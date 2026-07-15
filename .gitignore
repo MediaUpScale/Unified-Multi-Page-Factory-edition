@@ -1,0 +1,62 @@
+﻿# ──────────────────────────────────────────────────────────
+#  Unified Multi-Page Factory — .gitignore
+# ──────────────────────────────────────────────────────────
+
+# Secrets / credentials
+.env
+.env.*
+*.pem
+*.key
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+.venv/
+env/
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+
+# IDE / Cursor local state
+.cursor_local/
+.cursor/
+.idea/
+.vscode/
+
+# Heavy media outputs (generated at runtime)
+outputs/
+logs/
+clips/
+*.mp4
+*.mp3
+*.wav
+*.aac
+*.mov
+
+# Excel output files
+PostPlanner_B2_*.xlsx
+postplan_*.xlsx
+
+# Temp / cache files
+*.tmp
+*TEMP_MPY_wvf_snd*
+.cache/
+.pytest_cache/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
