@@ -884,10 +884,20 @@ def _produce_variant_worker(
             )
         _ak_clean = _re_ak.sub(r"[ \t]{2,}", " ", _ak_clean).strip(" ,.")
         # Final prompt: style directive + clean subject description
+        # Strict structural mandate prevents the model from generating a
+        # framed painting, gallery mockup, or picture-in-picture artefact.
         image_prompt = (
-            f"{_ak_style}. SUBJECT: {resolved_subject}. "
-            "Full-bleed, edge-to-edge composition. "
-            "Epic cinematic scale, dramatic atmospheric lighting, no borders, no frames."
+            f"{_ak_style}. "
+            "SHOT TYPE: Full-screen first-person immersive cinematic photograph. "
+            "The camera IS inside the location — the viewer stands directly inside "
+            "the scene. "
+            f"SUBJECT: {resolved_subject}. "
+            "CRITICAL — DO NOT generate: a framed painting, a picture hanging on a wall, "
+            "a gallery, a mockup, a physical canvas, picture borders, image-within-image, "
+            "a postcard, a mural, a plaque, or any rectangular frame element. "
+            "The entire frame is filled edge-to-edge with the immersive environment itself. "
+            "No white space, no margins, no frame overlay, no border, no vignette frame. "
+            "Epic wide-angle or medium cinematic shot, full-bleed, dramatic atmospheric lighting."
         )
         _LOG.info(
             "ancient_knowledge STYLE LOCK | compiled prompt: %s", image_prompt[:180]

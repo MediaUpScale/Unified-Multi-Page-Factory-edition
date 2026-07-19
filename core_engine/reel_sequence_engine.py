@@ -191,6 +191,38 @@ def _split_word_timings_into_acts(
 
 
 # ---------------------------------------------------------------------------
+# Phrase-chunking helper — groups word_timings into short natural phrases
+# ---------------------------------------------------------------------------
+
+def _chunk_words_into_phrases(
+    word_timings: "list[tuple[str, float, float]]",
+    words_per_phrase: int = 4,
+) -> "list[tuple[str, float, float]]":
+    """
+    Collapse ``word_timings`` (one entry per word) into phrase groups.
+
+    Each phrase spans ``words_per_phrase`` consecutive words.  The phrase's
+    start/end timestamps are taken from the first and last word in the group.
+    This produces captions that show 3-5 words at once instead of a single
+    flashing word, matching natural spoken cadence.
+
+    Example (words_per_phrase=4):
+        [("Ancient", 0.0, 0.5), ("ruins", 0.5, 0.9), ("were", 0.9, 1.2), ("found", 1.2, 1.7)]
+        → [("Ancient ruins were found", 0.0, 1.7)]
+    """
+    if not word_timings or words_per_phrase <= 1:
+        return word_timings
+    phrases: list[tuple[str, float, float]] = []
+    for i in range(0, len(word_timings), words_per_phrase):
+        chunk = word_timings[i : i + words_per_phrase]
+        phrase_text = " ".join(w for w, _, _ in chunk)
+        phrase_start = chunk[0][1]
+        phrase_end = chunk[-1][2]
+        phrases.append((phrase_text, phrase_start, phrase_end))
+    return phrases
+
+
+# ---------------------------------------------------------------------------
 # Per-act clip builder
 # ---------------------------------------------------------------------------
 
@@ -213,6 +245,7 @@ def _build_act_clip(
     zoom_start: float = _ZOOM_PER_ACT_START,
     zoom_end: float = _ZOOM_PER_ACT_END,
     act_index: int = 0,
+    words_per_phrase: int = 4,
 ):
     """
     Build one MoviePy VideoClip for a single act.
@@ -270,10 +303,14 @@ def _build_act_clip(
 
     _subtitle_y = subtitle_y_position if subtitle_y_position is not None else int(_REEL_HEIGHT * 0.82)
 
-    def _current_word(t: float) -> str:
-        for wrd, ws, we in word_timings:
+    # Group individual word timestamps into short natural phrases (3-5 words).
+    # This replaces the choppy single-word subtitle flicker with fluid readable lines.
+    _display_timings = _chunk_words_into_phrases(word_timings, words_per_phrase)
+
+    def _current_phrase(t: float) -> str:
+        for phrase, ws, we in _display_timings:
             if ws <= t <= we:
-                return wrd
+                return phrase
         return ""
 
     def _make_frame(t: float) -> np.ndarray:
@@ -304,11 +341,11 @@ def _build_act_clip(
             hook_y = int(_REEL_HEIGHT * hook_y_frac)
             _draw_centered_text(draw, hook_text, _font_hook, hook_y, _REEL_WIDTH)
 
-        # Lower-third word subtitle
-        word = _current_word(t)
-        if word:
+        # Lower-third phrase subtitle — 3-5 words per block for fluid readability
+        phrase = _current_phrase(t)
+        if phrase:
             _draw_centered_text(
-                draw, word, _font_subtitle, _subtitle_y, _REEL_WIDTH,
+                draw, phrase, _font_subtitle, _subtitle_y, _REEL_WIDTH,
                 fill=(255, 230, 0),
             )
 
@@ -440,6 +477,7 @@ def compile_sequence_reel(
     hook_y_frac: float = 0.50,
     page_id: str = "",
     fps: int = _DEFAULT_FPS,
+    words_per_phrase: int = 4,
 ) -> Path:
     """
     Compile an N-image sequence reel from a list of background images.
@@ -484,27 +522,30 @@ def compile_sequence_reel(
 
     n_acts = len(image_paths)
 
-    # ── Canonical timeline — ALWAYS locked to act_duration_s × n_acts ─────────
-    # The voiceover audio does NOT control the video container length.  If the
-    # voice finishes early, the scene lingers with ambient audio running to
-    # build tension before the next act cuts in.  This guarantees an exact 80s
-    # output regardless of TTS pacing variations.
-    if act_duration_s is not None and act_duration_s > 0:
-        total_duration = float(act_duration_s) * n_acts          # e.g. 20.0 × 4 = 80.0 s
-    else:
-        total_duration = float(target_duration)                   # fallback for pages without act_duration_s
-
-    act_duration_locked = total_duration / n_acts                 # exactly 20.0 s per act
-
-    # Determine voice audio length for logging only (not used to resize container)
+    # ── Canonical timeline — driven by voice audio duration ───────────────────
+    # The video container ends exactly when the narrator finishes speaking.
+    # Each act is voice_duration / n_acts so all acts share the audio proportionally.
+    # If no voice audio is present, fall back to act_duration_s × n_acts (page config),
+    # then to target_duration.
     _voice_actual_dur: float = 0.0
     if voice_audio and voice_audio.is_file():
         try:
             _tmp_ac = AudioFileClip(str(voice_audio))
             _voice_actual_dur = _tmp_ac.duration
             _tmp_ac.close()
+            total_duration = _voice_actual_dur
         except Exception as _ae:
-            logger.warning("Could not read voice audio duration: %s", _ae)
+            logger.warning("Could not read voice audio duration: %s — using act_duration fallback", _ae)
+            total_duration = (
+                float(act_duration_s) * n_acts if act_duration_s and act_duration_s > 0
+                else float(target_duration)
+            )
+    elif act_duration_s is not None and act_duration_s > 0:
+        total_duration = float(act_duration_s) * n_acts
+    else:
+        total_duration = float(target_duration)
+
+    act_duration_locked = total_duration / n_acts   # equal slice per act
 
     logger.info(
         "compile_sequence_reel | page=%s n_acts=%d total=%.1fs act=%.1fs "
@@ -548,6 +589,7 @@ def compile_sequence_reel(
             grain_intensity=grain_intensity,
             fps=fps,
             act_index=i,
+            words_per_phrase=words_per_phrase,
         )
         clips.append(clip)
 
