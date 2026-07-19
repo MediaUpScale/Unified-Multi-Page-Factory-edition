@@ -88,6 +88,52 @@ def _make_vignette(
 
 
 # ---------------------------------------------------------------------------
+# Procedural ambient drone synthesizer — guaranteed fallback when no audio
+# file is available from ElevenLabs SFX or from disk.
+# ---------------------------------------------------------------------------
+
+def _synthesize_ambient_drone(
+    total_duration: float,
+    sample_rate: int = 44100,
+    volume: float = 0.35,
+) -> "object | None":
+    """
+    Build a dark atmospheric drone of ``total_duration`` seconds using numpy.
+
+    Layers three slow sine tones (A1/E2/A2) plus filtered noise, normalised
+    and returned as a MoviePy ``AudioArrayClip``.  Used as the ultimate
+    fallback when neither the local mystery-loop asset nor the ElevenLabs SFX
+    API are available.
+
+    Returns None on any failure so callers can proceed voice-only.
+    """
+    try:
+        from moviepy import AudioArrayClip  # type: ignore[import]
+        n = int(total_duration * sample_rate)
+        t = np.linspace(0, total_duration, n, dtype=np.float32)
+        # Dark drone: A1 (55 Hz) + E2 (82.5 Hz) + A2 (110 Hz)
+        drone = (
+            0.40 * np.sin(2 * np.pi * 55.0 * t)
+            + 0.20 * np.sin(2 * np.pi * 82.5 * t)
+            + 0.15 * np.sin(2 * np.pi * 110.0 * t)
+        )
+        # Texture layer: seeded pink-ish noise
+        rng = np.random.default_rng(seed=7)
+        noise = rng.standard_normal(n).astype(np.float32) * 0.08
+        combined = drone + noise
+        peak = float(np.max(np.abs(combined)))
+        if peak > 0:
+            combined = (combined / peak * volume)
+        stereo = np.stack([combined, combined], axis=1)
+        clip = AudioArrayClip(stereo, fps=sample_rate)
+        logger.info("Procedural ambient drone synthesized | dur=%.1fs vol=%.2f", total_duration, volume)
+        return clip
+    except Exception as _exc:  # noqa: BLE001
+        logger.warning("Procedural ambient synthesis failed: %s", _exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # LLM script prompt builder
 # ---------------------------------------------------------------------------
 
@@ -590,36 +636,34 @@ def compile_sequence_reel(
 
     n_acts = len(image_paths)
 
-    # ── Canonical timeline — driven by voice audio duration ───────────────────
-    # The video container ends exactly when the narrator finishes speaking.
-    # Each act is voice_duration / n_acts so all acts share the audio proportionally.
-    # If no voice audio is present, fall back to act_duration_s × n_acts (page config),
-    # then to target_duration.
+    # ── Canonical timeline ────────────────────────────────────────────────────
+    # Priority: act_duration_s × n_acts (page config) is the FLOOR.
+    # TTS audio length is used when it is LONGER than the configured target
+    # (never truncate the narrator), but TTS shorter than target → visual runs
+    # to the target and ambient fills the silence — no dead-air truncation.
+    _configured_dur = (
+        float(act_duration_s) * n_acts
+        if act_duration_s is not None and act_duration_s > 0
+        else float(target_duration)
+    )
     _voice_actual_dur: float = 0.0
     if voice_audio and voice_audio.is_file():
         try:
             _tmp_ac = AudioFileClip(str(voice_audio))
             _voice_actual_dur = _tmp_ac.duration
             _tmp_ac.close()
-            total_duration = _voice_actual_dur
         except Exception as _ae:
-            logger.warning("Could not read voice audio duration: %s — using act_duration fallback", _ae)
-            total_duration = (
-                float(act_duration_s) * n_acts if act_duration_s and act_duration_s > 0
-                else float(target_duration)
-            )
-    elif act_duration_s is not None and act_duration_s > 0:
-        total_duration = float(act_duration_s) * n_acts
-    else:
-        total_duration = float(target_duration)
-
-    act_duration_locked = total_duration / n_acts   # equal slice per act
+            logger.warning("Could not read voice audio duration: %s", _ae)
+    # Use the larger of (configured target, TTS length) so the video is never
+    # shorter than the page config specifies AND never cuts off the narrator.
+    total_duration = max(_configured_dur, _voice_actual_dur)
+    act_duration_locked = total_duration / n_acts
 
     logger.info(
         "compile_sequence_reel | page=%s n_acts=%d total=%.1fs act=%.1fs "
-        "voice_dur=%.1fs enable_hook=%s vignette=%.2f grain=%.1f",
+        "voice_dur=%.1fs configured=%.1fs enable_hook=%s vignette=%.2f grain=%.1f",
         page_id, n_acts, total_duration, act_duration_locked,
-        _voice_actual_dur, enable_hook_text, vignette_strength, grain_intensity,
+        _voice_actual_dur, _configured_dur, enable_hook_text, vignette_strength, grain_intensity,
     )
 
     # Split word timings into acts
@@ -759,6 +803,13 @@ def compile_sequence_reel(
                 audio_clips.append(ac_trimmed.with_volume_scaled(_AMBIENT_VOLUME))
         except Exception as _ae:
             logger.warning("Ambient audio load failed: %s", _ae)
+    else:
+        # No ambient file available — synthesize a procedural dark drone so
+        # there is ALWAYS a background atmosphere layer in the final mix.
+        logger.info("No ambient file — falling back to procedural drone synthesis")
+        _synth = _synthesize_ambient_drone(total_duration, volume=_AMBIENT_VOLUME)
+        if _synth is not None:
+            audio_clips.append(_synth)
 
     if audio_clips:
         from moviepy import CompositeAudioClip  # type: ignore[import]
