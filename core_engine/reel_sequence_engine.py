@@ -484,33 +484,33 @@ def compile_sequence_reel(
 
     n_acts = len(image_paths)
 
-    # Determine actual reel duration from audio if available
-    audio_duration: float = target_duration
+    # ── Canonical timeline — ALWAYS locked to act_duration_s × n_acts ─────────
+    # The voiceover audio does NOT control the video container length.  If the
+    # voice finishes early, the scene lingers with ambient audio running to
+    # build tension before the next act cuts in.  This guarantees an exact 80s
+    # output regardless of TTS pacing variations.
+    if act_duration_s is not None and act_duration_s > 0:
+        total_duration = float(act_duration_s) * n_acts          # e.g. 20.0 × 4 = 80.0 s
+    else:
+        total_duration = float(target_duration)                   # fallback for pages without act_duration_s
+
+    act_duration_locked = total_duration / n_acts                 # exactly 20.0 s per act
+
+    # Determine voice audio length for logging only (not used to resize container)
+    _voice_actual_dur: float = 0.0
     if voice_audio and voice_audio.is_file():
         try:
-            _ac = AudioFileClip(str(voice_audio))
-            audio_duration = _ac.duration + 1.5  # 1.5s tail
-            _ac.close()
+            _tmp_ac = AudioFileClip(str(voice_audio))
+            _voice_actual_dur = _tmp_ac.duration
+            _tmp_ac.close()
         except Exception as _ae:
-            logger.warning("Could not read audio duration: %s", _ae)
-
-    # Use actual audio length as the reel duration — the 80s target_duration is a
-    # floor only when no audio exists.  Forcing max(80, 23s) causes MoviePy to
-    # request frames beyond the ambient track's actual length → OSError crash.
-    total_duration = audio_duration
-
-    # When no audio drives the timeline, respect explicit per-act duration from
-    # the page config (e.g. REEL_ACT_DURATION = 20.0 → 4 acts × 20s = 80s).
-    if audio_duration == target_duration and act_duration_s is not None and act_duration_s > 0:
-        total_duration = act_duration_s * n_acts
-
-    act_duration = total_duration / n_acts
+            logger.warning("Could not read voice audio duration: %s", _ae)
 
     logger.info(
         "compile_sequence_reel | page=%s n_acts=%d total=%.1fs act=%.1fs "
-        "enable_hook=%s vignette=%.2f grain=%.1f",
-        page_id, n_acts, total_duration, act_duration,
-        enable_hook_text, vignette_strength, grain_intensity,
+        "voice_dur=%.1fs enable_hook=%s vignette=%.2f grain=%.1f",
+        page_id, n_acts, total_duration, act_duration_locked,
+        _voice_actual_dur, enable_hook_text, vignette_strength, grain_intensity,
     )
 
     # Split word timings into acts
@@ -526,7 +526,7 @@ def compile_sequence_reel(
         vignette_arr = _make_vignette(_REEL_WIDTH, _REEL_HEIGHT, vignette_strength)
         logger.debug("Vignette pre-computed | strength=%.2f", vignette_strength)
 
-    # Build per-act clips
+    # Build per-act clips — each exactly act_duration_locked seconds
     clips = []
     for i, (img_path, (t_start, t_end, act_wt)) in enumerate(
         zip(image_paths, act_segments)
@@ -534,7 +534,7 @@ def compile_sequence_reel(
         logger.info("Rendering act %d/%d | image=%s", i + 1, n_acts, img_path.name)
         clip = _build_act_clip(
             img_path,
-            act_duration=t_end - t_start,
+            act_duration=act_duration_locked,   # ← always exactly 20.0 s
             word_timings=act_wt,
             hook_text=hook_text,
             enable_hook_text=enable_hook_text,
@@ -574,13 +574,27 @@ def compile_sequence_reel(
 
     if ambient_audio and ambient_audio.is_file():
         try:
-            from moviepy import CompositeAudioClip  # type: ignore[import]
+            import math as _math
             ac = AudioFileClip(str(ambient_audio))
-            # Clamp to actual clip duration — never request frames beyond the end
             _amb_actual = ac.duration
-            _amb_dur = min(total_duration, _amb_actual)
-            ac = ac.subclipped(0, _amb_dur).with_volume_scaled(_AMBIENT_VOLUME)
-            audio_clips.append(ac)
+            ac.close()
+
+            if _amb_actual < total_duration:
+                # Loop the ambient track to fill the full 80-second container.
+                # Reload fresh clips for concatenation to avoid closed-handle issues.
+                n_loops = _math.ceil(total_duration / _amb_actual)
+                logger.info(
+                    "Ambient audio (%.1fs) shorter than reel (%.1fs) — looping ×%d",
+                    _amb_actual, total_duration, n_loops,
+                )
+                from moviepy import concatenate_audioclips  # type: ignore[import]
+                looped_parts = [AudioFileClip(str(ambient_audio)) for _ in range(n_loops)]
+                ac_looped = concatenate_audioclips(looped_parts).subclipped(0, total_duration)
+                ac_looped = ac_looped.with_volume_scaled(_AMBIENT_VOLUME)
+                audio_clips.append(ac_looped)
+            else:
+                ac_trimmed = AudioFileClip(str(ambient_audio)).subclipped(0, total_duration)
+                audio_clips.append(ac_trimmed.with_volume_scaled(_AMBIENT_VOLUME))
         except Exception as _ae:
             logger.warning("Ambient audio load failed: %s", _ae)
 

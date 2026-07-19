@@ -99,9 +99,9 @@ LOGO_POSITION: str = "bottom_center"
 # TTS_VOICE_PREFERENCE is a human-readable label for documentation;
 # ELEVENLABS_VOICE_ID is the actual API identifier used in TTS calls.
 # ---------------------------------------------------------------------------
-ELEVENLABS_VOICE_ID: str = "TxGEqnHWrfWFTfGW9XjX"   # Josh — deep documentary male voice
+ELEVENLABS_VOICE_ID: str = "WdZjiN0nNcik2LBjOHiv"   # Direct voice ID — wise/mysterious narrator
 ELEVENLABS_MODEL: str = "eleven_multilingual_v2"        # Best char-per-credit efficiency
-TTS_VOICE_PREFERENCE: str = "David - Wise & Knowledgeable natural history"
+TTS_VOICE_PREFERENCE: str = "WdZjiN0nNcik2LBjOHiv"    # Human-readable label mirrors voice ID
 
 # ---------------------------------------------------------------------------
 # Sequence reel configuration
@@ -128,8 +128,8 @@ ENABLE_TOP_HOOK_TEXT: bool = False   # do not burn headline at top; only lower-t
 HOOK_Y_FRAC: float = 0.25             # hook headline in the upper quarter
 SUBTITLE_FONTSIZE: int = 56           # large, bold, legible on dark stone frames
 SUBTITLE_Y_POSITION: int = 1500       # safely in lower third
-LOGO_WIDTH: int = 300          # 1.5× base size for prominence at bottom-center
-LOGO_MAX_HEIGHT: int = 82      # 1.5× base height cap
+LOGO_WIDTH: int = 420          # 1.4× prior size (300→420) for mobile readability
+LOGO_MAX_HEIGHT: int = 115     # 1.4× prior cap  (82→115)
 LOGO_OPACITY: float = 0.75
 LOGO_BOTTOM_MARGIN: int = 90
 
