@@ -124,7 +124,13 @@ GEMINI_RESEARCH_MODEL: str = os.getenv("GEMINI_RESEARCH_MODEL", SAFE_GEMINI_TEXT
 GEMINI_ECONOMIC_BRAIN_MODEL: str = os.getenv("GEMINI_ECONOMIC_BRAIN_MODEL", SAFE_GEMINI_TEXT_MODEL)
 GEMINI_ECONOMIC_IMAGE_MODEL: str = os.getenv(
     "GEMINI_ECONOMIC_IMAGE_MODEL",
-    "models/gemini-3.1-flash-image",   # live hyper-economic tier (replaces 2.5-flash-image)
+    "models/gemini-2.0-flash-preview-image-generation",   # cheapest working flash image model
+)
+# Nano/banana tier — Imagen 3 Fast (uses generate_images API, cheapest per image).
+# Activated automatically when page_config.py declares COST_TIER = "nano".
+GEMINI_NANO_IMAGE_MODEL: str = os.getenv(
+    "GEMINI_NANO_IMAGE_MODEL",
+    "models/imagen-3.0-fast-generate-001",
 )
 CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", SAFE_CLAUDE_MODEL)
 GEMINI_IMAGE_MODEL: str = os.getenv("GEMINI_IMAGE_MODEL", SAFE_GEMINI_IMAGE_MODEL)

@@ -205,6 +205,20 @@ class GeminiImageAdapter(ImageProvider):
         gen_cfg = _generation_config_for_image(ratio)
         chain = chain_with_preferred_first(self._image_chain, self._model_id)
 
+        # ── Imagen fast-path ──────────────────────────────────────────────
+        # Imagen models use client.models.generate_images(), not generate_content().
+        # Detect by model slug and route separately so the standard Gemini
+        # generate_content loop never receives an Imagen model ID (which would
+        # return an API error rather than a graceful skip).
+        _primary_slug = (self._model_id or "").lower().lstrip("models/")
+        if _primary_slug.startswith("imagen"):
+            return self._generate_via_imagen(
+                prompt_with_ratio,
+                ratio=ratio,
+                output_stem=output_stem,
+                output_directory=output_directory,
+            )
+
         self.last_gemini_image_model_used = None
         self.last_gemini_image_failure_model_id = None
 
@@ -365,5 +379,140 @@ class GeminiImageAdapter(ImageProvider):
             raise RuntimeError(
                 "All Gemini image models in chain (including premium fallback) returned no valid image payload."
             )
+
+        return out_path.resolve()
+
+    # ------------------------------------------------------------------
+    # Imagen generate_images() fast path
+    # ------------------------------------------------------------------
+
+    def _generate_via_imagen(
+        self,
+        prompt: str,
+        *,
+        ratio: str,
+        output_stem: str,
+        output_directory: "Path | None",
+    ) -> "Path":
+        """
+        Generate an image using the Imagen API (generate_images, not generate_content).
+
+        Uses ``self._model_id`` as the Imagen model slug.  Falls back to the
+        standard Gemini generate_content chain when Imagen raises any error,
+        so a mis-configured or quota-exceeded Imagen key does not hard-crash.
+        """
+        from google.genai import types as _genai_types  # type: ignore[import]
+
+        out_dir = output_directory or (
+            Path(app_config.ENGINE_ROOT) / "outputs" / "images"
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        out_path = out_dir / f"{output_stem}_{ts}.png"
+
+        # Allowed Imagen aspect ratios (exact strings the API accepts)
+        _VALID_IMAGEN_RATIOS = {"1:1", "4:3", "3:4", "16:9", "9:16"}
+        imagen_ratio = ratio if ratio in _VALID_IMAGEN_RATIOS else "3:4"
+
+        try:
+            logger.info(
+                "Imagen fast-path | model=%s | ratio=%s", self._model_id, imagen_ratio
+            )
+            response = self._client.models.generate_images(
+                model=self._model_id,
+                prompt=prompt,
+                config=_genai_types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio=imagen_ratio,
+                    person_generation="ALLOW_ADULT",
+                ),
+            )
+            if response and response.generated_images:
+                pil_image = response.generated_images[0].image
+                if pil_image is not None:
+                    pil_image.save(str(out_path))
+                    self.last_gemini_image_model_used = self._model_id
+                    logger.info(
+                        "Image payload saved via Imagen | model=%s | path=%s",
+                        self._model_id, out_path,
+                    )
+                    return out_path.resolve()
+            logger.warning(
+                "Imagen model '%s' returned no image payload — falling back to Gemini chain.",
+                self._model_id,
+            )
+        except Exception as _img_exc:  # noqa: BLE001
+            logger.warning(
+                "Imagen call failed (%s) — falling back to Gemini generate_content chain.",
+                _img_exc,
+            )
+
+        # Fallback: run the standard generate_content chain
+        gen_cfg = _generation_config_for_image(imagen_ratio)
+        chain = chain_with_preferred_first(self._image_chain, None)
+        # Re-enter the generate_content loop (reuse same logic block via a
+        # minimal recursive call pattern — avoids code duplication).
+        self._model_id = app_config.SAFE_GEMINI_IMAGE_MODEL
+        self._image_chain = [app_config.SAFE_GEMINI_IMAGE_MODEL]
+        return self._run_generate_content_chain(
+            prompt, gen_cfg=gen_cfg, out_path=out_path
+        )
+
+    def _run_generate_content_chain(
+        self,
+        prompt: str,
+        *,
+        gen_cfg: "Any",
+        out_path: "Path",
+    ) -> "Path":
+        """Minimal generate_content chain runner used as Imagen fallback."""
+        from avatar_engine.providers.gemini_utils import chain_with_preferred_first  # noqa: F811
+
+        chain = chain_with_preferred_first(self._image_chain, self._model_id)
+        _PREMIUM_FALLBACK = app_config.SAFE_GEMINI_IMAGE_MODEL
+        full_chain = list(chain)
+        if _PREMIUM_FALLBACK not in full_chain:
+            full_chain.append(_PREMIUM_FALLBACK)
+
+        saved = False
+        last_err: "BaseException | None" = None
+
+        for candidate in full_chain:
+            try:
+                response = self._client.models.generate_content(
+                    model=candidate,
+                    contents=[prompt],
+                    config=gen_cfg,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                continue
+
+            if not response:
+                continue
+
+            for part in _iterate_response_parts(response):
+                inline = getattr(part, "inline_data", None)
+                data = getattr(inline, "data", None) if inline else None
+                if data:
+                    with out_path.open("wb") as h:
+                        h.write(data if isinstance(data, (bytes, bytearray)) else bytes(data))
+                    self.last_gemini_image_model_used = candidate
+                    saved = True
+                    break
+                if hasattr(part, "as_image"):
+                    pil_image = part.as_image()
+                    if pil_image is not None:
+                        pil_image.save(out_path)
+                        self.last_gemini_image_model_used = candidate
+                        saved = True
+                        break
+            if saved:
+                break
+
+        if not saved:
+            if last_err:
+                raise last_err
+            raise RuntimeError("Imagen fallback chain: all models returned no image payload.")
 
         return out_path.resolve()

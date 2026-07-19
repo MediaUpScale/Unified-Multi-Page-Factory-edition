@@ -1000,6 +1000,10 @@ def _produce_variant_worker(
                 _scene_desc[:80],
             )
         img_model_id = app_config.GEMINI_ECONOMIC_IMAGE_MODEL if economic else None
+        # Nano-tier override: ancient_knowledge (COST_TIER=nano) uses the Imagen
+        # fast model, which is cheaper than the economic flash model.
+        if page_ctx is not None and page_ctx.cost_tier == "nano":
+            img_model_id = app_config.GEMINI_NANO_IMAGE_MODEL
         if economic:
             _LOG.info(
                 "ECONOMIC LOCK | variant=%s | image_model=%s | text_brain=%s",
@@ -1145,7 +1149,12 @@ def _produce_variant_worker(
             )
             _act_out = subject_assets / f"{stem}_act{_act_i + 1:02d}.png"
             try:
-                _act_img = adapter.generate(_act_prompt, output_stem=f"{stem}_act{_act_i + 1:02d}", output_directory=subject_assets)
+                _act_img = adapter.generate(
+                    _act_prompt,
+                    output_stem=f"{stem}_act{_act_i + 1:02d}",
+                    output_directory=subject_assets,
+                    avatar_mode="OFF",  # sequence reels are always text-to-image; no likeness ref
+                )
                 _sequence_image_paths.append(_act_img)
                 if cost_tracker is not None:
                     cost_tracker.track_image()
