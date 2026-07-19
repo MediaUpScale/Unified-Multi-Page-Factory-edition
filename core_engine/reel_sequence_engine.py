@@ -61,6 +61,33 @@ _ZOOM_PER_ACT_END: float = 1.12
 
 
 # ---------------------------------------------------------------------------
+# Visual identity helpers — vignette + grain
+# ---------------------------------------------------------------------------
+
+def _make_vignette(
+    width: int,
+    height: int,
+    strength: float,
+) -> "np.ndarray":
+    """
+    Pre-compute a float32 vignette mask shaped (height, width).
+
+    Values range from 0.0 (centre — no darkening) to ``strength`` (corners).
+    Applied as: ``pixel *= (1.0 - vignette_mask)`` so high strength = dark corners.
+
+    The falloff is a smooth squared radial curve, beginning at ~40 % radius and
+    reaching full strength at the frame edge/corners.
+    """
+    y = np.linspace(-1.0, 1.0, height, dtype=np.float32)
+    x = np.linspace(-1.0, 1.0, width, dtype=np.float32)
+    xx, yy = np.meshgrid(x, y)
+    r = np.sqrt(xx ** 2 + yy ** 2)
+    # Smooth falloff: zero inside 40 % radius, ramps to `strength` at corners
+    raw = np.clip((r - 0.4) / 0.9, 0.0, 1.0) ** 2
+    return (raw * strength).astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
 # LLM script prompt builder
 # ---------------------------------------------------------------------------
 
@@ -159,12 +186,15 @@ def _build_act_clip(
     word_timings: "list[tuple[str, float, float]]",
     *,
     hook_text: str = "",
+    enable_hook_text: bool = True,
     overlay_opacity: float = 0.35,
     font_path: str | None = None,
     subtitle_fontsize: int = 46,
     subtitle_y_position: "int | None" = None,
     hook_y_frac: float = 0.55,
     logo_static_array: "np.ndarray | None" = None,
+    vignette_mask: "np.ndarray | None" = None,
+    grain_intensity: float = 18.0,
     fps: int = _DEFAULT_FPS,
     zoom_start: float = _ZOOM_PER_ACT_START,
     zoom_end: float = _ZOOM_PER_ACT_END,
@@ -173,9 +203,19 @@ def _build_act_clip(
     """
     Build one MoviePy VideoClip for a single act.
 
-    Replicates the core _make_frame logic from ``video_engine.compile_dynamic_reel``
-    but scoped to a single act's image and word timings.  Returns a
-    ``moviepy.VideoClip`` (no audio attached — audio is merged at stitch time).
+    Parameters
+    ----------
+    enable_hook_text:
+        When False the hook headline is never burned into the frame regardless
+        of whether hook_text is non-empty.  Lower-third subtitles and the logo
+        are unaffected.  Defaults to True for backward compatibility.
+    vignette_mask:
+        Pre-computed float32 array (H, W) from ``_make_vignette()``.  When
+        supplied it is applied after the dark overlay to darken the corners,
+        giving the footage a documentary/archival cinematic signature.
+    grain_intensity:
+        Amplitude of additive film grain noise in pixel value units (±).
+        Set to 0 to disable.  Default 18.0.
     """
     from moviepy import VideoClip  # type: ignore[import]
 
@@ -191,9 +231,13 @@ def _build_act_clip(
         new_h = int(new_w / img_ratio)
     img = img.resize((new_w, new_h), Image.LANCZOS)
 
-    # Precompute grain noise
-    rng = np.random.default_rng(seed=act_index + 42)
-    _grain = (rng.random((_REEL_HEIGHT, _REEL_WIDTH)) * 18 - 9).astype(np.float32)
+    # Precompute grain noise once per clip (seeded per-act for determinism)
+    _grain: "np.ndarray | None" = None
+    if grain_intensity > 0:
+        rng = np.random.default_rng(seed=act_index + 42)
+        _grain = (
+            rng.random((_REEL_HEIGHT, _REEL_WIDTH)) * (grain_intensity * 2) - grain_intensity
+        ).astype(np.float32)
 
     # Resolve font
     _font_path: str | None = font_path
@@ -210,7 +254,6 @@ def _build_act_clip(
         _font_subtitle = ImageFont.load_default()
         _font_hook = ImageFont.load_default()
 
-    # Subtitle lookup helper
     _subtitle_y = subtitle_y_position if subtitle_y_position is not None else int(_REEL_HEIGHT * 0.82)
 
     def _current_word(t: float) -> str:
@@ -229,23 +272,25 @@ def _build_act_clip(
         cy = (scaled_h - _REEL_HEIGHT) // 2
         cropped = scaled.crop((cx, cy, cx + _REEL_WIDTH, cy + _REEL_HEIGHT))
 
-        canvas = cropped.convert("RGB")
-        arr = np.array(canvas, dtype=np.float32)
+        arr = np.array(cropped.convert("RGB"), dtype=np.float32)
 
         # Dark overlay
         arr *= (1.0 - overlay_opacity)
 
-        # Clip to valid range before PIL conversion
+        # Vignette — additional corner darkening for archival/documentary look
+        if vignette_mask is not None:
+            arr *= (1.0 - vignette_mask[:, :, np.newaxis])
+
         arr = np.clip(arr, 0, 255).astype(np.uint8)
         frame = Image.fromarray(arr, mode="RGB").convert("RGBA")
         draw = ImageDraw.Draw(frame)
 
-        # Hook text (static, only on first act at top)
-        if hook_text and act_index == 0:
+        # Hook headline — only when explicitly enabled AND act is the first
+        if enable_hook_text and hook_text and act_index == 0:
             hook_y = int(_REEL_HEIGHT * hook_y_frac)
             _draw_centered_text(draw, hook_text, _font_hook, hook_y, _REEL_WIDTH)
 
-        # Word subtitle
+        # Lower-third word subtitle
         word = _current_word(t)
         if word:
             _draw_centered_text(
@@ -262,9 +307,10 @@ def _build_act_clip(
             _alpha_composite_numpy(frame_arr, logo_static_array, lx, ly)
             frame = Image.fromarray(frame_arr)
 
-        # Film grain
+        # Film grain — applied last so it sits over all layers
         rgb_arr = np.array(frame.convert("RGB"), dtype=np.float32)
-        rgb_arr += _grain[:, :, np.newaxis]
+        if _grain is not None:
+            rgb_arr += _grain[:, :, np.newaxis]
         rgb_arr = np.clip(rgb_arr, 0, 255).astype(np.uint8)
 
         return rgb_arr
@@ -363,9 +409,13 @@ def compile_sequence_reel(
     ambient_audio: "Path | None" = None,
     output_path: "Path | None" = None,
     target_duration: float = _DEFAULT_DURATION,
+    act_duration_s: "float | None" = None,
     word_timings: "list[tuple[str, float, float]] | None" = None,
     font_path: "str | None" = None,
     overlay_opacity: float = 0.35,
+    enable_hook_text: bool = True,
+    vignette_strength: float = 0.0,
+    grain_intensity: float = 18.0,
     logo_image_path: "Path | None" = None,
     logo_width_px: int = 200,
     logo_y_offset_px: int = 100,
@@ -380,7 +430,7 @@ def compile_sequence_reel(
     """
     Compile an N-image sequence reel from a list of background images.
 
-    Each image covers an equal portion of the total ``target_duration``
+    Each image covers an equal portion of the total duration
     (e.g. 4 images × 20s = 80s reel).
 
     Parameters
@@ -388,7 +438,7 @@ def compile_sequence_reel(
     image_paths:
         Ordered list of image paths — one per act.  Must be non-empty.
     hook_text:
-        Static headline burned into Act 1 only.
+        Static headline.  Burned into Act 1 only when ``enable_hook_text=True``.
     voice_audio:
         Path to the full-length voiceover MP3/WAV.
     ambient_audio:
@@ -396,11 +446,22 @@ def compile_sequence_reel(
     output_path:
         Destination MP4 path.  Auto-generated in a temp dir if None.
     target_duration:
-        Total reel duration in seconds.  Overridden by actual audio length
-        when ``voice_audio`` is supplied.
+        Target total reel duration in seconds (used when no audio file exists).
+    act_duration_s:
+        Explicit per-act clip length in seconds.  When provided and no audio
+        file is available, total_duration = n_acts × act_duration_s.  Ignored
+        when actual audio length drives the timeline.
     word_timings:
         List of ``(word, start_s, end_s)`` from ElevenLabs timestamps.
         Used to synchronise word-level subtitle burns.
+    enable_hook_text:
+        When False the hook headline is not burned at the top of any frame.
+        Lower-third subtitles and the logo are unaffected.
+    vignette_strength:
+        Corner darkening intensity (0 = off, 1 = full black corners).
+        Pre-computed once and reused across all act clips.
+    grain_intensity:
+        Film grain amplitude in pixel value units (±).  0 = off.
     """
     from moviepy import AudioFileClip, concatenate_videoclips  # type: ignore[import]
 
@@ -423,19 +484,33 @@ def compile_sequence_reel(
     # floor only when no audio exists.  Forcing max(80, 23s) causes MoviePy to
     # request frames beyond the ambient track's actual length → OSError crash.
     total_duration = audio_duration
+
+    # When no audio drives the timeline, respect explicit per-act duration from
+    # the page config (e.g. REEL_ACT_DURATION = 20.0 → 4 acts × 20s = 80s).
+    if audio_duration == target_duration and act_duration_s is not None and act_duration_s > 0:
+        total_duration = act_duration_s * n_acts
+
     act_duration = total_duration / n_acts
 
     logger.info(
-        "compile_sequence_reel | page=%s n_acts=%d total=%.1fs act=%.1fs",
+        "compile_sequence_reel | page=%s n_acts=%d total=%.1fs act=%.1fs "
+        "enable_hook=%s vignette=%.2f grain=%.1f",
         page_id, n_acts, total_duration, act_duration,
+        enable_hook_text, vignette_strength, grain_intensity,
     )
 
     # Split word timings into acts
     wt = word_timings or []
     act_segments = _split_word_timings_into_acts(wt, n_acts, total_duration)
 
-    # Pre-render logo once
+    # Pre-render logo once (shared across all acts)
     logo_arr = _prerender_logo(logo_image_path, logo_width_px, logo_opacity, logo_max_height_px)
+
+    # Pre-compute vignette mask once (shared across all acts)
+    vignette_arr: "np.ndarray | None" = None
+    if vignette_strength > 0:
+        vignette_arr = _make_vignette(_REEL_WIDTH, _REEL_HEIGHT, vignette_strength)
+        logger.debug("Vignette pre-computed | strength=%.2f", vignette_strength)
 
     # Build per-act clips
     clips = []
@@ -448,12 +523,15 @@ def compile_sequence_reel(
             act_duration=t_end - t_start,
             word_timings=act_wt,
             hook_text=hook_text,
+            enable_hook_text=enable_hook_text,
             overlay_opacity=overlay_opacity,
             font_path=font_path,
             subtitle_fontsize=subtitle_fontsize,
             subtitle_y_position=subtitle_y_position,
             hook_y_frac=hook_y_frac,
             logo_static_array=logo_arr,
+            vignette_mask=vignette_arr,
+            grain_intensity=grain_intensity,
             fps=fps,
             act_index=i,
         )

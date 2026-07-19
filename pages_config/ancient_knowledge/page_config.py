@@ -106,10 +106,18 @@ ELEVENLABS_MODEL: str = "eleven_multilingual_v2"        # Best char-per-credit e
 # REEL_IMAGE_COUNT:     number of images generated and stitched
 # ---------------------------------------------------------------------------
 REEL_DURATION: float = 80.0          # target reel length in seconds
+REEL_ACT_DURATION: float = 20.0      # per-act clip length when no audio drives the timeline
 ENABLE_SEQUENCE_REEL: bool = True    # engage 4-image sequence reel for ECONOMIC_REEL
 REEL_IMAGE_COUNT: int = 4            # exactly 4 distinct images per reel
 
 REEL_OVERLAY_OPACITY: float = 0.30   # lighter overlay — let the cinematic image breathe
+
+# ---------------------------------------------------------------------------
+# SEQUENCE_REEL — visual identity layer
+# ---------------------------------------------------------------------------
+VIGNETTE_STRENGTH: float = 0.60      # dark corner vignette (0 = off, 1 = full black corners)
+GRAIN_INTENSITY: float = 22.0        # film grain amplitude in pixel value units (default 18)
+ENABLE_TOP_HOOK_TEXT: bool = False   # do not burn headline at top; only lower-third subtitles
 
 # ---------------------------------------------------------------------------
 # SEQUENCE_REEL — video layout

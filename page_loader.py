@@ -471,6 +471,51 @@ class PageContext:
             return 4
 
     @property
+    def reel_act_duration(self) -> float:
+        """
+        Per-act clip length in seconds used when no audio drives the timeline.
+        Sourced from REEL_ACT_DURATION in page_config.py; defaults to 20.0.
+        Total reel = reel_image_count × reel_act_duration.
+        """
+        try:
+            return max(5.0, float(self.page_cfg.get("REEL_ACT_DURATION", 20.0)))
+        except (TypeError, ValueError):
+            return 20.0
+
+    @property
+    def enable_top_hook_text(self) -> bool:
+        """
+        When False the headline/hook text is NOT burned into the top of the frame.
+        Only lower-third word subtitles and the logo remain.
+        Sourced from ENABLE_TOP_HOOK_TEXT in page_config.py; defaults to True
+        for backward compatibility with wonder_feed and other pages.
+        """
+        return bool(self.page_cfg.get("ENABLE_TOP_HOOK_TEXT", True))
+
+    @property
+    def vignette_strength(self) -> float:
+        """
+        Vignette darkening applied at the frame corners (0 = off, 1 = full black).
+        Sourced from VIGNETTE_STRENGTH in page_config.py; defaults to 0.0.
+        """
+        try:
+            val = float(self.page_cfg.get("VIGNETTE_STRENGTH", 0.0))
+            return max(0.0, min(1.0, val))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @property
+    def grain_intensity(self) -> float:
+        """
+        Film grain amplitude in pixel value units (±grain_intensity added to each pixel).
+        Sourced from GRAIN_INTENSITY in page_config.py; defaults to 18.0.
+        """
+        try:
+            return max(0.0, float(self.page_cfg.get("GRAIN_INTENSITY", 18.0)))
+        except (TypeError, ValueError):
+            return 18.0
+
+    @property
     def niche_disclaimer(self) -> str:
         """
         Optional niche-specific disclaimer injected into LLM system prompts.
