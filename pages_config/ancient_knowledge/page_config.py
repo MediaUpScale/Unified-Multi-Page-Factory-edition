@@ -108,8 +108,8 @@ TTS_VOICE_PREFERENCE: str = "WdZjiN0nNcik2LBjOHiv"    # Human-readable label mir
 # ENABLE_SEQUENCE_REEL: True = use 4-image 80-second reel (core_engine)
 # REEL_IMAGE_COUNT:     number of images generated and stitched
 # ---------------------------------------------------------------------------
-REEL_DURATION: float = 65.0          # narration target: 65s × 4 acts + 5s CTA = 70s total
-REEL_ACT_DURATION: float = 16.25     # 65.0 / 4 acts — equal visual slice per act
+REEL_DURATION: float = 75.0          # narration target: 75s + 5s CTA = 80s total (1m20)
+REEL_ACT_DURATION: float = 18.75     # 75.0 / 4 acts — exactly 18.75s per visual act
 ENABLE_SEQUENCE_REEL: bool = True    # engage 4-image sequence reel for ECONOMIC_REEL
 REEL_IMAGE_COUNT: int = 4            # exactly 4 distinct images per reel
 
