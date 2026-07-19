@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 _REEL_WIDTH: int = 1080
 _REEL_HEIGHT: int = 1920
 _DEFAULT_FPS: int = 30
-_AMBIENT_VOLUME: float = 0.12   # low mix — background drone, never competes with narrator
+_AMBIENT_VOLUME: float = 0.35   # clearly audible drone pad behind the narrator
 
 # Default sequence configuration
 _DEFAULT_N_ACTS: int = 4
@@ -341,10 +341,12 @@ def _build_act_clip(
             hook_y = int(_REEL_HEIGHT * hook_y_frac)
             _draw_centered_text(draw, hook_text, _font_hook, hook_y, _REEL_WIDTH)
 
-        # Lower-third phrase subtitle — 3-5 words per block for fluid readability
+        # Lower-third phrase subtitle — 3-5 words per block for fluid readability.
+        # _draw_wrapped_text handles long strings (e.g. the 8-word CTA outro)
+        # without overflowing the 1080 px canvas.
         phrase = _current_phrase(t)
         if phrase:
-            _draw_centered_text(
+            _draw_wrapped_text(
                 draw, phrase, _font_subtitle, _subtitle_y, _REEL_WIDTH,
                 fill=(255, 230, 0),
             )
@@ -389,6 +391,68 @@ def _draw_centered_text(
     x = (canvas_width - tw) // 2
     y = y_center - th // 2
     draw.text((x, y), text, font=font, fill=fill)
+
+
+def _draw_wrapped_text(
+    draw: "ImageDraw.Draw",
+    text: str,
+    font,
+    y_center: int,
+    canvas_width: int,
+    fill: tuple = (255, 255, 255),
+    max_width_frac: float = 0.85,
+    line_spacing: int = 12,
+) -> None:
+    """
+    Draw text centered on the canvas, word-wrapping to stay within
+    ``max_width_frac`` of the canvas width.
+
+    Lines are stacked vertically and the whole block is vertically centred
+    around ``y_center``.  Falls back to a single centered line when the text
+    already fits within the safe zone (avoids unnecessary wrapping for short
+    3-5 word subtitle phrases).
+    """
+    max_w = int(canvas_width * max_width_frac)
+
+    # ── 1. Build wrapped lines ────────────────────────────────────────────────
+    words = text.split()
+    lines: list[str] = []
+    current: list[str] = []
+    for word in words:
+        candidate = " ".join(current + [word])
+        try:
+            bbox = draw.textbbox((0, 0), candidate, font=font)
+            tw = bbox[2] - bbox[0]
+        except AttributeError:
+            tw, _ = draw.textsize(candidate, font=font)  # type: ignore[attr-defined]
+        if tw <= max_w or not current:
+            current.append(word)
+        else:
+            lines.append(" ".join(current))
+            current = [word]
+    if current:
+        lines.append(" ".join(current))
+
+    if not lines:
+        return
+
+    # ── 2. Measure each line height ───────────────────────────────────────────
+    line_heights: list[int] = []
+    for line in lines:
+        try:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            th = bbox[3] - bbox[1]
+        except AttributeError:
+            _, th = draw.textsize(line, font=font)  # type: ignore[attr-defined]
+        line_heights.append(max(1, th))
+
+    total_h = sum(line_heights) + line_spacing * max(0, len(lines) - 1)
+
+    # ── 3. Draw each line, vertically centred as a block ─────────────────────
+    y = y_center - total_h // 2
+    for line, lh in zip(lines, line_heights):
+        _draw_centered_text(draw, line, font, y + lh // 2, canvas_width, fill=fill)
+        y += lh + line_spacing
 
 
 def _alpha_composite_numpy(
@@ -662,9 +726,20 @@ def compile_sequence_reel(
         except Exception as _ae:
             logger.warning("CTA audio load failed: %s", _ae)
 
+    if ambient_audio and not ambient_audio.is_file():
+        logger.warning(
+            "Ambient track path supplied but file MISSING: %s — reel will be voice-only",
+            ambient_audio,
+        )
     if ambient_audio and ambient_audio.is_file():
         try:
             import math as _math
+            logger.info(
+                "Ambient track FOUND (%.1f KB) → %s | will be mixed at volume=%.2f",
+                ambient_audio.stat().st_size / 1024,
+                ambient_audio.name,
+                _AMBIENT_VOLUME,
+            )
             ac = AudioFileClip(str(ambient_audio))
             _amb_actual = ac.duration
             ac.close()
@@ -687,7 +762,18 @@ def compile_sequence_reel(
 
     if audio_clips:
         from moviepy import CompositeAudioClip  # type: ignore[import]
-        mixed = CompositeAudioClip(audio_clips) if len(audio_clips) > 1 else audio_clips[0]
+        if len(audio_clips) > 1:
+            mixed = CompositeAudioClip(audio_clips)
+            # Explicitly set duration on the composite so MoviePy never clips it
+            # to the shortest constituent track.  Without this, the ambient loop
+            # (which runs longer than the voice clip) may be silenced after the
+            # voice ends.
+            try:
+                mixed = mixed.with_duration(total_duration)
+            except Exception:
+                pass  # fallback: let MoviePy infer duration
+        else:
+            mixed = audio_clips[0]
         # 1-second fade-out at the very end — prevents abrupt audio cut
         try:
             mixed = mixed.audio_fadeout(1.0)
