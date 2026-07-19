@@ -1468,6 +1468,14 @@ def _produce_variant_worker(
             _target_dur = page_ctx.reel_duration if page_ctx else 25.0
             _ambient_path = generate_ambient_track(_ambient_out, duration_seconds=_target_dur)
 
+        # -- For ancient_knowledge, prefer the local dark-mystery drone asset over
+        #    the ElevenLabs SFX ambient.  If the file is present, swap it in.
+        if page_ctx and (page_ctx.page_id or "").lower() == "ancient_knowledge":
+            _local_mystery_loop = app_config.ENGINE_ROOT / "assets" / "audio" / "ambient_mystery_loop.mp3"
+            if _local_mystery_loop.is_file():
+                _ambient_path = _local_mystery_loop
+                _LOG.info("ANCIENT_KNOWLEDGE | Using local ambient mystery loop: %s", _local_mystery_loop.name)
+
         # -- Compile reel via moviepy --
         # Build a readable slug from the hook text for the filename.
         _hook_slug = (
@@ -1496,6 +1504,27 @@ def _produce_variant_worker(
                 and page_ctx.enable_sequence_reel
                 and len(_sequence_image_paths) >= 2
             )
+            # ── CTA TTS for sequence reels (ancient_knowledge) ───────────────
+            # Generate a short 5-second closing clip: "Siga o Ancient Knowledge
+            # para mais mistérios ancestrais." appended after the main narration.
+            _cta_text: str = ""
+            _cta_audio_path: "Path | None" = None
+            if _use_sequence and page_ctx and (page_ctx.page_id or "").lower() == "ancient_knowledge":
+                _cta_text = "Siga o Ancient Knowledge para mais mistérios ancestrais."
+                _cta_out = _reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
+                if app_config.ELEVENLABS_API_KEY:
+                    try:
+                        _cta_audio_path, _ = generate_voiceover_with_timestamps(
+                            _cta_text,
+                            _cta_out,
+                            voice_id=page_ctx.elevenlabs_voice_id,
+                            model_id=page_ctx.elevenlabs_model,
+                        )
+                        _LOG.info("CTA TTS generated → %s", _cta_out.name)
+                    except Exception as _cta_exc:  # noqa: BLE001
+                        _LOG.warning("CTA TTS failed: %s — no CTA audio appended", _cta_exc)
+                else:
+                    _LOG.warning("CTA TTS skipped — ELEVENLABS_API_KEY not set")
             if _use_sequence:
                 _LOG.info(
                     "SEQUENCE_REEL | %d images → %s",
@@ -1524,6 +1553,9 @@ def _produce_variant_worker(
                     subtitle_y_position=page_ctx.subtitle_y_position if page_ctx else None,
                     hook_y_frac=page_ctx.hook_y_frac if page_ctx else 0.50,
                     page_id=page_ctx.page_id if page_ctx else "",
+                    cta_text=_cta_text,
+                    cta_audio=_cta_audio_path,
+                    cta_duration_s=5.0,
                 )
             else:
                 reel_path = compile_dynamic_reel(

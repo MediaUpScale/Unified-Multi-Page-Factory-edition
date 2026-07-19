@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 _REEL_WIDTH: int = 1080
 _REEL_HEIGHT: int = 1920
 _DEFAULT_FPS: int = 30
-_AMBIENT_VOLUME: float = 0.22
+_AMBIENT_VOLUME: float = 0.12   # low mix — background drone, never competes with narrator
 
 # Default sequence configuration
 _DEFAULT_N_ACTS: int = 4
@@ -478,6 +478,10 @@ def compile_sequence_reel(
     page_id: str = "",
     fps: int = _DEFAULT_FPS,
     words_per_phrase: int = 4,
+    # ── CTA extension ──────────────────────────────────────────────────────
+    cta_text: str = "",
+    cta_audio: "Path | None" = None,
+    cta_duration_s: float = 5.0,
 ) -> Path:
     """
     Compile an N-image sequence reel from a list of background images.
@@ -593,8 +597,38 @@ def compile_sequence_reel(
         )
         clips.append(clip)
 
-    # Concatenate all acts
-    logger.info("Concatenating %d act clips …", n_acts)
+    # ── CTA extension clip (appended after all narrative acts) ───────────────
+    # A 5-second closing scene on the last image with the follow CTA subtitle.
+    # The clip is always static (no Ken Burns zoom) so the CTA text is legible.
+    _narration_duration = total_duration   # save before extending for audio offsets
+    _has_cta = bool(cta_text) or (cta_audio is not None and cta_audio.is_file())
+    if _has_cta:
+        logger.info("CTA | appending %.1fs extension: %s", cta_duration_s, cta_text[:60])
+        cta_wt: list = [(cta_text, 0.0, cta_duration_s)] if cta_text else []
+        cta_clip = _build_act_clip(
+            image_paths[-1],              # last scene image — visual continuity
+            act_duration=cta_duration_s,
+            word_timings=cta_wt,
+            hook_text="",
+            enable_hook_text=False,
+            overlay_opacity=overlay_opacity,
+            font_path=font_path,
+            subtitle_fontsize=subtitle_fontsize,
+            subtitle_y_position=subtitle_y_position,
+            hook_y_frac=hook_y_frac,
+            logo_static_array=logo_arr,
+            vignette_mask=vignette_arr,
+            grain_intensity=grain_intensity,
+            fps=fps,
+            zoom_start=1.0, zoom_end=1.0,  # static frame — no zoom during CTA
+            act_index=n_acts,              # unique seed for grain
+            words_per_phrase=20,           # show full sentence as one block
+        )
+        clips.append(cta_clip)
+        total_duration += cta_duration_s  # extend container to include CTA
+
+    # Concatenate all acts (+ CTA if present)
+    logger.info("Concatenating %d clip(s) → %.1fs total …", len(clips), total_duration)
     final_video = concatenate_videoclips(clips, method="compose")
 
     # Resolve output path
@@ -604,15 +638,29 @@ def compile_sequence_reel(
         output_path = out_dir / f"{slug}_sequence_reel.mp4"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build full audio mix (voice + ambient)
+    # ── Full audio mix ────────────────────────────────────────────────────────
+    # Layer order:
+    #   1. Narrator voiceover  — at t=0, full length as-is
+    #   2. CTA audio            — starts at t=_narration_duration (no overlap)
+    #   3. Ambient drone loop   — runs from t=0 to t=total_duration at 0.12 vol
+    # A 1-second audio fade-out is applied to the composite mix so the video
+    # never ends with an abrupt audio cut.
     audio_clips = []
     if voice_audio and voice_audio.is_file():
         try:
             vc = AudioFileClip(str(voice_audio))
-            # Use actual clip duration — do not artificially extend with .with_duration()
             audio_clips.append(vc)
         except Exception as _ae:
             logger.warning("Voice audio load failed: %s", _ae)
+
+    if _has_cta and cta_audio is not None and cta_audio.is_file():
+        try:
+            cta_ac = AudioFileClip(str(cta_audio))
+            cta_ac = cta_ac.with_start(_narration_duration)   # offset to play after narrator
+            audio_clips.append(cta_ac)
+            logger.info("CTA audio | offset=%.1fs dur=%.1fs", _narration_duration, cta_ac.duration)
+        except Exception as _ae:
+            logger.warning("CTA audio load failed: %s", _ae)
 
     if ambient_audio and ambient_audio.is_file():
         try:
@@ -622,18 +670,15 @@ def compile_sequence_reel(
             ac.close()
 
             if _amb_actual < total_duration:
-                # Loop the ambient track to fill the full 80-second container.
-                # Reload fresh clips for concatenation to avoid closed-handle issues.
                 n_loops = _math.ceil(total_duration / _amb_actual)
                 logger.info(
-                    "Ambient audio (%.1fs) shorter than reel (%.1fs) — looping ×%d",
+                    "Ambient (%.1fs) < reel (%.1fs) — looping ×%d",
                     _amb_actual, total_duration, n_loops,
                 )
                 from moviepy import concatenate_audioclips  # type: ignore[import]
                 looped_parts = [AudioFileClip(str(ambient_audio)) for _ in range(n_loops)]
                 ac_looped = concatenate_audioclips(looped_parts).subclipped(0, total_duration)
-                ac_looped = ac_looped.with_volume_scaled(_AMBIENT_VOLUME)
-                audio_clips.append(ac_looped)
+                audio_clips.append(ac_looped.with_volume_scaled(_AMBIENT_VOLUME))
             else:
                 ac_trimmed = AudioFileClip(str(ambient_audio)).subclipped(0, total_duration)
                 audio_clips.append(ac_trimmed.with_volume_scaled(_AMBIENT_VOLUME))
@@ -643,6 +688,15 @@ def compile_sequence_reel(
     if audio_clips:
         from moviepy import CompositeAudioClip  # type: ignore[import]
         mixed = CompositeAudioClip(audio_clips) if len(audio_clips) > 1 else audio_clips[0]
+        # 1-second fade-out at the very end — prevents abrupt audio cut
+        try:
+            mixed = mixed.audio_fadeout(1.0)
+        except AttributeError:
+            try:
+                from moviepy.audio.fx import AudioFadeOut  # type: ignore[import]
+                mixed = mixed.with_effects([AudioFadeOut(1.0)])
+            except Exception:
+                pass  # fade-out unavailable in this MoviePy version — skip silently
         final_video = final_video.with_audio(mixed)
 
     # Write MP4
