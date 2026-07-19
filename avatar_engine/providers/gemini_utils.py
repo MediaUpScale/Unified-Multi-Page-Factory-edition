@@ -43,8 +43,8 @@ _LAST_RESORT_TEXT = [
 
 _LAST_RESORT_IMAGE = [
     "models/gemini-3-pro-image-preview",
+    "models/gemini-3.1-flash-lite-image",
     "models/gemini-2.5-flash-image",
-    "models/imagen-3.0-generate-002",
 ]
 
 # Keep these for config-level references.
@@ -170,7 +170,11 @@ def _is_text_candidate(model_id: str) -> bool:
 
 def _is_image_candidate(model_id: str) -> bool:
     low = model_id.lower()
-    return "imagen" in low or ("gemini" in low and "image" in low)
+    return (
+        "imagen" in low
+        or ("gemini" in low and "image" in low)
+        or "banana" in low  # nano-banana-pro-preview tier
+    )
 
 
 def _text_sort_key(model_id: str) -> tuple[float, float, str]:
@@ -194,6 +198,8 @@ def _image_sort_key(model_id: str) -> tuple[float, float, str]:
         pref = 4.0
     elif "imagen" in low:
         pref = 3.5
+    elif "banana" in low:
+        pref = 3.8  # nano-banana tier — cheapest known live tier, scores above standard image models
     elif "gemini-3" in low and "image" in low:
         pref = 3.0
     elif "gemini-2" in low and "image" in low:

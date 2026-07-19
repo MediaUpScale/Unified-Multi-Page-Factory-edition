@@ -1000,10 +1000,13 @@ def _produce_variant_worker(
                 _scene_desc[:80],
             )
         img_model_id = app_config.GEMINI_ECONOMIC_IMAGE_MODEL if economic else None
-        # Nano-tier override: ancient_knowledge (COST_TIER=nano) uses the Imagen
-        # fast model, which is cheaper than the economic flash model.
+        # Nano-tier override: ancient_knowledge (COST_TIER=nano) uses the banana
+        # model, which is cheaper than the standard economic flash model.
         if page_ctx is not None and page_ctx.cost_tier == "nano":
             img_model_id = app_config.GEMINI_NANO_IMAGE_MODEL
+        # Page-level explicit override has highest priority — bypasses all tier logic.
+        if page_ctx is not None and page_ctx.image_model_override:
+            img_model_id = page_ctx.image_model_override
         if economic:
             _LOG.info(
                 "ECONOMIC LOCK | variant=%s | image_model=%s | text_brain=%s",

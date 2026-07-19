@@ -37,6 +37,10 @@ USES_AVATAR_REFERENCE: bool = False
 COST_TIER: str = "nano"          # drives CostTracker pricing keys
 ENABLE_COST_TRACKING: bool = True  # write cost telemetry JSON per asset
 
+# Explicit image model override — bypasses all auto-discovery and tier defaults.
+# Set to the confirmed-live banana tier (absolute cheapest in the live API list).
+IMAGE_MODEL_OVERRIDE: str = "models/nano-banana-pro-preview"
+
 # ---------------------------------------------------------------------------
 # Economic brain mode — force lightweight models on every run
 # ---------------------------------------------------------------------------

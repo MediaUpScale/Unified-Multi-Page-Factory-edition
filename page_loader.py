@@ -479,6 +479,17 @@ class PageContext:
         return str(self.page_cfg.get("NICHE_DISCLAIMER", "")).strip()
 
     @property
+    def image_model_override(self) -> "str | None":
+        """
+        Explicit image model ID override sourced from IMAGE_MODEL_OVERRIDE in
+        page_config.py.  When set, this takes highest priority in main.py's
+        img_model_id resolution — overrides both the nano-tier constant and the
+        global economic flag.  Returns None when not configured.
+        """
+        val = self.page_cfg.get("IMAGE_MODEL_OVERRIDE", None)
+        return str(val).strip() or None if val else None
+
+    @property
     def prompt_negative_terms(self) -> list:
         """
         List of words / phrases to strip from inherited atmosphere prompts.
