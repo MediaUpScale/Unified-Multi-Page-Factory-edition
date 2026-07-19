@@ -1,0 +1,61 @@
+﻿{
+  "page_id": "ancient_knowledge",
+  "display_name": "Ancient Knowledge",
+  "niche": "ancient history, lost civilisations, world conspiracies, ancient mysteries",
+  "persona": {
+    "name": "Ancient Knowledge",
+    "archetype": "investigative documentary narrator",
+    "voice_tone": "investigative, neutral, immersive, respectful",
+    "core_mission": "Explore ancient history, lost civilisations, unbelievable historical facts, and world conspiracies with neutrality and deep respect for every culture and nation.",
+    "disclaimer": "We do not claim any conspiracy or theory is true. All content is for educational and entertainment purposes only.",
+    "content_pillars": [
+      "Lost civilisations and their advanced technologies",
+      "Unexplained archaeological discoveries",
+      "Ancient mystery sites (pyramids, Stonehenge, Göbekli Tepe)",
+      "World conspiracy theories presented neutrally",
+      "Suppressed or alternative historical narratives",
+      "Ancient artefacts that challenge mainstream archaeology"
+    ]
+  },
+  "visual_identity": {
+    "style": "hyper-realistic cinematic historical photography",
+    "colour_palette": ["deep ochre", "shadow black", "aged parchment", "torchlight amber"],
+    "texture": "gritty stone, aged parchment, weathered artefacts, 35mm film grain",
+    "mood": "epic, mysterious, documentary-grade realism",
+    "forbidden_styles": ["sketch", "illustration", "cartoon", "watercolour", "graphite", "pencil drawing"]
+  },
+  "voice_settings": {
+    "elevenlabs_voice_id": "TxGEqnHWrfWFTfGW9XjX",
+    "elevenlabs_voice_name": "Josh",
+    "elevenlabs_model": "eleven_multilingual_v2",
+    "pacing": "deliberate, measured, documentary pace"
+  },
+  "environments": [
+    "Ancient Egyptian ruins at dusk, with dramatic torchlight and hieroglyphs",
+    "Deep jungle canopy with ancient stone temples emerging from the mist",
+    "Underground chamber with carved walls and dim atmospheric light",
+    "Desert plateau with massive stone structures under a star-filled sky",
+    "Coastal cliff with submerged ancient ruins visible in crystal water",
+    "Mountain peak with megalithic stone alignments at sunrise"
+  ],
+  "narrative_angles": [
+    "What if everything we know about this is wrong?",
+    "The evidence that mainstream archaeology refuses to acknowledge",
+    "A discovery so unusual it changed everything for researchers",
+    "The mystery that has puzzled historians for centuries",
+    "Ancient records describe something that should not have existed yet",
+    "What did the ancients know that we have forgotten?"
+  ],
+  "cta_options": [
+    "What do you think really happened? Tell us in the comments.",
+    "Which theory do you find most convincing? Drop it below.",
+    "Share this if history class never taught you this.",
+    "Follow for more ancient mysteries we are still uncovering."
+  ],
+  "cost_config": {
+    "tier": "nano",
+    "economic_brain_mode": true,
+    "image_model": "gemini-3.1-flash-image",
+    "text_model": "deepseek-chat"
+  }
+}

@@ -18,6 +18,7 @@ Supported pages
   master_mei      Stoic discipline, cold exposure, performance protocols, avatar ON
   wonder_feed     Emotional intelligence, attachment science, avatar OFF (default)
   down_dirty      Matrix escape, financial sovereignty, raw mindset, avatar OFF (default)
+  ancient_knowledge  Ancient history, conspiracies, mysteries, photorealistic style, avatar OFF
 
 Usage
 -----
@@ -45,6 +46,7 @@ VALID_PAGES: tuple[str, ...] = (
     "master_mei",
     "wonder_feed",
     "down_dirty",
+    "ancient_knowledge",
 )
 
 VALID_AVATAR_MODES: tuple[str, ...] = ("ON", "OFF")
@@ -55,7 +57,8 @@ VALID_FORMATS: tuple[str, ...] = (
     "IMAGE_BACKGROUND",   # hyper-literal Gemini background + text overlay (SMART_BAIT default)
     "HYBRID_VIDEO",       # 7-second Ken Burns zoom loop from generated image
     "TEXT_QUOTE",         # brand-colour solid backdrop + text only (no Gemini image call)
-    "DYNAMIC_REEL",       # ECONOMIC_REEL: graphite image → 30-second MP4 via video_engine
+    "DYNAMIC_REEL",       # ECONOMIC_REEL: single image → MP4 via video_engine
+    "SEQUENCE_REEL",      # multi-image 80-second reel via core_engine.reel_sequence_engine
 )
 
 _ENGINE_ROOT: Path = Path(__file__).resolve().parent
@@ -427,6 +430,78 @@ class PageContext:
             return (r, g, b)
         except Exception:
             return (255, 255, 255)
+
+    # ------------------------------------------------------------------
+    # Core-engine modular properties (new — all pages may define these)
+    # ------------------------------------------------------------------
+
+    @property
+    def cost_tier(self) -> str:
+        """
+        Cost tier for this page: 'nano' | 'economic' | 'premium'.
+        Drives CostTracker pricing keys and model selection.
+        Sourced from COST_TIER in page_config.py; defaults to 'economic'.
+        """
+        raw = str(self.page_cfg.get("COST_TIER", "economic")).lower().strip()
+        return raw if raw in ("nano", "economic", "premium") else "economic"
+
+    @property
+    def enable_cost_tracking(self) -> bool:
+        """True = write cost telemetry JSON (cost_*.json) after each variant."""
+        return bool(self.page_cfg.get("ENABLE_COST_TRACKING", False))
+
+    @property
+    def enable_sequence_reel(self) -> bool:
+        """
+        True = use core_engine.reel_sequence_engine (4-image 80s reel).
+        False = use avatar_engine.video_engine single-image DYNAMIC_REEL.
+        Sourced from ENABLE_SEQUENCE_REEL in page_config.py; defaults to False.
+        """
+        return bool(self.page_cfg.get("ENABLE_SEQUENCE_REEL", False))
+
+    @property
+    def reel_image_count(self) -> int:
+        """
+        Number of distinct images generated and stitched in a SEQUENCE_REEL.
+        Sourced from REEL_IMAGE_COUNT in page_config.py; defaults to 4.
+        """
+        try:
+            return max(2, int(self.page_cfg.get("REEL_IMAGE_COUNT", 4)))
+        except (TypeError, ValueError):
+            return 4
+
+    @property
+    def niche_disclaimer(self) -> str:
+        """
+        Optional niche-specific disclaimer injected into LLM system prompts.
+        Sourced from NICHE_DISCLAIMER in page_config.py; defaults to empty string.
+        """
+        return str(self.page_cfg.get("NICHE_DISCLAIMER", "")).strip()
+
+    @property
+    def prompt_negative_terms(self) -> list:
+        """
+        List of words / phrases to strip from inherited atmosphere prompts.
+        Used to prevent cross-page style contamination (e.g. 'graphite' leaking
+        into ancient_knowledge's photorealistic prompts).
+        Sourced from PROMPT_NEGATIVE_TERMS in page_config.py; defaults to [].
+        """
+        raw = self.page_cfg.get("PROMPT_NEGATIVE_TERMS", [])
+        if not isinstance(raw, list):
+            return []
+        return [str(t).strip() for t in raw if t and str(t).strip()]
+
+    @property
+    def page_economic_brain_mode(self) -> "bool | None":
+        """
+        Page-level override for economic brain mode.
+        Returns True / False if ECONOMIC_BRAIN_MODE is explicitly set in
+        page_config.py, otherwise None (no override — CLI flag decides).
+        """
+        val = self.page_cfg.get("ECONOMIC_BRAIN_MODE", None)
+        if val is None:
+            return None
+        return bool(val)
 
 
 # ---------------------------------------------------------------------------

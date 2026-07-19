@@ -129,6 +129,11 @@ from avatar_engine.audio_engine import (
     generate_ambient_track,
 )
 from avatar_engine.video_engine import compile_dynamic_reel
+from core_engine.cost_tracker import CostTracker
+from core_engine.reel_sequence_engine import (
+    compile_sequence_reel as _core_compile_sequence_reel,
+    build_sequence_script_prompt as _build_sequence_script_prompt,
+)
 from avatar_engine.brand_composer import (
     apply_text_overlay as _brand_apply_text,
     apply_logo_watermark as _brand_apply_logo,
@@ -553,6 +558,7 @@ def _produce_variant_worker(
     generated_hooks_cache: "list[str] | None" = None,
     hooks_cache_lock: "threading.Lock | None" = None,
     hooks_cache_path: "Path | None" = None,
+    cost_tracker: "CostTracker | None" = None,
 ) -> "dict[str, Any]":
     """
     Produce one complete post variant inside a worker thread.
@@ -855,6 +861,37 @@ def _produce_variant_worker(
             effective_atmosphere[:160],
         )
 
+    # ── ANCIENT_KNOWLEDGE STYLE LOCK: photorealistic documentary photography ─
+    # Overrides any inherited atmosphere/sketch terms. Applies the page's
+    # ILLUSTRATION_STYLE directive and strips PROMPT_NEGATIVE_TERMS so no
+    # relationship-psychology or sketch artefacts bleed into this channel.
+    elif (
+        page_ctx
+        and (page_ctx.page_id or "").lower() == "ancient_knowledge"
+    ):
+        import re as _re_ak
+        _ak_style = (
+            page_ctx.illustration_style.rstrip(" .")
+            if page_ctx.illustration_style
+            else page_ctx.atmosphere_style.rstrip(" .")
+        )
+        # Scrub negative terms from any inherited atmosphere content
+        _ak_clean = effective_atmosphere
+        for _neg in page_ctx.prompt_negative_terms:
+            _ak_clean = _re_ak.sub(
+                _re_ak.escape(_neg), "", _ak_clean, flags=_re_ak.IGNORECASE
+            )
+        _ak_clean = _re_ak.sub(r"[ \t]{2,}", " ", _ak_clean).strip(" ,.")
+        # Final prompt: style directive + clean subject description
+        image_prompt = (
+            f"{_ak_style}. SUBJECT: {resolved_subject}. "
+            "Full-bleed, edge-to-edge composition. "
+            "Epic cinematic scale, dramatic atmospheric lighting, no borders, no frames."
+        )
+        _LOG.info(
+            "ancient_knowledge STYLE LOCK | compiled prompt: %s", image_prompt[:180]
+        )
+
     adapter: GeminiImageAdapter | None = None
 
     # ------------------------------------------------------------------
@@ -1070,6 +1107,57 @@ def _produce_variant_worker(
     img_ref_engine = ""
     if raw_bg_path is not None:
         img_ref_engine = path_under_engine(app_config.ENGINE_ROOT, raw_bg_path)
+
+    # ── COST TRACKING: image generation ──────────────────────────────────────
+    if cost_tracker is not None and not skip_image:
+        cost_tracker.track_image()
+
+    # ── SEQUENCE REEL: generate additional images for ancient_knowledge ──────
+    # When enable_sequence_reel is True, generate (reel_image_count - 1) more
+    # images with act-specific scene descriptions, then stitch them in Phase D.
+    _sequence_image_paths: list = []
+    if (
+        page_ctx
+        and page_ctx.enable_sequence_reel
+        and post_type == "ECONOMIC_REEL"
+        and raw_bg_path is not None
+        and adapter is not None
+    ):
+        _seq_n = page_ctx.reel_image_count  # e.g. 4
+        _sequence_image_paths.append(raw_bg_path)  # act 1 = already generated
+        _ak_base_style = (
+            page_ctx.illustration_style.rstrip(" .")
+            if page_ctx.illustration_style
+            else page_ctx.atmosphere_style.rstrip(" .")
+        )
+        _act_descriptors = [
+            f"OPENING WIDE SHOT: {resolved_subject}. Epic scale, dramatic sky, ancient ruins.",
+            f"CLOSE-UP DETAIL: {resolved_subject}. Ancient inscriptions, worn stone textures, torchlight.",
+            f"UNDERGROUND OR INTERIOR: {resolved_subject}. Chamber walls, carved hieroglyphs, dim atmospheric light.",
+            f"AERIAL OR REVEAL: {resolved_subject}. High-angle, dramatic landscape, civilisation-scale perspective.",
+        ]
+        for _act_i in range(1, _seq_n):
+            _act_desc = _act_descriptors[_act_i] if _act_i < len(_act_descriptors) else f"ACT {_act_i + 1}: {resolved_subject}."
+            _act_prompt = (
+                f"{_ak_base_style}. {_act_desc} "
+                "Full-bleed, edge-to-edge composition, no borders, no frames."
+            )
+            _act_out = subject_assets / f"{stem}_act{_act_i + 1:02d}.png"
+            try:
+                _act_img = adapter.generate(_act_prompt, output_path=_act_out)
+                _sequence_image_paths.append(_act_img)
+                if cost_tracker is not None:
+                    cost_tracker.track_image()
+                _LOG.info(
+                    "Sequence reel | act %d image generated: %s",
+                    _act_i + 1, _act_img.name,
+                )
+            except Exception as _act_exc:  # noqa: BLE001
+                _LOG.warning(
+                    "Sequence image act %d failed (%s) — reusing act 1 image.",
+                    _act_i + 1, _act_exc,
+                )
+                _sequence_image_paths.append(raw_bg_path)  # graceful fallback
 
     posting_slot_display = scheduled_bulk_post_display(variant_index=variation_index)
 
@@ -1307,6 +1395,13 @@ def _produce_variant_worker(
                 "ELEVENLABS_API_KEY not set" if not app_config.ELEVENLABS_API_KEY else "no narration script",
             )
 
+        # ── COST TRACKING: audio/TTS ─────────────────────────────────────────
+        if cost_tracker is not None and _voiceover_script:
+            cost_tracker.track_audio(
+                char_count=len(_voiceover_script),
+                sfx=bool(app_config.ELEVENLABS_API_KEY),
+            )
+
         # -- Ambient soundscape (ElevenLabs SFX) --
         if app_config.ELEVENLABS_API_KEY:
             _ambient_out = _reel_dir / f"{stem}_v{variant + 1:02d}_ambient.mp3"
@@ -1335,31 +1430,61 @@ def _produce_variant_worker(
                 if (page_ctx and page_ctx.display_name and not _logo_img_path)
                 else None
             )
-            reel_path = compile_dynamic_reel(
-                Path(img_path_display),
-                overlay_text,
-                voice_audio=_voice_path,
-                ambient_audio=_ambient_path,
-                output_path=_reel_target,
-                target_duration=_reel_dur,
-                font_path=_font_path_abs or None,
-                font_size_scale=_font_size_scale,
-                overlay_opacity=page_ctx.reel_overlay_opacity if page_ctx else 0.35,
-                word_timings=_word_timings or None,
-                brand_label=_brand_label,
-                logo_image_path=_logo_img_path,
-                subtitle_fontsize=page_ctx.subtitle_fontsize if page_ctx else 46,
-                subtitle_y_position=page_ctx.subtitle_y_position if page_ctx else None,
-                logo_width_px=page_ctx.logo_width_px if page_ctx else 160,
-                logo_y_offset_px=page_ctx.logo_y_offset_px if page_ctx else 90,
-                logo_opacity=page_ctx.logo_opacity if page_ctx else 0.70,
-                logo_max_height_px=page_ctx.logo_max_height_px if page_ctx else None,
-                hook_y_frac=page_ctx.hook_y_frac if page_ctx else 0.55,
-                page_id=page_ctx.page_id if page_ctx else "",
-                # Never render a static CTA block in the reel — the video timeline
-                # owns the lower-third via word-level subtitles.
-                sub_text=None,
+            # ── DISPATCH: sequence reel (multi-image) vs single-image reel ───
+            _use_sequence = (
+                page_ctx is not None
+                and page_ctx.enable_sequence_reel
+                and len(_sequence_image_paths) >= 2
             )
+            if _use_sequence:
+                _LOG.info(
+                    "SEQUENCE_REEL | %d images → %s",
+                    len(_sequence_image_paths), _reel_target.name,
+                )
+                reel_path = _core_compile_sequence_reel(
+                    _sequence_image_paths,
+                    overlay_text,
+                    voice_audio=_voice_path,
+                    ambient_audio=_ambient_path,
+                    output_path=_reel_target,
+                    target_duration=_reel_dur,
+                    word_timings=_word_timings or None,
+                    font_path=_font_path_abs or None,
+                    overlay_opacity=page_ctx.reel_overlay_opacity if page_ctx else 0.35,
+                    logo_image_path=_logo_img_path,
+                    logo_width_px=page_ctx.logo_width_px if page_ctx else 200,
+                    logo_y_offset_px=page_ctx.logo_y_offset_px if page_ctx else 100,
+                    logo_opacity=page_ctx.logo_opacity if page_ctx else 0.85,
+                    logo_max_height_px=page_ctx.logo_max_height_px if page_ctx else None,
+                    subtitle_fontsize=page_ctx.subtitle_fontsize if page_ctx else 56,
+                    subtitle_y_position=page_ctx.subtitle_y_position if page_ctx else None,
+                    hook_y_frac=page_ctx.hook_y_frac if page_ctx else 0.50,
+                    page_id=page_ctx.page_id if page_ctx else "",
+                )
+            else:
+                reel_path = compile_dynamic_reel(
+                    Path(img_path_display),
+                    overlay_text,
+                    voice_audio=_voice_path,
+                    ambient_audio=_ambient_path,
+                    output_path=_reel_target,
+                    target_duration=_reel_dur,
+                    font_path=_font_path_abs or None,
+                    font_size_scale=_font_size_scale,
+                    overlay_opacity=page_ctx.reel_overlay_opacity if page_ctx else 0.35,
+                    word_timings=_word_timings or None,
+                    brand_label=_brand_label,
+                    logo_image_path=_logo_img_path,
+                    subtitle_fontsize=page_ctx.subtitle_fontsize if page_ctx else 46,
+                    subtitle_y_position=page_ctx.subtitle_y_position if page_ctx else None,
+                    logo_width_px=page_ctx.logo_width_px if page_ctx else 160,
+                    logo_y_offset_px=page_ctx.logo_y_offset_px if page_ctx else 90,
+                    logo_opacity=page_ctx.logo_opacity if page_ctx else 0.70,
+                    logo_max_height_px=page_ctx.logo_max_height_px if page_ctx else None,
+                    hook_y_frac=page_ctx.hook_y_frac if page_ctx else 0.55,
+                    page_id=page_ctx.page_id if page_ctx else "",
+                    sub_text=None,
+                )
             _LOG.info("ECONOMIC_REEL compiled → %s", reel_path.name)
             video_path_str = str(reel_path)
             print(f"[reel] Video compiled → {reel_path}")
@@ -1584,7 +1709,7 @@ def _produce_variant_worker(
         img_report = bm.image_primary_id
 
     lib_json_rel = path_under_engine(app_config.ENGINE_ROOT, durable_abs) if durable_abs else ""
-    return {
+    _return_dict = {
         "topic": resolved_subject,
         "variant_index": variant + 1,
         "local_image_path": img_ref_engine,
@@ -1600,6 +1725,21 @@ def _produce_variant_worker(
         "humanizer": humanizer_notes,
         "caption_mode": caption_mode_tag if caption_mode_tag is not None else "skipped",
     }
+
+    # ── COST TRACKING: write telemetry + annotate return dict ────────────────
+    if cost_tracker is not None and page_ctx is not None and page_ctx.enable_cost_tracking:
+        cost_tracker.write_telemetry(
+            app_config.LIBRARY_DIR,
+            variant_index=variant + 1,
+        )
+        _return_dict["estimated_cost_usd"] = round(cost_tracker.total_usd(), 6)
+        _return_dict["cost_tier"] = cost_tracker.cost_tier
+        _LOG.info(
+            "CostTracker | variant %d total=$%.6f tier=%s",
+            variant + 1, cost_tracker.total_usd(), cost_tracker.cost_tier,
+        )
+
+    return _return_dict
 
 
 # ---------------------------------------------------------------------------
@@ -1622,6 +1762,17 @@ def produce(
 ) -> dict[str, Any]:
     qty = max(1, quantity)
     economic = economic_brain_mode if economic_brain_mode is not None else app_config.ECONOMIC_BRAIN_MODE
+
+    # Page-level override: if page_config.py sets ECONOMIC_BRAIN_MODE explicitly,
+    # honour it unless the caller explicitly passed economic_brain_mode as non-None.
+    if economic_brain_mode is None and page_ctx is not None:
+        _page_econ = page_ctx.page_economic_brain_mode
+        if _page_econ is not None:
+            economic = _page_econ
+            _LOG.info(
+                "Page-level economic override | page=%s ECONOMIC_BRAIN_MODE=%s",
+                page_ctx.page_id, economic,
+            )
 
     # Resolve avatar_mode and post_format from page context (or safe defaults).
     avatar_mode: str = page_ctx.avatar_mode if page_ctx else "ON"
@@ -1736,15 +1887,15 @@ def produce(
     import random as _rnd
     _page_id_lower = (page_ctx.page_id if page_ctx else "").lower()
     if (
-        _page_id_lower == "wonder_feed"
+        _page_id_lower in ("wonder_feed", "ancient_knowledge")
         and post_type in ("ECONOMIC_REEL", "SMART_BAIT")
         and page_ctx is not None
         and page_ctx.topic_pool
     ):
         resolved_subject = _rnd.choice(page_ctx.topic_pool)
         _LOG.info(
-            "wonder_feed TOPIC LOCK | fresh pool topic selected → %r (pool size=%d)",
-            resolved_subject, len(page_ctx.topic_pool),
+            "%s TOPIC LOCK | fresh pool topic selected → %r (pool size=%d)",
+            _page_id_lower, resolved_subject, len(page_ctx.topic_pool),
         )
     else:
         # Generic fallback: replace only the known static placeholder with a pool topic.
@@ -1895,6 +2046,20 @@ def produce(
         hooks_cache_lock=hooks_cache_lock,
         hooks_cache_path=_hooks_cache_path,
     )
+
+    # ── Instantiate CostTracker — one per run, shared across workers ──────────
+    # Each worker receives the same tracker; thread-safety is handled internally.
+    _cost_tracker: CostTracker | None = None
+    if page_ctx is not None and page_ctx.enable_cost_tracking:
+        _cost_tracker = CostTracker(
+            page_id=page_ctx.page_id,
+            cost_tier=page_ctx.cost_tier,
+        )
+        _LOG.info(
+            "CostTracker enabled | page=%s tier=%s",
+            page_ctx.page_id, page_ctx.cost_tier,
+        )
+    _wkw["cost_tracker"] = _cost_tracker
 
     if qty == 1:
         # Single-variant path: exceptions propagate naturally to cli()
@@ -2123,6 +2288,16 @@ def cli() -> None:
         if _wf_pt == "ECONOMIC_REEL":
             # Force post_format so resolve_default_format() cannot assign IMAGE_AVATAR
             args.post_format = "DYNAMIC_REEL"
+
+    # ── ANCIENT_KNOWLEDGE STYLE & FORMAT LOCK ──────────────────────────────
+    # photorealistic images only — sketch pipeline is OFF.
+    # ECONOMIC_REEL → DYNAMIC_REEL format (sequence reel handled at runtime).
+    if getattr(args, "page", "").lower() == "ancient_knowledge":
+        _ak_pt = getattr(args, "post_type", "").upper()
+        if _ak_pt == "ECONOMIC_REEL":
+            args.post_format = "DYNAMIC_REEL"
+        # Override draw_style to NATURAL (photorealistic) — never sketch for this page
+        args.draw_style = "NATURAL"
 
     if args.economic and args.premium:
         raise SystemExit("Choose either --economic or --premium-relay, not both.")
