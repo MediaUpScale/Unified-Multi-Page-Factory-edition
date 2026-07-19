@@ -98,21 +98,26 @@ def build_sequence_script_prompt(
     n_acts: int = _DEFAULT_N_ACTS,
     duration_s: float = _DEFAULT_DURATION,
     *,
+    total_words_target: "int | None" = None,
     previously_generated_hooks: "list[str] | None" = None,
 ) -> str:
     """
     Build an LLM system+user prompt that produces an N-act spoken script.
 
-    The LLM must:
-    - Write exactly N acts separated by ``[ACT 1]``, ``[ACT 2]``, … markers.
-    - Keep each act to approximately ``duration_s / n_acts`` seconds when spoken
-      at a natural pace (~130 words/minute).
-    - Not claim any conspiracy or theory is true — neutral, investigative tone.
-
-    Returns the full prompt string ready to pass to Gemini / DeepSeek.
+    Parameters
+    ----------
+    total_words_target:
+        Override the computed word count.  When provided the prompt instructs
+        the LLM to hit exactly this many words total (spread evenly across acts).
+        Use 130-140 for slow 80-second documentary narration (~100 WPM pace).
+        Defaults to computing from ``duration_s`` at 130 WPM.
     """
-    words_per_act = int((duration_s / n_acts) * (130 / 60))  # 130 wpm pace
-    total_words = words_per_act * n_acts
+    if total_words_target is not None:
+        words_per_act = total_words_target // n_acts
+        total_words = words_per_act * n_acts
+    else:
+        words_per_act = int((duration_s / n_acts) * (130 / 60))  # 130 wpm pace
+        total_words = words_per_act * n_acts
 
     anti_repeat_block = ""
     if previously_generated_hooks:
@@ -122,6 +127,15 @@ def build_sequence_script_prompt(
             f"\n\nPREVIOUSLY USED OPENING LINES (DO NOT REPEAT OR PARAPHRASE):\n{lines}\n"
         )
 
+    pacing_note = (
+        f"Write for a SLOW, deliberate documentary delivery (~100 words per minute). "
+        f"Each act must be approximately {words_per_act} words "
+        f"(total EXACTLY ~{total_words} words across all {n_acts} acts)."
+        if total_words_target is not None else
+        f"Each act must be approximately {words_per_act} words "
+        f"(total ~{total_words} words across all acts)."
+    )
+
     return f"""You are writing a compelling {duration_s:.0f}-second documentary-style voiceover script.
 
 TOPIC: {topic}
@@ -130,7 +144,7 @@ NARRATOR VOICE: {persona_voice}
 
 STRICT RULES:
 1. Divide the script into exactly {n_acts} acts using markers: [ACT 1], [ACT 2], ... [ACT {n_acts}].
-2. Each act must be approximately {words_per_act} words (total ~{total_words} words across all acts).
+2. {pacing_note}
 3. NEVER claim any conspiracy or theory is factual. Use language like: "some researchers believe", "ancient records suggest", "according to legend", "one theory proposes".
 4. Each act must feel visually distinct — the narrator should describe a different aspect, location, or era.
 5. Begin ACT 1 with a provocative, highly engaging hook sentence that immediately captures curiosity.

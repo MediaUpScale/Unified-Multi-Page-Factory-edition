@@ -1025,9 +1025,9 @@ def _produce_variant_worker(
             r"\pages_config\wonder_feed\style_reference\Screenshot 2026-06-01 183244.png"
         )
         _WF_STYLE_REF = Path(_WF_STYLE_REF_STR)
-        print(f"[DEBUG_STYLE_ENGINE] Target image reference assigned: {_WF_STYLE_REF_STR}")
         _style_ref_path: Path | None = None
         if page_ctx and (page_ctx.page_id or "").lower() == "wonder_feed":
+            print(f"[DEBUG_STYLE_ENGINE] Target image reference assigned: {_WF_STYLE_REF_STR}")
             if _os.path.exists(_WF_STYLE_REF_STR):
                 _style_ref_path = _WF_STYLE_REF
                 print(f"[DEBUG_STYLE_ENGINE] Verification PASSED — style reference loaded.")
@@ -1048,16 +1048,15 @@ def _produce_variant_worker(
 
         try:
             import os as _img_os
-            _dbg_ref = (
-                r"G:\My Drive\Z sosFiles\Z_act\@ NETWORK"
-                r"\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\Unified Multi-Page Factory"
-                r"\pages_config\wonder_feed\style_reference\Screenshot 2026-06-01 183244.png"
-            )
             print("\n" + "=" * 60)
             print("[DEBUG] IMAGE PIPELINE INITIALIZATION")
             print(f"[DEBUG] Model            : {img_model_id or bm.image_primary_id}")
-            print(f"[DEBUG] Style Ref Path   : {_dbg_ref}")
-            print(f"[DEBUG] Ref File Exists  : {_img_os.path.exists(_dbg_ref)}")
+            if page_ctx and (page_ctx.page_id or "").lower() == "wonder_feed":
+                _dbg_ref = _WF_STYLE_REF_STR
+                print(f"[DEBUG] Style Ref Path   : {_dbg_ref}")
+                print(f"[DEBUG] Ref File Exists  : {_img_os.path.exists(_dbg_ref)}")
+            else:
+                print(f"[DEBUG] Style Ref Path   : {_style_ref_path or '(none — text-only prompt)'}")
             print(f"[DEBUG] Compiled prompt  : {effective_atmosphere[:200]}")
             print("=" * 60 + "\n")
             adapter = GeminiImageAdapter(model_id=img_model_id)
@@ -1386,6 +1385,44 @@ def _produce_variant_worker(
         # Guard: never pass the "(skipped)" initialisation placeholder to TTS.
         _real_caption = caption if caption and caption != "(skipped)" else ""
         _voiceover_script = _real_caption or overlay_text
+
+        # For sequence reels (ancient_knowledge etc.) the caption is a short
+        # social-media post body (~65-80 words).  Generate a separate, longer
+        # documentary narration (~130-150 words, ~100 WPM) for TTS so the audio
+        # fills the full 80-second visual timeline instead of ~23 seconds.
+        if (
+            page_ctx is not None
+            and page_ctx.enable_sequence_reel
+            and caption_engine is not None
+            and resolved_subject
+        ):
+            _LOG.info(
+                "SEQUENCE_REEL | generating long-form voiceover script for '%s' (voice pref: %s)",
+                resolved_subject, page_ctx.tts_voice_preference or "default",
+            )
+            try:
+                _seq_script = caption_engine.generate_sequence_voiceover(
+                    resolved_subject,
+                    page_niche=page_ctx.content_niche,
+                    n_acts=page_ctx.reel_image_count,
+                    duration_s=page_ctx.reel_duration,
+                    total_words_target=140,
+                    economic=economic,
+                    niche_disclaimer=page_ctx.niche_disclaimer,
+                )
+                if _seq_script and len(_seq_script.split()) >= 60:
+                    _voiceover_script = _seq_script
+                    _LOG.info(
+                        "SEQUENCE_REEL | documentary voiceover generated: %d words",
+                        len(_seq_script.split()),
+                    )
+                else:
+                    _LOG.warning(
+                        "SEQUENCE_REEL | voiceover too short (%d words) — falling back to caption.",
+                        len((_seq_script or "").split()),
+                    )
+            except Exception as _seq_exc:  # noqa: BLE001
+                _LOG.warning("SEQUENCE_REEL | voiceover generation failed: %s — using caption.", _seq_exc)
         _word_timings: list[tuple[str, float, float]] = []
         if _voiceover_script and app_config.ELEVENLABS_API_KEY:
             _voice_out = _reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"

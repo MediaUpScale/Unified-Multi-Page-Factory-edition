@@ -1184,6 +1184,81 @@ class CaptionEngine:
 
         return (caption or "").strip()
 
+    def generate_sequence_voiceover(
+        self,
+        topic: str,
+        *,
+        page_niche: str = "",
+        persona_voice: str = "investigative, neutral, immersive",
+        n_acts: int = 4,
+        duration_s: float = 80.0,
+        total_words_target: int = 140,
+        economic: bool = False,
+        niche_disclaimer: str = "",
+    ) -> str:
+        """
+        Generate a full-length documentary narration script for SEQUENCE_REEL TTS.
+
+        Unlike ``humanize_smart_bait`` (which produces a 65-80 word social-media
+        caption), this method targets ``total_words_target`` words spread across
+        ``n_acts`` acts at a slow documentary pace (~100 WPM) to match an 80-second
+        visual timeline precisely.
+
+        The [ACT N] markers are stripped before returning so the raw prose can be
+        passed directly to ElevenLabs without any spoken artefacts.
+
+        Returns the cleaned narration string, or "" on failure.
+        """
+        from core_engine.reel_sequence_engine import build_sequence_script_prompt  # local import avoids circular
+
+        import re as _re
+
+        prompt = build_sequence_script_prompt(
+            topic=topic,
+            niche=page_niche or topic,
+            persona_voice=persona_voice,
+            n_acts=n_acts,
+            duration_s=duration_s,
+            total_words_target=total_words_target,
+        )
+
+        raw = ""
+        try:
+            if economic and self._deepseek is not None:
+                raw = self._deepseek_complete(
+                    prompt,
+                    system=(
+                        f"{niche_disclaimer}\n\n" if niche_disclaimer else ""
+                    ) + "Write ONLY the documentary narration script with [ACT N] markers. "
+                        "No preamble, no meta commentary.",
+                    max_tokens=600,
+                    temperature=0.65,
+                )
+            else:
+                from avatar_engine.providers.gemini_utils import chain_with_preferred_first
+                from avatar_engine.providers.gemini_utils import generate_content_with_model_fallback
+
+                chain = chain_with_preferred_first(self._text_model_chain, self._research_model)
+                sys_block = (
+                    f"{niche_disclaimer}\n\n" if niche_disclaimer else ""
+                ) + "Write ONLY the documentary narration script with [ACT N] markers. "  \
+                  "No preamble, no meta commentary."
+                response = generate_content_with_model_fallback(
+                    self._gemini, chain, contents=[sys_block + "\n\n" + prompt]
+                )
+                text_attr = getattr(response, "text", None)
+                raw = text_attr() if callable(text_attr) else (text_attr or "")
+        except Exception as _exc:
+            logger.warning("generate_sequence_voiceover failed: %s", _exc)
+            return ""
+
+        # Strip [ACT N] markers — they must not be spoken aloud
+        clean = _re.sub(r"\[ACT\s+\d+\]\s*", " ", raw or "").strip()
+        # Collapse extra whitespace / blank lines
+        clean = _re.sub(r"[ \t]{2,}", " ", clean)
+        clean = _re.sub(r"\n{3,}", "\n\n", clean)
+        return clean
+
     def humanize_smart_bait(
         self,
         topic: str,

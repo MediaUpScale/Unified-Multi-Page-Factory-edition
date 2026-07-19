@@ -261,6 +261,15 @@ class PageContext:
         return str(self.page_cfg.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")).strip()
 
     @property
+    def tts_voice_preference(self) -> str:
+        """
+        Human-readable voice label for documentation and logging.
+        Sourced from TTS_VOICE_PREFERENCE in page_config.py; defaults to empty string.
+        This is a descriptive label only — the actual API call uses elevenlabs_voice_id.
+        """
+        return str(self.page_cfg.get("TTS_VOICE_PREFERENCE", "")).strip()
+
+    @property
     def reel_duration(self) -> float:
         """Target ECONOMIC_REEL duration in seconds (fallback if no audio)."""
         try:
