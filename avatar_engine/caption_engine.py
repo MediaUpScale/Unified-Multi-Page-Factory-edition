@@ -478,6 +478,20 @@ _REEL_PSYCH_ANGLES: list[str] = [
     "trauma loyalty — staying with someone harmful because chaos feels like home",
 ]
 
+# Investigation angles for ancient history / documentary channels
+_REEL_INVESTIGATION_ANGLES: list[str] = [
+    "suppressed evidence — findings that mainstream institutions refuse to acknowledge",
+    "temporal impossibility — objects or structures that should not exist in that era",
+    "convergent mythology — the same story told by civilisations that never met",
+    "advanced precision — engineering tolerances modern tools can barely replicate today",
+    "deliberate erasure — records that were systematically destroyed after discovery",
+    "hidden in plain sight — monuments whose real meaning was encoded in plain view",
+    "forbidden chronology — dating that pushes human sophistication back thousands of years",
+    "cosmic alignment — structures precisely calibrated to astronomical events",
+    "lost transmission — knowledge that vanished with a civilisation and has never been recovered",
+    "unanswered silence — why official bodies refuse to comment on this specific discovery",
+]
+
 
 def build_reel_narration_prompt(
     topic: str,
@@ -485,23 +499,27 @@ def build_reel_narration_prompt(
     page_niche: str,
     persona_block: str,
     engagement_bait_examples: str = "",
+    niche_disclaimer: str = "",
 ) -> str:
     """
     Build the user-side LLM prompt for ECONOMIC_REEL narration generation.
 
     Asks for a 4-sentence, 65-80 word voiceover script plus a short on-screen
-    hook headline and a graphite scene description — all as a single JSON object.
+    hook headline and a scene description — all as a single JSON object.
 
-    A random psychological angle is injected each call so back-to-back runs on
-    the same topic cannot produce identical scripts — the LLM is forced to enter
-    the scene from a distinct conceptual direction every time.
-
-    When ``engagement_bait_examples`` is supplied the model receives the viral
-    reference block with strict instructions to analyse — never copy — its
-    psychological friction structure.
+    When ``niche_disclaimer`` is supplied (e.g. for ancient_knowledge) the
+    function switches to an investigative/documentary sentence structure instead
+    of the default relationship-psychology structure, and injects the disclaimer
+    so the LLM never presents theories as facts.
     """
     import random as _rnd_angle
-    _angle = _rnd_angle.choice(_REEL_PSYCH_ANGLES)
+
+    _is_investigative = bool(niche_disclaimer)
+
+    if _is_investigative:
+        _angle = _rnd_angle.choice(_REEL_INVESTIGATION_ANGLES)
+    else:
+        _angle = _rnd_angle.choice(_REEL_PSYCH_ANGLES)
 
     _bait_block = ""
     if engagement_bait_examples:
@@ -521,73 +539,144 @@ def build_reel_narration_prompt(
         ────────────────────────────────────────────────────────────────────────
         """).strip()
 
-    return dedent(
-        f"""
-        You are writing voice narration for a 30-second vertical relationship psychology reel
-        for the page: {page_display_name}
-        Content niche: {page_niche or topic}
+    _disclaimer_block = (
+        f"\n        ── MANDATORY CHANNEL DISCLAIMER ──\n        {niche_disclaimer}\n"
+        if niche_disclaimer else ""
+    )
 
-        {persona_block}
+    if _is_investigative:
+        # ── INVESTIGATIVE / DOCUMENTARY niche structure (ancient_knowledge etc.) ──
+        return dedent(
+            f"""
+            You are writing voice narration for a short-form investigative documentary reel
+            for the page: {page_display_name}
+            Content niche: {page_niche or topic}
 
-        TOPIC CONTEXT — STRICT THEME MANDATE: {topic}
+            {persona_block}
+            {_disclaimer_block}
+            TOPIC CONTEXT — STRICT THEME MANDATE: {topic}
 
-        ── CRITICAL THEME COMPLIANCE RULE ──
-        The topic of this script MUST be strictly about "{topic}".
-        The spreadsheet reference data (ENGAGEMENT_BAIT_EXAMPLES below) is provided
-        ONLY as an engagement blueprint — use it to understand how to structure a
-        high-retention psychological cliffhanger and what makes a hook stop a scroll.
-        Do NOT adopt the exact relationship trauma topics or phrasing from the spreadsheet
-        unless they directly and naturally fit into "{topic}".
-        The narrative must stay on-theme, original, and emotionally resonant with "{topic}".
+            ── CRITICAL THEME COMPLIANCE RULE ──
+            The topic of this script MUST be strictly about "{topic}".
+            NEVER import relationship advice, psychology therapy, or romantic content.
+            Every sentence must be exclusively about ancient history, mysteries, or the conspiracy described.
 
-        ── MANDATORY PSYCHOLOGICAL ANGLE (use this as your unique lens — do NOT ignore it) ──
-        Explore this specific concept in your narration: {_angle}
-        Your script must approach the topic THROUGH this lens. Do not name the concept
-        directly — weave its emotional truth into the narrative naturally.
+            ── MANDATORY INVESTIGATION ANGLE (use this as your narrative lens) ──
+            Explore this specific concept: {_angle}
+            Weave it naturally into the narration without naming it directly.
 
-        ─── YOUR TASK ───
-        Produce a JSON object with exactly three fields:
+            ─── YOUR TASK ───
+            Produce a JSON object with exactly three fields:
 
-        1. "image_text_overlay"
-           A single psychological hook question or statement — maximum 12 words.
-           This text is burned visually onto the video frame as the headline.
-           Make it short, emotionally charged, direct — designed to stop a scroll instantly.
+            1. "image_text_overlay"
+               A single provocative hook question or statement — maximum 12 words.
+               This text is burned visually onto the video frame as the headline.
+               Make it short, mysterious, awe-inspiring — designed to stop a scroll instantly.
+               Example patterns: "What if history has been hiding this for centuries?"
+               or "This discovery changes everything we thought we knew."
 
-        2. "caption_body"
-           A FULL 4-SENTENCE voiceover narration script for text-to-speech, 65–80 words total.
-           Follow this EXACT sentence structure — order is strict:
+            2. "caption_body"
+               A FULL 4-SENTENCE voiceover narration script for text-to-speech, 65–80 words total.
+               Follow this EXACT sentence structure — order is strict:
 
-             Sentence 1 (AUDIENCE WARM-UP — comes FIRST): Ask the viewer directly about their
-                         own past relationship experience. Example pattern: "Have you ever stayed
-                         in a relationship long after you knew it was over — and couldn't explain
-                         why?" This must feel personal and conversational, NOT analytical.
+               Sentence 1 (HOOK): An immediate attention-grabbing statement about the mystery.
+                        Never start with "Have you ever stayed in a relationship".
+                        Open with a striking historical fact, impossible detail, or forbidden question.
 
-             Sentence 2 (PSYCHOLOGICAL TRUTH): Reveal the deep psychological reason — why
-                         people repeat this pattern or tolerate it far longer than they should.
+               Sentence 2 (REVELATION): Present the key evidence, theory, or discovery.
+                        Use language like "some researchers believe", "ancient records suggest",
+                        "according to legend" — never present as established fact.
 
-             Sentence 3 (ACTIONABLE INSIGHT): Offer one specific emotional-intelligence
-                         realization the viewer can apply to their life immediately.
+               Sentence 3 (IMPLICATION): Explain what this means — why it matters, what it challenges.
 
-             Sentence 4 (WARM CTA): Invite viewers to share their own experience in the comments
-                         in a warm, human, non-pushy way.
+               Sentence 4 (CTA): Invite viewers to share their theory or follow for more discoveries.
 
-           Write at a natural, warm spoken pace. No bullet points. No headers. Plain prose only.
+               Write at a measured, documentary spoken pace. No bullet points. No headers. Plain prose only.
 
-        3. "visual_subject"
-           A precise graphite scene: exactly one man and one woman in a psychologically tense
-           interaction. Only ONE character may show a surreal transformation. Minimal dark
-           background, no heavy furniture or interior framing elements.
+            3. "visual_subject"
+               A precise cinematic description: ancient ruins, artefacts, stone carvings, or
+               historical environment relevant to the topic. Dramatic lighting, epic scale,
+               no human relationship dynamics, no domestic settings.
 
-        ─── OUTPUT FORMAT ───
-        Return ONLY valid JSON. No markdown fences, no explanation.
-        {{
-          "image_text_overlay": "...",
-          "caption_body": "...",
-          "visual_subject": "..."
-        }}
-        {_bait_block}
-        """
-    ).strip()
+            ─── OUTPUT FORMAT ───
+            Return ONLY valid JSON. No markdown fences, no explanation.
+            {{
+              "image_text_overlay": "...",
+              "caption_body": "...",
+              "visual_subject": "..."
+            }}
+            {_bait_block}
+            """
+        ).strip()
+    else:
+        # ── RELATIONSHIP PSYCHOLOGY niche structure (wonder_feed etc.) ──
+        return dedent(
+            f"""
+            You are writing voice narration for a 30-second vertical relationship psychology reel
+            for the page: {page_display_name}
+            Content niche: {page_niche or topic}
+
+            {persona_block}
+
+            TOPIC CONTEXT — STRICT THEME MANDATE: {topic}
+
+            ── CRITICAL THEME COMPLIANCE RULE ──
+            The topic of this script MUST be strictly about "{topic}".
+            The spreadsheet reference data (ENGAGEMENT_BAIT_EXAMPLES below) is provided
+            ONLY as an engagement blueprint — use it to understand how to structure a
+            high-retention psychological cliffhanger and what makes a hook stop a scroll.
+            Do NOT adopt the exact relationship trauma topics or phrasing from the spreadsheet
+            unless they directly and naturally fit into "{topic}".
+            The narrative must stay on-theme, original, and emotionally resonant with "{topic}".
+
+            ── MANDATORY PSYCHOLOGICAL ANGLE (use this as your unique lens — do NOT ignore it) ──
+            Explore this specific concept in your narration: {_angle}
+            Your script must approach the topic THROUGH this lens. Do not name the concept
+            directly — weave its emotional truth into the narrative naturally.
+
+            ─── YOUR TASK ───
+            Produce a JSON object with exactly three fields:
+
+            1. "image_text_overlay"
+               A single psychological hook question or statement — maximum 12 words.
+               This text is burned visually onto the video frame as the headline.
+               Make it short, emotionally charged, direct — designed to stop a scroll instantly.
+
+            2. "caption_body"
+               A FULL 4-SENTENCE voiceover narration script for text-to-speech, 65–80 words total.
+               Follow this EXACT sentence structure — order is strict:
+
+                    Sentence 1 (AUDIENCE WARM-UP — comes FIRST): Ask the viewer directly about their
+                              own past relationship experience. Example pattern: "Have you ever stayed
+                              in a relationship long after you knew it was over — and couldn't explain
+                              why?" This must feel personal and conversational, NOT analytical.
+
+                    Sentence 2 (PSYCHOLOGICAL TRUTH): Reveal the deep psychological reason — why
+                              people repeat this pattern or tolerate it far longer than they should.
+
+                    Sentence 3 (ACTIONABLE INSIGHT): Offer one specific emotional-intelligence
+                              realization the viewer can apply to their life immediately.
+
+                    Sentence 4 (WARM CTA): Invite viewers to share their own experience in the comments
+                              in a warm, human, non-pushy way.
+
+               Write at a natural, warm spoken pace. No bullet points. No headers. Plain prose only.
+
+            3. "visual_subject"
+               A precise graphite scene: exactly one man and one woman in a psychologically tense
+               interaction. Only ONE character may show a surreal transformation. Minimal dark
+               background, no heavy furniture or interior framing elements.
+
+            ─── OUTPUT FORMAT ───
+            Return ONLY valid JSON. No markdown fences, no explanation.
+            {{
+              "image_text_overlay": "...",
+              "caption_body": "...",
+              "visual_subject": "..."
+            }}
+            {_bait_block}
+            """
+        ).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -1107,6 +1196,7 @@ class CaptionEngine:
         post_type: str = "SMART_BAIT",
         engagement_bait_examples: str = "",
         previously_generated_hooks: "list[str] | None" = None,
+        niche_disclaimer: str = "",
     ) -> tuple[str, str, str, str]:
         """
         Generate SMART_BAIT or ECONOMIC_REEL hook content.
@@ -1134,6 +1224,7 @@ class CaptionEngine:
                 page_niche,
                 persona,
                 engagement_bait_examples=engagement_bait_examples,
+                niche_disclaimer=niche_disclaimer,
             )
         else:
             prompt = build_smart_bait_prompt(

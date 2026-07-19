@@ -618,6 +618,7 @@ def _produce_variant_worker(
                 post_type=post_type,
                 engagement_bait_examples=_bait_examples,
                 previously_generated_hooks=_hooks_snapshot,
+                niche_disclaimer=page_ctx.niche_disclaimer if page_ctx else "",
             )
         except Exception as exc:  # noqa: BLE001
             _LOG.error("Smart bait generation failed variant %s: %s", variant + 1, exc, exc_info=True)
@@ -1144,7 +1145,7 @@ def _produce_variant_worker(
             )
             _act_out = subject_assets / f"{stem}_act{_act_i + 1:02d}.png"
             try:
-                _act_img = adapter.generate(_act_prompt, output_path=_act_out)
+                _act_img = adapter.generate(_act_prompt, output_stem=f"{stem}_act{_act_i + 1:02d}", output_directory=subject_assets)
                 _sequence_image_paths.append(_act_img)
                 if cost_tracker is not None:
                     cost_tracker.track_image()
@@ -2346,6 +2347,16 @@ def cli() -> None:
         economic_choice = None
 
     econ_resolved = economic_choice if economic_choice is not None else app_config.ECONOMIC_BRAIN_MODE
+    # Page-level override: respect ECONOMIC_BRAIN_MODE from page_config.py when
+    # the CLI did not explicitly pass --economic or --premium.
+    # This ensures that ancient_knowledge (ECONOMIC_BRAIN_MODE=True) always gets
+    # the nano/flash image model, regardless of the global app_config default.
+    if economic_choice is None and _tmp_page_cfg.get("ECONOMIC_BRAIN_MODE") is not None:
+        econ_resolved = bool(_tmp_page_cfg["ECONOMIC_BRAIN_MODE"])
+        _LOG.info(
+            "Page-level economic override | page=%s ECONOMIC_BRAIN_MODE=%s (applied before model verification)",
+            page_id, econ_resolved,
+        )
     planned_models = _snapshot_verified_models(economic_brain_mode=econ_resolved)
 
     logging.basicConfig(

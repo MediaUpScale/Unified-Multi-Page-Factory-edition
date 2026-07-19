@@ -419,7 +419,10 @@ def compile_sequence_reel(
         except Exception as _ae:
             logger.warning("Could not read audio duration: %s", _ae)
 
-    total_duration = max(target_duration, audio_duration)
+    # Use actual audio length as the reel duration — the 80s target_duration is a
+    # floor only when no audio exists.  Forcing max(80, 23s) causes MoviePy to
+    # request frames beyond the ambient track's actual length → OSError crash.
+    total_duration = audio_duration
     act_duration = total_duration / n_acts
 
     logger.info(
@@ -471,7 +474,8 @@ def compile_sequence_reel(
     audio_clips = []
     if voice_audio and voice_audio.is_file():
         try:
-            vc = AudioFileClip(str(voice_audio)).with_duration(total_duration)
+            vc = AudioFileClip(str(voice_audio))
+            # Use actual clip duration — do not artificially extend with .with_duration()
             audio_clips.append(vc)
         except Exception as _ae:
             logger.warning("Voice audio load failed: %s", _ae)
@@ -479,11 +483,11 @@ def compile_sequence_reel(
     if ambient_audio and ambient_audio.is_file():
         try:
             from moviepy import CompositeAudioClip  # type: ignore[import]
-            ac = (
-                AudioFileClip(str(ambient_audio))
-                .with_duration(total_duration)
-                .with_volume_scaled(_AMBIENT_VOLUME)
-            )
+            ac = AudioFileClip(str(ambient_audio))
+            # Clamp to actual clip duration — never request frames beyond the end
+            _amb_actual = ac.duration
+            _amb_dur = min(total_duration, _amb_actual)
+            ac = ac.subclipped(0, _amb_dur).with_volume_scaled(_AMBIENT_VOLUME)
             audio_clips.append(ac)
         except Exception as _ae:
             logger.warning("Ambient audio load failed: %s", _ae)
