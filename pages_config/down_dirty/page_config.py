@@ -36,5 +36,5 @@ PINTEREST_BOARD_ID: str = ""
 # LOGO_SIZE_SCALE : float 0.0–1.0 — logo width as a fraction of canvas width.
 # LOGO_POSITION   : 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right'
 # ---------------------------------------------------------------------------
-LOGO_SIZE_SCALE: float = 0.16      # 16 % of canvas width
+LOGO_SIZE_SCALE: float = 0.30      # 30 % of canvas width — 2× previous for high visibility
 LOGO_POSITION: str = "bottom_left"

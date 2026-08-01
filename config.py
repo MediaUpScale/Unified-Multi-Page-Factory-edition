@@ -10,7 +10,8 @@ Supported keys
     GEMINI_IMAGE_MODEL, GEMINI_IMAGE_ASPECT_RATIO,
     GEMINI_RESEARCH_MODEL, CLAUDE_MODEL,
     GEMINI_ECONOMIC_BRAIN_MODEL, ECONOMIC_BRAIN_MODE (true/false),
-    DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL,
+    DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL (optional secondary fallback),
+    TEXT_LLM_PRIMARY (default: gemini),
     REFERENCE_IMAGE_PATH, DIGITAL_PRODUCTS_PATH, OUTPUTS_DIR, PDF_CHUNK_CHAR_LIMIT,
     IMGBB_API_KEY, ANTHROPIC_API_VERSION,
     PUBLISHING_SCHEDULE (e.g. "3h" or "90m" spacing between variant posts)
@@ -92,25 +93,102 @@ def _parse_schedule_minutes(raw: str | None) -> int | None:
 
 # ---------------------------------------------------------------------------
 # Safe fallback model IDs
+# Text: Gemini Flash. Image: Together AI FLUX.1-schnell (Gemini image deprecated).
 # ---------------------------------------------------------------------------
 SAFE_GEMINI_TEXT_MODEL: str = "models/gemini-2.5-flash"
-SAFE_GEMINI_IMAGE_MODEL: str = "models/gemini-3-pro-image-preview"
+SAFE_GEMINI_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"  # Together FLUX (name legacy)
+SAFE_GEMINI_IMAGE_FALLBACK_2: str = "black-forest-labs/FLUX.1-schnell"
+SAFE_GEMINI_IMAGE_FALLBACK_3: str = "black-forest-labs/FLUX.1-schnell"
 SAFE_CLAUDE_MODEL: str = "claude-3-5-sonnet-latest"
+
+# ---------------------------------------------------------------------------
+# Model Router — cost-first by default; premium ONLY when explicitly enabled
+# ---------------------------------------------------------------------------
+# USE_PREMIUM_MODEL=true  OR  MODEL_TIER=premium  → flagship Pro SKUs
+# Otherwise always cheap: gemini-2.5-flash / gemini-*-flash-image
+USE_PREMIUM_MODEL: bool = _bool_env("USE_PREMIUM_MODEL", False)
+MODEL_TIER: str = (os.getenv("MODEL_TIER") or ("premium" if USE_PREMIUM_MODEL else "cheap")).strip().lower()
+USE_OPENROUTER_AUTO: bool = _bool_env("USE_OPENROUTER_AUTO", False)
+
+# Hard timeout for every image API call (prevents terminal hangs)
+IMAGE_API_TIMEOUT_S: float = float(os.getenv("IMAGE_API_TIMEOUT_S") or "25")
 
 # ---------------------------------------------------------------------------
 # API keys & versioning
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+# Together AI — primary image backend (FLUX.1-schnell)
+TOGETHER_API_KEY: str | None = os.getenv("TOGETHER_API_KEY") or None
+TOGETHER_IMAGE_MODEL: str = (
+    os.getenv("TOGETHER_IMAGE_MODEL") or "black-forest-labs/FLUX.1-schnell"
+).strip()
+TOGETHER_IMAGE_STEPS: int = int(os.getenv("TOGETHER_IMAGE_STEPS") or "4")
+# Estimated USD — dynamic per model via together_image.estimate_together_image_cost()
+# Schnell default; override model with TOGETHER_IMAGE_MODEL without changing this floor.
+TOGETHER_IMAGE_COST_USD: float = float(os.getenv("TOGETHER_IMAGE_COST_USD") or "0.003")
+# Global Together AI rate limiter (process-wide, thread-safe): forces strictly
+# sequential image requests (max 1 in-flight at any time across ALL variant
+# workers) with a small micro-delay between calls, to avoid 429 storms when
+# multiple bulk-production workers run concurrently. Only gates image calls —
+# LLM research, TTS, video compile, and uploads stay fully concurrent. This is
+# the sync/threading equivalent of an ``asyncio.Semaphore(1)`` — the pipeline
+# itself is fully synchronous (threading-based), so a real asyncio primitive
+# would require converting main.py's ThreadPoolExecutor orchestration to an
+# event loop; this threading.Semaphore delivers an identical hard guarantee
+# (exactly 1 in-flight Together request, process-wide) without that rewrite.
+TOGETHER_MIN_CALL_INTERVAL_S: float = float(os.getenv("TOGETHER_MIN_CALL_INTERVAL_S") or "0.2")
+TOGETHER_IMAGE_MAX_RETRIES: int = int(os.getenv("TOGETHER_IMAGE_MAX_RETRIES") or "4")
+# 429 back-off is short and precise (server-hinted Retry-After when present,
+# else this fixed short ladder) — never the old long exponential chains.
+TOGETHER_429_BACKOFF_MIN_S: float = float(os.getenv("TOGETHER_429_BACKOFF_MIN_S") or "1.0")
+TOGETHER_429_BACKOFF_MAX_S: float = float(os.getenv("TOGETHER_429_BACKOFF_MAX_S") or "2.5")
+
+# Native portrait for all Together/FLUX outputs (test + production)
+DRAFT_IMAGE_SIZE: tuple[int, int] = (768, 1344)
+PRODUCTION_IMAGE_SIZE: tuple[int, int] = (768, 1344)
+
+# VisualQA_Agent critic calibration (also mirrored in VisualQA_Agent/config.py)
+MAX_RETRIES: int = 5
+QUALITY_THRESHOLD: float = 6.0
+
 ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_API_VERSION: str = (os.getenv("ANTHROPIC_API_VERSION") or "2023-06-01").strip()
 IMGBB_API_KEY: str | None = os.getenv("IMGBB_API_KEY")
+IMAGE_PROVIDER: str = (os.getenv("IMAGE_PROVIDER") or "together").strip().lower()
 
 # ---------------------------------------------------------------------------
-# DeepSeek — OpenAI-compatible endpoint for economic operations
+# DeepSeek — OPTIONAL secondary fallback only (Gemini is the primary text brain)
+# Models (2026): deepseek-v4-flash | deepseek-v4-pro
+# Legacy ``deepseek-chat`` is rejected by the API (HTTP 400) — never use it.
 # ---------------------------------------------------------------------------
 DEEPSEEK_API_KEY: str | None = os.getenv("DEEPSEEK_API_KEY") or None
 DEEPSEEK_BASE_URL: str = (os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").strip()
-DEEPSEEK_MODEL: str = (os.getenv("DEEPSEEK_MODEL") or "deepseek-chat").strip()
+
+
+def _normalize_deepseek_model(raw: str, *, default: str) -> str:
+    name = (raw or default).strip() or default
+    if name.lower() in {"deepseek-chat", "deepseek-coder", "deepseek-chat-v3"}:
+        return default
+    return name
+
+
+DEEPSEEK_FLASH_MODEL: str = _normalize_deepseek_model(
+    os.getenv("DEEPSEEK_FLASH_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash",
+    default="deepseek-v4-flash",
+)
+DEEPSEEK_PRO_MODEL: str = _normalize_deepseek_model(
+    os.getenv("DEEPSEEK_PRO_MODEL") or "deepseek-v4-pro",
+    default="deepseek-v4-pro",
+)
+DEEPSEEK_MODEL: str = DEEPSEEK_FLASH_MODEL
+
+# ---------------------------------------------------------------------------
+# Text LLM routing — Gemini is ALWAYS the primary provider for all pages
+# ---------------------------------------------------------------------------
+# "gemini" (default) | "deepseek" (legacy override — not recommended)
+TEXT_LLM_PRIMARY: str = (os.getenv("TEXT_LLM_PRIMARY") or "gemini").strip().lower()
+# Minimum words accepted from sequence voiceover before Gemini retry/fallback
+SEQUENCE_VOICEOVER_MIN_WORDS: int = int(os.getenv("SEQUENCE_VOICEOVER_MIN_WORDS") or "110")
 
 # ---------------------------------------------------------------------------
 # ElevenLabs — voiceover TTS + ambient SFX for ECONOMIC_REEL
@@ -118,25 +196,95 @@ DEEPSEEK_MODEL: str = (os.getenv("DEEPSEEK_MODEL") or "deepseek-chat").strip()
 ELEVENLABS_API_KEY: str | None = os.getenv("ELEVENLABS_API_KEY") or None
 
 # ---------------------------------------------------------------------------
-# Model IDs
+# YouTube Data API v3 — OAuth2 upload
+# ---------------------------------------------------------------------------
+# Set ENABLE_YOUTUBE_UPLOAD=true in .env to automatically publish every
+# compiled reel.  CLI flags --publish-youtube / --upload-youtube override this.
+ENABLE_YOUTUBE_UPLOAD: bool = os.getenv("ENABLE_YOUTUBE_UPLOAD", "false").strip().lower() in (
+    "true", "1", "yes",
+)
+YOUTUBE_PRIVACY_STATUS: str = os.getenv("YOUTUBE_PRIVACY_STATUS", "unlisted").strip().lower()
+# Path to Google OAuth2 desktop client-secrets file (never commit this file).
+YOUTUBE_CLIENT_SECRETS: str = os.getenv(
+    "YOUTUBE_CLIENT_SECRETS",
+    str(Path(__file__).resolve().parent / "client_secret.json"),
+)
+# Per-page OAuth refresh tokens: credentials/tokens/youtube_token_{page}.json
+YOUTUBE_TOKEN_DIR: str = os.getenv(
+    "YOUTUBE_TOKEN_DIR",
+    str(Path(__file__).resolve().parent / "credentials" / "tokens"),
+)
+# Daily upload-quota (~20 videos/channel/day) pending queue — populated when
+# YouTubeQuotaExceededError is caught; replayed via --resume-youtube-queue.
+YOUTUBE_PENDING_QUEUE_PATH: str = os.getenv(
+    "YOUTUBE_PENDING_QUEUE_PATH",
+    str(Path(__file__).resolve().parent / "credentials" / "pending_youtube_uploads.json"),
+)
+
+# ---------------------------------------------------------------------------
+# Model IDs — Gemini 2.5 Flash is the default primary text engine for ALL pages
 # ---------------------------------------------------------------------------
 GEMINI_RESEARCH_MODEL: str = os.getenv("GEMINI_RESEARCH_MODEL", SAFE_GEMINI_TEXT_MODEL)
-GEMINI_ECONOMIC_BRAIN_MODEL: str = os.getenv("GEMINI_ECONOMIC_BRAIN_MODEL", SAFE_GEMINI_TEXT_MODEL)
+GEMINI_ECONOMIC_BRAIN_MODEL: str = os.getenv(
+    "GEMINI_ECONOMIC_BRAIN_MODEL",
+    SAFE_GEMINI_TEXT_MODEL,  # models/gemini-2.5-flash
+)
 GEMINI_ECONOMIC_IMAGE_MODEL: str = os.getenv(
     "GEMINI_ECONOMIC_IMAGE_MODEL",
-    "models/gemini-3.1-flash-lite-image",   # cheapest confirmed-live 3.1 image model
+    SAFE_GEMINI_IMAGE_MODEL,  # models/gemini-3.1-flash-image
 )
-# Nano/banana tier — absolute cheapest tier per live API discovery.
-# Activated when page_config.py declares COST_TIER = "nano" or IMAGE_MODEL_OVERRIDE.
 GEMINI_NANO_IMAGE_MODEL: str = os.getenv(
     "GEMINI_NANO_IMAGE_MODEL",
-    "models/nano-banana-pro-preview",
+    SAFE_GEMINI_IMAGE_MODEL,
 )
 CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", SAFE_CLAUDE_MODEL)
 GEMINI_IMAGE_MODEL: str = os.getenv("GEMINI_IMAGE_MODEL", SAFE_GEMINI_IMAGE_MODEL)
 GEMINI_IMAGE_ASPECT_RATIO: str = os.getenv("GEMINI_IMAGE_ASPECT_RATIO", "3:4")
 ECONOMIC_BRAIN_MODE: bool = _bool_env("ECONOMIC_BRAIN_MODE", False)
-GEMINI_IMAGE_MODEL_PREFERENCE: str = "models/gemini-3-pro-image-preview"
+GEMINI_IMAGE_MODEL_PREFERENCE: str = SAFE_GEMINI_IMAGE_MODEL
+
+# Ordered live Gemini image chain — CHEAP tier only (no pro drift)
+IMAGE_MODEL_FALLBACK_CHAIN: list[str] = [
+    SAFE_GEMINI_IMAGE_MODEL,        # models/gemini-3.1-flash-image
+    SAFE_GEMINI_IMAGE_FALLBACK_2,   # models/gemini-2.5-flash-image
+]
+# Premium image SKU — only appended when USE_PREMIUM_MODEL / MODEL_TIER=premium
+PREMIUM_IMAGE_MODEL: str = SAFE_GEMINI_IMAGE_FALLBACK_3
+PREMIUM_TEXT_MODEL: str = "models/gemini-2.5-pro"
+
+
+def normalize_image_model_id(raw: str | None) -> str:
+    """
+    Normalize image model IDs.
+
+    Together FLUX Schnell is the primary backend — pass those IDs through.
+    Legacy Gemini image SKUs are remapped to FLUX for cost efficiency.
+    """
+    flux = "black-forest-labs/FLUX.1-schnell"
+    name = (raw or flux).strip() or flux
+    low = name.lower().removeprefix("models/")
+
+    # Together / FLUX — keep as-is
+    if "flux" in low or "black-forest-labs" in low:
+        return name if "/" in name else f"black-forest-labs/{low}"
+
+    # Legacy Gemini / Imagen image SKUs → FLUX Schnell
+    if (
+        low.startswith("imagen")
+        or ("gemini" in low and "image" in low)
+        or "flash-lite-image" in low
+    ):
+        logger.info("Image SKU '%s' remapped → Together %s", name, flux)
+        return flux
+
+    return name
+
+
+# Sanitize env overrides — legacy Gemini image IDs remap to Together FLUX
+GEMINI_ECONOMIC_IMAGE_MODEL = normalize_image_model_id(GEMINI_ECONOMIC_IMAGE_MODEL)
+GEMINI_NANO_IMAGE_MODEL = normalize_image_model_id(GEMINI_NANO_IMAGE_MODEL)
+GEMINI_IMAGE_MODEL = normalize_image_model_id(GEMINI_IMAGE_MODEL)
+TOGETHER_IMAGE_MODEL = normalize_image_model_id(TOGETHER_IMAGE_MODEL)
 
 # ---------------------------------------------------------------------------
 # Engagement-format defaults (CLI-overridable via --cta and --post-type)
@@ -315,6 +463,34 @@ def get_best_gemini_text_model(client: object | None = None) -> str:  # type: ig
     except Exception as exc:  # noqa: BLE001
         logger.debug("Gemini model discovery failed (%s); using fallback.", exc)
     return GEMINI_RESEARCH_MODEL or SAFE_GEMINI_TEXT_MODEL
+
+
+# ---------------------------------------------------------------------------
+# Cost-first router bootstrap (cheap unless USE_PREMIUM_MODEL / MODEL_TIER)
+# ---------------------------------------------------------------------------
+try:
+    from avatar_engine.providers.model_router import (
+        resolve_tier as _resolve_model_tier,
+        route_model,
+        sync_config_defaults as _sync_model_router_defaults,
+    )
+
+    _sync_model_router_defaults()
+    # If premium explicitly enabled, expand image fallback chain to include Pro
+    if _resolve_model_tier() == "premium":
+        IMAGE_MODEL_FALLBACK_CHAIN = [
+            PREMIUM_IMAGE_MODEL,
+            SAFE_GEMINI_IMAGE_MODEL,
+            SAFE_GEMINI_IMAGE_FALLBACK_2,
+        ]
+        if not os.getenv("GEMINI_IMAGE_MODEL"):
+            GEMINI_IMAGE_MODEL = normalize_image_model_id(PREMIUM_IMAGE_MODEL)
+        if not os.getenv("GEMINI_ECONOMIC_BRAIN_MODEL"):
+            GEMINI_ECONOMIC_BRAIN_MODEL = PREMIUM_TEXT_MODEL
+        if not os.getenv("GEMINI_RESEARCH_MODEL"):
+            GEMINI_RESEARCH_MODEL = PREMIUM_TEXT_MODEL
+except Exception as _router_exc:  # noqa: BLE001
+    logger.debug("Model router bootstrap skipped (%s)", _router_exc)
 
 
 # ---------------------------------------------------------------------------

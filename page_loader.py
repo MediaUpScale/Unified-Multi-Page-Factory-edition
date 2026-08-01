@@ -15,10 +15,11 @@ directory under pages_config/{page_id}/ and carries its own:
 Supported pages
 ---------------
   anna_protocol   Holistic Legacy — ancestral wellness, natural remedies, avatar ON
-  master_mei      Stoic discipline, cold exposure, performance protocols, avatar ON
+  master_mei      SUPER channel — Stoic financial freedom / wealth mindset (US), avatar ON
   wonder_feed     Emotional intelligence, attachment science, avatar OFF (default)
   down_dirty      Matrix escape, financial sovereignty, raw mindset, avatar OFF (default)
   ancient_knowledge  Ancient history, conspiracies, mysteries, photorealistic style, avatar OFF
+  momma_circle    Parenting / PARENTAL_CONTENTS — reference-clip reels, warm lullaby audio, avatar OFF
 
 Usage
 -----
@@ -32,10 +33,81 @@ Usage
 from __future__ import annotations
 
 import importlib.util
+import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+_LOG = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# MODULE 2 — Gemini Vision style-reference extraction. Sent ONCE per page
+# per run; the extracted ~40-word anchor is cached on the PageContext
+# instance and prepended to every image prompt generated for that run.
+# ---------------------------------------------------------------------------
+_STYLE_VISION_PROMPT: str = (
+    "Analyze these reference images to extract the exact style rules. "
+    "Focus on: dark 80s biomechanical cyberpunk, practical body horror FX, "
+    "H.R. Giger aesthetics, flesh pierced by cables/tubes with scarred entry wounds, "
+    "exposed copper wiring stitched into pale distressed skin, dirty raw metal, "
+    "gritty 35mm film grain. Do NOT describe rubber aprons, chestplates, or tactical vests. "
+    "Vary tech mods — do not put VR goggles on every face."
+)
+
+
+def _extract_style_anchor_via_gemini_vision(image_paths: "list[Path]", page_id: str) -> str:
+    """
+    Send ``image_paths`` ONCE to gemini-2.5-flash and extract a dense ~40-word
+    visual style anchor string. Returns "" on ANY failure (missing API key,
+    unreadable image, API error) so callers can gracefully fall back to a
+    static style anchor — this call must never crash the pipeline.
+    """
+    if not image_paths:
+        return ""
+    try:
+        from PIL import Image
+        from google import genai
+
+        import config as app_config
+        api_key = getattr(app_config, "GEMINI_API_KEY", None)
+        if not api_key:
+            _LOG.warning(
+                "DYNAMIC_STYLE_ANCHOR | GEMINI_API_KEY missing — skipping vision "
+                "extraction for page=%s; falling back to static style anchor.",
+                page_id,
+            )
+            return ""
+
+        contents: list[Any] = []
+        for p in image_paths:
+            try:
+                contents.append(Image.open(p))
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("DYNAMIC_STYLE_ANCHOR | could not open %s (%s)", p, exc)
+        if not contents:
+            return ""
+        contents.append(_STYLE_VISION_PROMPT)
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="models/gemini-2.5-flash", contents=contents,
+        )
+        text = (getattr(response, "text", "") or "").strip()
+        if text:
+            _LOG.info(
+                "DYNAMIC_STYLE_ANCHOR extracted | page=%s | %d word(s): %s",
+                page_id, len(text.split()), text[:200],
+            )
+        return text
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning(
+            "DYNAMIC_STYLE_ANCHOR | vision extraction failed for page=%s (%s) — "
+            "falling back to static style anchor.",
+            page_id, exc,
+        )
+        return ""
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,6 +119,7 @@ VALID_PAGES: tuple[str, ...] = (
     "wonder_feed",
     "down_dirty",
     "ancient_knowledge",
+    "momma_circle",
 )
 
 VALID_AVATAR_MODES: tuple[str, ...] = ("ON", "OFF")
@@ -59,6 +132,7 @@ VALID_FORMATS: tuple[str, ...] = (
     "TEXT_QUOTE",         # brand-colour solid backdrop + text only (no Gemini image call)
     "DYNAMIC_REEL",       # ECONOMIC_REEL: single image → MP4 via video_engine
     "SEQUENCE_REEL",      # multi-image 80-second reel via core_engine.reel_sequence_engine
+    "REFERENCE_BASED_REELS",  # raw footage clip + hook overlay + lullaby audio (momma_circle)
 )
 
 _ENGINE_ROOT: Path = Path(__file__).resolve().parent
@@ -117,6 +191,7 @@ class PageContext:
     product_reference_dir: Path
     outputs_dir: Path
     page_cfg: dict[str, Any] = field(default_factory=dict)
+    _dynamic_style_anchor_cache: "str | None" = field(default=None, repr=False, compare=False)
 
     # ------------------------------------------------------------------
     # Convenience properties
@@ -195,15 +270,33 @@ class PageContext:
     @property
     def logo_size_scale(self) -> float:
         """
-        Logo width as a fraction of canvas width (e.g. 0.15 = 15 %).
-        Sourced from LOGO_SIZE_SCALE in page_config.py; defaults to 0.18.
+        Logo width as a fraction of canvas width (e.g. 0.30 = 30 %).
+        Sourced from LOGO_SIZE_SCALE in page_config.py; defaults to 0.30.
         """
-        raw = self.page_cfg.get("LOGO_SIZE_SCALE", 0.18)
+        raw = self.page_cfg.get("LOGO_SIZE_SCALE", 0.30)
         try:
             val = float(raw)
             return max(0.05, min(val, 0.50))   # clamp to 5–50 %
         except (TypeError, ValueError):
             return 0.18
+
+    @property
+    def caption_signature(self) -> str:
+        """
+        Brand copyright line appended to every LONG_CAPTION_IMAGE caption.
+
+        Sources (in priority order):
+          1. CAPTION_SIGNATURE in page_config.py  (explicit override)
+          2. ``© {display_name} | by MediaUpScale`` derived from display_name
+          3. ``© MediaUpScale`` ultimate fallback
+        """
+        explicit = self.page_cfg.get("CAPTION_SIGNATURE", "")
+        if explicit:
+            return str(explicit).strip()
+        name = self.display_name
+        if name:
+            return f"© {name} | by MediaUpScale"
+        return "© MediaUpScale"
 
     @property
     def logo_position(self) -> str:
@@ -285,6 +378,34 @@ class PageContext:
             return max(0.0, min(1.0, val))
         except (TypeError, ValueError):
             return 0.35
+
+    @property
+    def subtitle_words_per_phrase(self) -> int:
+        try:
+            return max(3, min(5, int(self.page_cfg.get("SUBTITLE_WORDS_PER_PHRASE", 4))))
+        except (TypeError, ValueError):
+            return 4
+
+    @property
+    def subtitle_fill(self) -> tuple:
+        raw = self.page_cfg.get("SUBTITLE_FILL", (255, 230, 0))
+        if isinstance(raw, (list, tuple)) and len(raw) >= 3:
+            return (int(raw[0]), int(raw[1]), int(raw[2]))
+        return (255, 230, 0)
+
+    @property
+    def subtitle_stroke_fill(self) -> "tuple | None":
+        raw = self.page_cfg.get("SUBTITLE_STROKE_FILL", None)
+        if isinstance(raw, (list, tuple)) and len(raw) >= 3:
+            return (int(raw[0]), int(raw[1]), int(raw[2]))
+        return None
+
+    @property
+    def subtitle_stroke_width(self) -> int:
+        try:
+            return max(0, int(self.page_cfg.get("SUBTITLE_STROKE_WIDTH", 0)))
+        except (TypeError, ValueError):
+            return 0
 
     @property
     def subtitle_fontsize(self) -> int:
@@ -428,6 +549,91 @@ class PageContext:
         return str(self.page_cfg.get("STYLE_REFERENCE_DIR", "")).strip()
 
     @property
+    def style_reference_weight(self) -> float:
+        """
+        IP-Adapter / style-ref strength (0.65–0.80 recommended) — enforce local
+        visual style while still allowing prompt compliance. Sourced from
+        STYLE_REFERENCE_WEIGHT in page_config.py; defaults to 0.72.
+        """
+        try:
+            w = float(self.page_cfg.get("STYLE_REFERENCE_WEIGHT", 0.72))
+        except (TypeError, ValueError):
+            w = 0.72
+        return max(0.0, min(1.0, w))
+
+    @property
+    def style_reference_max_images(self) -> int:
+        """Max style reference images loaded per generation run (2–3 recommended)."""
+        try:
+            return max(1, int(self.page_cfg.get("STYLE_REFERENCE_MAX_IMAGES", 3)))
+        except (TypeError, ValueError):
+            return 3
+
+    @property
+    def master_style_anchor(self) -> str:
+        """
+        Style-anchor text appended VERBATIM to every generated image prompt.
+        Sourced from MASTER_STYLE_ANCHOR in page_config.py; defaults to "".
+        """
+        return str(self.page_cfg.get("MASTER_STYLE_ANCHOR", "")).strip()
+
+    def resolve_style_reference_images(self, max_images: "int | None" = None) -> list[Path]:
+        """
+        MODULE 3 — dynamic per-page style reference resolution.
+
+        Base directory pattern: ``pages_config/<page_id>/style_reference/``
+        (or the explicit ``STYLE_REFERENCE_DIR`` override when set). Loads all
+        valid ``*.png`` / ``*.jpg`` / ``*.jpeg`` assets, sorted by filename,
+        capped at ``max_images`` (defaults to ``style_reference_max_images``,
+        2–3 recommended).
+        """
+        limit = max_images if max_images is not None else self.style_reference_max_images
+        override = self.style_reference_dir
+        sref_dir = (
+            (_ENGINE_ROOT / override) if override else (self.page_dir / "style_reference")
+        )
+        if not sref_dir.is_dir():
+            return []
+        found: list[Path] = []
+        for ext in ("*.png", "*.jpg", "*.jpeg"):
+            found.extend(sorted(sref_dir.glob(ext)))
+        # De-dupe while preserving order, then cap.
+        seen: set[str] = set()
+        ordered: list[Path] = []
+        for p in sorted(found, key=lambda x: x.name.lower()):
+            key = str(p.resolve())
+            if key not in seen:
+                seen.add(key)
+                ordered.append(p)
+        return ordered[: max(1, limit)]
+
+    def resolve_dynamic_style_anchor(self, *, force_refresh: bool = False) -> str:
+        """
+        MODULE 2 — Gemini Vision style-reference extraction.
+
+        Loads ``pages_config/<page_id>/style_reference/`` images (via
+        ``resolve_style_reference_images``), sends them ONCE to
+        ``gemini-2.5-flash`` to extract a dense ~40-word visual style anchor,
+        and caches the result (``DYNAMIC_STYLE_ANCHOR``) on this PageContext
+        instance for the remainder of the run. Falls back to the static
+        ``MASTER_STYLE_ANCHOR`` (page_config.py) when no reference images
+        exist or vision extraction fails for any reason — never blocks or
+        crashes the pipeline.
+        """
+        if self._dynamic_style_anchor_cache is not None and not force_refresh:
+            return self._dynamic_style_anchor_cache
+
+        images = self.resolve_style_reference_images()
+        print(
+            f"[DEBUG] Loaded {len(images)} style reference assets for {self.page_id}: "
+            f"{[p.name for p in images]}"
+        )
+        anchor = _extract_style_anchor_via_gemini_vision(images, self.page_id) if images else ""
+        resolved = anchor or self.master_style_anchor
+        self._dynamic_style_anchor_cache = resolved
+        return resolved
+
+    @property
     def font_color(self) -> tuple[int, int, int]:
         """
         RGB text colour tuple (e.g. (255, 255, 255) for white).
@@ -471,25 +677,51 @@ class PageContext:
     @property
     def reel_image_count(self) -> int:
         """
-        Number of distinct images generated and stitched in a SEQUENCE_REEL.
-        Sourced from REEL_IMAGE_COUNT in page_config.py; defaults to 4.
+        Max distinct images stitched in a SEQUENCE_REEL (dense ~4 s/act).
+        Sourced from REEL_IMAGE_COUNT in page_config.py; defaults to 18.
         """
         try:
-            return max(2, int(self.page_cfg.get("REEL_IMAGE_COUNT", 4)))
+            return max(2, int(self.page_cfg.get("REEL_IMAGE_COUNT", 18)))
         except (TypeError, ValueError):
-            return 4
+            return 18
+
+    @property
+    def reel_seconds_per_act(self) -> float:
+        """
+        Target spoken seconds per visual act for dense scene sync (3.5–5.0).
+        Sourced from REEL_SECONDS_PER_ACT; defaults to 4.0.
+        NOTE: upper clamp is 5.0 (not 4.0) so pages configured for the
+        strict "4-5 s per image" pacing rule (e.g. master_mei @ 4.5) are
+        never silently forced back down to a faster/denser cadence.
+        """
+        try:
+            spa = float(self.page_cfg.get("REEL_SECONDS_PER_ACT", 4.0))
+        except (TypeError, ValueError):
+            spa = 4.0
+        return max(3.5, min(5.0, spa))
+
+    @property
+    def reel_image_min_count(self) -> int:
+        """
+        Min distinct images/acts (floor) for dense scene sync.
+        Sourced from REEL_IMAGE_MIN_COUNT in page_config.py; defaults to 12.
+        """
+        try:
+            return max(2, int(self.page_cfg.get("REEL_IMAGE_MIN_COUNT", 12)))
+        except (TypeError, ValueError):
+            return 12
 
     @property
     def reel_act_duration(self) -> float:
         """
         Per-act clip length in seconds used when no audio drives the timeline.
-        Sourced from REEL_ACT_DURATION in page_config.py; defaults to 20.0.
-        Total reel = reel_image_count × reel_act_duration.
+        Sourced from REEL_ACT_DURATION in page_config.py; defaults to 4.0.
+        Audio-driven compiles use ``total_audio_duration / n_acts`` instead.
         """
         try:
-            return max(5.0, float(self.page_cfg.get("REEL_ACT_DURATION", 20.0)))
+            return max(3.5, float(self.page_cfg.get("REEL_ACT_DURATION", 4.0)))
         except (TypeError, ValueError):
-            return 20.0
+            return 4.0
 
     @property
     def enable_top_hook_text(self) -> bool:
@@ -525,6 +757,38 @@ class PageContext:
             return 18.0
 
     @property
+    def enable_flicker(self) -> bool:
+        """
+        Subtle ±5 % brightness oscillation at ~0.10 s random intervals (torch/flame effect).
+        Sourced from ENABLE_FLICKER in page_config.py; defaults to False.
+        """
+        return bool(self.page_cfg.get("ENABLE_FLICKER", False))
+
+    @property
+    def enable_light_rays(self) -> bool:
+        """
+        Animated warm-gold volumetric light beam column sweeping across the canvas.
+        Sourced from ENABLE_LIGHT_RAYS in page_config.py; defaults to False.
+        """
+        return bool(self.page_cfg.get("ENABLE_LIGHT_RAYS", False))
+
+    @property
+    def enable_dust_particles(self) -> bool:
+        """
+        Floating dust/debris particles drifting upward (for ruin/cave environments).
+        Sourced from ENABLE_DUST_PARTICLES in page_config.py; defaults to False.
+        """
+        return bool(self.page_cfg.get("ENABLE_DUST_PARTICLES", False))
+
+    @property
+    def enable_light_refraction(self) -> bool:
+        """
+        Subtle prismatic light-refraction glow (for glass/crystal subjects).
+        Sourced from ENABLE_LIGHT_REFRACTION in page_config.py; defaults to False.
+        """
+        return bool(self.page_cfg.get("ENABLE_LIGHT_REFRACTION", False))
+
+    @property
     def niche_disclaimer(self) -> str:
         """
         Optional niche-specific disclaimer injected into LLM system prompts.
@@ -533,15 +797,322 @@ class PageContext:
         return str(self.page_cfg.get("NICHE_DISCLAIMER", "")).strip()
 
     @property
+    def narrative_mode(self) -> str:
+        """
+        Script/prompt structure mode for reel narration.
+        Sourced from NARRATIVE_MODE in page_config.py.
+        Known values: 'investigative' | 'warrior_discipline' | 'psychology' (default).
+        """
+        raw = str(self.page_cfg.get("NARRATIVE_MODE", "")).strip().lower()
+        if raw:
+            return raw
+        # Infer from known page IDs when unset
+        pid = (self.page_id or "").lower()
+        if pid == "ancient_knowledge":
+            return "investigative"
+        if pid == "master_mei":
+            return "warrior_discipline"
+        return "psychology"
+
+    @property
+    def reel_cta_text(self) -> str:
+        """
+        Spoken CTA line generated as a separate audio block after narration.
+        Sourced from REEL_CTA_TEXT in page_config.py; empty = no CTA stitch.
+        """
+        return str(self.page_cfg.get("REEL_CTA_TEXT", "")).strip()
+
+    @property
+    def ambient_sfx_prompt(self) -> str:
+        """
+        ElevenLabs SFX prompt for ambient underlay.
+        Sourced from AMBIENT_SFX_PROMPT in page_config.py; empty = engine default.
+        """
+        return str(self.page_cfg.get("AMBIENT_SFX_PROMPT", "")).strip()
+
+    @property
+    def ambient_volume(self) -> float:
+        """
+        Ambient BGM bed volume (0–1) mixed under voiceover.
+        Sourced from AMBIENT_VOLUME in page_config.py.
+        Master Mei cinematic bed locked to 0.14–0.18 (audible + ducked under VO).
+        """
+        try:
+            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.16))
+            if (self.page_id or "").lower() == "master_mei":
+                return max(0.14, min(0.18, val))
+            return max(0.08, min(1.0, val))
+        except (TypeError, ValueError):
+            return 0.16
+
+    @property
+    def ambient_duck_ratio(self) -> float:
+        """Multiply ambient by this while voiceover plays (Master Mei default 0.55)."""
+        try:
+            val = float(self.page_cfg.get("AMBIENT_DUCK_RATIO", 0.55))
+            return max(0.30, min(1.0, val))
+        except (TypeError, ValueError):
+            return 0.55
+
+    @property
+    def voice_volume_gain(self) -> "float | None":
+        """Linear VO gain override (e.g. 1.334 ≈ +2.5 dB). None → engine default."""
+        raw = self.page_cfg.get("VOICE_VOLUME_GAIN", None)
+        if raw is None:
+            return None
+        try:
+            val = float(raw)
+            return val if val > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def ambient_sfx_gain_mul(self) -> "float | None":
+        """Ambient/SFX multiplier after bed volume (e.g. ~1.995 for +3 dB over 1.4×)."""
+        raw = self.page_cfg.get("AMBIENT_SFX_GAIN_MUL", None)
+        if raw is None:
+            return None
+        try:
+            val = float(raw)
+            return val if val > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def hook_environments(self) -> list:
+        """
+        Rotating scenic environments for Master Mei Act-1 seated-meditation hook.
+        Sourced from HOOK_ENVIRONMENTS in page_config.py.
+        """
+        raw = self.page_cfg.get("HOOK_ENVIRONMENTS", [])
+        if not isinstance(raw, list):
+            return []
+        return [str(t).strip() for t in raw if t and str(t).strip()]
+
+    @property
+    def master_mei_visual_dna(self) -> str:
+        """Mandatory elder-sage visual DNA string for Master Mei image prompts."""
+        return str(self.page_cfg.get("MASTER_MEI_VISUAL_DNA", "")).strip()
+
+    @property
+    def sequence_force_avatar_off(self) -> bool:
+        """When True, sequence/ECONOMIC_REEL images ignore avatar likeness refs."""
+        return bool(self.page_cfg.get("SEQUENCE_FORCE_AVATAR_OFF", False))
+
+    @property
+    def avatar_image_weight(self) -> float:
+        """Likeness strength 0–1 injected into Gemini reference prompt (IP-adapter analogue)."""
+        try:
+            return max(0.1, min(1.0, float(self.page_cfg.get("AVATAR_IMAGE_WEIGHT", 0.75))))
+        except (TypeError, ValueError):
+            return 0.75
+
+    @property
+    def forced_avatar_reference_path(self) -> "Path | None":
+        """
+        Absolute path to the page's mandatory avatar.png.
+
+        For master_mei: ALWAYS resolves to
+        pages_config/master_mei/avatar_reference/avatar.png (zero-hallucination lock).
+        """
+        page_id = (self.page_id or "").lower()
+        if page_id == "master_mei":
+            try:
+                from avatar_engine.mei_visual import resolve_master_mei_avatar_path
+                p = resolve_master_mei_avatar_path(_ENGINE_ROOT)
+                return p
+            except Exception:
+                pass
+        rel = str(self.page_cfg.get("AVATAR_REFERENCE_PATH", "")).strip()
+        if rel:
+            p = Path(rel)
+            if not p.is_absolute():
+                p = _ENGINE_ROOT / rel
+            return p
+        if self.avatar_reference_png.is_file():
+            return self.avatar_reference_png
+        return None
+
+    @property
+    def reel_force_exact_duration(self) -> bool:
+        """When True, sequence reel container is floored at REEL_DURATION (e.g. 80 s)."""
+        return bool(self.page_cfg.get("REEL_FORCE_EXACT_DURATION", False))
+
+    @property
+    def reel_narration_words(self) -> int:
+        """Target narration word count for sequence TTS (master_mei ≈ 230 for ~100–120 s)."""
+        try:
+            return max(80, int(self.page_cfg.get("REEL_NARRATION_WORDS", 140)))
+        except (TypeError, ValueError):
+            return 140
+
+    @property
+    def reel_narration_min_words(self) -> int:
+        """Minimum acceptable narration word count before regenerate/fallback warn."""
+        try:
+            return max(60, int(self.page_cfg.get("REEL_NARRATION_MIN_WORDS", 110)))
+        except (TypeError, ValueError):
+            return 110
+
+    @property
+    def reel_narration_max_words(self) -> int:
+        """Hard ceiling for narration trim (master_mei ≈ 240)."""
+        try:
+            return max(
+                self.reel_narration_words,
+                int(self.page_cfg.get("REEL_NARRATION_MAX_WORDS", 240)),
+            )
+        except (TypeError, ValueError):
+            return max(240, self.reel_narration_words)
+
+    @property
+    def strip_audio_tags_before_tts(self) -> bool:
+        """Strip comedy bracket tags before ElevenLabs TTS (page-configurable)."""
+        if "STRIP_AUDIO_TAGS_BEFORE_TTS" in self.page_cfg:
+            return bool(self.page_cfg.get("STRIP_AUDIO_TAGS_BEFORE_TTS"))
+        return False
+
+    @property
+    def tts_enable_ssml(self) -> bool:
+        """Enable ElevenLabs SSML parsing (``<break time="…" />``) when True."""
+        if "TTS_ENABLE_SSML" in self.page_cfg:
+            return bool(self.page_cfg.get("TTS_ENABLE_SSML"))
+        return (self.page_id or "").lower() == "master_mei"
+
+    @property
+    def reel_tail_pad_s(self) -> float:
+        """
+        Extra seconds appended after final audio so CTA/subtitles never clip.
+        Sourced from REEL_TAIL_PAD_S; defaults to 1.0 (ancient_knowledge buffer).
+        """
+        try:
+            return max(0.0, float(self.page_cfg.get("REEL_TAIL_PAD_S", 1.0)))
+        except (TypeError, ValueError):
+            return 1.0
+
+    @property
+    def ambient_audio_path(self) -> "Path | None":
+        """
+        Optional local ambient loop preferred over ElevenLabs SFX.
+        Sourced from AMBIENT_AUDIO_RELPATH in page_config.py (relative to engine root).
+        """
+        rel = str(self.page_cfg.get("AMBIENT_AUDIO_RELPATH", "")).strip()
+        if not rel:
+            return None
+        candidate = _ENGINE_ROOT / rel
+        return candidate if candidate.is_file() else candidate  # path for existence check by caller
+
+    @property
+    def avatar_assets_dir(self) -> "Path | None":
+        """
+        Priority directory of cycleable avatar reference portraits.
+        Sourced from AVATAR_ASSETS_DIR in page_config.py (relative to engine root).
+        Falls back to pages_config/{page}/avatar_reference/ when unset.
+        """
+        rel = str(self.page_cfg.get("AVATAR_ASSETS_DIR", "")).strip()
+        if rel:
+            return _ENGINE_ROOT / rel
+        return self.avatar_reference_dir
+
+    def list_avatar_references(self) -> list:
+        """
+        Return sorted portrait paths for likeness cycling.
+        Priority: AVATAR_ASSETS_DIR images, then pages_config avatar_reference/.
+        """
+        found: list = []
+        seen: set = set()
+        for folder in (self.avatar_assets_dir, self.avatar_reference_dir):
+            if folder is None or not folder.is_dir():
+                continue
+            for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp"):
+                for p in sorted(folder.glob(ext)):
+                    if p.is_file() and p.resolve() not in seen:
+                        seen.add(p.resolve())
+                        found.append(p)
+        return found
+
+    def cycle_avatar_reference(self, index: int = 0) -> "Path | None":
+        """Pick avatar reference by index (wraps). None if no portraits exist."""
+        refs = self.list_avatar_references()
+        if not refs:
+            return None
+        return refs[index % len(refs)]
+
+    @property
+    def tts_narration_speed(self) -> float:
+        """
+        ElevenLabs narration speed multiplier.
+        Prefer ELEVENLABS_VOICE_SETTINGS['speed'], else TTS_NARRATION_SPEED.
+        Clamped to ElevenLabs practical range ~0.70–1.20 for short-form.
+        """
+        try:
+            vs = self.page_cfg.get("ELEVENLABS_VOICE_SETTINGS", None)
+            if isinstance(vs, dict) and vs.get("speed") is not None:
+                val = float(vs["speed"])
+            else:
+                val = float(self.page_cfg.get("TTS_NARRATION_SPEED", 1.05))
+            return max(0.70, min(1.20, val))
+        except (TypeError, ValueError):
+            return 1.05
+
+    @property
+    def elevenlabs_voice_settings(self) -> dict:
+        """
+        Optional ElevenLabs VoiceSettings overrides from page_config.
+        Sourced from ELEVENLABS_VOICE_SETTINGS; empty dict = engine defaults.
+        Keys: stability, similarity_boost, style, use_speaker_boost, speed.
+        """
+        raw = self.page_cfg.get("ELEVENLABS_VOICE_SETTINGS", None)
+        if not isinstance(raw, dict):
+            return {}
+        out: dict = {}
+        for key in ("stability", "similarity_boost", "style", "speed"):
+            if key in raw:
+                try:
+                    out[key] = float(raw[key])
+                except (TypeError, ValueError):
+                    pass
+        if "use_speaker_boost" in raw:
+            out["use_speaker_boost"] = bool(raw["use_speaker_boost"])
+        # Keep speed aligned with TTS_NARRATION_SPEED when only one is set
+        if "speed" not in out:
+            try:
+                out["speed"] = float(self.page_cfg.get("TTS_NARRATION_SPEED", 1.05))
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    @property
+    def audio_behavior_tags(self) -> list:
+        """
+        Bracketed ElevenLabs behavioral tags for this page's voice
+        (e.g. [chuckles], [cackles]). Sourced from AUDIO_BEHAVIOR_TAGS.
+        """
+        raw = self.page_cfg.get("AUDIO_BEHAVIOR_TAGS", [])
+        if not isinstance(raw, list):
+            return []
+        return [str(t).strip() for t in raw if t and str(t).strip()]
+
+    @property
     def image_model_override(self) -> "str | None":
         """
         Explicit image model ID override sourced from IMAGE_MODEL_OVERRIDE in
         page_config.py.  When set, this takes highest priority in main.py's
         img_model_id resolution — overrides both the nano-tier constant and the
         global economic flag.  Returns None when not configured.
+        Invalid flash-lite SKUs are remapped to a live Imagen model.
         """
         val = self.page_cfg.get("IMAGE_MODEL_OVERRIDE", None)
-        return str(val).strip() or None if val else None
+        if not val:
+            return None
+        raw = str(val).strip()
+        if not raw:
+            return None
+        try:
+            import config as _cfg
+            return _cfg.normalize_image_model_id(raw)
+        except Exception:  # noqa: BLE001
+            return raw
 
     @property
     def prompt_negative_terms(self) -> list:

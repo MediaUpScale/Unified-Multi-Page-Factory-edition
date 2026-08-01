@@ -32,18 +32,17 @@ logger = logging.getLogger(__name__)
 Capability = Literal["text", "image"]
 
 # Validated GA defaults -- used ONLY when models.list() returns nothing.
+# Cost-first: flash / flash-image only. Pro SKUs are NEVER last-resort defaults.
 _LAST_RESORT_TEXT = [
-    "models/gemini-2.5-flash",        # preferred: fastest verified model
-    "models/gemini-2.5-pro",          # first fallback
+    "models/gemini-2.5-flash",
+    "models/gemini-2.0-flash",
+    "models/gemini-flash-latest",
     "models/gemini-1.5-flash-latest",
-    "models/gemini-1.5-pro-latest",
     "models/gemini-1.5-flash-002",
-    "models/gemini-1.5-pro-002",
 ]
 
 _LAST_RESORT_IMAGE = [
-    "models/gemini-3-pro-image-preview",
-    "models/gemini-3.1-flash-lite-image",
+    "models/gemini-3.1-flash-image",
     "models/gemini-2.5-flash-image",
 ]
 
@@ -170,40 +169,46 @@ def _is_text_candidate(model_id: str) -> bool:
 
 def _is_image_candidate(model_id: str) -> bool:
     low = model_id.lower()
-    return (
-        "imagen" in low
-        or ("gemini" in low and "image" in low)
-        or "banana" in low  # nano-banana-pro-preview tier
-    )
+    # Imagen SKUs 404 on this API project — never select them
+    if "imagen" in low:
+        return False
+    return "gemini" in low and "image" in low
 
 
 def _text_sort_key(model_id: str) -> tuple[float, float, str]:
+    """Higher score = preferred. Cost-first: flash-lite > flash >> pro."""
     low = model_id.lower()
     tier = 1.5
     if "flash-lite" in low:
-        tier = 0.0
-    elif "flash" in low:
-        tier = 2.0
+        tier = 5.0
+    elif "flash" in low and "pro" not in low:
+        tier = 4.0
     elif "pro" in low:
-        tier = 3.0
-    # Prefer -latest aliases (they always resolve to something real).
+        tier = 0.5  # deprioritise premium unless explicitly requested
     bonus = 0.05 if "latest" in low else 0.0
     return (tier + bonus, _parse_version_score(model_id), low)
 
 
 def _image_sort_key(model_id: str) -> tuple[float, float, str]:
+    """Higher score = preferred. Cost-first: flash-image >> pro-image."""
     low = model_id.lower()
     pref = 1.0
-    if re.search(r"imagen-[34]|imagen[34]", low):
+    if "gemini-3.1-flash-image" in low and "preview" not in low and "lite" not in low:
+        pref = 5.0
+    elif "gemini-2.5-flash-image" in low and "preview" not in low:
+        pref = 4.5
+    elif "flash" in low and "image" in low and "pro" not in low:
         pref = 4.0
-    elif "imagen" in low:
-        pref = 3.5
-    elif "banana" in low:
-        pref = 3.8  # nano-banana tier — cheapest known live tier, scores above standard image models
+    elif "gemini-3-pro-image" in low and "preview" not in low:
+        pref = 1.0  # premium — lowest preference for auto-discovery
     elif "gemini-3" in low and "image" in low:
-        pref = 3.0
-    elif "gemini-2" in low and "image" in low:
         pref = 2.5
+    elif "gemini-2" in low and "image" in low:
+        pref = 2.0
+    if "preview" in low:
+        pref -= 0.5
+    if "lite" in low and "image" in low:
+        pref -= 0.3
     return (pref, _parse_version_score(model_id), low)
 
 
@@ -233,6 +238,25 @@ def _is_retryable_503(exc: BaseException) -> bool:
     return "503" in msg or "unavailable" in msg or "high demand" in msg or "overloaded" in msg
 
 
+def _is_retryable_429(exc: BaseException) -> bool:
+    """True for quota / rate-limit / RESOURCE_EXHAUSTED errors."""
+    code = getattr(exc, "code", None)
+    if code in (429, "429"):
+        return True
+    status = str(getattr(exc, "status", "") or "").upper()
+    if "429" in status or "RESOURCE_EXHAUSTED" in status or "RATE_LIMIT" in status:
+        return True
+    msg = str(getattr(exc, "message", None) or exc).upper()
+    return (
+        "429" in msg
+        or "RESOURCE_EXHAUSTED" in msg
+        or "RATE LIMIT" in msg
+        or "RATE_LIMIT" in msg
+        or "QUOTA" in msg
+        or "TOO MANY REQUESTS" in msg
+    )
+
+
 def is_model_not_found_error(exc: BaseException) -> bool:
     return _should_try_next_model(exc)
 
@@ -250,14 +274,8 @@ def get_active_model_id(
     """
     Query models.list() live and return the best model matching ``preference``.
 
-    Steps
-    -----
-    1. Call models.list() -- real network handshake.
-    2. Filter for generateContent capability and the correct type (text/image).
-    3. Among candidates, pick the first whose ID contains ``preference``.
-    4. If no preference match, pick the highest-scored candidate (with a warning).
-    5. If models.list() returns nothing at all, raise RuntimeError and log
-       what IS available so the operator can diagnose the issue.
+    Cost-first: default preference is flash. Pro SKUs are never auto-selected
+    unless ``preference`` explicitly names them (premium mode).
     """
     raw_list = _list_models(client)
 
@@ -288,6 +306,16 @@ def get_active_model_id(
         )
 
     prefs = [preference] if isinstance(preference, str) else list(preference)
+    # Cheap-mode guard: if no preference explicitly asks for pro, drop pro SKUs
+    prefs_want_pro = any("pro" in p.lower() for p in prefs)
+    if not prefs_want_pro:
+        cheap_only = [
+            c for c in candidates
+            if "pro" not in c.lower() or "flash" in c.lower()
+        ]
+        if cheap_only:
+            candidates = cheap_only
+
     for pref in prefs:
         pref_lower = pref.lower()
         for mid in candidates:
@@ -298,7 +326,7 @@ def get_active_model_id(
                 )
                 return result
 
-    # No preference matched -- fall back to best scored candidate.
+    # No preference matched -- fall back to best scored candidate (cost-first sort).
     sort_key = _text_sort_key if capability_type == "text" else _image_sort_key
     best = sorted(candidates, key=sort_key, reverse=True)[0]
     result = _full_model_id(best)

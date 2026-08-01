@@ -1,0 +1,143 @@
+{
+  "page_id": "momma_circle",
+  "display_name": "Momma Circle",
+  "niche": "parenting, baby care, motherhood, gentle discipline, baby nutrition, sleep routines",
+  "Subject": "Momma Circle",
+  "Physical_Appearance": {
+    "Age": 0,
+    "Hair": "",
+    "Physique": "",
+    "Skin_Texture": "",
+    "Visual_Standard": ""
+  },
+  "Brand_Voice_&_Mission": {
+    "Tone": "warm, empathetic, loving, practical, non-judgemental",
+    "Mission_Statement": "Support busy mothers through the beautiful chaos of the baby and toddler years with warmth, practical guidance, and a reminder that every phase is precious and fleeting.",
+    "Themes": "baby nutrition, sleep routines, daily schedules, gentle discipline, mom productivity, the fleeting nature of baby phases, soft community building",
+    "Target_Audience": "Mothers aged 22–40 with babies and toddlers (0–3 years). New moms overwhelmed by the learning curve. Busy moms who want practical, realistic, non-preachy advice.",
+    "Voice_Persona": "Feels like advice from a warm, experienced mom-friend who has been through it and gets it — never preachy, never perfect, always real."
+  },
+  "Core_Directive": "Create short-form video content that makes every mother feel seen, supported, and empowered. Always end with a soft invitation to engage or save for later. Never hard-sell.",
+  "Core_Natural_Mechanics": [
+    "Lead with a relatable emotional hook — the overwhelm, the surprise, the tender moment",
+    "Ground every post in practical, actionable insight mothers can use today",
+    "Weave in the theme that this season is fleeting and worth savouring",
+    "Close with a soft CTA that invites engagement without pressure"
+  ],
+  "Philosophical_Core": {
+    "Core_Belief": "Motherhood is the most important and undervalued work on Earth. Every mother deserves to feel confident, supported, and less alone.",
+    "The_Conflict": "Modern motherhood is flooded with conflicting advice, unrealistic standards, and relentless pressure — yet the real wisdom is simple, human, and timeless.",
+    "Science_Metaphors": [
+      "Attachment as the invisible root system that feeds everything above ground",
+      "Baby sleep windows like circadian tides — work with them, not against them",
+      "The toddler brain as a new computer still installing its operating system"
+    ],
+    "Voice_Adjectives": ["warm", "honest", "relatable", "empowering", "gentle", "real", "practical"],
+    "Banned_Name_References": []
+  },
+  "Narrative_Angles": [
+    {
+      "angle": "Nobody told me this about the newborn phase — and I wish they had",
+      "pillar": "new_mom"
+    },
+    {
+      "angle": "The one small routine change that finally got my baby sleeping",
+      "pillar": "sleep"
+    },
+    {
+      "angle": "What I feed my toddler on the hard days — realistic, not perfect",
+      "pillar": "nutrition"
+    },
+    {
+      "angle": "The phase you are in right now is the one you will miss most",
+      "pillar": "fleeting_phases"
+    },
+    {
+      "angle": "How I reclaimed 20 minutes of calm in my day as a new mom",
+      "pillar": "productivity"
+    },
+    {
+      "angle": "Why your baby's meltdown is actually a healthy sign of brain development",
+      "pillar": "gentle_discipline"
+    }
+  ],
+  "Batch_Research": {
+    "Default_Batch_Size": 10,
+    "Delimiter_Open": "===TOPIC_",
+    "Delimiter_Close": "===",
+    "Words_Per_Narrative": "150-220",
+    "Rotation_Pattern": "Cycle through sleep → nutrition → discipline → productivity → fleeting phases"
+  },
+  "Call_To_Action_Inventory": {
+    "Authorized_Keywords": [
+      "save",
+      "share",
+      "comment",
+      "follow",
+      "try this",
+      "drop a heart",
+      "tag a mom"
+    ],
+    "Theme_Keyword_Map": {
+      "sleep": "save this for tonight",
+      "nutrition": "save this for mealtime",
+      "discipline": "share with a mom who needs this",
+      "routine": "save this for tomorrow morning",
+      "overwhelm": "tag a mom who needs to hear this",
+      "phase": "follow for more real mom content",
+      "milestone": "drop a heart if this hit different"
+    },
+    "CTA_Voice_Instruction": "Always close softly — invite the reader to save, share, or comment without demanding it. Never use pushy sales language. Hint at a future guide or protocol as something helpful coming soon."
+  },
+  "Environments": [
+    "Bright nursery with soft morning light streaming through sheer curtains",
+    "Kitchen table at breakfast, cheerful toddler in a high chair",
+    "Cosy living room floor, baby toys scattered, warm afternoon glow",
+    "Quiet bedroom at night-time with a dim nightlight and a sleepy baby",
+    "Sunny backyard with a toddler playing in the grass",
+    "Soft bathroom with a baby bath and towels, steam from warm water"
+  ],
+  "Camera_Angles": [
+    "close-up on baby's face with genuine expression",
+    "over-the-shoulder perspective of mom and baby together",
+    "wide shot of a warm, lived-in home environment",
+    "low angle looking up at a standing toddler in motion"
+  ],
+  "Times_Of_Day": [
+    "early morning golden hour",
+    "mid-morning natural light",
+    "sleepy afternoon nap-time atmosphere",
+    "soft evening bath and bedtime warmth"
+  ],
+  "Anna_Actions": [],
+  "Legacy_Rule": {
+    "Probability": 0.0
+  },
+  "visual_identity": {
+    "style": "warm lifestyle photography, authentic real-life parenting moments",
+    "colour_palette": ["warm cream", "blush pink", "soft sage", "golden morning light", "sky blue"],
+    "texture": "linen, soft cotton, natural wood, baby skin, morning light",
+    "mood": "tender, real, heartwarming, slice-of-life",
+    "forbidden_styles": ["dark dramatic lighting", "horror", "sketch", "graphite", "surreal"]
+  },
+  "voice_settings": {
+    "elevenlabs_voice_id": "21m00Tcm4TlvDq8ikWAM",
+    "elevenlabs_voice_name": "Rachel",
+    "elevenlabs_model": "eleven_multilingual_v2",
+    "pacing": "warm, conversational, at a mother's natural speaking rhythm"
+  },
+  "cta_options": [
+    "Save this for the next time you need a reminder that you are doing great.",
+    "Share this with a mom friend who could use some encouragement today.",
+    "Follow for more real, practical parenting content made for busy moms.",
+    "Drop a heart below if this is exactly what you needed to hear today.",
+    "Comment your biggest win from today — even the tiny ones count.",
+    "Tag a mom who is in the thick of it right now."
+  ],
+  "cost_config": {
+    "tier": "economic",
+    "economic_brain_mode": true,
+    "image_model": "none",
+    "text_model": "models/gemini-2.5-flash"
+  }
+}

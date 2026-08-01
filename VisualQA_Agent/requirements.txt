@@ -1,0 +1,9 @@
+google-genai>=1.0.0
+chromadb>=0.5.0
+pillow>=10.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+rich>=13.0.0
+python-dotenv>=1.0.0
+# Optional: only needed when VISUALQA_USE_CHROMA=1 and ONNX MiniLM is used.
+# This agent defaults to JSON DNA store + hash embeddings (no onnxruntime).

@@ -8,6 +8,17 @@
 *.pem
 *.key
 
+# Google OAuth2 — client secrets and per-page YouTube access tokens
+client_secret*.json
+token_*.json
+oauth_token*.json
+credentials/tokens/
+youtube_token_*.json
+!credentials/tokens/.gitkeep
+
+# YouTube daily-quota pending-upload queue — runtime state, machine-local paths
+credentials/pending_youtube_uploads.json
+
 # Python artefacts
 __pycache__/
 *.py[cod]

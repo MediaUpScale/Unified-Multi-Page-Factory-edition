@@ -1,0 +1,35 @@
+{
+  "master_mei": {
+    "forbidden_tokens": [
+      "Gossip Goblin",
+      "fitness model",
+      "gym bro",
+      "tactical gear",
+      "gore",
+      "body horror",
+      "H.R. Giger",
+      "teens in bedrooms",
+      "smartphone desk",
+      "lifestyle soft-focus",
+      "pastel wellness",
+      "modern athletic wear"
+    ],
+    "mandatory_elements": [
+      "hybrid ancestral samurai-temple mysticism × cyberpunk dystopia",
+      "cinematic 8k photorealistic raw photography",
+      "detailed skin textures, octane render, volumetric lighting",
+      "Master Mei elder sage OR neon megacity neural-wire slaves",
+      "ancestral temple / misty mountain OR neon rain megacity",
+      "charcoal + neon cyan/magenta + cold steel + ember gold temple light"
+    ],
+    "lighting_style": "volumetric lighting, octane-render quality, dark atmospheric — cold moonlight / storm lightning / dawn rim light / warm torchfire, neon cyan/magenta accents against charcoal",
+    "target_audience_rules": "Western/US men seeking self-mastery; GOLDEN LOCK visuals = hybrid ancestral samurai-temple mysticism × cyberpunk dystopia from the 2026-07-24 successful reels — NEVER Gossip Goblin, gore, Giger, tactical gear, gym fitness, or bedroom teens",
+    "visual_concepts": {
+      "dopamine": "Cyberpunk slaves chained by glowing neon neural wires, bio-mechanical screens, neon rain megacity",
+      "training": "Master Mei ACTIVE in misty peaks / roaring waterfall / rain-soaked ancestral temple hardship conditioning",
+      "system": "Bleak dystopian megacity — neon towers, mass-control holograms, herds of wired citizens under rain",
+      "focus": "Master Mei ancestral-temple discipline OR neon megacity vs distant ancestral temple silhouette",
+      "business": "Ancient stone altar with holographic financial charts; molten gold on cyber-armor"
+    }
+  }
+}

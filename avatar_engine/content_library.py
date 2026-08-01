@@ -36,13 +36,18 @@ def build_library_metadata(
     topic: str,
     final_caption: str,
     imgbb_url: str,
+    video_path: str = "",
 ) -> dict[str, Any]:
-    """Lean library row: only the three fields needed by the scheduler."""
-    return {
+    """Library row with topic, caption, image URL, and local video path."""
+    entry: dict[str, Any] = {
         "topic": topic,
         "final_caption": final_caption,
         "imgbb_url": imgbb_url,
+        "timestamp": _utc_now_iso(),
     }
+    if video_path:
+        entry["video_path"] = video_path
+    return entry
 
 
 def dump_raw_research_to_log(

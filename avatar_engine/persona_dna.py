@@ -17,7 +17,7 @@ The module dynamically delegates to the correct page's master_dna.json.
 Page DNA files
 --------------
     pages_config/anna_protocol/master_dna.json  (active: holistic legacy)
-    pages_config/master_mei/master_dna.json     (blueprint: stoic discipline)
+    pages_config/master_mei/master_dna.json     (active SUPER: Protocol for Liberation)
     pages_config/wonder_feed/master_dna.json    (blueprint: emotional intelligence)
     pages_config/down_dirty/master_dna.json     (blueprint: matrix escape)
 
@@ -46,21 +46,69 @@ _candidate_dna = _ENGINE_ROOT / "pages_config" / _ACTIVE_PAGE / "master_dna.json
 # Fallback hierarchy:
 #   1. pages_config/{page}/master_dna.json   (primary — page-isolated)
 #   2. avatar_engine/master_dna.json         (legacy anna_protocol path)
+#   3. Minimal stub dict (reference-based pages that skip the LLM-image pipeline)
 if _candidate_dna.is_file():
-    _MASTER_DNA_PATH = _candidate_dna
+    _MASTER_DNA_PATH: Path | None = _candidate_dna
 elif _ACTIVE_PAGE == "anna_protocol":
     _MASTER_DNA_PATH = _ENGINE_ROOT / "avatar_engine" / "master_dna.json"
 else:
-    # Blueprint page whose master_dna.json hasn't been created yet.
-    raise FileNotFoundError(
-        f"persona_dna: master_dna.json not found for page '{_ACTIVE_PAGE}' "
-        f"at {_candidate_dna}. "
-        f"Create pages_config/{_ACTIVE_PAGE}/master_dna.json to activate this page."
+    # For reference-based pages (e.g. momma_circle REFERENCE_BASED_REELS) the
+    # image/avatar pipeline is not used, so persona_dna values are never read.
+    # Log a warning and fall back to a stub rather than crashing at import time.
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "persona_dna: master_dna.json not found for page '%s' at %s. "
+        "Using minimal stub DNA — reference-based pipeline will still function. "
+        "Create pages_config/%s/master_dna.json to enable full LLM persona features.",
+        _ACTIVE_PAGE, _candidate_dna, _ACTIVE_PAGE,
     )
+    _MASTER_DNA_PATH = None
 
 
 def _load() -> dict:
-    return json.loads(_MASTER_DNA_PATH.read_text(encoding="utf-8"))
+    if _MASTER_DNA_PATH is None:
+        # Return a minimal stub — all downstream consumers guard with .get() defaults.
+        _page_label = _ACTIVE_PAGE.replace("_", " ").title()
+        return {
+            "Subject": _page_label,
+            "display_name": _page_label,
+            "Physical_Appearance": {},
+            "Brand_Voice_&_Mission": {
+                "Tone": "warm, engaging, authentic",
+                "Mission_Statement": f"Create high-quality content for the {_page_label} channel.",
+                "Themes": "",
+                "Target_Audience": "Social media audience",
+                "Voice_Persona": f"The {_page_label} voice.",
+            },
+            "Core_Directive": f"Produce compelling content for {_page_label}.",
+            "Core_Natural_Mechanics": [],
+            "Philosophical_Core": {
+                "Core_Belief": "",
+                "The_Conflict": "",
+                "Science_Metaphors": [],
+                "Voice_Adjectives": ["warm", "authentic", "engaging"],
+                "Banned_Name_References": [],
+            },
+            "Narrative_Angles": [],
+            "Batch_Research": {
+                "Default_Batch_Size": 10,
+                "Delimiter_Open": "===TOPIC_",
+                "Delimiter_Close": "===",
+                "Words_Per_Narrative": "150-220",
+                "Rotation_Pattern": "",
+            },
+            "Call_To_Action_Inventory": {
+                "Authorized_Keywords": ["save", "share", "follow", "comment"],
+                "Theme_Keyword_Map": {},
+                "CTA_Voice_Instruction": "Invite the audience to engage warmly.",
+            },
+            "Environments": [],
+            "Camera_Angles": [],
+            "Times_Of_Day": [],
+            "Anna_Actions": [],
+            "Legacy_Rule": {"Probability": 0.0},
+        }
+    return json.loads(_MASTER_DNA_PATH.read_text(encoding="utf-8-sig"))
 
 
 _P = _load()

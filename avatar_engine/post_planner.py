@@ -5,7 +5,8 @@ PostPlanner -- Excel (.xlsx) bulk-import writer for the content pipeline.
 Column layout (3-column PostPlanner format):
   A: DATE / TIME  -- blank when PUBLISHING_SCHEDULE is None
   B: CAPTION      -- humanized caption with dynamic CTA woven in
-  C: MEDIA URL    -- ImgBB display_url for the generated image
+  C: MEDIA URL    -- B2 public .mp4 URL for video/reel posts;
+                     ImgBB display_url for static image posts
 
 CSV output is retired; all bulk outputs are .xlsx only.
 """

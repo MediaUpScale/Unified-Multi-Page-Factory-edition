@@ -55,7 +55,7 @@
   "cost_config": {
     "tier": "nano",
     "economic_brain_mode": true,
-    "image_model": "gemini-3.1-flash-image",
-    "text_model": "deepseek-chat"
+    "image_model": "models/gemini-3.1-flash-image",
+    "text_model": "models/gemini-2.5-flash"
   }
 }

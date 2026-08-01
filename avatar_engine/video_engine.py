@@ -40,7 +40,9 @@ _DEFAULT_DURATION: float = 30.0
 _ZOOM_START: float = 1.0
 _ZOOM_END: float = 1.12        # peak zoom at midpoint (12% in)
 _ZOOM_FLOOR: float = 1.04      # graceful zoom-out floor for the second half
-_AMBIENT_VOLUME: float = 0.22  # ambient sits quietly under narration
+_AMBIENT_VOLUME: float = 0.16  # cinematic bed 14–18% under narration
+_VOICE_VOLUME_GAIN: float = 1.20
+_AMBIENT_GAIN_MUL: float = 1.40
 _DEFAULT_FPS: int = 30
 
 
@@ -423,7 +425,7 @@ def compile_dynamic_reel(
     #   set_duration()→ with_duration()
     #   set_audio()   → with_audio()
     if voice_clip is not None:
-        audio_tracks.append(voice_clip.with_volume_scaled(1.0))
+        audio_tracks.append(voice_clip.with_volume_scaled(_VOICE_VOLUME_GAIN))
 
     if ambient_audio and Path(ambient_audio).is_file():
         try:
@@ -434,8 +436,9 @@ def compile_dynamic_reel(
                 amb_clip = concatenate_audioclips([amb_raw] * loops_needed).with_duration(duration)
             else:
                 amb_clip = amb_raw.with_duration(duration)
-            audio_tracks.append(amb_clip.with_volume_scaled(_AMBIENT_VOLUME))
-            logger.info("Ambient track mixed at %.0f%% volume", _AMBIENT_VOLUME * 100)
+            _amb_mix = min(1.0, _AMBIENT_VOLUME * _AMBIENT_GAIN_MUL)
+            audio_tracks.append(amb_clip.with_volume_scaled(_amb_mix))
+            logger.info("Ambient track mixed at %.0f%% volume", _amb_mix * 100)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Ambient audio load failed (%s) — skipping.", exc)
 

@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 _CANVAS_DIM_ALPHA: int = 150         # RGBA: (0, 0, 0, 150)
 
 _WATERMARK_ALPHA: float = 0.72       # logo opacity multiplier
-_WATERMARK_MAX_W_RATIO: float = 0.22 # logo ≤ 22 % of image width
-_WATERMARK_MARGIN_RATIO: float = 0.035
+_WATERMARK_MAX_W_RATIO: float = 0.38 # logo ≤ 38 % of image width (matches reel pixel spec)
+_WATERMARK_MARGIN_RATIO: float = 0.045  # safe bottom/edge gap scales with canvas height
 
 # Stroke / outline — 1 px thin, elegant, modern (not brutalist).
 # A single-pixel dark contour makes white text crisp and readable
@@ -147,7 +147,7 @@ def apply_text_overlay(
     logo_path: Path | None = None,
     output_path: Path | None = None,
     page_id: str | None = None,
-    logo_size_scale: float = 0.18,
+    logo_size_scale: float = 0.30,
     logo_position: str = "bottom_right",
     font_path_override: str | None = None,
     font_size_scale: float = 0.08,
@@ -288,6 +288,7 @@ def apply_text_overlay(
                 size_scale=logo_size_scale,
             )
 
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         final_rgba.convert("RGB").save(str(output_path), "PNG")
 
         try:
@@ -342,6 +343,7 @@ def apply_logo_watermark(
         if output_path is None:
             output_path = img_path.parent / (img_path.stem + "_wm.png")
         output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         base = Image.open(img_path).convert("RGBA")
         result = _composite_logo(base, logo_path, position=position, size_scale=size_scale)

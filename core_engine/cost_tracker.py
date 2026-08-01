@@ -11,6 +11,9 @@ Pricing constants
 -----------------
 All costs are approximations in USD; update ``_PRICE`` when provider pricing changes.
 
+Image generation uses Together AI ``FLUX.1-schnell`` at **$0.003 / image**
+(Gemini image pricing is deprecated / aliased to the same rate).
+
 Usage
 -----
     from core_engine.cost_tracker import CostTracker
@@ -40,14 +43,21 @@ logger = logging.getLogger(__name__)
 # Pricing table (USD per call/unit, approximate as of mid-2026)
 # ---------------------------------------------------------------------------
 _PRICE: dict[str, float] = {
-    # Image generation — per generation call
-    "image_nano":          0.000_3,   # Gemini Flash image (economic/nano tier)
-    "image_economic":      0.001_0,   # Gemini Flash standard
-    "image_premium":       0.006_0,   # Gemini Pro image
+    # Image generation — Together AI (dynamic by model)
+    "image_flux_schnell":  0.003_0,   # FLUX.1-schnell (default / cheapest)
+    "image_flux_dev":      0.025_0,   # FLUX.1-dev
+    "image_flux_pro":      0.050_0,   # FLUX.1-pro
+    "image_sdxl":          0.008_0,   # SDXL / Stable Diffusion XL
+    "image_nano":          0.003_0,   # alias → Schnell
+    "image_economic":      0.003_0,   # alias → Schnell
+    "image_premium":       0.025_0,   # alias → FLUX.1-dev
+    # Deprecated Gemini image keys (aliased; images no longer use Gemini)
+    "image_gemini_flash":  0.003_0,
+    "image_gemini_pro":    0.025_0,
 
     # Text / LLM — approximate per inference call (not per token for simplicity)
-    "text_deepseek":       0.000_2,   # DeepSeek Chat — cheapest tier
-    "text_gemini_flash":   0.000_4,   # Gemini 2.5 Flash text
+    "text_deepseek":       0.000_2,   # DeepSeek V4 — optional secondary fallback only
+    "text_gemini_flash":   0.000_4,   # Gemini 2.5 Flash text (PRIMARY default)
     "text_gemini_pro":     0.002_0,   # Gemini Pro text
     "text_claude_haiku":   0.001_0,   # Claude Haiku
     "text_claude_sonnet":  0.005_0,   # Claude Sonnet
@@ -57,16 +67,16 @@ _PRICE: dict[str, float] = {
     "sfx_per_call":        0.002_0,   # per SFX generation call
 }
 
-# Map cost_tier → default image model key
+# Map cost_tier → default image model key (all tiers → FLUX Schnell)
 _TIER_IMAGE_KEY: dict[str, str] = {
-    "nano":     "image_nano",
-    "economic": "image_economic",
-    "premium":  "image_premium",
+    "nano":     "image_flux_schnell",
+    "economic": "image_flux_schnell",
+    "premium":  "image_flux_schnell",
 }
 
 # Map cost_tier → default text model key
 _TIER_TEXT_KEY: dict[str, str] = {
-    "nano":     "text_deepseek",
+    "nano":     "text_gemini_flash",   # Gemini primary even on nano pages
     "economic": "text_gemini_flash",
     "premium":  "text_claude_sonnet",
 }
@@ -135,8 +145,8 @@ class CostTracker:
         count:
             Number of images generated (for multi-image sequence reels).
         """
-        key = model_key or _TIER_IMAGE_KEY.get(self.cost_tier, "image_economic")
-        price_per = _PRICE.get(key, _PRICE["image_economic"])
+        key = model_key or _TIER_IMAGE_KEY.get(self.cost_tier, "image_flux_schnell")
+        price_per = _PRICE.get(key, _PRICE["image_flux_schnell"])
         total = price_per * max(1, count)
         return self._add("image_generation", key, float(count), total)
 

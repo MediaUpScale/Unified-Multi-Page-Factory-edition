@@ -1,0 +1,6 @@
+chroma_db/
+outputs/
+logs/
+__pycache__/
+*.pyc
+.channel_cache

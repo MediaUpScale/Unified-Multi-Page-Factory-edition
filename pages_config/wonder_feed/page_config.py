@@ -50,7 +50,7 @@ STYLE_REFERENCE_DIR: str = "Fonts/Poppins/style_reference/"  # Aesthetic referen
 # LOGO_POSITION   : 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right'
 #                   'bottom_center' | 'top_center'
 # ---------------------------------------------------------------------------
-LOGO_SIZE_SCALE: float = 0.24       # Float: Percentage of canvas width (0.24 = 24%)
+LOGO_SIZE_SCALE: float = 0.38       # Float: Percentage of canvas width — raised to match reel scale
 LOGO_POSITION: str = "bottom_center"  # Options: 'top_left', 'top_right', 'bottom_left', 'bottom_right', 'bottom_center', 'top_center'
 
 # ---------------------------------------------------------------------------

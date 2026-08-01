@@ -1,7 +1,10 @@
 ﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import os
+import shutil
 import sys
+import re as _re
 from pathlib import Path
 
 
@@ -103,11 +106,13 @@ _load_dotenv(Path(__file__).resolve().parent / ".env", override=True, encoding="
 # ---------------------------------------------------------------------------
 
 import argparse
+import functools
 import logging
+import random
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
 from google import genai
 
@@ -123,7 +128,19 @@ from avatar_engine.caption_engine import (
 )
 from avatar_engine.b2_client import B2VideoUploader
 from avatar_engine.imgbb_client import upload_image_file_to_imgbb
+from avatar_engine.publishers.youtube_publisher import (
+    upload_short_from_envelope as _yt_upload_short,
+    build_credentials as _yt_build_credentials,
+    build_youtube_client as _yt_build_client,
+    verify_authorized_channel as _yt_verify_channel,
+    resolve_youtube_token_path as _yt_token_path,
+    get_or_create_playlist as _yt_get_or_create_playlist,  # noqa: F401 (available for future hooks)
+    YouTubeQuotaExceededError,
+    queue_pending_upload_from_envelope as _yt_queue_pending_upload,
+    resume_pending_youtube_uploads as _yt_resume_pending_queue,
+)
 from avatar_engine.audio_engine import (
+    apply_voice_loudnorm,
     generate_voiceover,
     generate_voiceover_with_timestamps,
     generate_ambient_track,
@@ -133,6 +150,8 @@ from core_engine.cost_tracker import CostTracker
 from core_engine.reel_sequence_engine import (
     compile_sequence_reel as _core_compile_sequence_reel,
     build_sequence_script_prompt as _build_sequence_script_prompt,
+    compute_dense_act_count as _compute_dense_act_count,
+    segment_script_into_act_snippets as _segment_script_into_act_snippets,
 )
 from avatar_engine.brand_composer import (
     apply_text_overlay as _brand_apply_text,
@@ -161,7 +180,13 @@ from avatar_engine.post_planner import (
 from avatar_engine.providers.gemini_utils import build_model_chain, get_latest_model
 from avatar_engine.persona_dna import contextual_cta_keyword
 from avatar_engine.providers.image_provider import GeminiImageAdapter
-from avatar_engine.subject_brain import imagine_subject, imagine_subject_instruction_preview
+from avatar_engine.subject_brain import imagine_subject, imagine_subject_instruction_preview, generate_bulk_topics
+from avatar_engine.batch_planner import (
+    BatchAngle,
+    BatchUniquenessGuard,
+    MAX_UNIQUENESS_RETRIES,
+    plan_angles_matrix,
+)
 from avatar_engine.text_utils import subject_slug
 from avatar_engine.visual_architect import VisualArchitect
 from page_loader import (
@@ -280,6 +305,63 @@ def _looks_like_upstream_api_failure(exc: BaseException) -> bool:
     return mod.startswith("httpx.") or exc.__class__.__name__.endswith("HTTPError")
 
 
+def _ensure_sequence_image(
+    img_path: "Path | str | None",
+    *,
+    fallback: "Path | str | None",
+    target_path: "Path | None" = None,
+) -> Path:
+    """
+    Guarantee a readable act image for MoviePy/PIL.
+
+    If *img_path* is missing/invalid, ``shutil.copy2`` the previous valid
+    *fallback* (Act 1 / base) into *target_path*. Never raises
+    ``FileNotFoundError`` — last resort is a solid-color placeholder so
+    API depletion never crashes compilation.
+    """
+    from PIL import Image as _PILImage
+
+    fb = Path(fallback) if fallback else None
+    candidate = Path(img_path) if img_path else None
+
+    if candidate is not None and candidate.is_file() and os.path.exists(candidate):
+        return candidate.resolve()
+
+    dest = Path(target_path) if target_path is not None else (
+        candidate if candidate is not None else (
+            (fb.parent / f"{fb.stem}_fallback{fb.suffix}") if fb is not None
+            else Path("outputs") / "seq_act_placeholder.png"
+        )
+    )
+    os.makedirs(os.path.dirname(str(dest)) or ".", exist_ok=True)
+
+    if fb is not None and fb.is_file() and os.path.exists(fb):
+        try:
+            if dest.resolve() != fb.resolve():
+                shutil.copy2(fb, dest)
+                _LOG.warning(
+                    "Act image missing (%s) — copied fallback %s → %s",
+                    candidate, fb.name, dest,
+                )
+            if dest.is_file() and os.path.exists(dest):
+                return dest.resolve()
+        except OSError as exc:
+            _LOG.warning("Fallback copy failed (%s) — using prior image path %s", exc, fb)
+            return fb.resolve()
+
+    # Blinded last resort — solid frame so MoviePy always completes
+    try:
+        _PILImage.new("RGB", (1080, 1920), (10, 10, 14)).save(str(dest))
+        _LOG.warning("Blinded placeholder act image written → %s", dest)
+        return dest.resolve()
+    except Exception as exc:  # noqa: BLE001
+        _LOG.error("Could not write placeholder act image (%s)", exc)
+        # Absolute last ditch: reuse any existing path we still hold
+        if fb is not None and fb.is_file():
+            return fb.resolve()
+        raise RuntimeError(f"Unable to guarantee sequence act image at {dest}") from exc
+
+
 def _color(text: str, code: str) -> str:
     if not getattr(sys.stdout, "isatty", lambda: False)():
         return text
@@ -301,6 +383,138 @@ def _emit_clean_api_error(exc: BaseException) -> None:
     print(dim + snippet + reset)
     print(dim + "Detail: see logs/run_*.log in this project." + reset)
     print()
+
+
+def _format_cost_block(
+    breakdown: dict,
+    post_format: str = "",
+    total_images: int = 0,
+    scheduled_publish: str = "",
+) -> str:
+    """
+    Render a formatted terminal cost-analysis block from a CostTracker snapshot.
+
+    Groups entries by operation category (research / image / voice) and
+    displays individual line costs plus a TOTAL ESTIMATED COST footer.
+
+    Args:
+        breakdown:    CostTracker snapshot dict.
+        post_format:  Page post format string (e.g. "SEQUENCE_REEL", "DYNAMIC_REEL").
+                      Controls the Visual Assets description and the $0.00 render line.
+        total_images: Authoritative image count from the envelope (overrides breakdown
+                      count when > 0).
+
+    Returns a multi-line string ready for ``print()``.
+    """
+    entries: list[dict] = breakdown.get("breakdown") or []
+    tier: str = breakdown.get("cost_tier", "—")
+
+    # Aggregate by operation family
+    research_cost = 0.0
+    research_chars = 0
+    research_model = "Gemini 2.5 Flash"
+
+    image_cost = 0.0
+    image_count = 0
+    image_model = "Nano Banana Pro"
+
+    voice_cost = 0.0
+    voice_chars = 0
+
+    for e in entries:
+        op = e.get("operation", "")
+        cost = float(e.get("cost_usd", 0.0))
+        units = float(e.get("units", 0.0))
+        mk = e.get("model_key", "")
+
+        if op == "text_generation":
+            research_cost += cost
+            research_chars += int(units)
+            if "deepseek" in mk:
+                research_model = "DeepSeek V4"
+            elif "flash" in mk:
+                research_model = "Gemini 2.5 Flash"
+            elif "pro" in mk:
+                research_model = "Gemini Pro"
+        elif op == "image_generation":
+            image_cost += cost
+            image_count += int(units)
+            if "nano" in mk or "banana" in mk:
+                image_model = "Nano Banana Pro"
+            elif "economic" in mk:
+                image_model = "Gemini Flash Lite"
+            elif "premium" in mk:
+                image_model = "Gemini Pro Image"
+        elif op == "audio_generation":
+            voice_cost += cost
+            voice_chars += int(units)
+
+    # Use the envelope's authoritative image count when available.
+    # Prefer the larger of tracker units vs envelope so sequence B-roll is never under-counted.
+    display_img_count = max(int(total_images or 0), int(image_count or 0))
+
+    # ── Visual Assets description ───────────────────────────────────────────
+    _fmt = (post_format or "").upper()
+    _is_reel = _fmt in ("SEQUENCE_REEL", "DYNAMIC_REEL", "HYBRID_VIDEO")
+    # DYNAMIC_REEL + multi-image = sequence reel (master_mei / ancient_knowledge)
+    _is_sequence = _fmt == "SEQUENCE_REEL" or (_is_reel and display_img_count >= 2)
+
+    if _is_sequence:
+        _asset_desc = (
+            f"{display_img_count} AI Base Image{'s' if display_img_count != 1 else ''}"
+            " \u2192 Compiled to 1 MP4 Sequence Reel"
+        )
+    elif _fmt in ("DYNAMIC_REEL", "HYBRID_VIDEO"):
+        _asset_desc = "1 AI Base Image \u2192 Animated to 1 MP4 Video"
+    elif _fmt == "CAROUSEL":
+        _asset_desc = (
+            f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Carousel Slides)"
+        )
+    else:
+        _asset_desc = (
+            f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Static Post)"
+        )
+
+    total = research_cost + image_cost + voice_cost
+    sep  = "+" + "=" * 62 + "+"
+    thin = "  " + "-" * 60
+
+    lines = [
+        "",
+        sep,
+        f"| {'COST ANALYSIS SUMMARY':<60} |",
+        f"| {'Tier: ' + tier:<60} |",
+        sep,
+        f"  {'Visual Assets:'.ljust(36)} {_asset_desc}",
+        "",
+        f"  - Research ({research_model}):".ljust(38) +
+            f"${research_cost:.4f}  ({research_chars:,} chars)",
+        f"  - Image Gen ({image_model}):".ljust(38) +
+            f"${image_cost:.4f}  ({display_img_count} generation{'s' if display_img_count != 1 else ''})",
+        f"  - Voice Gen (ElevenLabs):".ljust(38) +
+            f"${voice_cost:.4f}  ({voice_chars:,} characters)",
+    ]
+
+    # Local render operations carry no API cost — list explicitly so the user
+    # understands why video compilation doesn't appear in the API bill.
+    if _is_reel:
+        lines.append(
+            f"  - Video Render (MoviePy/FFmpeg):".ljust(38) +
+            "$0.0000  (local, no API charge)"
+        )
+
+    if scheduled_publish:
+        lines.append(
+            f"  - Scheduled Publish (YouTube):".ljust(38) +
+            f"{scheduled_publish} (Shorts)"
+        )
+
+    lines += [
+        thin,
+        f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}",
+        sep,
+    ]
+    return "\n".join(lines)
 
 
 def _print_production_summary(
@@ -346,6 +560,10 @@ def _print_production_summary(
         if mode == "researcher_fallback":
             print(_color("  Note: Caption is raw researcher output (humanizer failed).", yellow))
         print(_color("  Image path:", green), img or "(skipped)")
+        carousel_slides = row.get("carousel_image_paths") or []
+        if carousel_slides:
+            for _sidx, _spath in enumerate(carousel_slides, 1):
+                print(_color(f"  Slide {_sidx:02d}:", green), Path(_spath).name if _spath else "(missing)")
         if video:
             print(_color("  Video path:", green), video)
         if bb:
@@ -360,29 +578,55 @@ def _print_production_summary(
     if isinstance(first, dict) and first.get("library_json_relative"):
         lib_hint = str(first["library_json_relative"])
     print(_color("Records:", green), f"bulk workbook `{xlsx_rel}`" + (f"; library `{lib_hint}`" if lib_hint else ""))
+
+    # Metadata library — always announce its location so the user knows where
+    # all generated titles, descriptions, and video paths are persisted.
+    _lib_path = app_config.CONTENT_LIBRARY_PATH
+    _lib_rel = path_under_engine(app_config.ENGINE_ROOT, _lib_path)
+    print(_color("Metadata library:", cyan), str(_lib_path.resolve()))
+    print(_color("  (relative):", cyan), _lib_rel)
+
+    # ── COST ANALYSIS ──────────────────────────────────────────────────────
+    # Prefer envelope-level final snapshot (has full multi-variant totals).
+    # Fall back to first row's per-variant breakdown for single-variant runs.
+    _cost_snap = (
+        envelope.get("final_cost_breakdown")
+        or (rows[0] if rows else {}).get("cost_breakdown")
+    )
+    _total_imgs = envelope.get("total_images_generated") or 0
+    # Collect the earliest scheduled publish time from the uploaded rows (if any).
+    _sched_times = [r["youtube_scheduled_at"] for r in rows if r.get("youtube_scheduled_at")]
+    _sched_display = _sched_times[0] if _sched_times else ""
+    if _cost_snap:
+        print(_format_cost_block(
+            _cost_snap,
+            post_format=page_ctx.post_format if page_ctx else "",
+            total_images=_total_imgs,
+            scheduled_publish=_sched_display,
+        ))
     print()
 
 
 def _snapshot_verified_models(*, economic_brain_mode: bool) -> PlannedModels:
-    """Determine first-hop model IDs (matches CaptionEngine/GeminiImageAdapter chain heads)."""
+    """Determine first-hop model IDs via cost-first Model Router."""
+    from avatar_engine.providers.model_router import image_model, text_model
+    from avatar_engine.providers.together_image import FLUX_SCHNELL_MODEL
+
     gem_key = app_config.GEMINI_API_KEY
+    text_route = text_model(
+        task="caption" if economic_brain_mode else "research",
+        log=True,
+    )
+    img_route = image_model(task="image", log=True)
     humanizer = (
-        f"Gemini `{app_config.GEMINI_ECONOMIC_BRAIN_MODEL}` (captions + research)"
+        f"Gemini `{text_route.model_id}` (captions + research) [{text_route.tier}]"
         if economic_brain_mode
-        else f"Anthropic Claude `{app_config.CLAUDE_MODEL}`"
+        else f"Anthropic Claude `{app_config.CLAUDE_MODEL}` / Gemini `{text_route.model_id}` [{text_route.tier}]"
     )
-    # Economic mode strictly forces the cheaper image model tier.
-    img_pref = (
-        app_config.GEMINI_ECONOMIC_IMAGE_MODEL
-        if economic_brain_mode
-        else app_config.GEMINI_IMAGE_MODEL
-    )
+    # Images always Together FLUX Schnell
+    img_pref = FLUX_SCHNELL_MODEL
+    research_pref = text_route.model_id
     if not gem_key:
-        research_pref = (
-            app_config.GEMINI_ECONOMIC_BRAIN_MODEL
-            if economic_brain_mode
-            else app_config.GEMINI_RESEARCH_MODEL
-        )
         return PlannedModels(
             image_primary_id=img_pref,
             research_primary_id=research_pref,
@@ -390,38 +634,20 @@ def _snapshot_verified_models(*, economic_brain_mode: bool) -> PlannedModels:
         )
 
     client = genai.Client(api_key=gem_key)
-    img_chain = build_model_chain(client, capability_type="image", preferred=img_pref)
-    research_pref = (
-        app_config.GEMINI_ECONOMIC_BRAIN_MODEL
-        if economic_brain_mode
-        else app_config.GEMINI_RESEARCH_MODEL
+    research_chain = build_model_chain(
+        client, capability_type="text", preferred=research_pref
     )
-    txt_chain = build_model_chain(client, capability_type="text", preferred=research_pref)
-
-    verified_image   = img_chain[0] if img_chain else img_pref
-    verified_research = txt_chain[0]
-
-    discovery_img = get_latest_model(client, kind="image")
-    discovery_txt = get_latest_model(client, kind="text")
+    if text_route.tier != "premium":
+        research_chain = [
+            m for m in research_chain if "pro" not in m.lower() or "flash" in m.lower()
+        ] or [research_pref]
     _LOG.info(
-        "Gemini discovery | strongest image SKU (or safe default) = `%s`; text = `%s`",
-        discovery_img,
-        discovery_txt,
+        "Image backend locked | Together AI `%s` (steps=4, ≈$0.003/img) | router_tier=%s",
+        img_pref, img_route.tier,
     )
-
-    # In economic mode hard-clamp to the configured cheap image model regardless
-    # of what the discovery chain promoted.
-    if economic_brain_mode:
-        verified_image = img_pref
-        _LOG.info(
-            "Economic mode | image model clamped to `%s` (ignoring premium chain head `%s`)",
-            img_pref,
-            img_chain[0] if img_chain else "n/a",
-        )
-
     return PlannedModels(
-        image_primary_id=verified_image,
-        research_primary_id=verified_research,
+        image_primary_id=img_pref,
+        research_primary_id=(research_chain[0] if research_chain else research_pref),
         humanizer_summary=humanizer,
     )
 
@@ -523,6 +749,496 @@ def _maybe_convert_to_video(
         return ""
 
 
+
+# ---------------------------------------------------------------------------
+# Topic entity extractor — maps subject text to specific visual context hints
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Script word trimmer — CTA-preserving pre-TTS truncation
+# ---------------------------------------------------------------------------
+
+def _trim_script_to_word_limit(script: str, max_words: int = 140) -> str:
+    """Trim a voiceover script to *max_words* while always preserving:
+      • the opening hook (first sentence)
+      • the final CTA sentence
+
+    [ACT N] markers, persona audio tags, and SSML breaks are excluded from the
+    word count so they don't inflate the budget estimate.
+    Sentences are removed from the *middle* (furthest from start and end) until
+    the count falls at or below the limit.
+    Returns the original script unchanged when within budget.
+    """
+    # Strip act markers + audio behavior / persona tags + SSML for word-count only.
+    _tag_pat = (
+        r'\[(?:ACT\s*\d+|cackles?|chuckles?|cold\s*chuckle|arrogant\s*scoff|'
+        r'deep\s*subtle\s*laugh|dry\s*laugh)\]'
+        r'|<\s*break\s+[^>]*>'
+    )
+    _clean = _re.sub(_tag_pat, '', script, flags=_re.IGNORECASE)
+    words = _clean.split()
+    if len(words) <= max_words:
+        return script
+
+    # Split into individual sentences preserving trailing whitespace context.
+    sentences = _re.split(r'(?<=[.!?])\s+', script.strip())
+    if len(sentences) <= 2:
+        # Can't trim further without destroying structure — hard truncate at word boundary.
+        return " ".join(words[:max_words])
+
+    # Iteratively drop the middle sentence until budget is met.
+    result = list(sentences)
+    while True:
+        _test = _re.sub(_tag_pat, '', " ".join(result), flags=_re.IGNORECASE)
+        if len(_test.split()) <= max_words or len(result) <= 2:
+            break
+        mid = len(result) // 2
+        result.pop(mid)
+
+    trimmed = " ".join(result)
+    _LOG_TRIM = __import__("logging").getLogger(__name__)
+    _LOG_TRIM.info(
+        "Script trimmed: %d → %d words (max=%d, sentences=%d→%d)",
+        len(words),
+        len(_re.sub(_tag_pat, '', trimmed, flags=_re.IGNORECASE).split()),
+        max_words, len(sentences), len(result),
+    )
+    return trimmed
+
+
+def _filter_audio_tag_timings(
+    word_timings: list[tuple[str, float, float]],
+) -> list[tuple[str, float, float]]:
+    """Drop ElevenLabs behavior-tag / SSML tokens from subtitle timings."""
+    if not word_timings:
+        return word_timings
+    _tag_re = _re.compile(
+        r'^\[?(?:cackles?|chuckles?|cold\s*chuckle|arrogant\s*scoff|'
+        r'deep\s*subtle\s*laugh|dry\s*laugh|laughs?|sighs?|whispers?|'
+        r'pause|beat|silence)\]?$',
+        _re.IGNORECASE,
+    )
+    _break_re = _re.compile(r'break|time=|^\d+(\.\d+)?s?$', _re.IGNORECASE)
+    out: list[tuple[str, float, float]] = []
+    for w, s, e in word_timings:
+        if not w:
+            continue
+        tok = w.strip(" .,;:!?<>/\"'")
+        if _tag_re.match(tok) or _break_re.match(tok) or tok.lower() in {"<", ">", "/", "s"}:
+            continue
+        out.append((w, s, e))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Sequential CTA audio stitcher
+# ---------------------------------------------------------------------------
+
+def _stitch_audio_sequential(
+    narration_path: "Path",
+    cta_path: "Path | None",
+    output_path: "Path",
+    silence_s: float = 1.0,
+) -> "Path":
+    """Concatenate *narration_path* + *silence_s* of silence + *cta_path* into
+    *output_path* and return the combined file path.
+
+    The 1-second gap prevents the CTA from overlapping or bleeding into the
+    narration.  Returns *narration_path* unchanged if *cta_path* is absent or
+    MoviePy import fails, so the pipeline degrades gracefully.
+    """
+    if cta_path is None or not cta_path.is_file():
+        _LOG.warning("CTA audio not found — using narration-only voice track.")
+        return narration_path
+    try:
+        from moviepy import AudioFileClip  # type: ignore[import]
+        from moviepy import concatenate_audioclips  # type: ignore[import]
+        from moviepy.audio.AudioClip import AudioArrayClip  # type: ignore[import]
+        import numpy as _np_stitch
+
+        narr = AudioFileClip(str(narration_path))
+        cta  = AudioFileClip(str(cta_path))
+        _sr  = 44100
+        _sil = _np_stitch.zeros((int(_sr * silence_s), 2), dtype=_np_stitch.float32)
+        silence = AudioArrayClip(_sil, fps=_sr)
+
+        combined = concatenate_audioclips([narr, silence, cta])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        combined.write_audiofile(str(output_path), fps=_sr, logger=None)
+        _LOG.info(
+            "Audio stitched | narr=%.1fs + %.1fsgap + cta=%.1fs → total=%.1fs → %s",
+            narr.duration, silence_s, cta.duration, combined.duration, output_path.name,
+        )
+        for _c in (narr, cta, silence, combined):
+            try:
+                _c.close()
+            except Exception:
+                pass
+        return output_path
+    except Exception as _exc:
+        _LOG.warning("Audio stitch failed (%s) — falling back to narration-only track.", _exc)
+        return narration_path
+
+
+# Known geographic/visual anchors mapped to camera-perspective image directives.
+_GEO_ANCHORS: list[tuple[tuple[str, ...], str]] = [
+    (("nazca", "geoglyph", "nazca lines"),
+     "aerial top-down view, Nazca desert Peru, geoglyph sand line drawings of {subject}, "
+     "perfectly visible from high altitude, pale sand surface, minimal colour contrast"),
+    (("pyramid", "giza", "great pyramid", "khufu"),
+     "wide aerial panoramic view, Great Pyramid complex Giza Plateau Egypt, "
+     "dramatic golden sunset sky, vast desert landscape"),
+    (("sphinx",),
+     "wide-angle frontal view, Great Sphinx of Giza, Giza Plateau Egypt, "
+     "golden hour light, desert panorama"),
+    (("baalbek", "trilithon"),
+     "wide-angle view, Baalbek temple complex Lebanon, "
+     "massive stone megaliths, dramatic sky"),
+    (("easter island", "moai", "rapa nui"),
+     "wide overhead view, Easter Island moai stone statues, "
+     "Pacific Ocean coastline visible, dramatic sky"),
+    (("stonehenge",),
+     "wide aerial view, Stonehenge stone circle, Salisbury Plain England, "
+     "golden light, panoramic landscape"),
+    (("gobekli", "göbekli", "gobeklitepe"),
+     "wide aerial view, Göbekli Tepe excavation site, southeastern Turkey, "
+     "ancient stone circles visible from above"),
+    (("puma punku", "pumapunku", "tiahuanaco", "tiwanaku"),
+     "wide panoramic view, Puma Punku megalithic site, Bolivian Altiplano, "
+     "precisely cut stone blocks, mountain backdrop"),
+    (("atlantis",),
+     "wide cinematic view, submerged ancient city ruins underwater, "
+     "ethereal blue-green light, vast underwater cityscape"),
+    (("tartaria", "tartarian"),
+     "wide aerial view, grand baroque stone architecture, "
+     "vast ancient cityscape, dramatic sky"),
+    (("sumerian", "sumer", "mesopotamia", "ur"),
+     "wide-angle panoramic view, ancient Mesopotamian city, "
+     "ziggurat visible, vast plain landscape"),
+    (("angkor", "angkor wat"),
+     "wide aerial view, Angkor Wat temple complex Cambodia, "
+     "jungle canopy surrounding, golden sunrise reflection in moat"),
+    (("machu picchu",),
+     "wide aerial view, Machu Picchu Inca citadel, Peruvian Andes, "
+     "mountain mist, terraced stone architecture"),
+    (("teotihuacan", "teotihuacán"),
+     "wide aerial view, Teotihuacan Pyramid of the Sun Mexico, "
+     "Avenue of the Dead alignment, vast site scale"),
+    # ── Artifact / thematic anchors ──────────────────────────────────────────
+    (("crystal skull", "crystal skulls"),
+     "dramatic wide studio or cave environment, illuminated crystal skull artefact, "
+     "volumetric light refraction through quartz crystal, centrally framed, dark background"),
+    (("ark of the covenant", "ark of covenant", "holy ark"),
+     "wide interior shot, golden Ark of the Covenant in ancient stone chamber, "
+     "dramatic divine light beams from above, awe-inspiring scale"),
+    (("shroud of turin", "shroud"),
+     "wide flat-lay view, ancient linen shroud with faint human image, "
+     "soft warm light, archaeological context"),
+    (("antikythera", "antikythera mechanism"),
+     "wide flat-lay view, Antikythera Mechanism corroded bronze gears on stone surface, "
+     "macro-wide shot showing full device, dramatic side lighting"),
+    (("lost technology", "precision finish", "machined", "laser cut"),
+     "wide archaeological shot, precisely machined ancient stone block or artefact, "
+     "impossible geometric tolerances, dramatic raking side light revealing precision"),
+    (("oopart", "out of place artefact", "out-of-place artifact", "oopartz"),
+     "wide display or archaeological context, mysterious out-of-place ancient object, "
+     "dramatic directional light, academic museum-style composition"),
+    (("ancient astronaut", "ancient aliens", "extraterrestrial", "alien contact"),
+     "wide cinematic illustration, ancient stone carvings depicting humanoid figures "
+     "in space suits or flying craft, full-panel view, amber torchlight"),
+    (("lost city", "sunken city", "underwater ruins"),
+     "wide underwater cinematic view, submerged ancient city ruins, "
+     "blue-green volumetric light shafts from surface above, vast architectural scale"),
+    (("book of enoch", "enoch", "watchers", "nephilim"),
+     "wide dramatic illustration, ancient stone manuscripts and giant humanoid figures, "
+     "atmospheric biblical lighting, full-scene composition"),
+    (("free energy", "tesla", "ancient electricity", "baghdad battery", "vimana"),
+     "wide contextual museum shot, ancient device or artefact suggesting advanced technology, "
+     "illuminated display, dramatic dramatic directional lighting"),
+]
+
+
+def _extract_topic_visual_entities(subject: str) -> str:
+    """
+    Parse the topic/subject string and return a camera-perspective directive
+    string grounding image generation in the specific geographic/visual entity
+    named.  Falls back to extracted proper nouns when no known anchor matches.
+    """
+    lower = subject.lower()
+    for keywords, directive_template in _GEO_ANCHORS:
+        if any(kw in lower for kw in keywords):
+            return directive_template.replace("{subject}", subject)
+    # Generic fallback: extract capitalised phrases as visual subjects
+    candidates = _re.findall(
+        r'\b([A-Z][A-Za-z\'-]+(?:\s+[A-Z][A-Za-z\'-]+){0,3})\b', subject
+    )
+    _stopwords = {
+        "The", "A", "An", "In", "At", "On", "But", "And", "Or",
+        "Some", "Ancient", "This", "That", "These", "Those",
+        "What", "How", "Why", "When", "Where", "Who",
+        "Today", "Here", "Now", "Then", "Its", "Our", "Their",
+    }
+    seen: set[str] = set()
+    result: list[str] = []
+    for c in candidates:
+        cl = c.lower()
+        if c not in _stopwords and cl not in seen and len(c) > 3:
+            seen.add(cl)
+            result.append(c)
+    return ", ".join(result[:4]) if result else ""
+
+
+# ---------------------------------------------------------------------------
+# Master Mei Visual Engine — delegates to avatar_engine.mei_visual
+# ---------------------------------------------------------------------------
+
+from avatar_engine.mei_visual import (  # noqa: E402
+    MEI_DNA_FALLBACK as _MEI_DNA_FALLBACK,
+    _BAN_PLAIN as _MEI_BAN_PLAIN_MODERN,
+    _PHOTOREAL as _MEI_PHOTOREAL,
+    assert_avatar_exists as _assert_mei_avatar,
+    build_master_mei_script_act_prompts as _mei_build_act_prompts,
+    classify_mei_visual_theme as _classify_mei_visual_theme,
+    resolve_master_mei_avatar_path as _resolve_mei_avatar_path,
+)
+
+
+def _strip_audio_behavior_tags(text: str) -> str:
+    """Remove bracketed emotional tags / SSML so ElevenLabs never reads them aloud."""
+    if not text:
+        return ""
+    clean = _re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", text, flags=_re.IGNORECASE)
+    clean = _re.sub(r"<[^>]+>", " ", clean)
+    clean = _re.sub(
+        r"\[(?:cackles?|chuckles?|cold\s*chuckle|arrogant\s*scoff|"
+        r"deep\s*subtle\s*laugh|dry\s*laugh|laughs?|giggles?|sighs?|"
+        r"whispers?|pause|beat|silence)[^\]]*\]",
+        " ... ",
+        clean,
+        flags=_re.IGNORECASE,
+    )
+    clean = _re.sub(r"\s{2,}", " ", clean).strip()
+    return clean
+
+
+def _track_adapter_image(
+    cost_tracker: "CostTracker | None",
+    adapter: "Any",
+) -> int:
+    """
+    Record image API cost using the adapter's real call count (incl. retries).
+    Returns the number of API hits charged. Quiet during batch loops.
+    """
+    n = max(1, int(getattr(adapter, "last_api_call_count", 1) or 1))
+    if cost_tracker is not None:
+        _cost_key = getattr(adapter, "last_cost_key", None) or "image_flux_schnell"
+        cost_tracker.track_image(model_key=_cost_key, count=n)
+        _LOG.debug(
+            "CostTracker | image hit key=%s n=%d",
+            _cost_key, n,
+        )
+    return n
+
+
+def _run_acts_parallel(
+    jobs: "dict[int, Any]",
+    *,
+    max_workers: int = 5,
+) -> "dict[int, Any]":
+    """
+    Fire one zero-arg callable per act (``jobs[i]``) concurrently via
+    ``ThreadPoolExecutor(max_workers=5)``.
+
+    This only parallelizes Python-side orchestration / network-IO wait time
+    between act image requests. The Together AI adapter's own global
+    ``threading.Semaphore(1)`` rate limiter (see ``together_image.py``) still
+    forces the underlying HTTP calls to Together AI to execute strictly
+    sequentially with a micro-delay — so this ThreadPool improves throughput
+    without reopening the 429 rate-limit storm the semaphore was built to
+    prevent.
+
+    Returns ``{act_index: result_or_exception}`` — never raises; failures are
+    captured per-act so the caller can apply its own blinded-fallback logic.
+    """
+    results: dict[int, Any] = {}
+    if not jobs:
+        return results
+    workers = max(1, min(max_workers, len(jobs)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(fn): idx for idx, fn in jobs.items()}
+        for fut in as_completed(futures):
+            idx = futures[fut]
+            try:
+                results[idx] = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                results[idx] = exc
+    return results
+
+
+def _print_video_cost_summary(
+    cost_tracker: "CostTracker | None",
+    *,
+    image_count: int,
+    image_model_label: str = "FLUX Schnell",
+) -> None:
+    """One clean console line after a video finishes rendering."""
+    from avatar_engine.providers.model_router import format_video_cost_summary
+
+    if cost_tracker is None:
+        img_cost = 0.003 * max(0, image_count)
+        total = img_cost
+    else:
+        snap = cost_tracker.to_dict()
+        total = float(snap.get("total_estimated_usd") or 0.0)
+        img_cost = 0.0
+        for entry in snap.get("breakdown") or []:
+            if str(entry.get("operation") or "") == "image_generation":
+                img_cost += float(entry.get("cost_usd") or 0.0)
+        if img_cost <= 0 and image_count > 0:
+            img_cost = 0.003 * image_count
+    line = format_video_cost_summary(
+        image_count=image_count,
+        image_model_label=image_model_label,
+        image_cost_usd=img_cost,
+        pipeline_cost_usd=total,
+    )
+    print(line, flush=True)
+    _LOG.info(line)
+
+
+def _split_script_into_act_chunks(script: str, n_acts: int) -> list[str]:
+    """Split narration into n_acts sequential ~3–4 s spoken snippets (chronological)."""
+    return _segment_script_into_act_snippets(script or "", n_acts)
+
+
+def _build_master_mei_script_act_prompts(
+    *,
+    subject: str,
+    script: str,
+    n_acts: int,
+    base_style: str,
+    visual_dna: str,
+    hook_env: str,
+    master_style_anchor: "str | None" = None,
+    reference_folder: "str | Path | None" = None,
+    use_vision_style: bool = False,
+) -> tuple[list[str], set[int], list[str], list[str]]:
+    """
+    Build N image prompts for Master Mei sequence reels.
+
+    Returns ``(prompts, mei_appearance_slots, roles, negatives)``.
+    Avatar.png attaches ONLY for ROLE A (Master) slots — never globally.
+    """
+    prompts, slots, roles, negatives = _mei_build_act_prompts(
+        subject=subject,
+        script=script,
+        n_acts=n_acts,
+        base_style=base_style,
+        visual_dna=visual_dna or _MEI_DNA_FALLBACK,
+        hook_env=hook_env,
+        segment_fn=_split_script_into_act_chunks,
+        master_style_anchor=master_style_anchor,
+        reference_folder=reference_folder,
+        use_vision_style=use_vision_style,
+    )
+    return prompts, slots, roles, negatives
+
+
+# ---------------------------------------------------------------------------
+# Cinematic act-descriptor generator for multi-image sequence reels
+# ---------------------------------------------------------------------------
+
+def _build_reel_act_descriptors(subject: str, n_acts: int, page_id: str = "") -> list[str]:
+    """Return n_acts scene-description strings (one per act, index 0 = Act 1).
+
+    All shots use WIDE, AERIAL, or PANORAMIC framing so primary subjects remain
+    recognisable and centrally composed within social-media safe zones.
+    Extreme / ground-level close-ups are intentionally avoided; medium-wide
+    framing is the minimum for any detail shot.
+    """
+    # master_mei uses _build_master_mei_script_act_prompts() for dynamic matching.
+    if (page_id or "").lower() == "master_mei":
+        return [
+            f"MASTER MEI ACT {i + 1} — {subject}."
+            for i in range(n_acts)
+        ]
+
+    _ARC: list[str] = [
+        # 0 — Act 1: wide establishing anchor (used as fallback descriptor only)
+        (
+            f"WIDE ESTABLISHING PANORAMA — {subject}. "
+            "Iconic ancient monument fully visible, wide aerial or eye-level panoramic view. "
+            "Rim-lit stone edges, volumetric light shafts, deep atmospheric haze. "
+            "Primary subject centrally framed, full-bleed, no borders, no frames."
+        ),
+        # 1 — Act 2: wide approach shot — site context visible
+        (
+            f"WIDE APPROACH SHOT — {subject}. "
+            "Broad view of the ancient site as the camera advances — full structure visible, "
+            "surrounding landscape and dramatic sky in frame. Amber rim light on stone edges, "
+            "sense of impossible ancient scale. Full-bleed, no borders."
+        ),
+        # 2 — Act 3: medium-wide detail shot (NOT extreme close-up)
+        (
+            f"MEDIUM-WIDE CONSTRUCTION DETAIL — {subject}. "
+            "Mid-range shot showing an anomalous section of the site: perfectly fitted stones, "
+            "impossible precision cuts, or unexplained engineering features — with enough "
+            "surrounding context to establish scale. Warm amber sidelight, no borders, full-bleed."
+        ),
+        # 3 — Act 4: wide interior — full chamber visible
+        (
+            f"WIDE INTERIOR CHAMBER — {subject}. "
+            "Full-room view of a deep ancient chamber — carved walls, ceiling height, and "
+            "floor all visible. Volumetric cold light shaft from above. "
+            "Artefacts in situ, vast spatial depth. No borders, full-bleed."
+        ),
+        # 4 — Act 5: wide inscription wall — full panel visible
+        (
+            f"WIDE INSCRIPTION WALL — {subject}. "
+            "Full-panel view of an ancient wall or monument face covered in glyphs, "
+            "star maps, or mathematical geometry — the entire composition visible in frame. "
+            "Amber fire illumination, deep shadow. No borders, full-bleed."
+        ),
+        # 5 — Act 6: wide contextual artefact in situ
+        (
+            f"WIDE CONTEXTUAL ARTEFACT SHOT — {subject}. "
+            "An alien or advanced object placed naturally within the ancient environment, "
+            "full surroundings visible to convey impossible era-context. "
+            "Dramatic single-source directional light, wide framing. Full-bleed."
+        ),
+        # 6 — Act 7: human scale comparison
+        (
+            f"HUMAN SCALE COMPARISON — {subject}. "
+            "Wide shot: lone human silhouette dwarfed by a towering megalithic structure. "
+            "Emphasises impossible construction scale. Rim-lit figure against dramatic sky. "
+            "Centrally composed, full-bleed."
+        ),
+        # 7 — Act 8: wide night stellar alignment
+        (
+            f"WIDE NIGHT STELLAR ALIGNMENT — {subject}. "
+            "Exterior wide shot at night — full ancient structure perfectly aligned with "
+            "a constellation or celestial arc overhead. Deep indigo sky, Milky Way visible, "
+            "cool moonlit stone edges. Cosmic and vast. Full-bleed."
+        ),
+        # 8 — Act 9: high-altitude aerial geometry
+        (
+            f"HIGH-ALTITUDE AERIAL GEOMETRY — {subject}. "
+            "Top-down or near-vertical aerial view exposing perfect geometric layout, "
+            "alignment grid, or civilisation-scale construction pattern. "
+            "Golden-hour light, epic landscape. Full-bleed."
+        ),
+        # 9 — Act 10: sweeping panoramic revelation
+        (
+            f"SWEEPING PANORAMIC REVELATION — {subject}. "
+            "Final wide cinematic panorama — the full mystery in one frame. "
+            "Amber dust haze, otherworldly volumetric light, dramatic rim lighting, "
+            "hauntingly unresolved. Epic full-bleed, no borders, no frames."
+        ),
+    ]
+    # Build descriptor list for all n_acts; cycle if more than len(_ARC)
+    return [_ARC[i % len(_ARC)] for i in range(n_acts)]
+
+
 # ---------------------------------------------------------------------------
 # Per-variant worker — runs in a ThreadPoolExecutor for bulk production
 # ---------------------------------------------------------------------------
@@ -559,6 +1275,10 @@ def _produce_variant_worker(
     hooks_cache_lock: "threading.Lock | None" = None,
     hooks_cache_path: "Path | None" = None,
     cost_tracker: "CostTracker | None" = None,
+    per_variant_topics: "list[str] | None" = None,
+    batch_angles: "list[BatchAngle] | None" = None,
+    uniqueness_guard: "BatchUniquenessGuard | None" = None,
+    global_topic_dna: str = "",
 ) -> "dict[str, Any]":
     """
     Produce one complete post variant inside a worker thread.
@@ -575,6 +1295,41 @@ def _produce_variant_worker(
     """
     stem = f"{slug}_v{variant + 1:02d}"
     variation_index = variant
+
+    # ── Batch Angle injection (qty > 1) — Global DNA + unique sub-angle ─────
+    _batch_angle: "BatchAngle | None" = None
+    _batch_angle_block = ""
+    _visual_angle_focus = ""
+    if batch_angles and variant < len(batch_angles):
+        _batch_angle = batch_angles[variant]
+        _batch_angle_block = _batch_angle.prompt_block()
+        _visual_angle_focus = (_batch_angle.visual_focus or "").strip()
+        resolved_subject = _batch_angle.combined_topic
+        slug = subject_slug(resolved_subject)
+        stem = f"{slug}_v{variant + 1:02d}"
+        subject_assets = app_config.ASSETS_DIR / slug
+        subject_assets.mkdir(parents=True, exist_ok=True)
+        _LOG.info(
+            "Variant %d/%d | BATCH ANGLE → %r | hook_style=%s | global=%r",
+            variant + 1,
+            _batch_angle.total,
+            _batch_angle.angle_title,
+            _batch_angle.hook_style,
+            _batch_angle.global_topic,
+        )
+    # ── Per-variant topic override (legacy pool path when no angles matrix) ──
+    elif per_variant_topics and variant < len(per_variant_topics):
+        _vt = per_variant_topics[variant]
+        if _vt and _vt != resolved_subject:
+            resolved_subject = _vt
+            slug = subject_slug(resolved_subject)
+            stem = f"{slug}_v{variant + 1:02d}"
+            subject_assets = app_config.ASSETS_DIR / slug
+            subject_assets.mkdir(parents=True, exist_ok=True)
+            _LOG.info(
+                "Variant %d | per-variant topic override → %r",
+                variant + 1, resolved_subject,
+            )
 
     cta_kw = contextual_cta_keyword(resolved_subject)
     humanizer_notes = bm.humanizer_summary
@@ -594,8 +1349,9 @@ def _produce_variant_worker(
     # ====================================================================
     overlay_text: str = ""
     visual_subject: str = ""  # LLM-authored scene description for image generation
+    _seo_title_local = ""
 
-    if post_type in ("SMART_BAIT", "ECONOMIC_REEL") and not skip_caption:
+    if post_type in ("SMART_BAIT", "ECONOMIC_REEL", "CAROUSEL") and not skip_caption:
         assert caption_engine is not None
         try:
             # Load engagement bait examples from the wonder_feed reference spreadsheet
@@ -608,18 +1364,68 @@ def _produce_variant_worker(
             )
             # Snapshot the cache at call time so all workers see consistent history.
             _hooks_snapshot: list[str] = list(generated_hooks_cache or [])
-            overlay_text, caption, caption_mode_tag, visual_subject = caption_engine.humanize_smart_bait(
-                resolved_subject,
-                page_display_name=page_ctx.display_name if page_ctx else "",
-                page_niche=page_ctx.content_niche if page_ctx else "",
-                cta_enabled=cta_enabled,
-                economic=economic,
-                model_id=econ_model if economic else None,
-                post_type=post_type,
-                engagement_bait_examples=_bait_examples,
-                previously_generated_hooks=_hooks_snapshot,
-                niche_disclaimer=page_ctx.niche_disclaimer if page_ctx else "",
-            )
+            _reject_note = ""
+            for _uniq_attempt in range(1, MAX_UNIQUENESS_RETRIES + 1):
+                overlay_text, caption, caption_mode_tag, visual_subject = caption_engine.humanize_smart_bait(
+                    resolved_subject,
+                    page_display_name=page_ctx.display_name if page_ctx else "",
+                    page_niche=page_ctx.content_niche if page_ctx else "",
+                    cta_enabled=cta_enabled,
+                    economic=economic,
+                    model_id=econ_model if economic else None,
+                    post_type=post_type,
+                    engagement_bait_examples=_bait_examples,
+                    previously_generated_hooks=_hooks_snapshot,
+                    niche_disclaimer=page_ctx.niche_disclaimer if page_ctx else "",
+                    narrative_mode=page_ctx.narrative_mode if page_ctx else "",
+                    batch_angle_block=_batch_angle_block,
+                    uniqueness_rejection=_reject_note,
+                )
+                _seo_title_local = (
+                    getattr(caption_engine, "last_seo_title", "") or ""
+                ).strip()
+                if uniqueness_guard is None:
+                    break
+                # Gate BEFORE any paid image/TTS — titles, hooks, caption openings
+                _desc_first = (caption or "").strip().splitlines()[0] if caption else ""
+                _ok, _prior, _score = uniqueness_guard.try_claim(
+                    _seo_title_local,
+                    overlay_text,
+                    _desc_first,
+                )
+                if _ok:
+                    _LOG.info(
+                        "Batch uniqueness OK | variant=%d attempt=%d title=%r",
+                        variant + 1, _uniq_attempt, (_seo_title_local or overlay_text)[:80],
+                    )
+                    break
+                _reject_note = uniqueness_guard.rejection_instruction(
+                    _prior or "", _score
+                )
+                _LOG.warning(
+                    "Batch uniqueness REJECT | variant=%d attempt=%d sim=%.0f%% prior=%r",
+                    variant + 1, _uniq_attempt, _score * 100, (_prior or "")[:80],
+                )
+                if _uniq_attempt >= MAX_UNIQUENESS_RETRIES:
+                    _LOG.error(
+                        "Batch uniqueness FAILED after %d attempts | variant=%d — "
+                        "proceeding with last draft (may be similar).",
+                        MAX_UNIQUENESS_RETRIES, variant + 1,
+                    )
+                    uniqueness_guard.register(
+                        _seo_title_local, overlay_text, _desc_first,
+                    )
+                # Force visual uniqueness even on retry
+                if _batch_angle is not None and _visual_angle_focus:
+                    visual_subject = (
+                        f"{_visual_angle_focus}. {visual_subject or resolved_subject}"
+                    ).strip()
+            # Ensure visual_subject carries the angle focus
+            if _visual_angle_focus and visual_subject:
+                if _visual_angle_focus.lower() not in visual_subject.lower():
+                    visual_subject = f"{_visual_angle_focus}. {visual_subject}"
+            elif _visual_angle_focus and not visual_subject:
+                visual_subject = _visual_angle_focus
         except Exception as exc:  # noqa: BLE001
             _LOG.error("Smart bait generation failed variant %s: %s", variant + 1, exc, exc_info=True)
             logging.error("VARIANT_FAIL | smart_bait | variant=%s | err=%s", variant + 1, exc)
@@ -659,6 +1465,7 @@ def _produce_variant_worker(
                 cta_enabled=cta_enabled,
                 economic=economic,
                 model_id=econ_model if economic else None,
+                signature=page_ctx.caption_signature if page_ctx else "",
             )
         except Exception as exc:  # noqa: BLE001
             _LOG.error("Long caption generation failed variant %s: %s", variant + 1, exc, exc_info=True)
@@ -674,12 +1481,13 @@ def _produce_variant_worker(
     # ====================================================================
     # MASTER STYLE ROUTING GATE
     # For wonder_feed (and any page with BASE_GRAPHITE_PROMPT configured),
-    # SMART_BAIT / LONG_CAPTION_IMAGE / ECONOMIC_REEL are hard-locked to the
+    # SMART_BAIT / LONG_CAPTION_IMAGE / ECONOMIC_REEL / CAROUSEL are hard-locked to the
+    # graphite illustration style (no avatar reference image passed to Gemini).
     # graphite illustration pipeline via page_ctx.base_graphite_prompt.
     # The --draw-style CLI flag is SILENTLY IGNORED for these three post types.
     # ====================================================================
     _graphite_locked = (
-        post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL")
+        post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL")
         and (
             bool(page_ctx and (page_ctx.base_graphite_prompt or page_ctx.sketch_style_prompt))
             or image_style == "SKETCH"   # --draw-style SKETCH always forces graphite pipeline
@@ -736,6 +1544,19 @@ def _produce_variant_worker(
             effective_atmosphere = build_smart_bait_image_prompt(
                 _mutated_subject, _base_prompt
             )
+
+    # Batch uniqueness: force angle-specific visual DNA into every image prompt
+    if _visual_angle_focus:
+        _vf = _visual_angle_focus.rstrip(" .")
+        if _vf.lower() not in (effective_atmosphere or "").lower():
+            effective_atmosphere = (
+                f"{effective_atmosphere.rstrip(' .')}. "
+                f"BATCH ANGLE VISUAL FOCUS (unique to this video): {_vf}."
+            ).strip()
+            _LOG.info(
+                "Variant %d | visual angle injected → %r",
+                variant + 1, _vf[:80],
+            )
             _LOG.debug("LONG_CAPTION_IMAGE | scene (post-mutation): %s", _mutated_subject[:120])
 
     # ====================================================================
@@ -744,30 +1565,32 @@ def _produce_variant_worker(
     # SMART_BAIT forces avatar_mode="OFF" so the atmospheric context
     # derived from the text hook drives the image prompt unconditionally.
     # ====================================================================
-    # SMART_BAIT and LONG_CAPTION_IMAGE both need an environmental/illustration
-    # background (not an avatar portrait). Force avatar_mode="OFF" locally so the
-    # page-level avatar_mode cannot override this.
-    image_avatar_mode = "OFF" if post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL") else avatar_mode
-
-    # For SMART_BAIT / LONG_CAPTION_IMAGE / ECONOMIC_REEL: if theme extraction
-    # returned empty, substitute a vivid non-generic fallback.
-    # IMPORTANT: this photorealistic fallback is BLOCKED for graphite-locked pages
-    # (e.g. wonder_feed).  Firing it there would route Gemini into a photographic
-    # pipeline, overriding the BASE_GRAPHITE_PROMPT — the exact regression seen in
-    # reel_what_you_tolerate_speaks_volumes_v01.mp4.
-    if (
-        post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL")
-        and effective_atmosphere == atmosphere_style
-        and not _graphite_locked
+    # SMART_BAIT / LONG_CAPTION_IMAGE / CAROUSEL → atmospheric (avatar OFF).
+    # ECONOMIC_REEL → OFF by default, EXCEPT master_mei which MUST likeness-lock
+    # Act 1 to pages_config/master_mei/avatar_reference/avatar.png.
+    if post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "CAROUSEL"):
+        image_avatar_mode = "OFF"
+    elif (
+        post_type == "ECONOMIC_REEL"
+        and page_ctx
+        and (page_ctx.page_id or "").lower() == "master_mei"
+        and not page_ctx.sequence_force_avatar_off
     ):
-        _LOG.debug(
-            "SMART_BAIT | theme extraction did not override page default — applying vivid abstract fallback."
-        )
-        effective_atmosphere = (
-            "Dramatic, vivid cinematic wide shot. Emotionally charged abstract environment "
-            "with bold colours, rich textures, dynamic lighting. Bright and visually striking. "
-            "No avatar, no coffee cups, no generic office or desk props."
-        )
+        image_avatar_mode = "ON"
+    elif post_type == "ECONOMIC_REEL":
+        image_avatar_mode = "OFF"
+    else:
+        image_avatar_mode = avatar_mode
+
+    # NOTE: A hardcoded generic fallback string ("Dramatic, vivid cinematic wide
+    # shot. Emotionally charged abstract environment with bold colours…") used
+    # to silently override effective_atmosphere here whenever theme extraction
+    # didn't produce anything. REMOVED — every image prompt must come strictly
+    # from dynamic LLM generation (visual_subject / theme extraction) + the
+    # page's own configured atmosphere_style, never a canned literal string.
+    # When theme extraction yields nothing, effective_atmosphere simply keeps
+    # its already-assigned value (atmosphere_style, which is itself page-config
+    # driven, not a single global hardcoded phrase).
 
     # ── HARD SKETCH ENFORCEMENT ──────────────────────────────────────────────
     # Final-pass guardian: for every graphite-locked prompt, unconditionally
@@ -862,11 +1685,11 @@ def _produce_variant_worker(
             effective_atmosphere[:160],
         )
 
-    # ── ANCIENT_KNOWLEDGE STYLE LOCK: photorealistic documentary photography ─
-    # Overrides any inherited atmosphere/sketch terms. Applies the page's
-    # ILLUSTRATION_STYLE directive and strips PROMPT_NEGATIVE_TERMS so no
-    # relationship-psychology or sketch artefacts bleed into this channel.
-    elif (
+    # ── ANCIENT_KNOWLEDGE / MASTER_MEI STYLE LOCK — applied after architect.build_prompt() ─
+    # See the elif block after line "elif not skip_image:" below.
+    _ak_image_prompt_override: str = ""
+    _mm_image_prompt_override: str = ""
+    if (
         page_ctx
         and (page_ctx.page_id or "").lower() == "ancient_knowledge"
     ):
@@ -876,37 +1699,94 @@ def _produce_variant_worker(
             if page_ctx.illustration_style
             else page_ctx.atmosphere_style.rstrip(" .")
         )
-        # Scrub negative terms from any inherited atmosphere content
         _ak_clean = effective_atmosphere
         for _neg in page_ctx.prompt_negative_terms:
             _ak_clean = _re_ak.sub(
                 _re_ak.escape(_neg), "", _ak_clean, flags=_re_ak.IGNORECASE
             )
         _ak_clean = _re_ak.sub(r"[ \t]{2,}", " ", _ak_clean).strip(" ,.")
-        # Final prompt: style directive + clean subject description
-        # Strict structural mandate prevents the model from generating a
-        # framed painting, gallery mockup, or picture-in-picture artefact.
-        image_prompt = (
+        _ak_image_prompt_override = (
             f"{_ak_style}. "
+            "MEDIUM: Ultra-realistic photography — NOT digital art, NOT illustration, NOT CGI render. "
             "SHOT TYPE: Full-screen first-person immersive cinematic photograph. "
-            "The camera IS inside the location — the viewer stands directly inside "
-            "the scene. "
+            "The camera IS inside the location — the viewer stands directly inside the scene. "
             f"SUBJECT: {resolved_subject}. "
+            "LIGHTING: Dramatic single-source cinematic light — warm amber torchlight, ancient fire, "
+            "or cold ethereal blue-white moonlight cutting through stone arches. "
+            "Volumetric light shafts visible in atmospheric haze or dust particles. "
+            "Strong directional RIM LIGHTING tracing the edges of stone blocks, carved columns, "
+            "or megalithic surfaces. High-contrast chiaroscuro — rich deep shadows balanced by "
+            "intense focal highlights. NO flat, evenly-lit, or muddy scenes. "
+            "TEXTURE: Cinematic 35mm film grain over the entire frame for an archival documentary aesthetic. "
+            "VISUAL FOCUS: Recognisable real-world iconic monument (Great Pyramid, Baalbek megaliths, "
+            "Puma Punku, Easter Island, Göbekli Tepe, Sacsayhuamán) with an impossible or anomalous "
+            "element integrated naturally — precision machining visible in the stone, "
+            "impossible construction scale, ancient glyphs encoding advanced knowledge, "
+            "or artefacts suggesting extraterrestrial influence. "
+            "No clean digital renders, no smooth CGI surfaces, no modern elements. "
             "CRITICAL — DO NOT generate: a framed painting, a picture hanging on a wall, "
             "a gallery, a mockup, a physical canvas, picture borders, image-within-image, "
             "a postcard, a mural, a plaque, or any rectangular frame element. "
             "The entire frame is filled edge-to-edge with the immersive environment itself. "
-            "No white space, no margins, no frame overlay, no border, no vignette frame. "
-            "Epic wide-angle or medium cinematic shot, full-bleed, dramatic atmospheric lighting."
+            "No white space, no margins, no border. Epic cinematic shot, full-bleed."
         )
-        _LOG.info(
-            "ancient_knowledge STYLE LOCK | compiled prompt: %s", image_prompt[:180]
+    elif (
+        page_ctx
+        and (page_ctx.page_id or "").lower() == "master_mei"
+    ):
+        import re as _re_mm
+        import random as _rnd_hook_env
+        # Act-1 / Hook STRICT MANDATE: ROLE A Master Mei (traditional only).
+        # Environment rotates across episodes from HOOK_ENVIRONMENTS pool.
+        _hook_envs = page_ctx.hook_environments or [
+            "mist-covered ancient mountain temple courtyard at dawn",
+            "snowy Alps peak with wind-blown snow",
+            "high-altitude stone training ground above the clouds",
+            "dramatic mountain cliff at sunset under storm light",
+        ]
+        _hook_env = _rnd_hook_env.choice(_hook_envs)
+        # ROLE A only — traditional Master Mei; never fuse neon city / cybernetics onto him
+        _mm_dna_clean = (page_ctx.master_mei_visual_dna or _MEI_DNA_FALLBACK)
+        _mm_dna_clean = _re_mm.sub(
+            r"\b(?:cyber|bionic|neon|vr|headset|neural|wire|cable|implant|biomechanical)\w*\b",
+            "",
+            _mm_dna_clean,
+            flags=_re_mm.IGNORECASE,
+        )
+        _mm_dna_clean = _re_mm.sub(r"\s{2,}", " ", _mm_dna_clean).strip(" ,.")
+        _mm_image_prompt_override = (
+            "Cinematic 8k photorealistic raw photography, detailed skin textures, "
+            "octane render, volumetric natural mist and dawn light — traditional "
+            "ancestral temple aesthetic ONLY. Absolutely no neon, no cyberpunk city, "
+            "no technology on Master Mei's body. "
+            "MEDIUM: Ultra-realistic cinematic 4K photography — NOT illustration, NOT CGI polish. "
+            "HOOK FRAME 1 — FIRST APPEARANCE — STRICT CHARACTER LOCK. "
+            "ZERO HALLUCINATION: NEVER invent a generic old master — MUST match avatar.png. "
+            f"{_mm_dna_clean} "
+            "POSE MANDATE: Master Mei meditating, standing in fog, OR observing disciples "
+            "from a temple balcony — spine erect, absolute stillness, intense inner focus. "
+            "FRAMING: Close-up OR medium shot of Master Mei ONLY — STRICT SINGLE MASTER RULE. "
+            "Close-ups reserved ONLY for Master Mei matching reference. "
+            "STRICT BAN: close-ups of random/generic samurai faces or random men; "
+            "bionic implants, VR headsets, glowing wires, cybernetic limbs. "
+            f"ENVIRONMENT (rotate per episode): {_hook_env}. "
+            f"THEME CONTEXT: {resolved_subject}. "
+            "LIGHTING: Dark atmospheric — cold moonlight, storm lightning, dawn rim light, or warm torchfire. "
+            "Volumetric mist/rain shafts, strong rim lighting on wet stone and the seated elder sage. "
+            "Deep chiaroscuro. Colour grade: charcoal black, muted jade, ember gold. "
+            "FORBIDDEN: middle-aged short-haired warrior, standing idle pose, black hair, "
+            "clean-shaven face, modern athletic wear, pastel wellness, gym neon, sketch styles. "
+            f"{_MEI_BAN_PLAIN_MODERN} "
+            "REFERENCE LIKENESS REQUIRED — match pages_config/master_mei/avatar_reference/avatar.png exactly. "
+            f"{_MEI_PHOTOREAL}"
         )
 
     adapter: GeminiImageAdapter | None = None
 
-    # ------------------------------------------------------------------
-    # TEXT_QUOTE: skip Gemini entirely — create a brand solid-gradient bg.
+    # Per-variant image tracking initialised here so _return_dict always has these keys
+    # even when skip_image is True or when image generation raises an exception.
+    _carousel_image_paths: list[str] = []
+    _images_generated_this_variant: int = 0
     # IMAGE_BACKGROUND / IMAGE_QUOTE / IMAGE_AVATAR: call Gemini as normal.
     # ------------------------------------------------------------------
     _is_text_quote = (post_format == "TEXT_QUOTE") and not skip_image
@@ -1009,20 +1889,49 @@ def _produce_variant_worker(
                 "wonder_feed IMAGE PROMPT LOCK | hard-override applied | scene: %s",
                 _scene_desc[:80],
             )
-        img_model_id = app_config.GEMINI_ECONOMIC_IMAGE_MODEL if economic else None
-        # Nano-tier override: ancient_knowledge (COST_TIER=nano) uses the banana
-        # model, which is cheaper than the standard economic flash model.
-        if page_ctx is not None and page_ctx.cost_tier == "nano":
-            img_model_id = app_config.GEMINI_NANO_IMAGE_MODEL
-        # Page-level explicit override has highest priority — bypasses all tier logic.
-        if page_ctx is not None and page_ctx.image_model_override:
-            img_model_id = page_ctx.image_model_override
-        if economic:
+
+        # ── ANCIENT_KNOWLEDGE / MASTER_MEI STYLE LOCK (post-architect) ─────────
+        # Applied here — after architect.build_prompt() — so this override is
+        # the final word on the image_prompt and can never be clobbered.
+        if _ak_image_prompt_override:
+            image_prompt = _ak_image_prompt_override
             _LOG.info(
-                "ECONOMIC LOCK | variant=%s | image_model=%s | text_brain=%s",
+                "ancient_knowledge IMAGE PROMPT LOCK | hard-override applied: %s",
+                image_prompt[:180],
+            )
+        elif _mm_image_prompt_override:
+            image_prompt = _mm_image_prompt_override
+            _LOG.info(
+                "master_mei IMAGE PROMPT LOCK | hard-override applied: %s",
+                image_prompt[:180],
+            )
+        img_model_id = None
+        _page_cost = page_ctx.cost_tier if page_ctx is not None else None
+        # Page-level explicit override has highest priority — still logged via router.
+        _override = None
+        if page_ctx is not None and page_ctx.image_model_override:
+            _override = page_ctx.image_model_override
+        from avatar_engine.providers.model_router import image_model as _route_image
+        _img_route = _route_image(
+            task="image",
+            page_cost_tier=_page_cost,
+            model_override=_override,
+            preferred=(
+                app_config.GEMINI_ECONOMIC_IMAGE_MODEL
+                if economic
+                else app_config.GEMINI_IMAGE_MODEL
+            ),
+            use_premium=True if (_page_cost or "").lower() == "premium" else None,
+            log=True,
+        )
+        img_model_id = app_config.normalize_image_model_id(_img_route.model_id)
+        if economic or _img_route.tier == "cheap":
+            _LOG.info(
+                "COST-FIRST LOCK | variant=%s | tier=%s | image_model=%s | text_brain=%s",
                 variant + 1,
-                app_config.GEMINI_ECONOMIC_IMAGE_MODEL,
-                "DeepSeek" if (caption_engine is not None and getattr(caption_engine, "_deepseek", None)) else app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
+                _img_route.tier,
+                img_model_id,
+                app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
             )
         # Resolve style reference image.
         # For wonder_feed the reference file is pinned to an absolute path so
@@ -1036,10 +1945,13 @@ def _produce_variant_worker(
         )
         _WF_STYLE_REF = Path(_WF_STYLE_REF_STR)
         _style_ref_path: Path | None = None
+        _style_ref_paths: list[Path] = []
+        _style_ref_weight: float = 0.72
         if page_ctx and (page_ctx.page_id or "").lower() == "wonder_feed":
             print(f"[DEBUG_STYLE_ENGINE] Target image reference assigned: {_WF_STYLE_REF_STR}")
             if _os.path.exists(_WF_STYLE_REF_STR):
                 _style_ref_path = _WF_STYLE_REF
+                _style_ref_paths = [_WF_STYLE_REF]
                 print(f"[DEBUG_STYLE_ENGINE] Verification PASSED — style reference loaded.")
                 logging.info("wonder_feed STYLE REF LOCK | pinned → %s", _WF_STYLE_REF.name)
             else:
@@ -1047,14 +1959,13 @@ def _produce_variant_worker(
                 logging.warning(
                     "wonder_feed style reference not found at expected path: %s", _WF_STYLE_REF
                 )
-        elif page_ctx and page_ctx.style_reference_dir:
-            _sref_dir = app_config.ENGINE_ROOT / page_ctx.style_reference_dir
-            if _sref_dir.is_dir():
-                for _ext in ("*.jpg", "*.jpeg", "*.png"):
-                    _candidates = sorted(_sref_dir.glob(_ext))
-                    if _candidates:
-                        _style_ref_path = _candidates[0]
-                        break
+        elif page_ctx:
+            # MODULE 3 — dynamic per-page resolution: pages_config/<page>/style_reference/
+            # (or explicit STYLE_REFERENCE_DIR override), 2-3 images, IP-Adapter-style weight.
+            _style_ref_paths = page_ctx.resolve_style_reference_images()
+            _style_ref_weight = page_ctx.style_reference_weight
+            if _style_ref_paths:
+                _style_ref_path = _style_ref_paths[0]
 
         try:
             import os as _img_os
@@ -1069,14 +1980,44 @@ def _produce_variant_worker(
                 print(f"[DEBUG] Style Ref Path   : {_style_ref_path or '(none — text-only prompt)'}")
             print(f"[DEBUG] Compiled prompt  : {effective_atmosphere[:200]}")
             print("=" * 60 + "\n")
-            adapter = GeminiImageAdapter(model_id=img_model_id)
+            adapter = GeminiImageAdapter(
+                model_id=img_model_id,
+                page_cost_tier=_page_cost,
+                tier=_img_route.tier,
+            )
+            # master_mei: always prefer forced avatar.png over cycled assets
+            _gen_ref = effective_ref_path if image_avatar_mode == "ON" else None
+            _gen_weight: float | None = None
+            if (
+                page_ctx
+                and (page_ctx.page_id or "").lower() == "master_mei"
+                and image_avatar_mode == "ON"
+            ):
+                _forced = page_ctx.forced_avatar_reference_path
+                if _forced is not None and _forced.is_file():
+                    _gen_ref = _forced
+                _gen_weight = page_ctx.avatar_image_weight
+            _act1_role = None
+            _act1_neg = None
+            if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
+                from avatar_engine.visual_roles import (
+                    ROLE_A_NEGATIVE,
+                    ROLE_MASTER,
+                )
+                _act1_role = ROLE_MASTER
+                _act1_neg = ROLE_A_NEGATIVE
             img_path_display = adapter.generate(
                 image_prompt,
-                reference_image_path=effective_ref_path if image_avatar_mode == "ON" else None,
+                reference_image_path=_gen_ref,
                 style_reference_path=_style_ref_path,
+                style_reference_paths=_style_ref_paths or None,
+                style_reference_weight=_style_ref_weight,
                 output_stem=stem,
                 output_directory=subject_assets,
                 avatar_mode=image_avatar_mode,
+                reference_image_weight=_gen_weight,
+                visual_role=_act1_role,
+                negative_prompt=_act1_neg,
             )
             img_used = adapter.last_gemini_image_model_used or bm.image_primary_id
             logging.info(
@@ -1126,13 +2067,61 @@ def _produce_variant_worker(
         img_ref_engine = path_under_engine(app_config.ENGINE_ROOT, raw_bg_path)
 
     # ── COST TRACKING: image generation ──────────────────────────────────────
-    if cost_tracker is not None and not skip_image:
-        cost_tracker.track_image()
+    # For CAROUSEL the first generate() call above is Slide 01.
+    # The Slide 02 and 03 generation loop below tracks each separately.
+    # Charge real API hits (retries / chain advances), not just successful frames.
+    if not skip_image:
+        _n_hits = _track_adapter_image(cost_tracker, adapter) if adapter is not None else 1
+        _images_generated_this_variant = _n_hits
+        if cost_tracker is None:
+            _images_generated_this_variant = 1
 
-    # ── SEQUENCE REEL: generate additional images for ancient_knowledge ──────
-    # When enable_sequence_reel is True, generate (reel_image_count - 1) more
-    # images with act-specific scene descriptions, then stitch them in Phase D.
+    # ── CAROUSEL: generate slides 2 and 3 with distinct viewpoint directives ─
+    # Slide 1 is the image already generated above (same image_prompt).
+    # Slides 2 and 3 use the same base style but with a different cinematographic
+    # angle so the three frames form a coherent visual narrative for the post.
+    if post_type == "CAROUSEL" and not skip_image and raw_bg_path is not None and adapter is not None:
+        _carousel_image_paths.append(str(raw_bg_path))  # slide 01
+        _carousel_slide_directives = [
+            (
+                "SLIDE 02 — DETAIL CLOSE-UP",
+                "Extreme close-up shot. Tangible surface textures, hyper-detailed craftsmanship, "
+                "micro-scale inscriptions or material patterns. Fill the frame edge-to-edge.",
+            ),
+            (
+                "SLIDE 03 — ATMOSPHERIC REVELATION",
+                "Dramatic low-angle or aerial perspective. Symbolic composition, mysterious "
+                "atmospheric haze, sense of scale and ancient grandeur revealed from a new angle.",
+            ),
+        ]
+        for _ci, (_slide_label, _slide_extra) in enumerate(_carousel_slide_directives):
+            _slide_num = _ci + 2  # 2, 3
+            _slide_prompt = (
+                f"{image_prompt} "
+                f"{_slide_label}: {_slide_extra} "
+                f"(Carousel frame {_slide_num} of 3 — maintain visual consistency with slide 01.)"
+            )
+            try:
+                _slide_img = adapter.generate(
+                    _slide_prompt,
+                    reference_image_path=effective_ref_path if image_avatar_mode == "ON" else None,
+                    output_stem=f"{stem}_slide_{_slide_num:02d}",
+                    output_directory=subject_assets,
+                    avatar_mode=image_avatar_mode,
+                )
+                _carousel_image_paths.append(str(_slide_img))
+                _images_generated_this_variant += _track_adapter_image(cost_tracker, adapter)
+                _LOG.info("CAROUSEL slide %d generated → %s", _slide_num, Path(_slide_img).name)
+            except Exception as _ce:  # noqa: BLE001
+                _LOG.warning("CAROUSEL slide %d generation failed: %s — skipping.", _slide_num, _ce)
+    elif post_type == "CAROUSEL" and not skip_image and raw_bg_path is not None:
+        _carousel_image_paths.append(str(raw_bg_path))
+
+    # ── SEQUENCE REEL: dense ~4 s/act scene-to-audio sync ─────────────────
+    # Early voiceover script → segment into N spoken snippets → one Gemini
+    # image per snippet → Phase D TTS + compile (act_dur = audio / N).
     _sequence_image_paths: list = []
+    _early_seq_script: str = ""
     if (
         page_ctx
         and page_ctx.enable_sequence_reel
@@ -1140,46 +2129,492 @@ def _produce_variant_worker(
         and raw_bg_path is not None
         and adapter is not None
     ):
-        _seq_n = page_ctx.reel_image_count  # e.g. 4
-        _sequence_image_paths.append(raw_bg_path)  # act 1 = already generated
         _ak_base_style = (
             page_ctx.illustration_style.rstrip(" .")
             if page_ctx.illustration_style
             else page_ctx.atmosphere_style.rstrip(" .")
         )
-        _act_descriptors = [
-            f"OPENING WIDE SHOT: {resolved_subject}. Epic scale, dramatic sky, ancient ruins.",
-            f"CLOSE-UP DETAIL: {resolved_subject}. Ancient inscriptions, worn stone textures, torchlight.",
-            f"UNDERGROUND OR INTERIOR: {resolved_subject}. Chamber walls, carved hieroglyphs, dim atmospheric light.",
-            f"AERIAL OR REVEAL: {resolved_subject}. High-angle, dramatic landscape, civilisation-scale perspective.",
-        ]
-        for _act_i in range(1, _seq_n):
-            _act_desc = _act_descriptors[_act_i] if _act_i < len(_act_descriptors) else f"ACT {_act_i + 1}: {resolved_subject}."
-            _act_prompt = (
-                f"{_ak_base_style}. {_act_desc} "
-                "Full-bleed, edge-to-edge composition, no borders, no frames."
-            )
-            _act_out = subject_assets / f"{stem}_act{_act_i + 1:02d}.png"
+        _is_mm = (page_ctx.page_id or "").lower() == "master_mei"
+        _seq_words = page_ctx.reel_narration_words if page_ctx else 140
+        _seq_min = page_ctx.reel_narration_min_words if page_ctx else 110
+
+        # Hardcoded math enforcement: Total Images = round(audio_s / seconds_per_act),
+        # clamped to [REEL_IMAGE_MIN_COUNT, REEL_IMAGE_COUNT] (master_mei: 8–10 @ ~9s).
+        _seq_n = _compute_dense_act_count(
+            page_ctx.reel_duration,
+            seconds_per_act=page_ctx.reel_seconds_per_act,
+            min_acts=page_ctx.reel_image_min_count,
+            max_acts=page_ctx.reel_image_count,
+        )
+
+        # ── Isolated timestamped subdirectory for this run's act images ──
+        for _stale_dir in subject_assets.glob("seq_run_*"):
+            if _stale_dir.is_dir():
+                shutil.rmtree(_stale_dir, ignore_errors=True)
+        _reel_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        _reel_img_dir = subject_assets / f"seq_run_{_reel_ts}"
+        _reel_img_dir.mkdir(parents=True, exist_ok=True)
+        _LOG.info(
+            "Sequence reel | dense acts=%d (%.1fs/act target) | dir=%s",
+            _seq_n, page_ctx.reel_seconds_per_act, _reel_img_dir.name,
+        )
+
+        # Early script for ALL sequence pages → exact spoken-beat image prompts
+        # Uniqueness gate: reject near-duplicate scripts BEFORE any act images / TTS.
+        if caption_engine is not None:
             try:
-                _act_img = adapter.generate(
+                _seq_reject = ""
+                _hooks_for_seq = list(generated_hooks_cache or [])
+                for _seq_attempt in range(1, MAX_UNIQUENESS_RETRIES + 1):
+                    _early_seq_script = caption_engine.generate_sequence_voiceover(
+                        resolved_subject,
+                        page_niche=page_ctx.content_niche,
+                        persona_voice=page_ctx.tts_voice_preference or (
+                            "calm, deep, highly wise, authoritative ancient master"
+                            if _is_mm
+                            else "investigative, neutral, immersive"
+                        ),
+                        n_acts=_seq_n,
+                        duration_s=page_ctx.reel_duration,
+                        total_words_target=_seq_words,
+                        economic=economic,
+                        niche_disclaimer=page_ctx.niche_disclaimer,
+                        cta_line="",
+                        narrative_mode=page_ctx.narrative_mode,
+                        batch_angle_block=_batch_angle_block,
+                        uniqueness_rejection=_seq_reject,
+                        previously_generated_hooks=_hooks_for_seq,
+                    ) or ""
+                    _early_ok = (
+                        len((_early_seq_script or "").split()) >= _seq_min
+                        or len((_early_seq_script or "").strip()) >= 150
+                    )
+                    if not _early_ok:
+                        _LOG.warning(
+                            "SEQUENCE_REEL | early script short (%d words) — regenerating…",
+                            len((_early_seq_script or "").split()),
+                        )
+                        if cost_tracker is not None:
+                            cost_tracker.track_text(char_count=len(_early_seq_script or "") + 500)
+                        _early_seq_script = caption_engine.generate_sequence_voiceover(
+                            resolved_subject,
+                            page_niche=page_ctx.content_niche,
+                            persona_voice=(
+                                "VERY SLOW meditative ancient master — write a LONG full script"
+                                if _is_mm
+                                else "investigative documentary narrator — write a LONG full script"
+                            ),
+                            n_acts=_seq_n,
+                            duration_s=page_ctx.reel_duration,
+                            total_words_target=max(_seq_words, _seq_min + 20),
+                            economic=economic,
+                            niche_disclaimer=(
+                                (page_ctx.niche_disclaimer or "")
+                                + f" CRITICAL: Write AT LEAST {_seq_min} words OR 150+ characters. "
+                                "Short scripts are forbidden."
+                            ),
+                            cta_line="",
+                            narrative_mode=page_ctx.narrative_mode,
+                            batch_angle_block=_batch_angle_block,
+                            uniqueness_rejection=_seq_reject,
+                            previously_generated_hooks=_hooks_for_seq,
+                        ) or _early_seq_script
+                    if uniqueness_guard is None or not _early_seq_script:
+                        break
+                    _opening = " ".join((_early_seq_script or "").split()[:28])
+                    _ok_s, _prior_s, _score_s = uniqueness_guard.try_claim(_opening)
+                    if _ok_s:
+                        _LOG.info(
+                            "SEQUENCE uniqueness OK | variant=%d attempt=%d",
+                            variant + 1, _seq_attempt,
+                        )
+                        break
+                    _seq_reject = uniqueness_guard.rejection_instruction(
+                        _prior_s or "", _score_s
+                    )
+                    _LOG.warning(
+                        "SEQUENCE uniqueness REJECT | variant=%d attempt=%d sim=%.0f%%",
+                        variant + 1, _seq_attempt, _score_s * 100,
+                    )
+                    if _seq_attempt >= MAX_UNIQUENESS_RETRIES:
+                        uniqueness_guard.register(_opening)
+                        break
+                if _early_seq_script:
+                    _early_seq_script = _trim_script_to_word_limit(
+                        _early_seq_script, max_words=_seq_words + 15
+                    )
+                    if cost_tracker is not None:
+                        cost_tracker.track_text(char_count=len(_early_seq_script))
+                    _LOG.info(
+                        "SEQUENCE_REEL | early script ready for act-image sync (%d words, %d acts)",
+                        len(_early_seq_script.split()), _seq_n,
+                    )
+            except Exception as _early_exc:  # noqa: BLE001
+                _LOG.warning(
+                    "SEQUENCE_REEL early script failed (%s) — falling back to topic.",
+                    _early_exc,
+                )
+                _early_seq_script = ""
+
+        _spoken_snippets = _segment_script_into_act_snippets(
+            _early_seq_script
+            or (caption if caption and caption != "(skipped)" else resolved_subject),
+            _seq_n,
+        )
+
+        # Act 1 = main graphite base; acts 2–N match spoken snippets
+        _sequence_image_paths.append(
+            _ensure_sequence_image(raw_bg_path, fallback=raw_bg_path)
+        )
+        _act1_base = _sequence_image_paths[0]
+
+        if _is_mm:
+            import random as _rnd_mm_env
+            _hook_envs = page_ctx.hook_environments or [
+                "inside a stark ancient dark monolithic stone shrine, sparse torchlight",
+                "looking out over a vast ash wasteland from a high stone ledge",
+            ]
+            _hook_env = _rnd_mm_env.choice(_hook_envs)
+            from avatar_engine.mei_visual import (
+                MASTER_STYLE_ANCHOR_DEFAULT as _MM_STYLE_DEFAULT_PROD,
+            )
+            from avatar_engine.style_reader import (
+                default_master_mei_ref_folder as _mm_ref_folder_prod,
+            )
+            _mm_fixed_anchor = (
+                page_ctx.master_style_anchor or _MM_STYLE_DEFAULT_PROD
+            ).strip() or _MM_STYLE_DEFAULT_PROD
+            _mm_prompts, _mm_slots, _mm_roles, _mm_negatives = (
+                _build_master_mei_script_act_prompts(
+                    subject=resolved_subject,
+                    script=_early_seq_script or (
+                        caption if caption and caption != "(skipped)" else resolved_subject
+                    ),
+                    n_acts=_seq_n,
+                    base_style=_ak_base_style,
+                    visual_dna=page_ctx.master_mei_visual_dna or _MEI_DNA_FALLBACK,
+                    hook_env=_hook_env,
+                    master_style_anchor=_mm_fixed_anchor,
+                    reference_folder=_mm_ref_folder_prod(),
+                    use_vision_style=False,  # GOLDEN LOCK — no Vision prompt rewrite
+                )
+            )
+            _LOG.info(
+                "MASTER_MEI 3-ROLE distribution | roles=%s | avatar_slots=%s",
+                _mm_roles, sorted(_mm_slots),
+            )
+            # MODULE 3 — dynamic per-page style reference (pages_config/<page>/style_reference/)
+            _mm_style_refs = page_ctx.resolve_style_reference_images()
+            _mm_style_weight = page_ctx.style_reference_weight
+            if _mm_style_refs:
+                _LOG.info(
+                    "MASTER_MEI | %d style reference image(s) loaded (weight=%.2f) → %s",
+                    len(_mm_style_refs), _mm_style_weight,
+                    ", ".join(p.name for p in _mm_style_refs),
+                )
+            # ZERO HALLUCINATION: always bind canonical avatar.png for Mei frames
+            _mm_avatar_ref: "Path | None" = None
+            _mm_avatar_w: float | None = None
+            if not page_ctx.sequence_force_avatar_off:
+                _mm_avatar_ref = _assert_mei_avatar(app_config.ENGINE_ROOT)
+                if not _mm_avatar_ref.is_file():
+                    # Fallback to page_loader path if assert path missing
+                    _forced_mm = page_ctx.forced_avatar_reference_path
+                    if _forced_mm is not None and _forced_mm.is_file():
+                        _mm_avatar_ref = _forced_mm
+                    else:
+                        _LOG.error(
+                            "MASTER_MEI | avatar.png MISSING — Mei frames will fail "
+                            "zero-hallucination lock. Expected: %s",
+                            _resolve_mei_avatar_path(app_config.ENGINE_ROOT),
+                        )
+                        _mm_avatar_ref = None
+                if _mm_avatar_ref is not None:
+                    _mm_avatar_w = page_ctx.avatar_image_weight
+                    _LOG.info(
+                        "MASTER_MEI | avatar likeness LOCKED → %s (weight=%.2f)",
+                        _mm_avatar_ref, _mm_avatar_w or 0.0,
+                    )
+            # PARALLEL IMAGE GENERATION — build all act jobs (cheap, sequential),
+            # then fire them concurrently (ThreadPoolExecutor max_workers=5). The
+            # Together AI adapter's global rate limiter still paces the actual
+            # HTTP calls, so this only removes orchestration/IO wait time.
+            _mm_act_meta: dict[int, dict[str, Any]] = {}
+            _mm_act_jobs: dict[int, Any] = {}
+            for _act_i in range(1, _seq_n):
+                _snippet = (
+                    _spoken_snippets[_act_i]
+                    if _act_i < len(_spoken_snippets)
+                    else resolved_subject
+                )
+                _act_prompt = _mm_prompts[_act_i] if _act_i < len(_mm_prompts) else (
+                    f"Spoken beat: {_snippet}. Cinematic 4K, full-bleed."
+                )
+                _act_role = (
+                    _mm_roles[_act_i] if _act_i < len(_mm_roles) else "slave"
+                )
+                _act_neg = (
+                    _mm_negatives[_act_i] if _act_i < len(_mm_negatives) else ""
+                )
+                _act_theme = _classify_mei_visual_theme(
+                    f"{resolved_subject} {_snippet}"
+                )
+                # CONDITIONAL AVATAR: Role A (Master) only — never disciples/slaves
+                _use_avatar = (
+                    _mm_avatar_ref is not None
+                    and _act_i in _mm_slots
+                    and _act_role == "master"
+                )
+                _fallback_dest = _reel_img_dir / f"{stem}_act{_act_i + 1:02d}_fallback.png"
+                _mm_act_meta[_act_i] = {
+                    "snippet": _snippet,
+                    "theme": _act_theme,
+                    "role": _act_role,
+                    "use_avatar": _use_avatar,
+                    "fallback_dest": _fallback_dest,
+                }
+                _mm_act_jobs[_act_i] = functools.partial(
+                    adapter.generate,
                     _act_prompt,
                     output_stem=f"{stem}_act{_act_i + 1:02d}",
-                    output_directory=subject_assets,
-                    avatar_mode="OFF",  # sequence reels are always text-to-image; no likeness ref
+                    output_directory=_reel_img_dir,
+                    reference_image_path=_mm_avatar_ref if _use_avatar else None,
+                    avatar_mode="ON" if _use_avatar else "OFF",
+                    reference_image_weight=_mm_avatar_w if _use_avatar else None,
+                    style_reference_paths=(
+                        _mm_style_refs if _use_avatar else None
+                    ) or None,
+                    style_reference_weight=_mm_style_weight if _use_avatar else None,
+                    visual_role=_act_role,
+                    negative_prompt=_act_neg or None,
+                )
+
+            _mm_act_results = _run_acts_parallel(_mm_act_jobs, max_workers=5)
+
+            for _act_i in range(1, _seq_n):
+                _meta = _mm_act_meta[_act_i]
+                _snippet = _meta["snippet"]
+                _act_theme = _meta["theme"]
+                _use_avatar = _meta["use_avatar"]
+                _fallback_dest = _meta["fallback_dest"]
+                _result = _mm_act_results.get(_act_i)
+                if isinstance(_result, Exception):
+                    _LOG.warning(
+                        "MASTER_MEI act %d failed (%s) — blinded fallback to Act 1.",
+                        _act_i + 1, _result,
+                    )
+                    _sequence_image_paths.append(
+                        _ensure_sequence_image(
+                            _fallback_dest, fallback=_act1_base, target_path=_fallback_dest,
+                        )
+                    )
+                    continue
+                _act_img = _ensure_sequence_image(
+                    _result, fallback=_act1_base, target_path=_fallback_dest,
                 )
                 _sequence_image_paths.append(_act_img)
-                if cost_tracker is not None:
-                    cost_tracker.track_image()
+                _images_generated_this_variant += _track_adapter_image(
+                    cost_tracker, adapter
+                )
                 _LOG.info(
-                    "Sequence reel | act %d image generated: %s",
-                    _act_i + 1, _act_img.name,
+                    "MASTER_MEI sequence | act %d/%d | avatar=%s theme=%s | beat=%.40s…",
+                    _act_i + 1, _seq_n,
+                    "ON" if _use_avatar else "OFF", _act_theme, _snippet,
                 )
-            except Exception as _act_exc:  # noqa: BLE001
-                _LOG.warning(
-                    "Sequence image act %d failed (%s) — reusing act 1 image.",
-                    _act_i + 1, _act_exc,
+        else:
+            # ancient_knowledge (+ other sequence pages): spoken-snippet → visual
+            _act_descriptors = _build_reel_act_descriptors(
+                resolved_subject, _seq_n, page_id=page_ctx.page_id or ""
+            )
+            _topic_entity_ctx = _extract_topic_visual_entities(resolved_subject)
+            _topic_entity_prefix = (
+                f"VISUAL SUBJECT: {_topic_entity_ctx}. " if _topic_entity_ctx else ""
+            )
+            from avatar_engine.prompt_alignment import build_aligned_visual_block
+            _parallax_directive = (
+                "DEPTH LAYERS: Foreground — visible elements such as dust particles, "
+                "a stone arch, ancient doorframe, or human observer silhouette. "
+                "Background — distant temple façade, starfield, horizon, or vast landscape. "
+                "Force multi-plane depth separation so camera motion creates true parallax. "
+            )
+            _lighting_tail = (
+                "LIGHTING: Dramatic directional light — volumetric shafts, strong rim lighting "
+                "on stone edges, deep chiaroscuro shadows. High-contrast graphite cinematic look. "
+                "No flat or muddy lighting. Ultra-realistic photography, 35mm film grain, "
+                "full-bleed, no borders, no frames."
+            )
+            # PARALLEL IMAGE GENERATION — build all act jobs (cheap, sequential),
+            # then fire them concurrently (ThreadPoolExecutor max_workers=5); the
+            # Together AI adapter's global rate limiter still paces the actual
+            # HTTP calls under the hood.
+            _sr_act_meta: dict[int, dict[str, Any]] = {}
+            _sr_act_jobs: dict[int, Any] = {}
+            for _act_i in range(1, _seq_n):
+                _snippet = (
+                    _spoken_snippets[_act_i]
+                    if _act_i < len(_spoken_snippets)
+                    else resolved_subject
                 )
-                _sequence_image_paths.append(raw_bg_path)  # graceful fallback
+                _prev_snip = (
+                    _spoken_snippets[_act_i - 1]
+                    if _act_i > 0 and (_act_i - 1) < len(_spoken_snippets)
+                    else ""
+                )
+                _act_desc = (
+                    _act_descriptors[_act_i]
+                    if _act_i < len(_act_descriptors)
+                    else f"ACT {_act_i + 1}: {resolved_subject}."
+                )
+                _align = build_aligned_visual_block(
+                    spoken_snippet=_snippet,
+                    act_index=_act_i,
+                    total_acts=_seq_n,
+                    main_subject=resolved_subject,
+                    prev_snippet=_prev_snip,
+                )
+                _act_prompt = (
+                    f"{_topic_entity_prefix}"
+                    f"{_ak_base_style}. {_act_desc} "
+                    f"{_align} "
+                    f"{_parallax_directive}"
+                    f"{_lighting_tail}"
+                )
+                _fallback_dest = _reel_img_dir / f"{stem}_act{_act_i + 1:02d}_fallback.png"
+                _sr_act_meta[_act_i] = {
+                    "snippet": _snippet,
+                    "fallback_dest": _fallback_dest,
+                }
+                _sr_act_jobs[_act_i] = functools.partial(
+                    adapter.generate,
+                    _act_prompt,
+                    output_stem=f"{stem}_act{_act_i + 1:02d}",
+                    output_directory=_reel_img_dir,
+                    avatar_mode="OFF",
+                )
+
+            _sr_act_results = _run_acts_parallel(_sr_act_jobs, max_workers=5)
+
+            for _act_i in range(1, _seq_n):
+                _meta = _sr_act_meta[_act_i]
+                _snippet = _meta["snippet"]
+                _fallback_dest = _meta["fallback_dest"]
+                _result = _sr_act_results.get(_act_i)
+                if isinstance(_result, Exception):
+                    _LOG.warning(
+                        "Sequence image act %d failed (%s) — blinded fallback to Act 1.",
+                        _act_i + 1, _result,
+                    )
+                    _sequence_image_paths.append(
+                        _ensure_sequence_image(
+                            _fallback_dest, fallback=_act1_base, target_path=_fallback_dest,
+                        )
+                    )
+                    continue
+                _act_img = _ensure_sequence_image(
+                    _result, fallback=_act1_base, target_path=_fallback_dest,
+                )
+                _sequence_image_paths.append(_act_img)
+                _images_generated_this_variant += _track_adapter_image(
+                    cost_tracker, adapter
+                )
+                _LOG.info(
+                    "Sequence reel | act %d/%d generated | beat=%.48s…",
+                    _act_i + 1, _seq_n, _snippet,
+                )
+
+        if _sequence_image_paths:
+            _images_generated_this_variant = max(
+                _images_generated_this_variant,
+                len(_sequence_image_paths),
+            )
+            _LOG.info(
+                "Sequence reel | frames=%d | api_image_units=%d",
+                len(_sequence_image_paths),
+                _images_generated_this_variant,
+            )
+
+        # ── Visual Control Agent (Master Mei) — VLM + phash before compile ──
+        if (
+            _is_mm
+            and _sequence_image_paths
+            and adapter is not None
+            and len(_sequence_image_paths) >= 2
+        ):
+            try:
+                from avatar_engine.visual_inspector import inspect_sequence_images
+                from avatar_engine.visual_roles import (
+                    ROLE_MASTER,
+                    assign_frame_beats,
+                    build_role_prompt,
+                )
+
+                _insp = inspect_sequence_images(_sequence_image_paths, use_vlm=True)
+                _LOG.info(
+                    "VISUAL_INSPECTOR | passed=%s regen_frames=%s | %s",
+                    _insp.passed,
+                    [i + 1 for i in _insp.regenerate_indices],
+                    "; ".join(_insp.notes[:4]) if _insp.notes else "ok",
+                )
+                _beats_insp = assign_frame_beats(len(_sequence_image_paths))
+                for _ri in _insp.regenerate_indices[:5]:  # cap regen attempts
+                    if _ri < 0 or _ri >= len(_sequence_image_paths):
+                        continue
+                    _beat = _beats_insp[_ri] if _ri < len(_beats_insp) else ""
+                    _role = (
+                        "master"
+                        if _beat in ("intro", "outro", "training")
+                        else ("disciple" if _beat == "break_free" else "slave")
+                    )
+                    _snip = (
+                        _spoken_snippets[_ri]
+                        if _ri < len(_spoken_snippets)
+                        else resolved_subject
+                    )
+                    _pos, _neg = build_role_prompt(
+                        role=_role,
+                        visual_dna=(
+                            (page_ctx.master_mei_visual_dna or _MEI_DNA_FALLBACK)
+                            if _role == ROLE_MASTER
+                            else ""
+                        ),
+                        spoken_beat=_snip,
+                        subject=resolved_subject,
+                        act_index=_ri,
+                        beat=_beat,
+                    )
+                    _av_ref = locals().get("_mm_avatar_ref")
+                    _av_w = locals().get("_mm_avatar_w")
+                    _use_av = _role == ROLE_MASTER and _av_ref is not None
+                    try:
+                        _regen_path = adapter.generate(
+                            _pos,
+                            output_stem=f"{stem}_act{_ri + 1:02d}_regen",
+                            output_directory=_reel_img_dir,
+                            reference_image_path=_av_ref if _use_av else None,
+                            avatar_mode="ON" if _use_av else "OFF",
+                            reference_image_weight=_av_w if _use_av else None,
+                            visual_role=_role,
+                            negative_prompt=_neg or None,
+                        )
+                        _sequence_image_paths[_ri] = _ensure_sequence_image(
+                            _regen_path,
+                            fallback=_sequence_image_paths[_ri],
+                            target_path=_reel_img_dir / f"{stem}_act{_ri + 1:02d}_regen.png",
+                        )
+                        _images_generated_this_variant += _track_adapter_image(
+                            cost_tracker, adapter
+                        )
+                        _LOG.info(
+                            "VISUAL_INSPECTOR | regenerated frame %d (beat=%s role=%s)",
+                            _ri + 1, _beat, _role,
+                        )
+                    except Exception as _regen_exc:  # noqa: BLE001
+                        _LOG.warning(
+                            "VISUAL_INSPECTOR | regen frame %d failed: %s",
+                            _ri + 1, _regen_exc,
+                        )
+            except Exception as _insp_exc:  # noqa: BLE001
+                _LOG.warning("VISUAL_INSPECTOR skipped: %s", _insp_exc)
 
     posting_slot_display = scheduled_bulk_post_display(variant_index=variation_index)
 
@@ -1188,8 +2623,8 @@ def _produce_variant_worker(
     # ====================================================================
 
     # ---- Caption: STANDARD_QUOTE path -----------------------------------
-    # SMART_BAIT, LONG_CAPTION_IMAGE, and ECONOMIC_REEL all generate captions in Phase B1.
-    if post_type not in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL") and not skip_caption:
+    # SMART_BAIT, LONG_CAPTION_IMAGE, ECONOMIC_REEL, and CAROUSEL all generate captions in Phase B1.
+    if post_type not in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL") and not skip_caption:
         assert caption_engine is not None
         caption_mode_tag = "humanized"
 
@@ -1385,9 +2820,9 @@ def _produce_variant_worker(
         _ambient_path: Path | None = None
 
         # Reels go to a dedicated clips/ folder alongside assets/
-        # (e.g. outputs/wonder_feed/clips/) so MP4s are easy to find.
-        _reel_dir = subject_assets.parent.parent / "clips"
-        _reel_dir.mkdir(parents=True, exist_ok=True)
+        # (e.g. outputs/{page}/clips/) so MP4s are easy to find.
+        _reel_dir = Path(app_config.PAGE_OUTPUTS_DIR) / "clips"
+        os.makedirs(_reel_dir, exist_ok=True)
 
         # -- Voiceover (ElevenLabs TTS + word-level timestamps for auto-subtitles) --
         # caption      = 4-sentence narration script spoken by Dorothy voice
@@ -1396,10 +2831,9 @@ def _produce_variant_worker(
         _real_caption = caption if caption and caption != "(skipped)" else ""
         _voiceover_script = _real_caption or overlay_text
 
-        # For sequence reels (ancient_knowledge etc.) the caption is a short
-        # social-media post body (~65-80 words).  Generate a separate, longer
-        # documentary narration (~130-150 words, ~100 WPM) for TTS so the audio
-        # fills the full 80-second visual timeline instead of ~23 seconds.
+        # For sequence reels the caption is a short social-media post body.
+        # Generate a longer narration for TTS — or reuse the early master_mei script
+        # already built for narrative-to-image B-roll matching.
         if (
             page_ctx is not None
             and page_ctx.enable_sequence_reel
@@ -1411,44 +2845,194 @@ def _produce_variant_worker(
                 resolved_subject, page_ctx.tts_voice_preference or "default",
             )
             try:
-                _seq_script = caption_engine.generate_sequence_voiceover(
-                    resolved_subject,
-                    page_niche=page_ctx.content_niche,
-                    n_acts=page_ctx.reel_image_count,
-                    duration_s=page_ctx.reel_duration,
-                    total_words_target=140,
-                    economic=economic,
-                    niche_disclaimer=page_ctx.niche_disclaimer,
-                )
-                if _seq_script and len(_seq_script.split()) >= 60:
-                    _voiceover_script = _seq_script
+                if _early_seq_script and (
+                    len(_early_seq_script.split()) >= (
+                        page_ctx.reel_narration_min_words if page_ctx else 110
+                    )
+                    or len(_early_seq_script.strip()) >= 150
+                ):
+                    _seq_script = _early_seq_script
                     _LOG.info(
-                        "SEQUENCE_REEL | documentary voiceover generated: %d words",
+                        "SEQUENCE_REEL | reusing early narrative script: %d words",
                         len(_seq_script.split()),
                     )
                 else:
-                    _LOG.warning(
-                        "SEQUENCE_REEL | voiceover too short (%d words) — falling back to caption.",
-                        len((_seq_script or "").split()),
+                    _words_tgt = page_ctx.reel_narration_words
+                    _n_for_script = max(
+                        2,
+                        len(_sequence_image_paths) if _sequence_image_paths else page_ctx.reel_image_count,
                     )
+                    _seq_script = caption_engine.generate_sequence_voiceover(
+                        resolved_subject,
+                        page_niche=page_ctx.content_niche,
+                        persona_voice=page_ctx.tts_voice_preference or (
+                            "calm, deep, highly wise, authoritative ancient master"
+                            if (page_ctx.page_id or "").lower() == "master_mei"
+                            else "investigative, neutral, immersive"
+                        ),
+                        n_acts=_n_for_script,
+                        duration_s=page_ctx.reel_duration,
+                        total_words_target=_words_tgt,
+                        economic=economic,
+                        niche_disclaimer=page_ctx.niche_disclaimer,
+                        cta_line="",   # CTA is generated as a separate audio block and stitched after narration
+                        narrative_mode=page_ctx.narrative_mode,
+                        batch_angle_block=_batch_angle_block,
+                        previously_generated_hooks=list(generated_hooks_cache or []),
+                    )
+                    if cost_tracker is not None and _seq_script:
+                        cost_tracker.track_text(char_count=len(_seq_script))
+                _min_ok = page_ctx.reel_narration_min_words if page_ctx else 110
+                if _seq_script and (
+                    len(_seq_script.split()) >= _min_ok or len(_seq_script.strip()) >= 150
+                ):
+                    _voiceover_script = _seq_script
+                    _LOG.info(
+                        "SEQUENCE_REEL | documentary voiceover generated: %d words (min=%d)",
+                        len(_seq_script.split()), _min_ok,
+                    )
+                else:
+                    _LOG.warning(
+                        "SEQUENCE_REEL | voiceover too short (%d words, need ≥%d or ≥150 chars) — "
+                        "video will trim to audio length (no silent 80s pad).",
+                        len((_seq_script or "").split()), _min_ok,
+                    )
+                    if _seq_script and (
+                        len(_seq_script.split()) >= 60 or len(_seq_script.strip()) >= 150
+                    ):
+                        _voiceover_script = _seq_script
             except Exception as _seq_exc:  # noqa: BLE001
                 _LOG.warning("SEQUENCE_REEL | voiceover generation failed: %s — using caption.", _seq_exc)
         _word_timings: list[tuple[str, float, float]] = []
         if _voiceover_script and app_config.ELEVENLABS_API_KEY:
-            _voice_out = _reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"
+            # 1. Trim narration body to page word target (master_mei ≈ 175 for ~75 s).
+            #    Allow slight headroom so we don't over-trim a correctly long script.
+            _max_words = (page_ctx.reel_narration_words if page_ctx else 140) + 30
+            if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
+                # Hard cap 260 per Master Philosophical Scriptwriter brief
+                _max_words = int(page_ctx.reel_narration_max_words)
+            _voiceover_script = _trim_script_to_word_limit(_voiceover_script, max_words=_max_words)
+            _is_mei_page = (page_ctx.page_id if page_ctx else "").lower() == "master_mei"
+            _tts_ssml = bool(page_ctx.tts_enable_ssml) if page_ctx else False
+            if _is_mei_page:
+                # Purge ALL emotion/SSML tags → pure spoken text + ellipsis pacing
+                from avatar_engine.mei_narrative import (
+                    prepare_mei_tts_text,
+                    strip_inline_follow_cta,
+                )
+                _pre = _voiceover_script
+                _voiceover_script = prepare_mei_tts_text(_voiceover_script)
+                _voiceover_script = strip_inline_follow_cta(_voiceover_script)
+                if _pre != _voiceover_script:
+                    _LOG.info(
+                        "MASTER_MEI TTS prep | purged tags → pure speech (%d → %d chars)",
+                        len(_pre), len(_voiceover_script),
+                    )
+                _tts_ssml = False  # punctuation-only pacing; never send SSML
+            elif page_ctx is None or page_ctx.strip_audio_tags_before_tts:
+                # Other pages: strip bracketed emotional tags so ElevenLabs never reads them aloud
+                _pre_strip = _voiceover_script
+                _voiceover_script = _strip_audio_behavior_tags(_voiceover_script)
+                if _pre_strip != _voiceover_script:
+                    _LOG.info(
+                        "TTS tag strip | removed bracket tags before ElevenLabs (%d → %d chars)",
+                        len(_pre_strip), len(_voiceover_script),
+                    )
+            _narration_out = _reel_dir / f"{stem}_v{variant + 1:02d}_narration.mp3"
             _voice_id = page_ctx.elevenlabs_voice_id if page_ctx else None
+            _tts_speed = page_ctx.tts_narration_speed if page_ctx else None
+            _tts_vs = page_ctx.elevenlabs_voice_settings if page_ctx else None
             try:
                 _voice_path, _word_timings = generate_voiceover_with_timestamps(
                     _voiceover_script,
-                    _voice_out,
+                    _narration_out,
                     voice_id=_voice_id or None,
                     model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_multilingual_v2",
+                    speed=_tts_speed,
+                    voice_settings=_tts_vs or None,
+                    enable_ssml=_tts_ssml,
                 )
+                _word_timings = _filter_audio_tag_timings(_word_timings)
             except Exception as vaudio_exc:  # noqa: BLE001
                 _LOG.warning(
                     "Voiceover generation failed (variant %s): %s — reel will be silent.",
                     variant + 1, vaudio_exc,
                 )
+
+            # 2. Generate CTA audio as a distinct block (strict zero-overlap rule).
+            #    Use generate_voiceover_with_timestamps so subtitle coverage extends
+            #    across the full stitched track (narration + silence + CTA).
+            _cta_text = (page_ctx.reel_cta_text if page_ctx else "") or ""
+            from avatar_engine.mei_narrative import approved_cta_text, fix_cta_typos
+            if (page_ctx.page_id if page_ctx else "").lower() == "master_mei":
+                # Force the single approved CTA — never invent or duplicate variants
+                _cta_text = approved_cta_text()
+            if page_ctx is None or page_ctx.strip_audio_tags_before_tts:
+                _cta_text = _strip_audio_behavior_tags(_cta_text)
+            # Always correct sovereianty → sovereignty before TTS / burn-in
+            _cta_text = fix_cta_typos(_cta_text or "")
+            _cta_path: "Path | None" = None
+            _cta_word_timings: list[tuple[str, float, float]] = []
+            if _cta_text and _voice_path is not None:
+                _cta_out = _reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
+                try:
+                    _cta_path, _cta_word_timings = generate_voiceover_with_timestamps(
+                        _cta_text,
+                        _cta_out,
+                        voice_id=_voice_id or None,
+                        model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_multilingual_v2",
+                        speed=_tts_speed,
+                        voice_settings=_tts_vs or None,
+                    )
+                    _cta_word_timings = _filter_audio_tag_timings(_cta_word_timings)
+                    _LOG.info("CTA voiceover generated | %s (%d chars)", _cta_path.name, len(_cta_text))
+                except Exception as _cta_exc:  # noqa: BLE001
+                    _LOG.warning("CTA voiceover failed (%s) — CTA will be omitted.", _cta_exc)
+
+            # 3. Stitch: narration + 1.0 s silence + CTA → single voice track.
+            #    After stitching, offset CTA word timings by (narration_dur + 1.0 s)
+            #    and append to _word_timings so subtitles cover the whole track.
+            if _voice_path is not None and _cta_path is not None:
+                # Capture narration duration before overwriting _voice_path.
+                _narr_dur: float = 0.0
+                try:
+                    from moviepy import AudioFileClip as _AFC  # type: ignore[import]
+                    with _AFC(str(_narration_out)) as _afc:
+                        _narr_dur = float(_afc.duration)
+                except Exception:
+                    # Fallback: last word-timing end timestamp
+                    _narr_dur = _word_timings[-1][2] if _word_timings else 0.0
+
+                _stitched_out = _reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"
+                _voice_path = _stitch_audio_sequential(
+                    _voice_path, _cta_path, _stitched_out, silence_s=1.0
+                )
+
+                # Append offset CTA timings → full transcription coverage.
+                _cta_offset = _narr_dur + 1.0   # 1.0 s silence gap
+                _word_timings = _word_timings + [
+                    (w, s + _cta_offset, e + _cta_offset)
+                    for w, s, e in _cta_word_timings
+                ]
+                _LOG.info(
+                    "Subtitle coverage extended | narr=%.1fs + 1.0s + cta=%.1fs words (%d total tokens)",
+                    _narr_dur,
+                    _cta_word_timings[-1][2] if _cta_word_timings else 0.0,
+                    len(_word_timings),
+                )
+            elif _voice_path is None:
+                _voice_path = None   # silence path stays None; reel renders without audio
+
+            # 3b. Loudnorm on final voice track (no raw gain — prevents distortion)
+            if (
+                _voice_path is not None
+                and page_ctx
+                and (page_ctx.page_id or "").lower() == "master_mei"
+            ):
+                try:
+                    _voice_path = apply_voice_loudnorm(_voice_path)
+                except Exception as _ln_exc:  # noqa: BLE001
+                    _LOG.debug("VO loudnorm skipped: %s", _ln_exc)
         else:
             _LOG.warning(
                 "ECONOMIC_REEL | Voiceover skipped — %s",
@@ -1457,24 +3041,73 @@ def _produce_variant_worker(
 
         # ── COST TRACKING: audio/TTS ─────────────────────────────────────────
         if cost_tracker is not None and _voiceover_script:
+            # Include CTA characters in TTS cost if a separate CTA was generated.
+            _cta_chars = len(locals().get("_cta_text", ""))
             cost_tracker.track_audio(
-                char_count=len(_voiceover_script),
+                char_count=len(_voiceover_script) + _cta_chars,
                 sfx=bool(app_config.ELEVENLABS_API_KEY),
             )
 
-        # -- Ambient soundscape (ElevenLabs SFX) --
+        # -- Ambient soundscape (ElevenLabs SFX, page-specific prompt when set) --
         if app_config.ELEVENLABS_API_KEY:
             _ambient_out = _reel_dir / f"{stem}_v{variant + 1:02d}_ambient.mp3"
             _target_dur = page_ctx.reel_duration if page_ctx else 25.0
-            _ambient_path = generate_ambient_track(_ambient_out, duration_seconds=_target_dur)
+            _sfx_prompt = page_ctx.ambient_sfx_prompt if page_ctx else ""
+            _ambient_path = generate_ambient_track(
+                _ambient_out,
+                duration_seconds=_target_dur,
+                prompt=_sfx_prompt or None,
+            )
 
-        # -- For ancient_knowledge, prefer the local dark-mystery drone asset over
-        #    the ElevenLabs SFX ambient.  If the file is present, swap it in.
-        if page_ctx and (page_ctx.page_id or "").lower() == "ancient_knowledge":
-            _local_mystery_loop = app_config.ENGINE_ROOT / "assets" / "audio" / "ambient_mystery_loop.mp3"
-            if _local_mystery_loop.is_file():
-                _ambient_path = _local_mystery_loop
-                _LOG.info("ANCIENT_KNOWLEDGE | Using local ambient mystery loop: %s", _local_mystery_loop.name)
+        # -- Prefer page-local ambient loop when present on disk ──────────────
+        # ancient_knowledge → assets/audio/ambient_mystery_loop.mp3
+        # master_mei        → assets/master_mei/audio/ambient_cinematic_pad.mp3
+        # NEVER prefer legacy rain/martial rain loops (hiss/clipping).
+        if page_ctx:
+            _local_ambient = page_ctx.ambient_audio_path
+            _ban_rain = ("rain", "martial_loop", "storm", "thunder", "hiss")
+            if (
+                _local_ambient is not None
+                and _local_ambient.is_file()
+                and not any(b in _local_ambient.name.lower() for b in _ban_rain)
+            ):
+                _ambient_path = _local_ambient
+                _LOG.info(
+                    "%s | Using local ambient loop: %s",
+                    (page_ctx.page_id or "").upper(),
+                    _local_ambient.name,
+                )
+            elif (
+                _local_ambient is not None
+                and _local_ambient.is_file()
+                and any(b in _local_ambient.name.lower() for b in _ban_rain)
+            ):
+                _LOG.warning(
+                    "%s | Ignoring rain/hiss ambient asset %s — using cinematic SFX/drone",
+                    (page_ctx.page_id or "").upper(),
+                    _local_ambient.name,
+                )
+            elif (page_ctx.page_id or "").lower() == "ancient_knowledge":
+                _legacy_mystery = app_config.ENGINE_ROOT / "assets" / "audio" / "ambient_mystery_loop.mp3"
+                if _legacy_mystery.is_file():
+                    _ambient_path = _legacy_mystery
+                    _LOG.info("ANCIENT_KNOWLEDGE | Using local ambient mystery loop: %s", _legacy_mystery.name)
+
+        # Force ambient to 48 kHz (light loudnorm) before MoviePy mix
+        if _ambient_path is not None and Path(_ambient_path).is_file():
+            try:
+                from avatar_engine.audio_engine import resample_audio_48k as _rs48
+                # Copy into reel dir if using a shared asset, so we don't mutate originals
+                _amb_src = Path(_ambient_path)
+                if _amb_src.resolve().parent != _reel_dir.resolve():
+                    _amb_copy = _reel_dir / f"{stem}_v{variant + 1:02d}_ambient_48k.mp3"
+                    import shutil as _sh_amb
+                    _sh_amb.copy2(_amb_src, _amb_copy)
+                    _ambient_path = _rs48(_amb_copy, apply_loudnorm=True)
+                else:
+                    _ambient_path = _rs48(_amb_src, apply_loudnorm=True)
+            except Exception as _amb_rs_exc:  # noqa: BLE001
+                _LOG.debug("Ambient 48k resample skipped: %s", _amb_rs_exc)
 
         # -- Compile reel via moviepy --
         # Build a readable slug from the hook text for the filename.
@@ -1504,31 +3137,33 @@ def _produce_variant_worker(
                 and page_ctx.enable_sequence_reel
                 and len(_sequence_image_paths) >= 2
             )
-            # ── CTA TTS for sequence reels (ancient_knowledge) ───────────────
-            # Generate a short 5-second closing clip: "Siga o Ancient Knowledge
-            # para mais mistérios ancestrais." appended after the main narration.
-            _cta_text: str = ""
-            _cta_audio_path: "Path | None" = None
-            if _use_sequence and page_ctx and (page_ctx.page_id or "").lower() == "ancient_knowledge":
-                _cta_text = "Siga o Ancient Knowledge para mais mistérios ancestrais."
-                _cta_out = _reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
-                if app_config.ELEVENLABS_API_KEY:
-                    try:
-                        _cta_audio_path, _ = generate_voiceover_with_timestamps(
-                            _cta_text,
-                            _cta_out,
-                            voice_id=page_ctx.elevenlabs_voice_id,
-                            model_id=page_ctx.elevenlabs_model,
-                        )
-                        _LOG.info("CTA TTS generated → %s", _cta_out.name)
-                    except Exception as _cta_exc:  # noqa: BLE001
-                        _LOG.warning("CTA TTS failed: %s — no CTA audio appended", _cta_exc)
-                else:
-                    _LOG.warning("CTA TTS skipped — ELEVENLABS_API_KEY not set")
             if _use_sequence:
                 _LOG.info(
                     "SEQUENCE_REEL | %d images → %s",
                     len(_sequence_image_paths), _reel_target.name,
+                )
+                _styled_subs = False
+                if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
+                    try:
+                        from pages_config.master_mei.system_config import (
+                            is_cinematic_yellow_subtitles_enabled as _yel_on,
+                            is_cyber_samurai_subtitles_enabled as _cyber_on,
+                        )
+                        _styled_subs = bool(_yel_on() or _cyber_on())
+                    except Exception:
+                        _styled_subs = True
+                _wpp = page_ctx.subtitle_words_per_phrase if page_ctx and _styled_subs else 4
+                _sub_fill = (
+                    page_ctx.subtitle_fill if page_ctx and _styled_subs else (255, 230, 0)
+                )
+                _sub_sw = page_ctx.subtitle_stroke_width if page_ctx and _styled_subs else 0
+                _sub_sf = page_ctx.subtitle_stroke_fill if page_ctx and _styled_subs else None
+                # No raw VO gain scaling (loudnorm already applied). SFX at page ambient vol.
+                _voice_gain = 1.0
+                _amb_mul = (
+                    page_ctx.ambient_sfx_gain_mul
+                    if page_ctx and page_ctx.ambient_sfx_gain_mul is not None
+                    else 1.0
                 )
                 reel_path = _core_compile_sequence_reel(
                     _sequence_image_paths,
@@ -1553,9 +3188,45 @@ def _produce_variant_worker(
                     subtitle_y_position=page_ctx.subtitle_y_position if page_ctx else None,
                     hook_y_frac=page_ctx.hook_y_frac if page_ctx else 0.50,
                     page_id=page_ctx.page_id if page_ctx else "",
-                    cta_text=_cta_text,
-                    cta_audio=_cta_audio_path,
-                    cta_duration_s=5.0,
+                    words_per_phrase=_wpp,
+                    subtitle_fill=_sub_fill,
+                    subtitle_stroke_width=_sub_sw,
+                    subtitle_stroke_fill=_sub_sf,
+                    enable_flicker=page_ctx.enable_flicker if page_ctx else False,
+                    enable_light_rays=page_ctx.enable_light_rays if page_ctx else False,
+                    enable_dust_particles=page_ctx.enable_dust_particles if page_ctx else False,
+                    enable_light_refraction=page_ctx.enable_light_refraction if page_ctx else False,
+                    # Guaranteed CTA subtitle overlay — never cut off by act-boundary split
+                    # Strip audio behavior tags so [chuckles] etc. never burn onto screen.
+                    cta_text=_re.sub(
+                        r'\[(?:cackles|chuckles|dry\s*laugh)\]\s*',
+                        '',
+                        locals().get("_cta_text", "") or "",
+                        flags=_re.IGNORECASE,
+                    ).strip(),
+                    cta_start_s=locals().get("_narr_dur", -1.0) + 1.0
+                    if locals().get("_narr_dur", -1.0) >= 0 else -1.0,
+                    ambient_volume=page_ctx.ambient_volume if page_ctx else None,
+                    voice_volume_gain=_voice_gain,
+                    ambient_gain_mul=_amb_mul,
+                    ambient_duck_ratio=(
+                        page_ctx.ambient_duck_ratio
+                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
+                        else None
+                    ),
+                    ambient_duck_until_s=locals().get("_narr_dur", None),
+                    ambient_profile=(
+                        "warrior"
+                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
+                        else "mystery"
+                    ),
+                    tail_pad_s=page_ctx.reel_tail_pad_s if page_ctx else 1.0,
+                    force_exact_duration=(
+                        page_ctx.reel_force_exact_duration if page_ctx else False
+                    ),
+                    exact_duration_s=(
+                        page_ctx.reel_duration if page_ctx else 80.0
+                    ),
                 )
             else:
                 reel_path = compile_dynamic_reel(
@@ -1584,6 +3255,16 @@ def _produce_variant_worker(
             _LOG.info("ECONOMIC_REEL compiled → %s", reel_path.name)
             video_path_str = str(reel_path)
             print(f"[reel] Video compiled → {reel_path}")
+            _img_n = (
+                len(_sequence_image_paths)
+                if _sequence_image_paths
+                else max(1, int(_images_generated_this_variant or 1))
+            )
+            _print_video_cost_summary(
+                cost_tracker,
+                image_count=_img_n,
+                image_model_label="FLUX Schnell",
+            )
 
             # ── PHASE E1: Backblaze B2 upload ────────────────────────────────
             # Upload the finished MP4 to B2 and store the public URL so the
@@ -1666,6 +3347,18 @@ def _produce_variant_worker(
                 "caption_status": caption_mode_tag,
                 "created_utc": created_iso,
             }
+            if (page_ctx.page_id if page_ctx else "").lower() == "master_mei":
+                from avatar_engine.mei_narrative import (
+                    build_seo_description,
+                    build_seo_title,
+                )
+                _llm_seo = getattr(caption_engine, "last_seo_title", "") if caption_engine else ""
+                smart_bait_payload["title"] = (
+                    (_llm_seo or build_seo_title(resolved_subject)).strip()[:100]
+                )
+                smart_bait_payload["description"] = build_seo_description(
+                    resolved_subject, caption=caption or "",
+                )
             write_atomic_json(durable_abs, smart_bait_payload)
             try:
                 with write_lock:
@@ -1778,6 +3471,7 @@ def _produce_variant_worker(
                 topic=resolved_subject,
                 final_caption=caption_str,
                 imgbb_url=imgbb_url,
+                video_path=video_path_str or "",
             ),
         )
 
@@ -1790,7 +3484,9 @@ def _produce_variant_worker(
                     run_stamp=run_stamp,
                     posting_time=posting_slot_display,
                     caption=caption_str,
-                    media_url=imgbb_url,
+                    # Prefer B2 public video URL for reel posts; fall back to
+                    # local video path; then fall back to ImgBB for image posts.
+                    media_url=_b2_video_url or video_path_str or imgbb_url,
                 )
             if xlsx_path:
                 _LOG.info("PostPlanner XLSX row written: %s", xlsx_path.name)
@@ -1805,13 +3501,53 @@ def _produce_variant_worker(
         img_report = bm.image_primary_id
 
     lib_json_rel = path_under_engine(app_config.ENGINE_ROOT, durable_abs) if durable_abs else ""
+    _seo_title = ""
+    _seo_description = caption_str
+    if (page_ctx.page_id if page_ctx else "").lower() == "master_mei":
+        from avatar_engine.mei_narrative import (
+            build_seo_description,
+            build_seo_title,
+        )
+        _llm_seo = (
+            _seo_title_local
+            or (getattr(caption_engine, "last_seo_title", "") if caption_engine else "")
+        )
+        if _batch_angle and _batch_angle.seo_title_hint and not _llm_seo:
+            _seo_title = _batch_angle.seo_title_hint.strip()[:100]
+        else:
+            _seo_title = (_llm_seo or build_seo_title(resolved_subject)).strip()[:100]
+        _seo_description = build_seo_description(
+            resolved_subject, caption=caption_str or "",
+        )
+    elif _batch_angle is not None:
+        # Generic pages: unique angle-driven title + description first line
+        _seo_title = (
+            _seo_title_local
+            or (_batch_angle.seo_title_hint or _batch_angle.angle_title)
+            or overlay_text
+            or resolved_subject
+        ).strip()[:100]
+        _angle_lead = (
+            f"{_batch_angle.angle_title}: {_batch_angle.angle_brief}"
+        ).strip()
+        if caption_str:
+            _seo_description = f"{_angle_lead}\n\n{caption_str}"
+        else:
+            _seo_description = _angle_lead
+    elif _seo_title_local:
+        _seo_title = _seo_title_local[:100]
+
     _return_dict = {
         "topic": resolved_subject,
+        "title": _seo_title or overlay_text or resolved_subject,
+        "batch_angle": (_batch_angle.angle_title if _batch_angle else ""),
+        "hook_style": (_batch_angle.hook_style if _batch_angle else ""),
         "variant_index": variant + 1,
         "local_image_path": img_ref_engine,
         "video_path": video_path_str,
         "imgbb_url": imgbb_url,
         "caption": caption_str,
+        "description": _seo_description,
         "overlay_text": overlay_text,
         "library_timestamp": meta.get("timestamp"),
         "library_json_relative": lib_json_rel,
@@ -1820,6 +3556,9 @@ def _produce_variant_worker(
         "model_research_head": bm.research_primary_id,
         "humanizer": humanizer_notes,
         "caption_mode": caption_mode_tag if caption_mode_tag is not None else "skipped",
+        # Carousel and image-count metadata
+        "carousel_image_paths": _carousel_image_paths,
+        "images_generated": _images_generated_this_variant,
     }
 
     # ── COST TRACKING: write telemetry + annotate return dict ────────────────
@@ -1830,6 +3569,8 @@ def _produce_variant_worker(
         )
         _return_dict["estimated_cost_usd"] = round(cost_tracker.total_usd(), 6)
         _return_dict["cost_tier"] = cost_tracker.cost_tier
+        # Full breakdown stored on the row so the summary printer can render it
+        _return_dict["cost_breakdown"] = cost_tracker.to_dict()
         _LOG.info(
             "CostTracker | variant %d total=$%.6f tier=%s",
             variant + 1, cost_tracker.total_usd(), cost_tracker.cost_tier,
@@ -1983,16 +3724,25 @@ def produce(
     import random as _rnd
     _page_id_lower = (page_ctx.page_id if page_ctx else "").lower()
     if (
-        _page_id_lower in ("wonder_feed", "ancient_knowledge")
+        _page_id_lower in ("wonder_feed", "ancient_knowledge", "master_mei")
         and post_type in ("ECONOMIC_REEL", "SMART_BAIT")
         and page_ctx is not None
         and page_ctx.topic_pool
     ):
         resolved_subject = _rnd.choice(page_ctx.topic_pool)
-        _LOG.info(
-            "%s TOPIC LOCK | fresh pool topic selected → %r (pool size=%d)",
-            _page_id_lower, resolved_subject, len(page_ctx.topic_pool),
-        )
+        if _page_id_lower == "master_mei":
+            from avatar_engine.mei_narrative import episode_theme_meta
+            _ep = episode_theme_meta(resolved_subject)
+            _LOG.info(
+                "%s TOPIC LOCK | episode=%s | theme=%s | topic=%r (pool size=%d)",
+                _page_id_lower, _ep["label"], _ep["key"],
+                resolved_subject, len(page_ctx.topic_pool),
+            )
+        else:
+            _LOG.info(
+                "%s TOPIC LOCK | fresh pool topic selected → %r (pool size=%d)",
+                _page_id_lower, resolved_subject, len(page_ctx.topic_pool),
+            )
     else:
         # Generic fallback: replace only the known static placeholder with a pool topic.
         _STATIC_FALLBACK_SUBJECT = "Holistic vitality protocol"
@@ -2016,6 +3766,103 @@ def produce(
         qty,
         economic,
     )
+
+    # ── BATCH PLANNER: Angles Matrix (qty > 1) ───────────────────────────────
+    # Deconstruct the core topic into N unique non-overlapping sub-angles BEFORE
+    # the generation loop. Each worker receives Global Topic DNA + Specific Angle.
+    batch_angles: list[BatchAngle] | None = None
+    uniqueness_guard: BatchUniquenessGuard | None = None
+    global_topic_dna = (subject or resolved_subject or "").strip()
+
+    # ── PER-VARIANT TOPIC LIST (legacy pool / LLM topics) ────────────────────
+    # When qty > 1 and the user did not specify a topic, every variant must
+    # receive its own unique, freshly-generated subject.  The strategy is:
+    #   1. If the page topic_pool is large enough → shuffle + sample without
+    #      replacement (fast, zero API cost).
+    #   2. If the pool is too small → generate the remainder via Gemini in one
+    #      call using the page-specialised generate_bulk_topics() prompt.
+    #   3. Pool absent entirely → call generate_bulk_topics() for all qty slots.
+    per_variant_topics: list[str] | None = None
+    _seed_for_angles: list[str] | None = None
+    if not subject and qty > 1:
+        _pool = page_ctx.topic_pool if page_ctx else []
+        if _pool and len(_pool) >= qty:
+            _pool_copy = list(_pool)
+            _rnd.shuffle(_pool_copy)
+            # Anchor variant-0 to the already-resolved_subject so the pre-research
+            # phase that runs before the loop still uses a consistent base topic.
+            per_variant_topics = [resolved_subject] + [
+                t for t in _pool_copy if t != resolved_subject
+            ][:qty - 1]
+            _seed_for_angles = list(per_variant_topics)
+            _LOG.info(
+                "Bulk topics | pool-sampled %d unique topics for page=%s",
+                len(per_variant_topics), _page_id_lower,
+            )
+        else:
+            _llm_topics = generate_bulk_topics(
+                qty,
+                page_id=_page_id_lower,
+                page_niche=page_ctx.content_niche if page_ctx else "",
+            )
+            if _llm_topics:
+                # Combine pool topics + LLM topics, deduplicate, take qty
+                _combined = _llm_topics + list(_pool or [])
+                _seen: set[str] = set()
+                _deduped: list[str] = []
+                for _t in _combined:
+                    if _t.lower() not in _seen:
+                        _seen.add(_t.lower())
+                        _deduped.append(_t)
+                per_variant_topics = _deduped[:qty]
+                # Ensure the first variant matches the pre-resolved subject
+                if per_variant_topics:
+                    per_variant_topics[0] = resolved_subject
+                _seed_for_angles = list(per_variant_topics)
+                _LOG.info(
+                    "Bulk topics | LLM-generated %d unique topics for page=%s",
+                    len(per_variant_topics), _page_id_lower,
+                )
+            else:
+                _LOG.warning(
+                    "Bulk topics | LLM generation returned no topics — all variants "
+                    "will use the same resolved_subject: %r", resolved_subject,
+                )
+
+    if qty > 1:
+        uniqueness_guard = BatchUniquenessGuard()
+        # Prefer explicit CLI topic as Global DNA; else resolved subject / niche
+        _core = (subject or "").strip() or global_topic_dna or (
+            page_ctx.content_niche if page_ctx else ""
+        ) or "Content series"
+        global_topic_dna = _core
+        batch_angles = plan_angles_matrix(
+            _core,
+            qty,
+            page_id=_page_id_lower,
+            page_niche=page_ctx.content_niche if page_ctx else "",
+            seed_topics=_seed_for_angles or per_variant_topics,
+        )
+        # Prefer angles matrix as the authoritative per-variant topic list
+        per_variant_topics = [a.combined_topic for a in batch_angles]
+        if batch_angles:
+            resolved_subject = batch_angles[0].combined_topic
+        envelope["batch_angles"] = [
+            {
+                "index": a.index,
+                "angle_title": a.angle_title,
+                "hook_style": a.hook_style,
+                "visual_focus": a.visual_focus,
+                "seo_title_hint": a.seo_title_hint,
+            }
+            for a in batch_angles
+        ]
+        envelope["global_topic_dna"] = global_topic_dna
+        _LOG.info(
+            "BatchPlanner | uniqueness guard armed | angles=%d | core=%r",
+            len(batch_angles), global_topic_dna,
+        )
+
     logging.info(
         "Models banner | verified_image=%s | verified_research=%s | humanizer=%s",
         bm.image_primary_id,
@@ -2072,9 +3919,26 @@ def produce(
     # across all variants and depends only on avatar_mode and page_ctx.
     effective_ref_path: Path | None = None
     if avatar_mode == "ON":
-        if page_ctx and page_ctx.avatar_reference_exists:
-            effective_ref_path = page_ctx.avatar_reference_png
-        else:
+        # master_mei: hard-prefer forced avatar.png DNA over cycled avatars
+        if (
+            page_ctx
+            and (page_ctx.page_id or "").lower() == "master_mei"
+            and not page_ctx.sequence_force_avatar_off
+        ):
+            _forced_ref = page_ctx.forced_avatar_reference_path
+            if _forced_ref is not None and _forced_ref.is_file():
+                effective_ref_path = _forced_ref
+        if effective_ref_path is None and page_ctx and page_ctx.avatar_reference_exists:
+            # Prefer cycling pool (assets/{page}/avatars) when available
+            _cycled = page_ctx.cycle_avatar_reference(0)
+            effective_ref_path = _cycled or page_ctx.avatar_reference_png
+        elif effective_ref_path is None and page_ctx:
+            _cycled = page_ctx.cycle_avatar_reference(0)
+            if _cycled is not None:
+                effective_ref_path = _cycled
+            else:
+                effective_ref_path = app_config.REFERENCE_IMAGE_PATH
+        elif effective_ref_path is None:
             effective_ref_path = app_config.REFERENCE_IMAGE_PATH
 
     econ_model = app_config.GEMINI_ECONOMIC_BRAIN_MODEL
@@ -2116,6 +3980,10 @@ def produce(
         qty=qty,
         slug=slug,
         resolved_subject=resolved_subject,
+        per_variant_topics=per_variant_topics,
+        batch_angles=batch_angles,
+        uniqueness_guard=uniqueness_guard,
+        global_topic_dna=global_topic_dna,
         corpus=corpus,
         pre_narratives=pre_narratives,
         caption_engine=caption_engine,
@@ -2164,7 +4032,7 @@ def produce(
     else:
         # Multi-variant path: each worker runs concurrently; a failure in
         # one variant is caught per-future and logged, all others complete.
-        max_workers = min(qty, 5)
+        max_workers = min(qty, 3)
         _LOG.info(
             "Bulk production: %d variants | max_workers=%d | page=%s",
             qty,
@@ -2205,6 +4073,22 @@ def produce(
             "%d of %d variant(s) failed and were excluded from the output.",
             skipped_count,
             qty,
+        )
+
+    # ── FINAL COST SNAPSHOT: capture the shared tracker AFTER all workers ────
+    # Each worker writes its per-variant view of the tracker, but since all workers
+    # share the same CostTracker instance, the post-loop snapshot has the full
+    # accumulated totals across every variant.  Store it at the envelope level so
+    # _print_production_summary always displays the complete picture.
+    _total_images_generated = sum(r.get("images_generated", 0) for r in items)
+    envelope["total_images_generated"] = _total_images_generated
+    if _cost_tracker is not None and page_ctx is not None and page_ctx.enable_cost_tracking:
+        envelope["final_cost_breakdown"] = _cost_tracker.to_dict()
+        _LOG.info(
+            "Final cost snapshot | total_images=%d | total_usd=%.6f | tier=%s",
+            _total_images_generated,
+            _cost_tracker.total_usd(),
+            _cost_tracker.cost_tier,
         )
 
     envelope["items"] = items
@@ -2249,6 +4133,256 @@ def run_pipeline(
 def _print_test_footer() -> None:
     print("\n--- Test summary ---\n")
     print("Dry-run complete; no Gemini or Claude paid calls were exercised for generation.\n")
+
+
+def run_test_images_debug_mode(
+    *,
+    topic: "str | None",
+    page_id: str,
+    avatar_mode: str,
+    post_format: str,
+    n: int,
+    economic: bool = True,
+) -> None:
+    """
+    ``--test-images [N]`` debug mode.
+
+    Generates the real production voiceover script and the first ``n`` visual
+    image prompts using the SAME prompt-generation code path as a live run
+    (``_build_master_mei_script_act_prompts`` for master_mei, the generic
+    aligned-visual-block builder for other sequence pages), prints every
+    final prompt, generates ``n`` images in parallel
+    (``ThreadPoolExecutor(max_workers=5)``).
+
+    Master Mei saves stills (768×1344) to
+    ``outputs/master_mei/VisualQA_Agent_Judge/attempts/``.
+    Other pages save to ``outputs/<page_id>/test_previews/``.
+
+    Bypasses ElevenLabs voiceover synthesis, MoviePy video compilation, and
+    all YouTube / B2 / ImgBB uploads entirely.
+    """
+    from page_loader import load_page_context
+    from avatar_engine.caption_engine import CaptionEngine
+    from avatar_engine.providers.model_router import image_model as _route_image_dbg
+
+    n = max(1, int(n))
+    page_ctx = load_page_context(page_id, avatar_mode=avatar_mode, post_format=post_format)
+    resolved_subject = (topic or "").strip() or page_ctx.display_name or page_id
+    is_mm = (page_ctx.page_id or "").lower() == "master_mei"
+    base_style = (
+        page_ctx.illustration_style.rstrip(" .")
+        if page_ctx.illustration_style
+        else page_ctx.atmosphere_style.rstrip(" .")
+    )
+
+    seq_n = _compute_dense_act_count(
+        page_ctx.reel_duration,
+        seconds_per_act=page_ctx.reel_seconds_per_act,
+        min_acts=page_ctx.reel_image_min_count,
+        max_acts=page_ctx.reel_image_count,
+    )
+    n = min(n, seq_n)
+
+    print("\n" + "=" * 60)
+    print(f"[DEBUG] --test-images MODE | page={page_id} | subject={resolved_subject!r}")
+    print(f"[DEBUG] Requested previews={n} | full production act_count={seq_n}")
+    print("=" * 60)
+
+    print("[DEBUG] Generating voiceover script…")
+    ce = CaptionEngine()
+    script = ce.generate_sequence_voiceover(
+        resolved_subject,
+        page_niche=page_ctx.content_niche,
+        persona_voice=page_ctx.tts_voice_preference or (
+            "calm, deep, highly wise, authoritative ancient master"
+            if is_mm else "investigative, neutral, immersive"
+        ),
+        n_acts=seq_n,
+        duration_s=page_ctx.reel_duration,
+        total_words_target=page_ctx.reel_narration_words,
+        economic=economic,
+        niche_disclaimer=page_ctx.niche_disclaimer,
+        cta_line="",
+        narrative_mode=page_ctx.narrative_mode,
+    ) or resolved_subject
+    print(f"[DEBUG] Script ({len(script.split())} words):\n{script}\n")
+
+    # Build visual prompts for test previews.
+    # Master Mei: force core Giger pillars (never Mei likeness).
+    #   tech_slavery / warrior_forge / panopticon
+    from avatar_engine.mei_visual import (
+        MASTER_STYLE_ANCHOR_DEFAULT as _MM_STYLE_DEFAULT,
+        TEST_PREVIEW_MODULES as _MM_TEST_MODULES,
+        TEST_PREVIEW_MODULES_3 as _MM_TEST_MODULES_3,
+        build_test_preview_prompts as _mm_build_test_previews,
+    )
+    from avatar_engine.style_reader import default_master_mei_ref_folder as _mm_ref_folder
+
+    _mm_pillar_keys: tuple = ()
+    if is_mm:
+        _mm_fixed_anchor = (
+            page_ctx.master_style_anchor or _MM_STYLE_DEFAULT
+        ).strip() or _MM_STYLE_DEFAULT
+        _mm_style_dir = _mm_ref_folder()
+        if n >= 4:
+            _mm_pillar_keys = _MM_TEST_MODULES
+        else:
+            _mm_pillar_keys = _MM_TEST_MODULES_3[:n]
+        print(
+            f"[DEBUG] VISION_AGENT | style_reference folder → {_mm_style_dir}"
+        )
+        preview_source = _mm_build_test_previews(
+            script=script,
+            subject=resolved_subject,
+            style_anchor=_mm_fixed_anchor,
+            segment_fn=_split_script_into_act_chunks,
+            module_keys=_mm_pillar_keys,
+            reference_folder=_mm_style_dir,
+            use_vision_style=True,
+        )
+        print(
+            "[DEBUG] Master Mei EXCLUDED from test previews | modules: "
+            + ", ".join(_mm_pillar_keys)
+            + " | resolution 768x1344"
+        )
+    else:
+        mei_slots = set()
+        from avatar_engine.prompt_alignment import build_aligned_visual_block
+
+        spoken_snippets = _segment_script_into_act_snippets(script, seq_n)
+        act_descriptors = _build_reel_act_descriptors(
+            resolved_subject, seq_n, page_id=page_ctx.page_id or ""
+        )
+        topic_entity_ctx = _extract_topic_visual_entities(resolved_subject)
+        topic_entity_prefix = (
+            f"VISUAL SUBJECT: {topic_entity_ctx}. " if topic_entity_ctx else ""
+        )
+        parallax_directive = (
+            "DEPTH LAYERS: Foreground — dust particles, stone arch, or human observer. "
+            "Background — distant temple façade, starfield, or horizon. Force multi-plane depth."
+        )
+        lighting_tail = (
+            "LIGHTING: Dramatic directional light, volumetric shafts, high-contrast cinematic "
+            "look, 35mm film grain, full-bleed, no borders."
+        )
+        all_prompts = []
+        for i in range(seq_n):
+            snippet = spoken_snippets[i] if i < len(spoken_snippets) else resolved_subject
+            prev_snip = (
+                spoken_snippets[i - 1] if i > 0 and (i - 1) < len(spoken_snippets) else ""
+            )
+            act_desc = (
+                act_descriptors[i] if i < len(act_descriptors)
+                else f"ACT {i + 1}: {resolved_subject}."
+            )
+            align = build_aligned_visual_block(
+                spoken_snippet=snippet, act_index=i, total_acts=seq_n,
+                main_subject=resolved_subject, prev_snippet=prev_snip,
+            )
+            all_prompts.append(
+                f"{topic_entity_prefix}{base_style}. {act_desc} {align} "
+                f"{parallax_directive}{lighting_tail}"
+            )
+        preview_source = all_prompts
+
+    from avatar_engine.providers.together_image import sanitize_prompt_for_flux
+
+    # Sanitize BEFORE printing so the debug output matches EXACTLY what is
+    # sent to Together/FLUX (TogetherImageAdapter.generate() re-applies the
+    # same idempotent sanitizer right before the API call).
+    # For master_mei, preview_source is already exactly the pillar prompt set.
+    _take = len(preview_source) if is_mm else n
+    test_prompts = [sanitize_prompt_for_flux(p) for p in preview_source[:_take]]
+    for idx, p in enumerate(test_prompts, start=1):
+        label = ""
+        if is_mm and _mm_pillar_keys and idx <= len(_mm_pillar_keys):
+            label = f" [{_mm_pillar_keys[idx - 1]}]"
+        print(f"[DEBUG] Final Prompt Sent to API [{idx}/{len(test_prompts)}]{label}: {p}")
+
+    # ------------------------------------------------------------------
+    # Image generation — N images in parallel (max_workers=5)
+    # ------------------------------------------------------------------
+    if is_mm:
+        out_dir = (
+            app_config.OUTPUTS_DIR / page_id / "VisualQA_Agent_Judge" / "attempts"
+        )
+    else:
+        out_dir = app_config.OUTPUTS_DIR / page_id / "test_previews"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    _page_cost = page_ctx.cost_tier
+    _img_route = _route_image_dbg(
+        task="image",
+        page_cost_tier=_page_cost,
+        model_override=page_ctx.image_model_override,
+        preferred=(
+            app_config.GEMINI_ECONOMIC_IMAGE_MODEL if economic else app_config.GEMINI_IMAGE_MODEL
+        ),
+        use_premium=True if (_page_cost or "").lower() == "premium" else None,
+        log=True,
+    )
+    img_model_id = app_config.normalize_image_model_id(_img_route.model_id)
+    adapter = GeminiImageAdapter(
+        model_id=img_model_id, page_cost_tier=_page_cost, tier=_img_route.tier,
+    )
+
+    # --test-images for master_mei: never attach avatar.png (Mei excluded).
+    style_refs = page_ctx.resolve_style_reference_images()
+    style_weight = page_ctx.style_reference_weight
+    print(
+        f"[DEBUG] Loaded {len(style_refs)} style reference assets for {page_id}: "
+        f"{[p.name for p in style_refs]} | weight={style_weight}"
+    )
+    if is_mm:
+        print(f"[DEBUG] Draft output dir → {out_dir}")
+
+    jobs: "dict[int, Any]" = {}
+    for idx, p in enumerate(test_prompts):
+        _p_lo = (p or "").lower()
+        _skip_sref = is_mm and any(
+            tok in _p_lo
+            for tok in (
+                "fitness model physique",
+                "glossy led fashion",
+                "clean high-fashion",
+            )
+        )
+        jobs[idx] = functools.partial(
+            adapter.generate,
+            p,
+            output_stem=f"attempt_{idx + 1:02d}" if is_mm else f"test_preview_act{idx + 1:02d}",
+            output_directory=out_dir,
+            reference_image_path=None,
+            avatar_mode="OFF",
+            reference_image_weight=None,
+            style_reference_paths=None if _skip_sref else (style_refs or None),
+            style_reference_weight=None if _skip_sref else style_weight,
+            draft=bool(is_mm),
+        )
+
+    print(
+        f"\n[DEBUG] Generating {len(jobs)} test image(s) in parallel "
+        f"(ThreadPoolExecutor max_workers=5) → {out_dir}"
+    )
+    results = _run_acts_parallel(jobs, max_workers=5)
+
+    ok = 0
+    for idx in range(len(test_prompts)):
+        res = results.get(idx)
+        if isinstance(res, Exception):
+            print(f"[DEBUG] Image {idx + 1}/{n} FAILED: {res}")
+        else:
+            print(f"[DEBUG] Image {idx + 1}/{n} OK → {res}")
+            ok += 1
+
+    print(
+        f"\n[DEBUG] --test-images complete | {ok}/{len(test_prompts)} succeeded | "
+        f"saved to {out_dir}"
+    )
+    print(
+        "[DEBUG] Bypassed: ElevenLabs voiceover synthesis, MoviePy video compilation, "
+        "YouTube/B2/ImgBB uploads."
+    )
 
 
 def cli() -> None:
@@ -2333,7 +4467,14 @@ def cli() -> None:
         "--post-type",
         dest="post_type",
         default="STANDARD_QUOTE",
-        choices=["STANDARD_QUOTE", "SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL"],
+        choices=[
+            "STANDARD_QUOTE",
+            "SMART_BAIT",
+            "LONG_CAPTION_IMAGE",
+            "ECONOMIC_REEL",
+            "CAROUSEL",
+            "REFERENCE_BASED_REELS",
+        ],
         metavar="POST_TYPE",
         help=(
             "STANDARD_QUOTE (default): long-form educational caption from PDF research. "
@@ -2343,7 +4484,11 @@ def cli() -> None:
             "Deep long-form storytelling caption about relationships/character. "
             "ECONOMIC_REEL: graphite image base (same pipeline as SMART_BAIT) compiled into a "
             "vertical 9:16 MP4 reel with ElevenLabs TTS voiceover, dark ambient soundscape, "
-            "and cinematic Ken Burns zoom-in. Outputs .mp4 + durable JSON."
+            "and cinematic Ken Burns zoom-in. Outputs .mp4 + durable JSON. "
+            "CAROUSEL: generates 3 visually cohesive images (slide_01..03) with distinct "
+            "scene viewpoints for a 3-part visual narrative post. "
+            "REFERENCE_BASED_REELS: extract a raw-footage clip, overlay an LLM hook text, "
+            "blend lullaby ambient audio — no image generation. Designed for momma_circle."
         ),
     )
     parser.add_argument(
@@ -2359,6 +4504,64 @@ def cli() -> None:
         help="Force Gemini research + Claude 3.5 Sonnet captions (dual-LLM relay).",
     )
     parser.add_argument(
+        "--publish-youtube",
+        "--upload-youtube",
+        dest="publish_youtube",
+        action="store_true",
+        default=False,
+        help=(
+            "Auto-upload compiled reels to YouTube AFTER generation as SCHEDULED "
+            "(Programado): privacyStatus=private + publishAt staggered timestamps. "
+            "Never uploads as unlisted/immediate. "
+            "Uses isolated OAuth token per page at credentials/tokens/youtube_token_{page}.json. "
+            "Alias: --upload-youtube. Overrides ENABLE_YOUTUBE_UPLOAD in .env."
+        ),
+    )
+    parser.add_argument(
+        "--yt-privacy",
+        dest="yt_privacy",
+        default=None,
+        choices=["public", "unlisted", "private"],
+        metavar="PRIVACY",
+        help=(
+            "IGNORED when --publish-youtube is set (forced to private + publishAt for Scheduled). "
+            "Kept for legacy one-off scripts only."
+        ),
+    )
+    parser.add_argument(
+        "--schedule-uploads",
+        dest="schedule_uploads",
+        action="store_true",
+        default=False,
+        help=(
+            "Legacy flag — scheduling is now ALWAYS ON with --publish-youtube "
+            "(private + publishAt). Kept for backward compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--interval-hours",
+        dest="interval_hours",
+        type=float,
+        default=12.0,
+        metavar="HOURS",
+        help=(
+            "Base interval in hours between scheduled posts when --publish-youtube "
+            "is active. Video i publishes at now + interval_hours*(i+1) (+ random delay). "
+            "Default: 12.0."
+        ),
+    )
+    parser.add_argument(
+        "--random-delay-max-minutes",
+        dest="random_delay_max_minutes",
+        type=int,
+        default=60,
+        metavar="MINUTES",
+        help=(
+            "Random additional delay in minutes (0 to X) added to each scheduled "
+            "publishAt slot. Default: 60."
+        ),
+    )
+    parser.add_argument(
         "--draw-style",
         dest="draw_style",
         default="SKETCH",
@@ -2372,7 +4575,57 @@ def cli() -> None:
             "this flag is ignored for those post types)."
         ),
     )
+    parser.add_argument(
+        "--clip-duration",
+        dest="clip_duration",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Target clip length in seconds for REFERENCE_BASED_REELS post type. "
+            "Clamped to the page config CLIP_DURATION_MIN_S / CLIP_DURATION_MAX_S range. "
+            "Default: midpoint of the configured range (e.g. 37 s for 15–60 s)."
+        ),
+    )
+    parser.add_argument(
+        "--test-images",
+        dest="test_images",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "DEBUG MODE: generate the production script + the first N visual image "
+            "prompts for --page, print every final prompt, generate N images in "
+            "parallel (ThreadPoolExecutor max_workers=5) to "
+            "outputs/<page_id>/test_previews/, then exit immediately. Bypasses "
+            "ElevenLabs voiceover, MoviePy video compilation, and all "
+            "YouTube/B2/ImgBB uploads."
+        ),
+    )
+    parser.add_argument(
+        "--resume-youtube-queue",
+        dest="resume_youtube_queue",
+        action="store_true",
+        default=False,
+        help=(
+            "Read credentials/pending_youtube_uploads.json and attempt to publish "
+            "any videos that were queued after a previous run hit YouTube's daily "
+            "upload limit (~20 videos/channel/day). Scoped to --page when explicitly "
+            "passed on the CLI, otherwise resumes queued uploads for ALL pages. "
+            "Exits after resuming — does not generate new content."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.resume_youtube_queue:
+        _explicit_page = any(a == "--page" or a.startswith("--page=") for a in sys.argv[1:])
+        _resume_page = args.page if _explicit_page else None
+        print(
+            "[YouTube] --resume-youtube-queue: resuming pending upload queue"
+            + (f" for page='{_resume_page}' …" if _resume_page else " for ALL pages …")
+        )
+        _yt_resume_pending_queue(page_name=_resume_page)
+        return
 
     # ── PERMANENT WONDER_FEED STYLE LOCK ───────────────────────────────────
     # Fires BEFORE any config lookups so no legacy format bucket can override.
@@ -2394,6 +4647,24 @@ def cli() -> None:
             args.post_format = "DYNAMIC_REEL"
         # Override draw_style to NATURAL (photorealistic) — never sketch for this page
         args.draw_style = "NATURAL"
+
+    # ── MASTER_MEI (SUPER) STYLE & FORMAT LOCK ─────────────────────────────
+    # Cinematic martial photorealism + avatar ON; sequence reel for ECONOMIC_REEL.
+    if getattr(args, "page", "").lower() == "master_mei":
+        _mm_pt = getattr(args, "post_type", "").upper()
+        if _mm_pt == "ECONOMIC_REEL":
+            args.post_format = "DYNAMIC_REEL"
+        args.draw_style = "NATURAL"
+        # Default avatar ON unless CLI explicitly set --avatar
+        if getattr(args, "avatar", None) is None:
+            args.avatar = "ON"
+
+    # ── MOMMA_CIRCLE FORMAT LOCK ────────────────────────────────────────────
+    # Reference-based pipeline: always REFERENCE_BASED_REELS; no Gemini image generation.
+    if getattr(args, "page", "").lower() == "momma_circle":
+        args.post_type   = "REFERENCE_BASED_REELS"
+        args.post_format = "REFERENCE_BASED_REELS"
+        args.draw_style  = "NATURAL"
 
     if args.economic and args.premium:
         raise SystemExit("Choose either --economic or --premium-relay, not both.")
@@ -2427,6 +4698,9 @@ def cli() -> None:
     # display and any format-sensitive guards all see the correct type.
     if getattr(args, "post_type", "").upper() == "ECONOMIC_REEL":
         post_format = "DYNAMIC_REEL"
+    # REFERENCE_BASED_REELS uses its own engine path — keep the format as-is.
+    if getattr(args, "post_type", "").upper() == "REFERENCE_BASED_REELS":
+        post_format = "REFERENCE_BASED_REELS"
 
     try:
         page_ctx = load_page_context(page_id, avatar_mode=avatar_mode, post_format=post_format)
@@ -2452,6 +4726,18 @@ def cli() -> None:
             "Page-level economic override | page=%s ECONOMIC_BRAIN_MODE=%s (applied before model verification)",
             page_id, econ_resolved,
         )
+
+    if args.test_images is not None:
+        run_test_images_debug_mode(
+            topic=(args.topic or None),
+            page_id=page_id,
+            avatar_mode=avatar_mode,
+            post_format=post_format,
+            n=args.test_images,
+            economic=bool(econ_resolved),
+        )
+        return
+
     planned_models = _snapshot_verified_models(economic_brain_mode=econ_resolved)
 
     logging.basicConfig(
@@ -2487,11 +4773,51 @@ def cli() -> None:
     _active_post_type = args.post_type.upper() if hasattr(args, "post_type") else ""
     if (
         args.page.lower() == "wonder_feed"
-        and _active_post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL")
+        and _active_post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL")
     ):
         args.draw_style = "SKETCH"
 
     envelope: dict[str, Any] | None = None
+
+    # ── REFERENCE_BASED_REELS early dispatch ──────────────────────────────
+    # Bypasses the full Gemini-image produce() pipeline — uses raw footage clips.
+    if _active_post_type == "REFERENCE_BASED_REELS":
+        try:
+            from core_engine.reference_reel_engine import ReferenceReelEngine
+            _ref_engine = ReferenceReelEngine(
+                page_ctx,
+                outputs_dir=page_ctx.outputs_dir,
+                api_key_gemini=app_config.GEMINI_API_KEY,
+                api_key_elevenlabs=app_config.ELEVENLABS_API_KEY,
+            )
+            postplanner_dir = page_ctx.outputs_dir / "postplanner"
+            envelope = _ref_engine.run(
+                quantity=args.quantity,
+                topic=topic_raw or None,
+                clip_duration=getattr(args, "clip_duration", None),
+                postplanner_dir=postplanner_dir,
+                run_stamp=ts_token,
+                posting_slot_display="",
+                publish_to_b2=True,
+            )
+        except Exception as ref_exc:  # noqa: BLE001
+            if isinstance(ref_exc, KeyboardInterrupt):
+                raise
+            _LOG.error("REFERENCE_BASED_REELS failed: %s", ref_exc, exc_info=True)
+            print(f"[refReel] ERROR: {type(ref_exc).__name__}: {ref_exc}")
+            sys.exit(1)
+
+        # Print lightweight summary and skip the YT block if no videos
+        if envelope:
+            _items = envelope.get("items") or []
+            print(f"\n[refReel] Completed {envelope.get('successful', 0)}/{args.quantity} reel(s).")
+            for _it in _items:
+                if _it.get("video_path"):
+                    print(f"  Video : {_it['video_path']}")
+                if _it.get("b2_url"):
+                    print(f"  B2 URL: {_it['b2_url']}")
+        return  # skip produce() + YT block for this post type
+
     try:
         envelope = produce(
             topic_raw,
@@ -2526,6 +4852,166 @@ def cli() -> None:
         _print_test_footer()
     else:
         _print_production_summary(envelope, page_ctx=page_ctx)
+
+    # ── PHASE YT: YouTube Shorts auto-publish with per-page token isolation ──
+    # Triggered by --publish-youtube / --upload-youtube OR ENABLE_YOUTUBE_UPLOAD.
+    # Each --page uses credentials/tokens/youtube_token_{page}.json exclusively.
+    #
+    # STRICT: When publishing is active, uploads are ALWAYS Scheduled (Programado):
+    #   privacyStatus = "private" + status.publishAt = staggered ISO timestamp.
+    # Never upload as unlisted/public immediate when --publish-youtube is set.
+    _should_publish_yt = getattr(args, "publish_youtube", False) or app_config.ENABLE_YOUTUBE_UPLOAD
+    # Force continuous schedule queue whenever publishing (CLI flag becomes redundant but honored)
+    _schedule_uploads = bool(_should_publish_yt) or bool(getattr(args, "schedule_uploads", False))
+    if getattr(args, "schedule_uploads", False) and not _should_publish_yt:
+        print(
+            "[YouTube] --schedule-uploads requires --publish-youtube "
+            "(or ENABLE_YOUTUBE_UPLOAD=true). Skipping schedule."
+        )
+        _schedule_uploads = False
+    if _should_publish_yt and envelope and envelope.get("mode") != "test":
+        _yt_privacy = "private"  # Scheduled / Programado requires private + publishAt
+        _interval_h = float(getattr(args, "interval_hours", 12.0) or 12.0)
+        if _interval_h <= 0:
+            _interval_h = 12.0
+        _rand_max_m = int(getattr(args, "random_delay_max_minutes", 60) or 0)
+        if _rand_max_m < 0:
+            _rand_max_m = 0
+
+        _yt_rows = [
+            row for row in (envelope.get("items") or [])
+            if row.get("video_path")
+        ]
+        if not _yt_rows:
+            print("[YouTube] No compiled video found in this run — skipping upload.")
+        else:
+            _yt_secrets = app_config.YOUTUBE_CLIENT_SECRETS
+            _yt_token_dir = app_config.YOUTUBE_TOKEN_DIR
+            _yt_token_file = _yt_token_path(page_id, _yt_token_dir)
+            print(
+                f"[YouTube] Page '{page_id}' → token file: {_yt_token_file}"
+            )
+
+            _yt_client = None
+            try:
+                _yt_creds = _yt_build_credentials(
+                    page_id,
+                    _yt_secrets,
+                    _yt_token_dir,
+                )
+                _yt_client = _yt_build_client(_yt_creds)
+                _yt_verify_channel(_yt_client, page_name=page_id)
+            except Exception as _auth_exc:
+                _LOG.warning(
+                    "YT auth/init failed (%s) — uploads will retry per-row auth.",
+                    _auth_exc,
+                )
+
+            _sched_anchor = datetime.now(timezone.utc)
+            print(
+                f"[YouTube Scheduler] Scheduling {len(_yt_rows)} video(s) as Programado | "
+                f"privacy=private + publishAt | interval={_interval_h:g} h | "
+                f"random delay=0–{_rand_max_m} min | "
+                f"anchor={_sched_anchor.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            )
+            _LOG.info(
+                "YT schedule-uploads FORCED | page=%s videos=%d interval_h=%s rand_max_m=%d",
+                page_id,
+                len(_yt_rows),
+                _interval_h,
+                _rand_max_m,
+            )
+
+            for _i, _yt_row in enumerate(_yt_rows):
+                _extra_min = random.randint(0, _rand_max_m) if _rand_max_m > 0 else 0
+                _publish_at = _sched_anchor + timedelta(
+                    hours=_interval_h * (_i + 1),
+                    minutes=_extra_min,
+                )
+                # YouTube API: Scheduled = private + publishAt (never unlisted)
+                _privacy_for_row = "private"
+                _iso = _publish_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+                print(
+                    f"[YouTube Scheduler] Video {_i + 1}/{len(_yt_rows)} "
+                    f"'{Path(_yt_row.get('video_path', '?')).name}' → "
+                    f"SCHEDULED {_publish_at.strftime('%Y-%m-%d %H:%M:%S')} UTC "
+                    f"(privacyStatus=private, publishAt={_iso}, +{_extra_min} min random)"
+                )
+
+                try:
+                    _yt_vid_id, _yt_url, _yt_pa = _yt_upload_short(
+                        row=_yt_row,
+                        page_name=page_id,
+                        privacy_status=_privacy_for_row,
+                        publish_at=_publish_at,
+                        client_secrets_path=_yt_secrets,
+                        token_dir=_yt_token_dir,
+                        youtube=_yt_client,
+                    )
+                    if _yt_vid_id:
+                        _yt_row["youtube_video_id"] = _yt_vid_id
+                        _yt_row["youtube_url"] = _yt_url
+                        if _yt_pa:
+                            _yt_row["youtube_scheduled_at"] = _yt_pa.strftime(
+                                "%Y-%m-%d %H:%M UTC"
+                            )
+                            print(
+                                f"[YouTube] ✓ Scheduled release confirmed → "
+                                f"{_yt_pa.strftime('%Y-%m-%d %H:%M:%S')} UTC | {_yt_url}"
+                            )
+                        _LOG.info(
+                            "YouTube upload OK | page=%s  id=%s  url=%s  publish_at=%s",
+                            page_id,
+                            _yt_vid_id,
+                            _yt_url,
+                            _yt_pa.strftime("%Y-%m-%d %H:%M UTC") if _yt_pa else "immediate",
+                        )
+                except YouTubeQuotaExceededError as _yt_quota_exc:
+                    _LOG.warning(
+                        "[YouTube] Daily upload limit (20 videos) reached for this channel."
+                    )
+                    _remaining_rows = _yt_rows[_i:]
+                    print(
+                        "[YouTube] Daily upload limit (20 videos) reached for this channel. "
+                        f"Queuing remaining {len(_remaining_rows)} video(s) → "
+                        "credentials/pending_youtube_uploads.json"
+                    )
+                    for _r_offset, _pending_row in enumerate(_remaining_rows):
+                        _pending_i = _i + _r_offset
+                        _pending_extra_min = (
+                            random.randint(0, _rand_max_m) if _rand_max_m > 0 else 0
+                        )
+                        _pending_publish_at = _sched_anchor + timedelta(
+                            hours=_interval_h * (_pending_i + 1),
+                            minutes=_pending_extra_min,
+                        )
+                        _yt_queue_pending_upload(
+                            row=_pending_row,
+                            page_name=page_id,
+                            privacy_status="private",
+                            publish_at=_pending_publish_at,
+                            reason="daily_upload_limit_exceeded",
+                        )
+                    _LOG.info(
+                        "YT quota reached | page=%s queued=%d | %s",
+                        page_id, len(_remaining_rows), _yt_quota_exc,
+                    )
+                    # Stop attempting further uploads this run — the pipeline
+                    # completes normally; queued videos resume via
+                    # --resume-youtube-queue once the daily cap rolls over.
+                    break
+                except Exception as _yt_exc:  # noqa: BLE001
+                    _LOG.error(
+                        "YouTube upload failed for '%s': %s",
+                        _yt_row.get("video_path", "?"),
+                        _yt_exc,
+                        exc_info=True,
+                    )
+                    print(
+                        f"[YouTube] Upload FAILED for "
+                        f"{Path(_yt_row.get('video_path', '?')).name}: "
+                        f"{type(_yt_exc).__name__}: {_yt_exc}"
+                    )
 
 
 if __name__ == "__main__":

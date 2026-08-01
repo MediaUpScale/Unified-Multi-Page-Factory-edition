@@ -6,5 +6,12 @@ openpyxl>=3.1.0
 pypdf>=5.0.0
 requests>=2.31.0
 openai>=1.0.0
+together>=1.3.0
 moviepy>=1.0.3
 elevenlabs>=1.0.0
+# YouTube Data API v3 — OAuth2 upload pipeline
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+# Google Sheets queue (Facebook scheduler)
+gspread>=6.0.0

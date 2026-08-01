@@ -37,9 +37,8 @@ USES_AVATAR_REFERENCE: bool = False
 COST_TIER: str = "nano"          # drives CostTracker pricing keys
 ENABLE_COST_TRACKING: bool = True  # write cost telemetry JSON per asset
 
-# Explicit image model override — bypasses all auto-discovery and tier defaults.
-# Set to the confirmed-live banana tier (absolute cheapest in the live API list).
-IMAGE_MODEL_OVERRIDE: str = "models/nano-banana-pro-preview"
+# Explicit image model — Together AI FLUX.1-schnell (ultra cost-efficient)
+IMAGE_MODEL_OVERRIDE: str = "black-forest-labs/FLUX.1-schnell"
 
 # ---------------------------------------------------------------------------
 # Economic brain mode — force lightweight models on every run
@@ -51,21 +50,28 @@ ECONOMIC_BRAIN_MODE: bool = True   # page-level override; respected by main.py b
 # Hyper-realistic, cinematic historical photography — NOT stylised/illustrated.
 # ---------------------------------------------------------------------------
 ATMOSPHERE_STYLE: str = (
-    "Hyper-realistic cinematic historical photography. Dramatic chiaroscuro lighting, "
-    "deep atmospheric shadows, gritty aged stone and earth textures, raw archival aesthetic. "
-    "35mm documentary film grain, desaturated ochre and deep shadow colour grading. "
-    "Feels like a National Geographic or BBC documentary still frame. "
-    "Ancient ruins, crumbling temples, hieroglyphs, underground chambers, torchlight, "
-    "misty jungle canopy, desert dunes, star maps carved in stone. "
-    "NO cartoon, NO illustration, NO watercolour, NO sketch. Full photographic realism only."
+    "Ultra-realistic cinematic photography of iconic ancient monuments — Great Pyramids, Baalbek, "
+    "Göbekli Tepe, Puma Punku, Sacsayhuamán, Easter Island, Stonehenge. "
+    "Dramatic single-source lighting: warm amber torchlight or cold blue-white ethereal glow. "
+    "Volumetric light shafts cutting through atmospheric haze and dust particles. "
+    "Strong directional RIM LIGHTING tracing the edges of megalithic stone blocks. "
+    "Deep chiaroscuro contrast — rich shadow pools balanced by intense focal highlights. "
+    "35mm documentary film grain, desaturated ochre and shadow-black colour grade. "
+    "Speculative impossible elements integrated naturally: precision machining, alien glyphs, "
+    "advanced-technology artefacts, out-of-place objects, impossible construction scale. "
+    "NO flat lighting, NO muddy underexposed scenes, NO clean CGI. Full photographic realism only."
 )
 
 ILLUSTRATION_STYLE: str = (
-    "Hyper-realistic, cinematic documentary photography. Raw, gritty stone textures, "
-    "dramatic high-contrast shadows, authentic archival historical aesthetics. "
-    "Warm torchlight, ancient inscriptions, weathered artefacts, epic wide-angle perspectives. "
-    "Colour grade: deep ochre, shadow black, aged parchment tones. Film grain overlay. "
-    "NO illustration, NO sketch, NO vector art."
+    "Ultra-realistic, high-contrast cinematic documentary photograph. "
+    "Iconic real-world monument (Pyramid, Baalbek megalith, Göbekli Tepe pillar, Puma Punku block) "
+    "anchoring the frame — instantly recognisable global landmark. "
+    "Single dramatic light source: warm amber fire or cold ethereal moonlight. "
+    "Volumetric dust-haze beams, strong rim lighting on carved stone edges, deep shadow contrast. "
+    "Impossible anomalous detail woven into the scene naturally: precision tool marks, "
+    "alien-script glyphs, impossible engineering, speculative ancient technology. "
+    "35mm film grain, deep ochre and shadow black colour grade. "
+    "NO illustration, NO sketch, NO CGI, NO flat lighting, NO modern elements."
 )
 
 # ---------------------------------------------------------------------------
@@ -90,7 +96,7 @@ TEXT_OUTLINE_WIDTH: int = 2            # subtle outline for readability over dar
 # ---------------------------------------------------------------------------
 # Brand logo layout
 # ---------------------------------------------------------------------------
-LOGO_SIZE_SCALE: float = 0.22
+LOGO_SIZE_SCALE: float = 0.38      # static image watermark — matches reel pixel ratio (420/1080)
 LOGO_POSITION: str = "bottom_center"
 
 # ---------------------------------------------------------------------------
@@ -105,15 +111,22 @@ TTS_VOICE_PREFERENCE: str = "WdZjiN0nNcik2LBjOHiv"    # Human-readable label mir
 
 # ---------------------------------------------------------------------------
 # Sequence reel configuration
-# ENABLE_SEQUENCE_REEL: True = use 4-image 80-second reel (core_engine)
-# REEL_IMAGE_COUNT:     number of images generated and stitched
+# ENABLE_SEQUENCE_REEL: True = use multi-image 80-second reel (core_engine)
+# Dense sync: ~1 image every 3.5–4.0 s of speech (~15–18 acts for 60–80 s).
+# Clip duration at compile = total_audio_duration / n_acts.
 # ---------------------------------------------------------------------------
-REEL_DURATION: float = 75.0          # narration target: 75s + 5s CTA = 80s total (1m20)
-REEL_ACT_DURATION: float = 18.75     # 75.0 / 4 acts — exactly 18.75s per visual act
-ENABLE_SEQUENCE_REEL: bool = True    # engage 4-image sequence reel for ECONOMIC_REEL
-REEL_IMAGE_COUNT: int = 4            # exactly 4 distinct images per reel
+REEL_DURATION: float = 75.0          # narration floor: 75 s + 5 s CTA = 80 s total
+REEL_SECONDS_PER_ACT: float = 4.0    # dense scene-to-audio sync target
+REEL_ACT_DURATION: float = 4.0       # fallback when no audio drives timeline
+ENABLE_SEQUENCE_REEL: bool = True    # engage multi-image sequence reel for ECONOMIC_REEL
+REEL_IMAGE_COUNT: int = 18           # max acts (~80 s / 4 s); dynamic clamp 12–18
 
 REEL_OVERLAY_OPACITY: float = 0.30   # lighter overlay — let the cinematic image breathe
+
+# Narrative + CTA (read generically via page_loader)
+NARRATIVE_MODE: str = "investigative"
+REEL_CTA_TEXT: str = "Follow Ancient Knowledge for more hidden mysteries."
+AMBIENT_AUDIO_RELPATH: str = "assets/audio/ambient_mystery_loop.mp3"
 
 # ---------------------------------------------------------------------------
 # SEQUENCE_REEL — visual identity layer
@@ -121,6 +134,10 @@ REEL_OVERLAY_OPACITY: float = 0.30   # lighter overlay — let the cinematic ima
 VIGNETTE_STRENGTH: float = 0.60      # dark corner vignette (0 = off, 1 = full black corners)
 GRAIN_INTENSITY: float = 22.0        # film grain amplitude in pixel value units (default 18)
 ENABLE_TOP_HOOK_TEXT: bool = False   # do not burn headline at top; only lower-third subtitles
+ENABLE_FLICKER: bool = True          # ±5 % torch/flame brightness oscillation — archival atmosphere
+ENABLE_LIGHT_RAYS: bool = True       # warm-gold volumetric beam sweeping across each scene
+ENABLE_DUST_PARTICLES: bool = True   # floating dust drifting upward — ruin/chamber atmosphere
+ENABLE_LIGHT_REFRACTION: bool = False  # prismatic crystal glow (enable per-topic if crystal subject)
 
 # ---------------------------------------------------------------------------
 # SEQUENCE_REEL — video layout
@@ -144,33 +161,55 @@ STYLE_CHARACTERS: str = ""
 
 # ---------------------------------------------------------------------------
 # TOPIC_POOL — rotating subject seeds for ECONOMIC_REEL / SMART_BAIT
+# Hook strategy: each topic opens with a REAL recognisable anchor, then
+# introduces the impossible / extraterrestrial / suppressed-history element.
 # ---------------------------------------------------------------------------
 TOPIC_POOL: list = [
-    "The lost city of Atlantis and the evidence scientists refuse to discuss",
-    "Ancient Egyptian technologies that modern science cannot fully explain",
-    "The real purpose of the pyramids — beyond burial chambers",
-    "Göbekli Tepe and the 12,000-year-old civilisation that rewrites history",
-    "The Antikythera mechanism — who really built the world's first computer",
-    "Lost city of Paititi — the golden Incan capital hidden in the Amazon",
-    "The Nazca Lines and theories about why they were built",
-    "Ancient nuclear war — the archaeological evidence from Mohenjo-daro",
-    "The Dendera light bulbs — ancient Egyptian electricity or religious art",
-    "Tartaria and the mudflood theory that challenges mainstream history",
-    "The Sumerian tablets and what they claim about human origins",
-    "Oak Island and the 200-year mystery that still has no answer",
-    "The Baghdad Battery — did ancient Mesopotamians discover electricity",
-    "Coral Castle and how one man allegedly moved multi-ton stones alone",
-    "Ancient maps that show Antarctica without ice — impossible or real",
-    "The Voynich manuscript — the coded book that no one has ever decoded",
-    "Giants in ancient history — bones, myths, and suppressed evidence",
-    "The Ark of the Covenant — where it went and what it might really be",
-    "Stonehenge and the forgotten civilisation that built it",
-    "The Library of Alexandria — what was really lost and who destroyed it",
-    "Ancient underwater cities discovered around the world",
-    "The mysterious Elongated Skulls of Paracas — human or something else",
-    "Easter Island and the real reason the statues were built",
-    "The Philadelphia Experiment — government teleportation or wartime myth",
-    "Ancient Indian flying machines — the Vimana texts and their claims",
+    # ── Pyramids & Egypt ────────────────────────────────────────────────────
+    "The Great Pyramid — precision that modern engineers say is impossible to replicate today",
+    "Inside the Great Pyramid's hidden chambers — what ground-penetrating radar just found",
+    "The Sphinx enclosure erosion that suggests it was built before the last ice age",
+    "Ancient Egyptian glyphs that show what appears to be a helicopter, submarine, and aircraft",
+    "The Dendera Temple light bulb reliefs — ancient Egyptian electricity or sacred symbol",
+    "The Osireion at Abydos and the megalithic construction that predates all known Egyptian history",
+
+    # ── Baalbek & Impossible Megaliths ──────────────────────────────────────
+    "The 1,500-tonne Trilithon stones of Baalbek — no crane on Earth can lift them today",
+    "Baalbek's Hajar al-Wubr stone — the largest single quarried block in human history",
+    "Puma Punku's H-blocks at 13,000 feet — machined precision no Bronze Age tool could achieve",
+    "Sacsayhuamán's 100-tonne interlocking stones — no mortar, no gaps, no explanation",
+    "The Nazca Lines — vast geoglyphs only visible and meaningful from 1,500 feet in the air",
+
+    # ── Göbekli Tepe & Pre-Flood Civilisations ──────────────────────────────
+    "Göbekli Tepe was deliberately buried 10,000 years ago — by whom and why",
+    "Göbekli Tepe's animal carvings encode a comet impact that triggered the Younger Dryas",
+    "Plato's Atlantis — the geological evidence researchers say has been hiding in plain sight",
+    "Tartaria and the global mudflood theory — where did all these buried first-floor windows go",
+    "The Younger Dryas Impact — a civilisation-ending comet 12,800 years ago that reset humanity",
+
+    # ── OOPArts & Impossible Artefacts ──────────────────────────────────────
+    "The Antikythera Mechanism — a 2,000-year-old analogue computer the ancient world should not have had",
+    "The Baghdad Battery — Mesopotamian artefacts that appear to be ancient galvanic cells",
+    "The Voynich Manuscript — an undeciphered illustrated book that has defeated every cryptographer",
+    "Ancient Indian Vimana flying machines — the Sanskrit texts that describe anti-gravity aircraft",
+    "The Paracas Elongated Skulls — cranial volumes 25 % larger than any human on record",
+    "The Crystal Skulls of ancient Mesoamerica — why modern analysis found no tool marks",
+
+    # ── Lost Cities & Hidden History ────────────────────────────────────────
+    "Yonaguni Monument — Japan's submerged stepped pyramid 90 feet under the Pacific",
+    "The lost golden city of El Dorado — new Lidar scans in the Amazon just changed everything",
+    "Dwarka: India's sunken city 40 metres below the Gulf of Khambhat, dated to 9,000 BC",
+    "The Library of Alexandria — what was really inside, and who burned it and why",
+    "Easter Island's Moai were once standing in the ocean floor — what the underwater survey found",
+    "Oak Island's Money Pit — 200 years of excavation, six deaths, and no definitive answer",
+
+    # ── Ancient Astronaut & ET Contact ──────────────────────────────────────
+    "The Anunnaki tablets of Sumer — ancient Mesopotamians who claimed gods arrived from the sky",
+    "The Nazca Lines' spider glyph — the only known representation of a spider found nowhere in Peru",
+    "Prehistoric cave paintings across four continents show the same disc-shaped flying object",
+    "The Sirius Mystery — how did the Dogon tribe in Mali know about Sirius B 300 years before telescopes",
+    "The ancient nuclear blast at Mohenjo-daro — vitrified stone, epicentre, and 50,000 casualties",
+    "The Saqqara Bird — a 2,200-year-old carved wooden object that aerodynamically flies as a glider",
 ]
 
 # ---------------------------------------------------------------------------
@@ -182,5 +221,11 @@ NICHE_DISCLAIMER: str = (
     "We respect every race, culture, and nation. We do NOT claim any of these theories are true. "
     "Use language like: 'some researchers believe', 'ancient records suggest', "
     "'according to legend', 'one theory proposes', 'historians debate whether'. "
-    "Never present a theory as established fact."
+    "Never present a theory as established fact. "
+    "HOOK STRATEGY: Always open with a REAL, RECOGNISABLE world anchor "
+    "(an iconic monument, a famous discovery, a confirmed historical site) "
+    "and then introduce the HIGH-CONCEPT IMPOSSIBLE element — "
+    "the precision that should not exist, the scale no modern machine could achieve, "
+    "the artefact that defies its era, or the alien/advanced-technology influence. "
+    "This anchor → impossibility structure maximises curiosity and scroll-stopping engagement."
 )

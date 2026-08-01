@@ -183,7 +183,7 @@ Activating economic mode swaps every heavy LLM call to a cheaper provider:
 
 | Component | Premium | Economic |
 |---|---|---|
-| Text brain | Gemini Pro + Claude polish | DeepSeek → Gemini Flash fallback |
+| Text brain | Gemini 2.5 Flash (+ Claude polish) | Gemini 2.5 Flash primary (DeepSeek last-resort only) |
 | Image model | `gemini-3-pro-image-preview` | `gemini-3.1-flash-image` |
 | Research phase | Full PDF corpus sweep | Skipped (direct hook generation) |
 
@@ -319,6 +319,8 @@ GEMINI_API_KEY=
 ANTHROPIC_API_KEY=
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_PRO_MODEL=deepseek-v4-pro
 
 # Media
 ELEVENLABS_API_KEY=

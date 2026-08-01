@@ -492,6 +492,18 @@ _REEL_INVESTIGATION_ANGLES: list[str] = [
     "unanswered silence — why official bodies refuse to comment on this specific discovery",
 ]
 
+# Warrior / Liberation Protocol angles — ONE angle = ONE episode theme
+_REEL_WARRIOR_ANGLES: list[str] = [
+    "seduction & the siren trap — deceptive allure and neon impulse slavery",
+    "the panopticon & digital slavery — devices and cables as modern chains",
+    "sun tzu & strategic patience in wealth — focus as the front line of capital",
+    "physical hardship & discipline protocol — pai mei cold conditioning",
+    "marcus aurelius inner citadel — protect attention before the market opens",
+    "musashi timing — strike once with discipline, never a hundred times with impulse",
+    "buddhist detachment — watch craving rise and refuse to obey it",
+    "financial sovereignty — forge unshakeable assets or remain a cog",
+]
+
 
 def build_reel_narration_prompt(
     topic: str,
@@ -500,6 +512,9 @@ def build_reel_narration_prompt(
     persona_block: str,
     engagement_bait_examples: str = "",
     niche_disclaimer: str = "",
+    narrative_mode: str = "",
+    batch_angle_block: str = "",
+    uniqueness_rejection: str = "",
 ) -> str:
     """
     Build the user-side LLM prompt for ECONOMIC_REEL narration generation.
@@ -507,17 +522,21 @@ def build_reel_narration_prompt(
     Asks for a 4-sentence, 65-80 word voiceover script plus a short on-screen
     hook headline and a scene description — all as a single JSON object.
 
-    When ``niche_disclaimer`` is supplied (e.g. for ancient_knowledge) the
-    function switches to an investigative/documentary sentence structure instead
-    of the default relationship-psychology structure, and injects the disclaimer
-    so the LLM never presents theories as facts.
+    ``narrative_mode`` selects structure:
+      - ``investigative`` / non-empty niche_disclaimer → documentary mystery
+      - ``warrior_discipline`` → Master Mei 4-Act Philosophical Storyline
+      - default → relationship psychology
     """
     import random as _rnd_angle
 
-    _is_investigative = bool(niche_disclaimer)
+    _mode = (narrative_mode or "").strip().lower()
+    if not _mode:
+        _mode = "investigative" if niche_disclaimer else "psychology"
 
-    if _is_investigative:
+    if _mode == "investigative":
         _angle = _rnd_angle.choice(_REEL_INVESTIGATION_ANGLES)
+    elif _mode == "warrior_discipline":
+        _angle = _rnd_angle.choice(_REEL_WARRIOR_ANGLES)
     else:
         _angle = _rnd_angle.choice(_REEL_PSYCH_ANGLES)
 
@@ -543,8 +562,100 @@ def build_reel_narration_prompt(
         f"\n        ── MANDATORY CHANNEL DISCLAIMER ──\n        {niche_disclaimer}\n"
         if niche_disclaimer else ""
     )
+    _batch_block = f"\n{batch_angle_block}\n" if batch_angle_block else ""
+    _reject_block = (
+        f"\n        ── UNIQUENESS REJECTION (REGENERATE) ──\n        {uniqueness_rejection}\n"
+        if uniqueness_rejection else ""
+    )
 
-    if _is_investigative:
+    if _mode == "warrior_discipline":
+        from avatar_engine.mei_narrative import (
+            build_seo_title,
+            episode_theme_meta,
+        )
+
+        _ep = episode_theme_meta(topic)
+        _seo_ex = build_seo_title(topic, theme_key=_ep["key"])
+        return dedent(
+            f"""
+            You are writing voice narration for a short-form V4.0 Cinematic Story Arc
+            (3-Act Master Philosophical Lesson) for the page: {page_display_name}
+            Content niche: {page_niche or topic}
+
+            {persona_block}
+            {_disclaimer_block}
+            {_batch_block}
+            {_reject_block}
+            TOPIC CONTEXT — SINGLE EPISODE THEME: {topic}
+            LOCKED THEME: {_ep['label']} — {_ep['core']}
+            PHILOSOPHER: {_ep.get('philosopher', 'Master Mei')} | CONCEPT: {_ep.get('concept', _ep['label'])}
+
+            ── CRITICAL SINGLE-CONCEPT RULE ──
+            Transform THIS core concept into ONE cohesive didactic story (Acts I–III).
+            This video is ONLY about "{_ep['label']}". Never mix philosophies.
+            Avoid disconnected quotes or generic soundbites.
+            Core purpose (immutable): building real wealth and sovereignty through ruthless
+            physical, mental, and spiritual discipline.
+            NEVER import ancient-mystery conspiracy content, relationship therapy, or soft wellness fluff.
+
+            ── MANDATORY ANGLE (narrative lens for THIS episode only) ──
+            {_angle}
+
+            ─── YOUR TASK ───
+            Produce a JSON object with exactly four fields:
+
+            1. "image_text_overlay"
+               A single sharp command or uncomfortable truth — maximum 12 words.
+               Burned visually onto the video frame as the headline.
+
+            2. "seo_title"
+               YouTube/SEO title naming the concept or authority figure.
+               Format example: "{_seo_ex}"
+               Max 90 characters. Include "Master Mei" and a relevant hashtag token.
+
+            3. "caption_body"
+               A FULL voiceover narration, 200–240 words MAX (~80–100 s at deliberate pace),
+               as ONE continuous 4-Act storyline (NEVER skip an act):
+
+               ACT I — HOOK & CONCEPT INTRODUCTION (~0:00–0:20 | ~4 shots):
+                 Introduce philosophy/author. Modern world as a trap for the unprepared.
+               ACT II — SLAVERY OF MODERN COMFORT (~0:20–0:45 | ~5 shots):
+                 Easy living, cheap dopamine, fast food, digital lures → techno-slaves.
+               ACT III — FORGE OF DISCIPLINE (~0:45–1:15 | ~6 shots):
+                 Strategic preparation, voluntary suffering, severe training.
+                 CRITICAL — never drop a philosopher name out of nowhere.
+                 Correct: "As Sun Tzu taught on the battlefield, your focus is your front line…"
+               ACT IV — SOVEREIGN CONCLUSION (~1:15–1:40 | ~5 shots):
+                 Synthesize. Command: claim self-mastery or remain enslaved.
+                 DO NOT say "Follow Master Mei" or "Subscribe" — CTA is added separately.
+
+               Tone: authoritative, solemn, deep, gravitas. Pai Mei sternness.
+               PACING: Insert ellipses (`...`) between heavy philosophical statements.
+               Short sentences. Strategic commas. Pure spoken prose ONLY.
+               FORBIDDEN: ALL emotion/expression tags — never `[cold chuckle]`,
+               `[arrogant scoff]`, `[deep subtle laugh]`, `[cackles]`, or `<break/>`.
+
+            4. "visual_subject"
+               NO repetitive monk heads. Prefer human agony, techno-slavery, forge hardship,
+               abstract metaphors (Panopticon circular prison, Art of War chessboard city,
+               Inner Fortress citadel in chest).
+               Master Mei ONLY Opening + Key Transition + Final CTA (avatar.png lock).
+               Crowds/youth: Black, Caucasian, Hispanic, Asian, Middle Eastern blend.
+               Each shot 4–5 seconds; 18–22 distinct visuals. 9:16 cinematic 8k.
+
+            ─── OUTPUT FORMAT ───
+            Return ONLY valid JSON. No markdown fences, no explanation.
+            {{
+              "image_text_overlay": "...",
+              "seo_title": "...",
+              "caption_body": "...",
+              "visual_subject": "..."
+            }}
+            {_bait_block}
+            """
+        ).strip()
+
+    if _mode == "investigative":
         # ── INVESTIGATIVE / DOCUMENTARY niche structure (ancient_knowledge etc.) ──
         return dedent(
             f"""
@@ -554,6 +665,8 @@ def build_reel_narration_prompt(
 
             {persona_block}
             {_disclaimer_block}
+            {_batch_block}
+            {_reject_block}
             TOPIC CONTEXT — STRICT THEME MANDATE: {topic}
 
             ── CRITICAL THEME COMPLIANCE RULE ──
@@ -775,6 +888,7 @@ def build_long_caption_prompt(
     persona_block: str,
     *,
     cta_enabled: bool = True,
+    signature: str = "",
 ) -> str:
     """
     Build a long-form LLM prompt that produces a profound, storytelling-style
@@ -784,10 +898,11 @@ def build_long_caption_prompt(
     It must read as a seamless, gripping narrative in short impactful paragraphs,
     modelled on the two structural archetypes below.
     """
+    _sig = signature or f"© {page_display_name} | by MediaUpScale"
     cta_close = (
-        "\n\nEnd the caption with the exact line: © Wonder Feed | by MediaUpScale"
+        f"\n\nEnd the caption with the exact line: {_sig}"
         if cta_enabled
-        else "\n\nEnd the caption with the exact line: © Wonder Feed | by MediaUpScale"
+        else ""
     )
     return dedent(
         f"""
@@ -858,6 +973,7 @@ class CaptionEngine:
         research_model: str | None = None,
         writer_model: str | None = None,
     ) -> None:
+        self.last_seo_title = ""
         g_key = gemini_key or app_config.GEMINI_API_KEY
         a_key = anthropic_key or app_config.ANTHROPIC_API_KEY
         if not g_key:
@@ -865,12 +981,30 @@ class CaptionEngine:
         # v1beta -> v1 fallback; SDK sends x-goog-api-key header automatically.
         self._gemini = make_gemini_client_with_fallback(g_key)
 
-        # Handshake: validate research model against live models.list().
-        research_hint = research_model or app_config.GEMINI_RESEARCH_MODEL
-        # Ordered preference: 2.5-flash (fastest), then 2.5-pro as first fallback.
+        # Handshake: cost-first research model (flash); premium only if enabled.
+        from avatar_engine.providers.model_router import text_model as _route_text
+
+        _page_tier = None
+        try:
+            _page_tier = getattr(app_config, "ACTIVE_PAGE_COST_TIER", None)
+        except Exception:
+            pass
+        research_route = _route_text(
+            task="research",
+            page_cost_tier=_page_tier,
+            model_override=research_model,
+            preferred=research_model or app_config.GEMINI_RESEARCH_MODEL,
+            log=True,
+        )
+        research_hint = research_route.model_id
+        # Ordered preference stays inside the resolved tier
+        _prefs = (
+            ["2.5-pro", "2.5-flash"] if research_route.tier == "premium"
+            else ["2.5-flash", "2.0-flash", "flash"]
+        )
         active_research = get_active_model_id(
             self._gemini,
-            preference=["2.5-flash", "2.5-pro"],
+            preference=_prefs,
             capability_type="text",
         )
         self._text_model_chain = build_model_chain(
@@ -878,17 +1012,34 @@ class CaptionEngine:
             capability_type="text",
             preferred=research_hint,
         )
-        # If the env-hinted model is not live, use the handshake result.
+        # Keep handshake result first; strip pro SKUs on cheap tier
+        if research_route.tier != "premium":
+            self._text_model_chain = [
+                m for m in self._text_model_chain
+                if "pro" not in m.lower() or "flash" in m.lower()
+            ] or list(research_route.chain)
         if not self._text_model_chain or self._text_model_chain[0] != active_research:
             self._text_model_chain = [active_research] + [
                 m for m in self._text_model_chain if m != active_research
             ]
 
+        econ_route = _route_text(
+            task="caption",
+            page_cost_tier=_page_tier,
+            preferred=app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
+            log=True,
+        )
         self._econ_gemini_chain = build_model_chain(
             self._gemini,
             capability_type="text",
-            preferred=app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
+            preferred=econ_route.model_id,
         )
+        if econ_route.tier != "premium":
+            self._econ_gemini_chain = [
+                m for m in self._econ_gemini_chain
+                if "pro" not in m.lower() or "flash" in m.lower()
+            ] or list(econ_route.chain)
+        self._router_tier = research_route.tier
         self._research_model = self._text_model_chain[0] if self._text_model_chain else active_research
 
         # Headers sent on every request: x-api-key (auto from api_key)
@@ -921,8 +1072,9 @@ class CaptionEngine:
                     base_url=app_config.DEEPSEEK_BASE_URL,
                 )
                 logger.debug(
-                    "CaptionEngine | DeepSeek client initialised (model: %s)",
-                    app_config.DEEPSEEK_MODEL,
+                    "CaptionEngine | DeepSeek client initialised (flash=%s pro=%s)",
+                    app_config.DEEPSEEK_FLASH_MODEL,
+                    app_config.DEEPSEEK_PRO_MODEL,
                 )
             except ImportError:
                 logger.warning(
@@ -955,26 +1107,98 @@ class CaptionEngine:
         system: str | None = None,
         max_tokens: int = 1500,
         temperature: float = 0.70,
+        model: str | None = None,
     ) -> str:
         """
         Send a single-turn completion to DeepSeek via the OpenAI-compatible API.
 
         Raises RuntimeError if the DeepSeek client is not initialised.
         Callers should guard with ``if self._deepseek``.
+
+        ``model`` defaults to ``DEEPSEEK_FLASH_MODEL`` (economic/fast). Pass
+        ``DEEPSEEK_PRO_MODEL`` for longer quality scripts (sequence voiceover).
         """
         if self._deepseek is None:
             raise RuntimeError("DeepSeek client not initialised (no DEEPSEEK_API_KEY).")
+        _model = (model or app_config.DEEPSEEK_FLASH_MODEL or app_config.DEEPSEEK_MODEL).strip()
+        # Hard-block retired IDs even if a caller passes them explicitly
+        if _model.lower() in {"deepseek-chat", "deepseek-coder", "deepseek-chat-v3"}:
+            logger.warning(
+                "DeepSeek model '%s' is retired — remapping to %s",
+                _model, app_config.DEEPSEEK_FLASH_MODEL,
+            )
+            _model = app_config.DEEPSEEK_FLASH_MODEL
         messages: list[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_prompt})
         resp = self._deepseek.chat.completions.create(
-            model=app_config.DEEPSEEK_MODEL,
+            model=_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
         )
         return (resp.choices[0].message.content or "").strip()
+
+    def _gemini_text_complete(self, contents: str, *, model_id: str | None = None) -> str:
+        """Gemini text completion — cost-first router; stays in active tier on retry."""
+        from avatar_engine.providers.gemini_utils import chain_with_preferred_first
+        from avatar_engine.providers.gemini_utils import generate_content_with_model_fallback
+        from avatar_engine.providers.model_router import text_model as _route_text
+
+        route = _route_text(
+            task="caption",
+            model_override=model_id,
+            preferred=model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
+            tier=getattr(self, "_router_tier", None),
+            log=True,
+        )
+        econ = route.model_id
+        base = list(route.chain) + list(self._econ_gemini_chain or self._text_model_chain or [])
+        if route.tier != "premium":
+            base = [m for m in base if "pro" not in m.lower() or "flash" in m.lower()]
+        chain = chain_with_preferred_first(base or [econ], econ)
+        response = generate_content_with_model_fallback(
+            self._gemini, chain, contents=[contents],
+        )
+        text_attr = getattr(response, "text", None)
+        raw = text_attr() if callable(text_attr) else (text_attr or "")
+        if raw:
+            return str(raw).strip()
+        parts_out: list[str] = []
+        for cand in getattr(response, "candidates", []) or []:
+            content = getattr(cand, "content", None)
+            if not content:
+                continue
+            for part in getattr(content, "parts", []) or []:
+                t = getattr(part, "text", None)
+                if t:
+                    parts_out.append(t)
+        return "\n".join(parts_out).strip()
+
+    def _claude_text_complete(
+        self,
+        user_prompt: str,
+        *,
+        system: str = "",
+        max_tokens: int = 900,
+        temperature: float = 0.70,
+    ) -> str:
+        """Claude text fallback used when DeepSeek fails (economic or premium)."""
+        if self._anthropic is None:
+            return ""
+        message = self._anthropic.messages.create(
+            model=self._writer_model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system or "You are a precise creative writer. Follow the user instructions exactly.",
+            messages=[{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
+        )
+        chunks = [
+            getattr(b, "text", None)
+            for b in (getattr(message, "content", []) or [])
+        ]
+        return "\n".join(c for c in chunks if c).strip()
 
     def synthesize_facts(
         self,
@@ -998,51 +1222,61 @@ class CaptionEngine:
         if len(context) > _MAX_PROMPT_CHARS:
             context = context[:_MAX_PROMPT_CHARS]
 
-        # --- DeepSeek economic path ---
-        if economic and self._deepseek is not None:
-            try:
-                full_prompt = (
-                    instruction
-                    + "\n\nPDF CORPUS BEGIN\n"
-                    + context
-                    + "\nPDF CORPUS END"
-                )
-                result = self._deepseek_complete(
-                    full_prompt,
-                    system="You are a research assistant. Return only the requested fact sheet.",
-                    max_tokens=2000,
-                )
-                if result:
-                    logger.info("synthesize_facts | DeepSeek research complete (topic='%s')", topic)
-                    return result
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "DeepSeek research failed (%s); falling back to Gemini.", exc
-                )
-
-        model = research_model_override or self._research_model
-        chain = chain_with_preferred_first(self._text_model_chain, model)
-        response = generate_content_with_model_fallback(
-            self._gemini,
-            chain,
-            contents=[instruction, "\n\nPDF CORPUS BEGIN\n", context, "\nPDF CORPUS END"],
+        # --- Gemini PRIMARY only (no DeepSeek / Claude text fallbacks) ---
+        full_prompt = (
+            instruction
+            + "\n\nPDF CORPUS BEGIN\n"
+            + context
+            + "\nPDF CORPUS END"
         )
+        model = research_model_override or self._research_model
+        try:
+            chain = chain_with_preferred_first(self._text_model_chain, model)
+            response = generate_content_with_model_fallback(
+                self._gemini,
+                chain,
+                contents=[instruction, "\n\nPDF CORPUS BEGIN\n", context, "\nPDF CORPUS END"],
+            )
+            text_attr = getattr(response, "text", None)
+            raw_text = text_attr() if callable(text_attr) else text_attr
+            if not raw_text:
+                parts_out: list[str] = []
+                for candidate in getattr(response, "candidates", []) or []:
+                    content = getattr(candidate, "content", None)
+                    if not content:
+                        continue
+                    for part in getattr(content, "parts", []) or []:
+                        text_val = getattr(part, "text", None)
+                        if text_val:
+                            parts_out.append(text_val)
+                raw_text = "\n".join(parts_out)
+            if raw_text and str(raw_text).strip():
+                result = str(raw_text).strip()
+                if len(result) < 150:
+                    logger.warning(
+                        "synthesize_facts | Gemini draft < 150 chars — re-prompting to expand."
+                    )
+                    expand = generate_content_with_model_fallback(
+                        self._gemini,
+                        chain,
+                        contents=[
+                            instruction
+                            + "\n\nCRITICAL: Expand the fact sheet substantially (≥150 characters).\n\n"
+                            + "PDF CORPUS BEGIN\n"
+                            + context
+                            + "\nPDF CORPUS END",
+                        ],
+                    )
+                    exp_attr = getattr(expand, "text", None)
+                    exp_text = exp_attr() if callable(exp_attr) else exp_attr
+                    if exp_text and len(str(exp_text).strip()) > len(result):
+                        result = str(exp_text).strip()
+                logger.info("synthesize_facts | Gemini OK (topic='%s')", topic)
+                return result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("synthesize_facts | Gemini failed (%s).", exc)
 
-        text_attr = getattr(response, "text", None)
-        raw_text = text_attr() if callable(text_attr) else text_attr
-        if not raw_text:
-            parts_out: list[str] = []
-            for candidate in getattr(response, "candidates", []) or []:
-                content = getattr(candidate, "content", None)
-                if not content:
-                    continue
-                for part in getattr(content, "parts", []) or []:
-                    text_val = getattr(part, "text", None)
-                    if text_val:
-                        parts_out.append(text_val)
-            raw_text = "\n".join(parts_out)
-
-        return raw_text.strip() if raw_text else ""
+        return ""
 
     def synthesize_facts_batch(
         self,
@@ -1195,6 +1429,11 @@ class CaptionEngine:
         total_words_target: int = 140,
         economic: bool = False,
         niche_disclaimer: str = "",
+        cta_line: str = "",
+        narrative_mode: str = "",
+        batch_angle_block: str = "",
+        uniqueness_rejection: str = "",
+        previously_generated_hooks: "list[str] | None" = None,
     ) -> str:
         """
         Generate a full-length documentary narration script for SEQUENCE_REEL TTS.
@@ -1203,6 +1442,10 @@ class CaptionEngine:
         caption), this method targets ``total_words_target`` words spread across
         ``n_acts`` acts at a slow documentary pace (~100 WPM) to match an 80-second
         visual timeline precisely.
+
+        When ``cta_line`` is provided the LLM is instructed to append it naturally
+        as the final sentence so the output becomes a single, self-contained script
+        that requires only ONE ElevenLabs API call — no secondary CTA audio request.
 
         The [ACT N] markers are stripped before returning so the raw prose can be
         passed directly to ElevenLabs without any spoken artefacts.
@@ -1220,43 +1463,162 @@ class CaptionEngine:
             n_acts=n_acts,
             duration_s=duration_s,
             total_words_target=total_words_target,
+            narrative_mode=narrative_mode,
+            niche_disclaimer=niche_disclaimer,
+            previously_generated_hooks=previously_generated_hooks,
+            batch_angle_block=batch_angle_block,
+            uniqueness_rejection=uniqueness_rejection,
+        )
+
+        # Append CTA instruction so the single voice script ends with the follow call.
+        cta_instruction = (
+            f"\n\nCrucial: Append the text \"{cta_line}\" naturally as the very last "
+            "sentence of the voiceover script. Do NOT add any label or marker before it."
+            if cta_line else ""
+        )
+
+        _mei_voice = ""
+        if (narrative_mode or "").strip().lower() == "warrior_discipline":
+            try:
+                from avatar_engine.mei_narrative import mei_voice_prompt_block
+                _mei_voice = mei_voice_prompt_block()
+            except Exception:  # noqa: BLE001
+                _mei_voice = (
+                    "Insert ellipses (`...`) between heavy truths. Short sentences. "
+                    "NEVER write emotion tags, sound directions, or SSML — pure spoken prose only."
+                )
+        _sys_base = (
+            f"{niche_disclaimer}\n\n" if niche_disclaimer else ""
+        ) + (
+            "Write ONLY the 4-Act Master Philosophical Lesson narration with [ACT N] markers. "
+            "SINGLE-TOPIC: one continuous story arc — beginning, middle, end. "
+            f"{_mei_voice} "
+            "Do NOT write Follow/Subscribe CTA — that is stitched separately after narration. "
+            "No preamble, no meta commentary, no bracketed emotion tags."
+            if (narrative_mode or "").strip().lower() == "warrior_discipline"
+            else
+            "Write ONLY the documentary narration script with [ACT N] markers. "
+            "No preamble, no meta commentary."
         )
 
         raw = ""
-        try:
-            if economic and self._deepseek is not None:
-                raw = self._deepseek_complete(
-                    prompt,
-                    system=(
-                        f"{niche_disclaimer}\n\n" if niche_disclaimer else ""
-                    ) + "Write ONLY the documentary narration script with [ACT N] markers. "
-                        "No preamble, no meta commentary.",
-                    max_tokens=600,
-                    temperature=0.65,
-                )
-            else:
+        # Soft acceptance: Master Mei 4-Act drafts (~150–180 words) must pass on attempt 1.
+        # Pass when words ≥ page min OR cleaned chars ≥ 240 (no expand-loop stalls).
+        _min_words = int(getattr(app_config, "SEQUENCE_VOICEOVER_MIN_WORDS", 110) or 110)
+        if (narrative_mode or "").strip().lower() == "warrior_discipline":
+            _min_words = max(_min_words, 150)
+        _min_chars = 240 if (narrative_mode or "").strip().lower() == "warrior_discipline" else 150
+        _full_prompt = _sys_base + "\n\n" + prompt + cta_instruction
+
+        def _clean_script(text: str) -> str:
+            c = _re.sub(r"\[ACT\s+\d+\]\s*", " ", text or "").strip()
+            # Purge ALL emotion / expression / SSML tags — ElevenLabs gets pure speech only
+            c = _re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", c, flags=_re.IGNORECASE)
+            c = _re.sub(r"<[^>]+>", " ", c)
+            c = _re.sub(
+                r"\[(?:cackles?|chuckles?|cold\s*chuckle|arrogant\s*scoff|"
+                r"deep\s*subtle\s*laugh|dry\s*laugh|giggles?|laughs?|sighs?|"
+                r"whispers?|pause|beat|silence)[^\]]*\]",
+                " ... ",
+                c,
+                flags=_re.IGNORECASE,
+            )
+            c = _re.sub(r"\[[^\]]*\]", " ", c)
+            c = _re.sub(r"[ \t]{2,}", " ", c)
+            c = _re.sub(r"\n{3,}", "\n\n", c)
+            c = _re.sub(r"\s*\.\.\.\s*", " ... ", c)
+            return c.strip()
+
+        def _word_count(text: str) -> int:
+            return len(_clean_script(text).split()) if text else 0
+
+        def _passes_length(text: str) -> bool:
+            cleaned = _clean_script(text)
+            if not cleaned:
+                return False
+            return _word_count(cleaned) >= _min_words or len(cleaned) >= _min_chars
+
+        def _try_gemini(*, attempt: int = 1, expand: bool = False) -> str:
+            try:
                 from avatar_engine.providers.gemini_utils import chain_with_preferred_first
                 from avatar_engine.providers.gemini_utils import generate_content_with_model_fallback
+                from avatar_engine.providers.model_router import text_model as _route_text
 
-                chain = chain_with_preferred_first(self._text_model_chain, self._research_model)
-                sys_block = (
-                    f"{niche_disclaimer}\n\n" if niche_disclaimer else ""
-                ) + "Write ONLY the documentary narration script with [ACT N] markers. "  \
-                  "No preamble, no meta commentary."
+                # Cost-first: flash primary; pro only when premium tier enabled
+                route = _route_text(
+                    task="voiceover_script",
+                    preferred=app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
+                    tier=getattr(self, "_router_tier", None),
+                    log=True,
+                )
+                preferred = route.model_id
+                base = list(route.chain) + list(self._text_model_chain or [])
+                if route.tier != "premium":
+                    base = [m for m in base if "pro" not in m.lower() or "flash" in m.lower()]
+                chain = chain_with_preferred_first(base or [preferred], preferred)
+                boost = ""
+                if expand or attempt > 1:
+                    boost = (
+                        f"\n\nCRITICAL EXPAND/RETRY: Your previous draft was TOO SHORT "
+                        f"(under {_min_chars} characters AND under {_min_words} words). "
+                        f"EXPAND it. Write AT LEAST {_min_words} words "
+                        f"(target {total_words_target}). Fill the {duration_s:.0f}-second narration."
+                    )
                 response = generate_content_with_model_fallback(
-                    self._gemini, chain, contents=[sys_block + "\n\n" + prompt]
+                    self._gemini, chain,
+                    contents=[_full_prompt + boost],
                 )
                 text_attr = getattr(response, "text", None)
-                raw = text_attr() if callable(text_attr) else (text_attr or "")
-        except Exception as _exc:
-            logger.warning("generate_sequence_voiceover failed: %s", _exc)
+                out = text_attr() if callable(text_attr) else (text_attr or "")
+                return (out or "").strip()
+            except Exception as _exc:
+                logger.warning(
+                    "generate_sequence_voiceover | Gemini attempt %d failed (%s)",
+                    attempt, _exc,
+                )
+                return ""
+
+        # ── Gemini ONLY (no Claude / DeepSeek fallbacks) ─────────────────────
+        raw = _try_gemini(attempt=1)
+        _chars = len(_clean_script(raw))
+        if _passes_length(raw):
+            logger.info(
+                "generate_sequence_voiceover | Gemini PRIMARY OK (%d chars, %d words)",
+                _chars, _word_count(raw),
+            )
+        else:
+            logger.warning(
+                "generate_sequence_voiceover | Gemini draft short "
+                "(%d chars / %d words; need ≥%d words OR ≥%d chars) — one expand re-prompt.",
+                _chars, _word_count(raw), _min_words, _min_chars,
+            )
+            expanded = _try_gemini(attempt=2, expand=True)
+            if expanded and (
+                len(_clean_script(expanded)) > _chars
+                or _word_count(expanded) > _word_count(raw)
+            ):
+                raw = expanded
+            elif not raw:
+                raw = expanded or ""
+
+        if not raw or _word_count(raw) < 40:
+            logger.error(
+                "generate_sequence_voiceover | Gemini-only stack failed or returned stubs "
+                "(%d words / %d chars) — returning empty.",
+                _word_count(raw),
+                len(_clean_script(raw)),
+            )
             return ""
 
-        # Strip [ACT N] markers — they must not be spoken aloud
-        clean = _re.sub(r"\[ACT\s+\d+\]\s*", " ", raw or "").strip()
-        # Collapse extra whitespace / blank lines
-        clean = _re.sub(r"[ \t]{2,}", " ", clean)
-        clean = _re.sub(r"\n{3,}", "\n\n", clean)
+        clean = _clean_script(raw)
+        if (narrative_mode or "").strip().lower() == "warrior_discipline":
+            from avatar_engine.mei_narrative import strip_inline_follow_cta
+            clean = strip_inline_follow_cta(clean)
+        logger.info(
+            "generate_sequence_voiceover | final script %d words / %d chars "
+            "(target_words=%d min_words=%d) [Gemini-only]",
+            len(clean.split()), len(clean), total_words_target, _min_words,
+        )
         return clean
 
     def humanize_smart_bait(
@@ -1272,6 +1634,9 @@ class CaptionEngine:
         engagement_bait_examples: str = "",
         previously_generated_hooks: "list[str] | None" = None,
         niche_disclaimer: str = "",
+        narrative_mode: str = "",
+        batch_angle_block: str = "",
+        uniqueness_rejection: str = "",
     ) -> tuple[str, str, str, str]:
         """
         Generate SMART_BAIT or ECONOMIC_REEL hook content.
@@ -1300,6 +1665,9 @@ class CaptionEngine:
                 persona,
                 engagement_bait_examples=engagement_bait_examples,
                 niche_disclaimer=niche_disclaimer,
+                narrative_mode=narrative_mode,
+                batch_angle_block=batch_angle_block,
+                uniqueness_rejection=uniqueness_rejection,
             )
         else:
             prompt = build_smart_bait_prompt(
@@ -1309,9 +1677,6 @@ class CaptionEngine:
                 persona,
                 cta_enabled=cta_enabled,
             )
-
-        raw_response = ""
-        mode_tag = "humanized"
 
         if _is_reel:
             # Build the previously-generated hooks block for the system message.
@@ -1358,64 +1723,32 @@ class CaptionEngine:
                 "Your overlay hooks must make someone stop scrolling and immediately type a response."
             )
 
-        # --- DeepSeek economic path ---
-        if economic and self._deepseek is not None:
-            try:
-                raw_response = self._deepseek_complete(
-                    prompt,
-                    system=_smart_bait_system,
-                    max_tokens=280,
-                    temperature=0.85,
-                )
-                if raw_response:
-                    logger.info("humanize_smart_bait | DeepSeek OK")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("DeepSeek smart bait failed (%s); trying Claude/Gemini.", exc)
-                raw_response = ""
+        raw_response = ""
+        mode_tag = "humanized"
 
-        if not raw_response and not economic and self._anthropic:
-            try:
-                message = self._anthropic.messages.create(
-                    model=self._writer_model,
-                    max_tokens=280,
-                    temperature=0.85,
-                    system=_smart_bait_system,
-                    messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+        # --- Gemini ONLY (models/gemini-2.5-flash) — no Claude / DeepSeek ---
+        try:
+            econ = model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL
+            gemini_contents = f"{_smart_bait_system}\n\n{prompt}"
+            raw_response = self._gemini_text_complete(gemini_contents, model_id=econ)
+            if raw_response and len(raw_response.strip()) < 150:
+                logger.warning(
+                    "humanize_smart_bait | Gemini draft < 150 chars — re-prompting to expand."
                 )
-                chunks = [
-                    getattr(b, "text", None)
-                    for b in (getattr(message, "content", []) or [])
-                ]
-                raw_response = "\n".join(c for c in chunks if c).strip()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Claude smart bait failed (%s). Falling back to Gemini.", exc)
-                mode_tag = "gemini_fallback"
-
-        if not raw_response:
-            try:
-                econ = model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL
-                chain = chain_with_preferred_first(self._econ_gemini_chain, econ)
-                response = generate_content_with_model_fallback(
-                    self._gemini, chain, contents=[prompt]
+                expand_prompt = (
+                    gemini_contents
+                    + "\n\nCRITICAL: Expand your previous answer. "
+                    "Return a richer JSON payload with more detail (≥150 characters total)."
                 )
-                text_attr = getattr(response, "text", None)
-                raw_response = text_attr() if callable(text_attr) else text_attr
-                if not raw_response:
-                    parts_out: list[str] = []
-                    for cand in getattr(response, "candidates", []) or []:
-                        content = getattr(cand, "content", None)
-                        if not content:
-                            continue
-                        for part in getattr(content, "parts", []) or []:
-                            t = getattr(part, "text", None)
-                            if t:
-                                parts_out.append(t)
-                    raw_response = "\n".join(parts_out).strip()
-                if economic:
-                    mode_tag = "humanized"
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Gemini smart bait also failed: %s", exc)
-                return "", "", "researcher_fallback", ""
+                expanded = self._gemini_text_complete(expand_prompt, model_id=econ)
+                if expanded and len(expanded.strip()) > len(raw_response.strip()):
+                    raw_response = expanded
+            if raw_response:
+                mode_tag = "humanized"
+                logger.info("humanize_smart_bait | Gemini PRIMARY OK")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("humanize_smart_bait | Gemini failed (%s).", exc)
+            raw_response = ""
 
         if not raw_response:
             return "", "", "researcher_fallback", ""
@@ -1425,6 +1758,7 @@ class CaptionEngine:
         overlay_text = ""
         visual_subject = ""
         caption = ""
+        self.last_seo_title = ""
 
         # Primary: JSON parse (handles both SMART_BAIT and ECONOMIC_REEL schemas)
         try:
@@ -1444,6 +1778,7 @@ class CaptionEngine:
                     data.get("caption_body", "") or data.get("caption", "")
                 ).strip()
                 visual_subject = str(data.get("visual_subject", "")).strip()
+                self.last_seo_title = str(data.get("seo_title", "") or "").strip()
                 if not caption:
                     caption = overlay_text  # final fallback
             else:
@@ -1469,6 +1804,8 @@ class CaptionEngine:
                 elif ls.upper().startswith("CAPTION:") or ls.upper().startswith("CAPTION_BODY:"):
                     key_len = len("CAPTION_BODY:") if ls.upper().startswith("CAPTION_BODY:") else len("CAPTION:")
                     caption = ls[key_len:].strip()
+                elif ls.upper().startswith("SEO_TITLE:"):
+                    self.last_seo_title = ls[len("SEO_TITLE:"):].strip()
             if not overlay_text and not caption:
                 caption = raw_response.strip()
 
@@ -1483,16 +1820,24 @@ class CaptionEngine:
         cta_enabled: bool = True,
         economic: bool = False,
         model_id: str | None = None,
+        signature: str = "",
     ) -> tuple[str, str]:
         """
         Generate a LONG_CAPTION_IMAGE caption: profound, long-form storytelling
         about relationship dynamics, emotional character, and modern marriage.
+
+        ``signature`` is the brand copyright line appended to the caption footer
+        (e.g. ``© Ancient Knowledge | by MediaUpScale``).  When omitted it is
+        derived from ``page_display_name`` so it is always page-specific.
 
         Returns ``(caption, mode_tag)`` where mode_tag is one of:
           "humanized"           -- primary LLM succeeded
           "gemini_fallback"     -- Claude failed, Gemini succeeded
           "researcher_fallback" -- all LLMs failed
         """
+        _sig = signature or (
+            f"© {page_display_name} | by MediaUpScale" if page_display_name else "© MediaUpScale"
+        )
         persona = persona_context_block()
         prompt = build_long_caption_prompt(
             topic,
@@ -1500,6 +1845,7 @@ class CaptionEngine:
             page_niche,
             persona,
             cta_enabled=cta_enabled,
+            signature=_sig,
         )
 
         _long_caption_system = (
@@ -1519,75 +1865,35 @@ class CaptionEngine:
             "- Analyze destructive female and male relationship behaviors.\n"
             "- Cover exactly 2 specific traitor/betrayal scenarios with concrete detail.\n"
             "- Conclude with guidance on managing the domestic home space for inner peace.\n"
-            "- End with the exact line: © Wonder Feed | by MediaUpScale"
+            "- End with the exact line: " + _sig
         )
 
         raw_response = ""
         mode_tag = "humanized"
 
-        # --- DeepSeek economic path ---
-        if economic and self._deepseek is not None:
-            try:
-                raw_response = self._deepseek_complete(
-                    prompt,
-                    system=_long_caption_system,
-                    max_tokens=900,
-                    temperature=0.78,
+        # --- Gemini ONLY — no Claude / DeepSeek ---
+        try:
+            econ = model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL
+            raw_response = self._gemini_text_complete(
+                f"{_long_caption_system}\n\n{prompt}", model_id=econ,
+            )
+            if raw_response and len(raw_response.strip()) < 150:
+                logger.warning(
+                    "humanize_long_caption | Gemini draft < 150 chars — re-prompting to expand."
                 )
-                if raw_response:
-                    logger.info("humanize_long_caption | DeepSeek OK")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("DeepSeek long caption failed (%s); trying Claude/Gemini.", exc)
-                raw_response = ""
-
-        # --- Claude premium path ---
-        if not raw_response and not economic and self._anthropic:
-            try:
-                message = self._anthropic.messages.create(
-                    model=self._writer_model,
-                    max_tokens=900,
-                    temperature=0.78,
-                    system=_long_caption_system,
-                    messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+                expanded = self._gemini_text_complete(
+                    f"{_long_caption_system}\n\n{prompt}\n\n"
+                    "CRITICAL: Expand the essay substantially (≥150 characters).",
+                    model_id=econ,
                 )
-                chunks = [
-                    getattr(b, "text", None)
-                    for b in (getattr(message, "content", []) or [])
-                ]
-                raw_response = "\n".join(c for c in chunks if c).strip()
-                if raw_response:
-                    logger.info("humanize_long_caption | Claude OK")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Claude long caption failed (%s). Falling back to Gemini.", exc)
-                mode_tag = "gemini_fallback"
-
-        # --- Gemini fallback ---
-        if not raw_response:
-            try:
-                econ = model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL
-                chain = chain_with_preferred_first(self._econ_gemini_chain, econ)
-                response = generate_content_with_model_fallback(
-                    self._gemini, chain, contents=[prompt]
-                )
-                text_attr = getattr(response, "text", None)
-                raw_response = text_attr() if callable(text_attr) else text_attr
-                if not raw_response:
-                    parts_out: list[str] = []
-                    for cand in getattr(response, "candidates", []) or []:
-                        content = getattr(cand, "content", None)
-                        if not content:
-                            continue
-                        for part in getattr(content, "parts", []) or []:
-                            t = getattr(part, "text", None)
-                            if t:
-                                parts_out.append(t)
-                    raw_response = "\n".join(parts_out).strip()
-                if raw_response:
-                    mode_tag = "humanized"
-                    logger.info("humanize_long_caption | Gemini fallback OK")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Gemini long caption also failed: %s", exc)
-                return "", "researcher_fallback"
+                if expanded and len(expanded.strip()) > len(raw_response.strip()):
+                    raw_response = expanded
+            if raw_response:
+                mode_tag = "humanized"
+                logger.info("humanize_long_caption | Gemini PRIMARY OK")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("humanize_long_caption | Gemini failed (%s).", exc)
+            raw_response = ""
 
         if not raw_response:
             return "", "researcher_fallback"
@@ -1595,7 +1901,7 @@ class CaptionEngine:
         # Parse JSON first; fall back to plain text if the LLM skips the format
         import json as _json  # noqa: PLC0415
 
-        _copyright = "© Wonder Feed | by MediaUpScale"
+        _copyright = _sig
         caption = ""
         try:
             _clean = (
@@ -1629,8 +1935,8 @@ class CaptionEngine:
         overlay question so the Gemini image prompt emotionally matches the hook.
 
         Priority:
-          1. DeepSeek (if ``economic=True`` and key present) — cheapest.
-          2. Gemini flash economic chain.
+          1. Gemini flash (PRIMARY default for all pages).
+          2. DeepSeek (optional secondary fallback).
           3. Keyword heuristic fallback — zero API cost, always succeeds.
 
         Returns
@@ -1659,23 +1965,7 @@ class CaptionEngine:
             "Output ONLY the one-sentence background description. No preamble, no labels."
         )
 
-        # --- DeepSeek (economic, cheap) ---
-        if economic and self._deepseek is not None:
-            try:
-                result = self._deepseek_complete(
-                    meta_prompt,
-                    system="You are a visual art director. Reply with only the requested description.",
-                    max_tokens=60,
-                    temperature=0.45,
-                )
-                if result:
-                    r = result.strip().rstrip(".")
-                    logger.debug("extract_smart_bait_image_theme | DeepSeek OK: %s", r[:80])
-                    return r + "."
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("DeepSeek theme extraction failed (%s); trying Gemini.", exc)
-
-        # --- Gemini flash economic chain ---
+        # --- Gemini ONLY (keyword heuristic if Gemini unavailable) ---
         try:
             chain = chain_with_preferred_first(
                 self._econ_gemini_chain, app_config.GEMINI_ECONOMIC_BRAIN_MODEL
@@ -1721,63 +2011,41 @@ class CaptionEngine:
         kw = (cta_keyword or contextual_cta_keyword(topic)) if cta_enabled else None
 
         if economic:
-            # DeepSeek path: cheaper than Gemini, same or better quality for text
-            if self._deepseek is not None:
-                try:
-                    prompt = build_gemini_humanizer_instruction(
-                        topic,
-                        raw_fact_sheet,
-                        variation_index=variation_index,
-                        total_variants=total_variants,
-                        cta_keyword=kw,
-                        cta_enabled=cta_enabled,
-                    )
-                    result = self._deepseek_complete(
-                        prompt,
-                        system="You are a human social media writer. Output ONLY the caption text.",
-                        max_tokens=900,
-                        temperature=0.72,
-                    )
-                    if result:
-                        logger.info("humanize_voice_with_fallback | DeepSeek humanizer OK")
-                        return result, "humanized"
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "DeepSeek humanizer failed (%s); falling back to Gemini economic.", exc
-                    )
-            # Gemini economic fallback
+            # Gemini PRIMARY ONLY for economic captions (all pages)
             try:
                 result = self.humanize_voice_gemini(
                     raw_fact_sheet, topic,
                     variation_index=variation_index,
                     total_variants=total_variants,
-                    model_id=model_id,
+                    model_id=model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
                     cta_keyword=kw,
                     cta_enabled=cta_enabled,
                 )
+                if result and len(result.strip()) < 150:
+                    logger.warning(
+                        "humanize_voice_with_fallback | Gemini draft < 150 chars — re-prompting."
+                    )
+                    result = self.humanize_voice_gemini(
+                        raw_fact_sheet
+                        + "\n\nCRITICAL: Expand the caption substantially (≥150 characters).",
+                        topic,
+                        variation_index=variation_index,
+                        total_variants=total_variants,
+                        model_id=model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL,
+                        cta_keyword=kw,
+                        cta_enabled=cta_enabled,
+                    ) or result
                 if result:
+                    logger.info("humanize_voice_with_fallback | Gemini PRIMARY OK")
                     return result, "humanized"
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Gemini humanizer failed (economic mode): %s", exc)
+                logger.warning(
+                    "Gemini humanizer failed (economic mode): %s — no Claude/DeepSeek fallback.",
+                    exc,
+                )
             return "", "researcher_fallback"
 
-        # Premium path: Claude first, then Gemini fallback.
-        if self._anthropic:
-            try:
-                result = self.humanize_voice(
-                    raw_fact_sheet, topic,
-                    variation_index=variation_index,
-                    total_variants=total_variants,
-                    cta_keyword=kw,
-                    cta_enabled=cta_enabled,
-                )
-                if result:
-                    return result, "humanized"
-            except Exception as claude_exc:  # noqa: BLE001
-                logger.warning(
-                    "Claude humanizer failed (%s). Retrying with Gemini fallback.", claude_exc
-                )
-
+        # Premium path: Gemini-only (Claude / DeepSeek removed from text stack)
         try:
             result = self.humanize_voice_gemini(
                 raw_fact_sheet, topic,
@@ -1786,10 +2054,20 @@ class CaptionEngine:
                 cta_keyword=kw,
                 cta_enabled=cta_enabled,
             )
+            if result and len(result.strip()) < 150:
+                result = self.humanize_voice_gemini(
+                    raw_fact_sheet
+                    + "\n\nCRITICAL: Expand the caption substantially (≥150 characters).",
+                    topic,
+                    variation_index=variation_index,
+                    total_variants=total_variants,
+                    cta_keyword=kw,
+                    cta_enabled=cta_enabled,
+                ) or result
             if result:
-                return result, "gemini_fallback"
+                return result, "humanized"
         except Exception as gem_exc:  # noqa: BLE001
-            logger.warning("Gemini fallback humanizer also failed: %s", gem_exc)
+            logger.warning("Gemini humanizer failed: %s", gem_exc)
 
         return "", "researcher_fallback"
 

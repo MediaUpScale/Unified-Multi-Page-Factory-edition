@@ -1,0 +1,68 @@
+{
+  "source_run_log": "logs/run_20260724_210846.log",
+  "reference_clips": [
+    "outputs/master_mei/clips/reel_weakness_isn_t_choice__it_s_an_u_v12.mp4",
+    "outputs/master_mei/clips/reel_your_solitude_is_not_loneliness__v14.mp4",
+    "outputs/master_mei/clips/reel_the_matrix_fog_obscures_your_tru_v15.mp4"
+  ],
+  "image_count": "8–10 keyframes (REEL_IMAGE_MIN_COUNT=8, REEL_IMAGE_COUNT=10)",
+  "api_note": "These golden reels were generated with Gemini Image (models/gemini-3.1-flash-image), NOT Together/FLUX. No '[DEBUG] Final Prompt Sent to API' lines exist for this run. Recovered strings below are the exact ILLUSTRATION_STYLE lock logged at generation time + the exact act-prompt compiler templates active in that codebase revision (agent transcript lines 82/89/126). visual_compiler.py + mei_visual.py were reverted to this logic on 2026-07-31.",
+  "master_style_anchor": "Cinematic 8k photorealistic raw photography, detailed skin textures, octane render, volumetric lighting — hybrid ancestral samurai-temple mysticism × cyberpunk dystopia",
+  "illustration_style_full": "Cinematic 8k photorealistic raw photography, detailed skin textures, octane render, volumetric lighting — hybrid ancestral samurai-temple mysticism × cyberpunk dystopia. Master Mei elder sage + young disciples in hardship conditioning OR neon megacity slaves chained by glowing neural wires. NO teens in bedrooms. NO plain smartphone desk shots. NO lifestyle soft-focus.",
+  "atmosphere_style": "Ultra-realistic cinematic 8k HYBRID aesthetic: Cyberpunk Dystopia fused with Ancient Ancestral Samurai Temples. Photorealistic raw photography, detailed skin textures, octane render quality, volumetric lighting. Master Mei — older East Asian sage, long white hair bun, long white beard, dark/gold robes — in misty mountain peaks, roaring waterfalls, rain-soaked ancestral temples, brutal hardship training with young disciples. Contrast against neon-drenched dystopian megacities, glowing neural-wire slaves, bio-mechanical screens, cybernetic rebels tearing digital chains. STRICT BAN: ordinary teenagers in bedrooms, desks with smartphones, mundane modern rooms, casual lifestyle photography, soft wellness aesthetics. Colour grade: charcoal, neon cyan/magenta accents, cold steel, ember gold temple light.",
+  "visual_compiler_translation_rules": {
+    "hook": "HOOK FRAME 1 — STRICT CHARACTER LOCK + REFERENCE LIKENESS. Master Mei SEATED in meditation in ancestral samurai temple / misty mountain sacred ground.",
+    "dopamine": "B-ROLL — MATRIX / DISTRACTION / CHEAP DOPAMINE (CYBERPUNK). Futuristic cyberpunk slaves chained by glowing neon neural wires, bio-mechanical screens fused to faces, neon-lit rain-drenched dystopian megacity. NO Master Mei. NO teens in bedrooms. NO plain smartphone desks.",
+    "rebellion": "B-ROLL — REBELLION / AWAKENING. Young cybernetic rebels tearing off glowing digital chains against dystopian neon towers.",
+    "system": "B-ROLL — SYSTEM / MASS MANIPULATION. Bleak dystopian megacity: endless neon towers, mass-control holograms, herds of wired citizens under rain.",
+    "training": "B-ROLL — DISCIPLINE / CONDITIONING (ACTIVE). Master Mei ACTIVE in misty mountain peaks, roaring waterfall training, rain-soaked ancient temple.",
+    "focus": "B-ROLL — INNER MASTERY / CYBERPUNK CONTRAST. Alternates Master Mei ancestral-temple discipline vs neon rain megacity vs distant ancestral temple silhouette.",
+    "business": "B-ROLL — WEALTH / EMPIRE. Ancient stone altar with holographic financial charts; molten gold on cyber-armor; sovereign focus-as-capital."
+  },
+  "videos": [
+    {
+      "file": "reel_seeking_validation_feeds_the_cha_v05.mp4",
+      "subject": "Quit the dopamine drip or watch your ambition dissolve in noise",
+      "subject_slug": "quit_the_dopamine_drip_or_watch_your_ambition_dissolve_in_noise",
+      "variant": "v05",
+      "seq_run": "seq_run_20260724_210935",
+      "logged_theme_sequence": ["hook", "dopamine", "dopamine", "dopamine", "dopamine", "dopamine", "business", "business"],
+      "image_prompt_lock_logged_180chars": "Cinematic 8k photorealistic raw photography, detailed skin textures, octane render, volumetric lighting — hybrid ancestral samurai-temple mysticism × cyberpunk dystopia. Master Mei",
+      "reconstructed_act_prompt_templates": {
+        "act01_hook": "{ILLUSTRATION_STYLE}. MEDIUM: Ultra-realistic cinematic 4K photography — NOT illustration, NOT CGI polish. HOOK FRAME 1 — FIRST APPEARANCE — STRICT CHARACTER LOCK. ZERO HALLUCINATION: NEVER invent a generic old master — MUST match avatar.png. {MASTER_MEI_VISUAL_DNA} POSE MANDATE: Master Mei meditating, standing in fog, OR observing the neon city — spine erect, absolute stillness. ENVIRONMENT: ancestral samurai temple / misty mountain sacred ground. THEME CONTEXT: Quit the dopamine drip or watch your ambition dissolve in noise.",
+        "act02_to_06_dopamine": "{ILLUSTRATION_STYLE}. B-ROLL — MATRIX / DISTRACTION / CHEAP DOPAMINE (CYBERPUNK). Spoken beat: {chunk}. Futuristic cyberpunk slaves: humans chained by glowing neon neural wires, bio-mechanical screens fused to faces, neon-lit rain-drenched dystopian megacity. Brainwashed masses under holographic addiction feeds. NO Master Mei. NO teens in bedrooms. NO plain smartphone desks.",
+        "act07_to_08_business": "{ILLUSTRATION_STYLE}. B-ROLL — WEALTH / EMPIRE. Spoken beat: {chunk}. Ancient stone altar projecting holographic financial charts; molten gold reflecting on cyber-armor; focus treated as capital. REFERENCE LIKENESS when Master Mei present."
+      }
+    },
+    {
+      "file": "reel_your__friends__may_be_the_chains_v03.mp4",
+      "subject": "Guard your energy — toxic people are leaks you keep calling friends",
+      "subject_slug": "guard_your_energy_toxic_people_are_leaks_you_keep_calling_friends",
+      "variant": "v03",
+      "seq_run": "seq_run_20260724_210938",
+      "logged_theme_sequence": ["hook", "focus", "focus", "training", "dopamine", "training", "training", "training"],
+      "image_prompt_lock_logged_180chars": "Cinematic 8k photorealistic raw photography, detailed skin textures, octane render, volumetric lighting — hybrid ancestral samurai-temple mysticism × cyberpunk dystopia. Master Mei",
+      "reconstructed_act_prompt_templates": {
+        "act01_hook": "{ILLUSTRATION_STYLE}. HOOK FRAME 1 — STRICT CHARACTER LOCK + REFERENCE LIKENESS. Master Mei SEATED in meditation — ancestral samurai temple / misty mountain sacred ground. NARRATIVE CONTEXT: Guard your energy — toxic people are leaks you keep calling friends.",
+        "focus_acts": "{ILLUSTRATION_STYLE}. B-ROLL — INNER MASTERY. Master Mei in active ancestral-temple discipline under storm or waterfall. REFERENCE LIKENESS REQUIRED. OR neon rain megacity vs distant ancestral temple silhouette.",
+        "training_acts": "{ILLUSTRATION_STYLE}. B-ROLL — DISCIPLINE / CONDITIONING (ACTIVE). Master Mei ACTIVE in misty mountain peaks, roaring waterfall training, rain-soaked ancient temple — hard physical/spiritual conditioning in motion.",
+        "dopamine_act": "{ILLUSTRATION_STYLE}. B-ROLL — MATRIX / DISTRACTION / CHEAP DOPAMINE (CYBERPUNK). Cyberpunk slaves chained by glowing neon neural wires in neon rain megacity. NO Master Mei."
+      }
+    },
+    {
+      "file": "reel_surrender_impulse__claim_your_em_v02.mp4",
+      "subject": "The warrior who cannot refuse pleasure will never command power",
+      "subject_slug": "the_warrior_who_cannot_refuse_pleasure_will_never_command_power",
+      "variant": "v02",
+      "seq_run": "seq_run_20260724_210934",
+      "logged_theme_sequence": ["hook", "focus", "dopamine", "focus", "focus", "dopamine", "business", "focus"],
+      "image_prompt_lock_logged_180chars": "Cinematic 8k photorealistic raw photography, detailed skin textures, octane render, volumetric lighting — hybrid ancestral samurai-temple mysticism × cyberpunk dystopia. Master Mei",
+      "reconstructed_act_prompt_templates": {
+        "act01_hook": "{ILLUSTRATION_STYLE}. HOOK FRAME 1 — STRICT CHARACTER LOCK. Master Mei in ancestral samurai temple. THEME CONTEXT: The warrior who cannot refuse pleasure will never command power.",
+        "focus_acts": "{ILLUSTRATION_STYLE}. B-ROLL — INNER MASTERY / CYBERPUNK CONTRAST. Master Mei ancestral discipline OR neon megacity vs temple silhouette.",
+        "dopamine_acts": "{ILLUSTRATION_STYLE}. B-ROLL — MATRIX / CHEAP DOPAMINE. Neural-wire slaves, bio-mechanical screens, neon rain megacity. NO Master Mei.",
+        "business_act": "{ILLUSTRATION_STYLE}. B-ROLL — WEALTH / EMPIRE. Stone altar + holographic charts + molten gold cyber-armor."
+      }
+    }
+  ]
+}
