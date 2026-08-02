@@ -78,6 +78,8 @@ ROLE_A_STYLE: str = (
 
 ROLE_A_NEGATIVE: str = (
     f"{_ORDINARY_BAN}, "
+    "text, subtitles, words, typography, watermark, signature, caption, quotes, "
+    "letters, script, labels, UI elements, overlay text, lower thirds, "
     "bionic implants, cybernetics, VR headset, glowing wires, neural cables, "
     "neon lights, cyberpunk city, smartphone, digital chains, robot arm, "
     "mechanical eye, futuristic tech on body, biomechanical, CRT monitors, "
@@ -97,6 +99,8 @@ ROLE_B_STYLE: str = (
 
 ROLE_B_NEGATIVE: str = (
     f"{_ORDINARY_BAN}, "
+    "text, subtitles, words, typography, watermark, signature, caption, quotes, "
+    "letters, script, labels, UI elements, overlay text, lower thirds, "
     "Master Mei, elder sage, white beard mentor, bionic implants, cybernetics, "
     "VR headset, glowing wires, neon megacity, casual t-shirt, jeans, sneakers, "
     "deformed hands, extra limbs, blurry face, looking at viewer"
@@ -122,6 +126,8 @@ _SAFETY_BAN: str = (
 
 ROLE_C_NEGATIVE: str = (
     f"{_ORDINARY_BAN}, {_SAFETY_BAN}, "
+    "text, subtitles, words, typography, watermark, signature, caption, quotes, "
+    "letters, script, labels, UI elements, overlay text, lower thirds, "
     "Master Mei, elder sage, white beard, topknot master, ancient Asian master, "
     "temple balcony, bamboo forest, tatami room, waterfall training monks, "
     "casual t-shirt, jeans, sneakers, bland crowd, blood, gore, open wounds, "
@@ -134,6 +140,7 @@ ROLE_C_NEGATIVE: str = (
 SHOT_WIDE_MASS: str = "wide_mass_matrix"
 SHOT_WIDE_SUBJUGATED: str = "wide_subjugated"
 SHOT_WIDE_LUDOVICO: str = "wide_forced_consumption"
+SHOT_MICRO_FULLBODY: str = "micro_fullbody_agony"
 SHOT_DETAIL_BIOMECH: str = "detail_biomech"
 SHOT_DETAIL_VISCERAL: str = "detail_visceral"
 SHOT_SEDUCTION: str = "seduction_device"
@@ -142,18 +149,30 @@ _WIDE_SHOTS: frozenset[str] = frozenset({
     SHOT_WIDE_MASS, SHOT_WIDE_SUBJUGATED, SHOT_WIDE_LUDOVICO,
 })
 _DETAIL_SHOTS: frozenset[str] = frozenset({
-    SHOT_DETAIL_BIOMECH, SHOT_DETAIL_VISCERAL, SHOT_SEDUCTION,
+    SHOT_MICRO_FULLBODY, SHOT_DETAIL_BIOMECH, SHOT_DETAIL_VISCERAL, SHOT_SEDUCTION,
 })
 _VR_CLOSEUP_SHOTS: frozenset[str] = frozenset({
     SHOT_DETAIL_BIOMECH, SHOT_DETAIL_VISCERAL,
 })
 
-# Mass Matrix Vistas (Wide-Angle)
+# Shot #2 — Macro / World Concept (Massive Matrix vista)
 _WIDE_MASS_MATRIX: str = (
-    "WIDE-ANGLE MASS MATRIX VISTA: vast crowds of enslaved men, women, and youth in a "
-    "desolate futuristic wasteland, physically tied to colossal biomechanical towers, "
-    "sky-high digital propaganda screens, and computational matrix cocoons — endless "
-    "masses watching glowing digital propaganda in uniform trance"
+    "MACRO WORLD-CONCEPT VISTA: massive scale Matrix landscape — colossal futuristic "
+    "propaganda towers, vast endless crowds of subjugated masses wired into "
+    "computational matrix cocoons and towering digital screens, desolate wasteland "
+    "horizon, ambient energy fields controlling the herd in uniform trance"
+)
+
+# Shot #3/#4 — Micro / Individual Agony (full body, 1–2 men)
+_MICRO_FULLBODY_AGONY: str = (
+    "MICRO FULL-BODY INDIVIDUAL AGONY: 1 to 2 adult men in full-body composition "
+    "(kneeling or seated) on a desolate devastated wasteland — full torsos, arms, "
+    "and legs visible in complete posture of agony, submission, and physical slavery. "
+    "Bodies heavily integrated into ultra-modern futuristic biomechanical gear: "
+    "intricate circuits, thick glowing fiber-optic cables, neural chips embedded in "
+    "skulls, hydraulics, metallic gears, diesel oil stains across skin. Barren "
+    "dystopian landscape dominated by glowing dopamine-inducing machinery symbolizing "
+    f"total captivity to instant pleasure. Full body — not a face crop. {_SAFETY_BAN}"
 )
 
 _WIDE_SUBJUGATED: str = (
@@ -198,6 +217,7 @@ _SHOT_PROMPT: dict[str, str] = {
     SHOT_WIDE_MASS: _WIDE_MASS_MATRIX,
     SHOT_WIDE_SUBJUGATED: _WIDE_SUBJUGATED,
     SHOT_WIDE_LUDOVICO: _WIDE_LUDOVICO,
+    SHOT_MICRO_FULLBODY: _MICRO_FULLBODY_AGONY,
     SHOT_DETAIL_BIOMECH: _DETAIL_BIOMECH,
     SHOT_DETAIL_VISCERAL: _DETAIL_VISCERAL,
     SHOT_SEDUCTION: _SEDUCTION_DEVICE,
@@ -469,6 +489,19 @@ def plan_matrix_shots(
                 plan[i] = SHOT_WIDE_SUBJUGATED
             else:
                 seen_visceral = True
+
+    # Macro → Micro lock (1-based Shot #2 / Shot #3-or-#4)
+    # Shot #2 (act 1): always MACRO world-concept Matrix vista
+    if n >= 2 and (roles_l[1] == ROLE_SLAVE or plan[1] is not None):
+        plan[1] = SHOT_WIDE_MASS
+    # Shot #3 (act 2) preferred for MICRO full-body agony; else Shot #4 (act 3)
+    micro_slot = None
+    for cand in (2, 3):
+        if cand < n and (roles_l[cand] == ROLE_SLAVE or plan[cand] is not None):
+            micro_slot = cand
+            break
+    if micro_slot is not None:
+        plan[micro_slot] = SHOT_MICRO_FULLBODY
     return plan
 
 
@@ -496,6 +529,8 @@ def build_role_prompt(
         beat = lore[min(act_index, len(lore) - 1)][1]
     beat = _normalize_beat(beat)
 
+    # spoken_beat used only for shot sync classification — NEVER appended to
+    # the positive prompt (FLUX paints typography when fed dialogue/quotes).
     chunk = (spoken_beat or subject or "").strip()
     style = style_for_role(role)
     negative = negative_for_role(role)
@@ -504,27 +539,28 @@ def build_role_prompt(
         mei = _clean_mei_dna(visual_dna)
         env = (hook_env or "").strip() or (
             "primal untouched ancient mountain temple, misty waterfalls, "
-            "primal bamboo forest — NO modern technology"
+            "primal bamboo forest — no modern technology"
         )
         positive = (
             f"{style}. "
-            f"[FRAME 1 INTRO]: {mei}, standing OR meditating in primal nature — "
-            f"absolute stillness, serene authority. ENVIRONMENT: {env}. "
-            f"NO modern technology on his body. Spoken beat: {chunk}."
+            f"{mei}, standing or meditating in primal nature — "
+            f"absolute stillness, serene authority. Environment: {env}. "
+            f"No modern technology on his body. Pure visual scene, no text."
         )
         negative = ROLE_A_NEGATIVE + ", looking at viewer, selfie pose"
     elif beat == BEAT_OUTRO:
         mei = _clean_mei_dna(visual_dna)
         positive = (
             f"{style}. "
-            f"[FRAME 10 OUTRO / CTA]: {mei}, standing in an exuberant ancestral "
-            f"temple hall with warm torchlight and gold accents, LOOKING DIRECTLY "
-            f"AT THE CAMERA with absolute authority and implacable focus — "
-            f"REFERENCE LIKENESS REQUIRED. Spoken beat: {chunk}."
+            f"{mei}, standing in an exuberant ancestral "
+            f"temple hall with warm torchlight and gold accents, looking directly "
+            f"at the camera with absolute authority and implacable focus. "
+            f"Pure visual scene, no text."
         )
         # Outro uniquely allows eye contact
         negative = (
-            f"{_ORDINARY_BAN}, bionic implants, cybernetics, VR headset, glowing wires, "
+            f"{_ORDINARY_BAN}, text, subtitles, words, typography, watermark, "
+            "bionic implants, cybernetics, VR headset, glowing wires, "
             "neon city fused onto Master Mei, deformed hands, extra limbs, blurry face"
         )
     elif beat == BEAT_TRAINING:
@@ -540,17 +576,17 @@ def build_role_prompt(
         action = variants[act_index % len(variants)]
         positive = (
             f"{style}. "
-            f"[FRAMES 5-7 RIGOROUS TRAINING]: {mei}. {action}. "
-            f"Traditional organic world ONLY — no cybernetics on Master Mei. "
-            f"Spoken beat: {chunk}."
+            f"{mei}. {action}. "
+            f"Traditional organic world only — no cybernetics on Master Mei. "
+            f"Pure visual scene, no text."
         )
     elif beat in (BEAT_MAYA, BEAT_GEARS, BEAT_PANOPTICON, BEAT_DOPAMINE):
         sync = _sync_shot_for_chunk(chunk, beat, shot_key=shot_key)
         positive = (
             f"{ROLE_C_STYLE}. "
-            f"[MATRIX SYNC:{sync['label']}] {sync['shot']}. "
-            f"Composition rule: prefer wide mass vistas; avoid repetitive single-person "
-            f"VR-goggle close-ups. {_SAFETY_BAN}. Spoken beat: {chunk}."
+            f"{sync['shot']}. "
+            f"Prefer wide mass vistas; avoid repetitive single-person "
+            f"VR-goggle close-ups. {_SAFETY_BAN}. Pure visual scene, no text."
         )
         negative = (
             f"{ROLE_C_NEGATIVE}, repetitive VR goggle portrait, identical headset close-up, "
@@ -559,29 +595,30 @@ def build_role_prompt(
     elif beat == BEAT_BREAKFREE:
         positive = (
             f"{ROLE_B_STYLE}. "
-            f"[FRAMES 8-9 DISCIPLINE]: A SINGLE focused martial monk tearing free from "
-            f"glowing digital chains / VR tether — sweat, determination, break from the "
-            f"dopamine masses. Absolutely no Master Mei. Spoken beat: {chunk}."
+            f"A single focused martial monk tearing free from "
+            f"glowing digital chains and VR tether — sweat, determination, break from the "
+            f"dopamine masses. Absolutely no Master Mei. Pure visual scene, no text."
         )
         negative = ROLE_B_NEGATIVE
     elif role == ROLE_MASTER:
         mei = _clean_mei_dna(visual_dna)
         env = (hook_env or "").strip() or environment_for_role(role, act_index)
         positive = (
-            f"{style}. [SUBJECT]: {mei}. ENVIRONMENT: {env}. Spoken beat: {chunk}."
+            f"{style}. {mei}. Environment: {env}. Pure visual scene, no text."
         )
     elif role == ROLE_DISCIPLE:
         positive = (
-            f"{style}. [SUBJECT]: {ROLE_B_SUBJECT}, intense training. "
-            f"ENVIRONMENT: {environment_for_role(role, act_index)}. Spoken beat: {chunk}."
+            f"{style}. {ROLE_B_SUBJECT}, intense training. "
+            f"Environment: {environment_for_role(role, act_index)}. "
+            f"Pure visual scene, no text."
         )
     else:
         # Role C fallback — still apply Narrative Synchronization Matrix
         sync = _sync_shot_for_chunk(chunk, beat or BEAT_MAYA, shot_key=shot_key)
         positive = (
             f"{ROLE_C_STYLE}. "
-            f"[MATRIX SYNC:{sync['label']}] {sync['shot']}. "
-            f"{_SAFETY_BAN}. Spoken beat: {chunk}."
+            f"{sync['shot']}. "
+            f"{_SAFETY_BAN}. Pure visual scene, no text."
         )
         negative = (
             f"{ROLE_C_NEGATIVE}, repetitive VR goggle portrait, identical headset close-up"

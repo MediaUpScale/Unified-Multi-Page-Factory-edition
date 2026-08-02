@@ -2348,7 +2348,8 @@ def _produce_variant_worker(
                     else resolved_subject
                 )
                 _act_prompt = _mm_prompts[_act_i] if _act_i < len(_mm_prompts) else (
-                    f"Spoken beat: {_snippet}. Cinematic 4K, full-bleed."
+                    "Cinematic 4K full-bleed dystopian visual scene, no text, "
+                    "no subtitles, no typography."
                 )
                 _act_role = (
                     _mm_roles[_act_i] if _act_i < len(_mm_roles) else "slave"
@@ -3158,12 +3159,12 @@ def _produce_variant_worker(
                 )
                 _sub_sw = page_ctx.subtitle_stroke_width if page_ctx and _styled_subs else 0
                 _sub_sf = page_ctx.subtitle_stroke_fill if page_ctx and _styled_subs else None
-                # Master Mei: VO +20% (VOICE_VOLUME_GAIN=1.20). SFX at page ambient vol.
+                # Master Mei: VO +15% (VOICE_VOLUME_GAIN=1.15). Ambient bed 0.38.
                 _voice_gain = (
                     float(page_ctx.voice_volume_gain)
                     if page_ctx and page_ctx.voice_volume_gain is not None
                     else (
-                        1.20
+                        1.15
                         if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
                         else 1.0
                     )

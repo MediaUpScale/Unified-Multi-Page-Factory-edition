@@ -312,8 +312,8 @@ def _resolve_sequence_mp4_path(
 _REEL_WIDTH: int  = 1080
 _REEL_HEIGHT: int = 1920
 _DEFAULT_FPS: int = 30
-_AMBIENT_VOLUME: float = 0.45   # cinematic bed ~0.45; ducked under VO
-_VOICE_VOLUME_GAIN: float = 1.20  # +20% VO mix gain (Master Mei default)
+_AMBIENT_VOLUME: float = 0.38   # cinematic bed ~0.38; ducked under VO
+_VOICE_VOLUME_GAIN: float = 1.15  # +15% VO mix gain (Master Mei default)
 _AMBIENT_GAIN_MUL_DEFAULT: float = 1.0  # no compounding SFX boost (distortion fix)
 _AMBIENT_DUCK_RATIO_DEFAULT: float = 0.70  # × bed while voice plays (still audible)
 _MASTER_AUDIO_GAIN_DEFAULT: float = 1.15   # +15% overall master after mix
@@ -374,7 +374,7 @@ def _synthesize_ambient_drone(
         combined = drone * swell
         peak = float(np.max(np.abs(combined)))
         vol = (
-            max(0.40, min(0.50, float(volume)))
+            max(0.35, min(0.42, float(volume)))
             if (profile or "").lower() == "warrior"
             else max(0.08, float(volume))
         )
@@ -1690,7 +1690,7 @@ def compile_sequence_reel(
     )
     _amb_profile = (ambient_profile or "mystery").strip().lower() or "mystery"
     if _amb_profile == "warrior":
-        _amb_vol = max(0.40, min(0.50, float(_amb_vol) * _AMBIENT_GAIN_MUL))
+        _amb_vol = max(0.35, min(0.42, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     else:
         _amb_vol = max(0.08, min(1.0, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     _duck = (

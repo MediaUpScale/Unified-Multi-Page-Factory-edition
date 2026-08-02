@@ -67,7 +67,16 @@ TRADITIONAL_STYLE_ANCHOR: str = (
     "warm ember gold and charcoal stone, ancestral temple aesthetic"
 )
 
+# Hard ban: FLUX must never paint words / UI / captions onto the frame
+_TEXT_OVERLAY_NEGATIVE: str = (
+    "text, subtitles, words, typography, watermark, signature, caption, quotes, "
+    "letters, script, labels, UI elements, overlay text, lower thirds, "
+    "written text, logos, inscriptions, speech bubbles, closed captions, "
+    "burned-in subtitles, on-screen text, title cards, hashtags"
+)
+
 MANDATORY_NEGATIVE_PROMPT: str = (
+    f"{_TEXT_OVERLAY_NEGATIVE}, "
     "gore, blood, open wounds, open flesh, graphic body horror, mutilation, "
     "exposed organs, body mutilation, bloody cables, liquid dripping, "
     "repetitive VR goggle portrait, identical headset close-up, "
@@ -318,6 +327,31 @@ def sanitize_prompt_for_flux(
     text = _ACT_LABEL_RE.sub("", text)
     text = _STRUCTURAL_LABEL_RE.sub("", text)
 
+    # CRITICAL: strip spoken script / dialogue / quotes so FLUX never paints text
+    text = re.sub(
+        r"(?i)\bSpoken\s+beat\s*:?\s*.*?(?=(?:\.\s+[A-Z])|$)",
+        " ",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(?:voiceover|narration|dialogue|script|caption|subtitle)\s*:?\s*.*?"
+        r"(?=(?:\.\s+[A-Z])|$)",
+        " ",
+        text,
+    )
+    # Quoted strings (ASCII + curly) — dialogue leaks cause typography in frames
+    text = re.sub(r'"[^"]{2,}"', " ", text)
+    text = re.sub(r"'[^']{2,}'", " ", text)
+    text = re.sub(r"[“”][^“”]{2,}[“”]", " ", text)
+    text = re.sub(r"[‘’][^‘’]{2,}[‘’]", " ", text)
+    # Structural frame / sync tags (keep visual content after, drop brackets)
+    text = re.sub(
+        r"\[(?:ACT|FRAME|MATRIX\s*SYNC|SUBJECT|ENVIRONMENT)[^\]]*\]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
     # Strip negative stuffing — bans belong in negative_prompt, not positives
     text = re.sub(
         r"(?:,\s*)?\b(?:NO|NEVER|ZERO)\s+[^,.;]+",
@@ -328,6 +362,7 @@ def sanitize_prompt_for_flux(
     text = re.sub(r"\bVisual details\s*:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\bSTRICT:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\bAbsolutely\s+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bComposition rule\s*:?\s*[^.]+\.?", " ", text, flags=re.IGNORECASE)
 
     # Soft bans are role-gated — meditation/smartphone must survive their roles
     if role == "slave":
