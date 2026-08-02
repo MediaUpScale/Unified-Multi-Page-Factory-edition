@@ -683,6 +683,7 @@ def build_master_mei_script_act_prompts(
         assign_visual_roles,
         build_role_prompt,
         mei_slots_from_roles,
+        plan_matrix_shots,
     )
 
     if segment_fn is None:
@@ -720,6 +721,9 @@ def build_master_mei_script_act_prompts(
     roles = assign_visual_roles(n_acts, themes=themes, spoken_chunks=chunks)
     beats = assign_frame_beats(n_acts, spoken_chunks=chunks)
     slots = mei_slots_from_roles(roles)
+    shot_plan = plan_matrix_shots(
+        n_acts, roles, beats=beats, spoken_chunks=chunks,
+    )
 
     prompts: list[str] = []
     negatives: list[str] = []
@@ -735,14 +739,17 @@ def build_master_mei_script_act_prompts(
             act_index=i,
             hook_env=hook_env if (i == 0 and role == ROLE_MASTER) else "",
             beat=beat,
+            shot_key=shot_plan[i] if i < len(shot_plan) else None,
         )
         prompts.append(pos)
         negatives.append(neg)
 
     mei_pct = (100.0 * len(slots) / max(1, n_acts))
+    _wide_n = sum(1 for s in shot_plan if s and str(s).startswith("wide_"))
+    _det_n = sum(1 for s in shot_plan if s and not str(s).startswith("wide_") and s)
     _LOG.info(
         "MASTER_MEI 10-FRAME LORE | n_acts=%d | roles=%s | beats=%s | "
-        "mei_slots=%s (%.0f%%) | DNA=ROLE_A_ONLY",
-        n_acts, roles, beats, sorted(slots), mei_pct,
+        "shots=%s (wide=%d detail=%d) | mei_slots=%s (%.0f%%) | DNA=ROLE_A_ONLY",
+        n_acts, roles, beats, shot_plan, _wide_n, _det_n, sorted(slots), mei_pct,
     )
     return prompts, slots, roles, negatives

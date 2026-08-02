@@ -128,29 +128,80 @@ ROLE_C_NEGATIVE: str = (
     "deformed hands, extra limbs, blurry face, looking at viewer"
 )
 
-# Wide-angle mass-control vistas
-_WIDE_WASTELAND: str = (
-    "WIDE-ANGLE: desolate devastated futuristic wasteland dominated by colossal matrix "
-    "propaganda towers, glowing neon monoliths, and panopticon structures; vast masses of "
-    "enslaved humans standing in uniform trance-like states, physically controlled by ambient "
-    "energy fields and massive sky-high digital screens"
+# ---------------------------------------------------------------------------
+# Visual Scene Pool — 70% Wide / 30% Detail (anti-VR-redundancy)
+# ---------------------------------------------------------------------------
+SHOT_WIDE_MASS: str = "wide_mass_matrix"
+SHOT_WIDE_SUBJUGATED: str = "wide_subjugated"
+SHOT_WIDE_LUDOVICO: str = "wide_forced_consumption"
+SHOT_DETAIL_BIOMECH: str = "detail_biomech"
+SHOT_DETAIL_VISCERAL: str = "detail_visceral"
+SHOT_SEDUCTION: str = "seduction_device"
+
+_WIDE_SHOTS: frozenset[str] = frozenset({
+    SHOT_WIDE_MASS, SHOT_WIDE_SUBJUGATED, SHOT_WIDE_LUDOVICO,
+})
+_DETAIL_SHOTS: frozenset[str] = frozenset({
+    SHOT_DETAIL_BIOMECH, SHOT_DETAIL_VISCERAL, SHOT_SEDUCTION,
+})
+_VR_CLOSEUP_SHOTS: frozenset[str] = frozenset({
+    SHOT_DETAIL_BIOMECH, SHOT_DETAIL_VISCERAL,
+})
+
+# Mass Matrix Vistas (Wide-Angle)
+_WIDE_MASS_MATRIX: str = (
+    "WIDE-ANGLE MASS MATRIX VISTA: vast crowds of enslaved men, women, and youth in a "
+    "desolate futuristic wasteland, physically tied to colossal biomechanical towers, "
+    "sky-high digital propaganda screens, and computational matrix cocoons — endless "
+    "masses watching glowing digital propaganda in uniform trance"
 )
 
-# Close-up biomechanical enslavement (clean tech — no gore)
-_CLOSEUP_IMPLANT: str = (
-    "CLOSE-UP DETAIL: gradual technological integration — microchips and neural nodes "
-    "integrated cleanly into the base of the skull and temples; glowing high-tech electrical "
-    "circuitry illuminated subtly beneath skin tracing along the spine; sleek fiber-optic "
-    "cables and glowing data cords connected to neck and upper body tethering to a central "
-    "power grid; advanced sensory-deprivation VR headset / cybernetic goggles clamped tightly "
-    f"over eyes. {_SAFETY_BAN}"
+_WIDE_SUBJUGATED: str = (
+    "WIDE-ANGLE SUBJUGATED MASSES: kneeling and bound slaves tied with glowing cables "
+    "across a devastated plaza, zombie-like vacant stares, no struggle, no breakaway — "
+    "panopticon monitors looming overhead"
+)
+
+_WIDE_LUDOVICO: str = (
+    "WIDE/MEDIUM FORCED CONSUMPTION (Ludovico-style): rows of individuals strapped to "
+    "mechanical chairs and couches with clean mechanical eye-openers forcing them to "
+    "absorb digital entertainment while heavily sedated — cinematic dark fantasy, "
+    "institutional scale"
+)
+
+# Biomechanical Integration (Detail — clean tech, no gore)
+_DETAIL_BIOMECH: str = (
+    "BIOMECHANICAL DETAIL: sleek cybernetic wires, fiber optics, and metallic circuits "
+    "entering through mouths, ears, and eyes — permanently fusing into skulls as clean "
+    "high-tech sensory control interfaces (NOT open wounds). Glowing circuitry under skin. "
+    f"{_SAFETY_BAN}"
+)
+
+# Single visceral close-up (MAX 1 per video)
+_DETAIL_VISCERAL: str = (
+    "SINGLE VISCERAL CLOSE-UP (use sparingly): modern cybernetic engines and glowing "
+    "circuitry physically merging into the flesh of agonized digital slaves — high-concept "
+    f"cyberpunk fusion, facial torment WITHOUT injury. {_SAFETY_BAN}"
 )
 
 _SEDUCTION_DEVICE: str = (
     "SEDUCTION / INSTANT DOPAMINE: sleek personal devices, subtle glowing headbands, "
     "alluring holographic interfaces, soft neon UI reflecting on trance faces — "
-    "seductive clean tech addiction, no gore"
+    "seductive clean tech addiction, no gore, NO repetitive VR-goggle portrait"
 )
+
+# Legacy aliases used by sync helpers
+_WIDE_WASTELAND: str = _WIDE_MASS_MATRIX
+_CLOSEUP_IMPLANT: str = _DETAIL_BIOMECH
+
+_SHOT_PROMPT: dict[str, str] = {
+    SHOT_WIDE_MASS: _WIDE_MASS_MATRIX,
+    SHOT_WIDE_SUBJUGATED: _WIDE_SUBJUGATED,
+    SHOT_WIDE_LUDOVICO: _WIDE_LUDOVICO,
+    SHOT_DETAIL_BIOMECH: _DETAIL_BIOMECH,
+    SHOT_DETAIL_VISCERAL: _DETAIL_VISCERAL,
+    SHOT_SEDUCTION: _SEDUCTION_DEVICE,
+}
 
 _ROLE_C_KEYWORDS: re.Pattern[str] = re.compile(
     r"\b(?:machine|dopamine|digital|matrix|slaver(?:y|ies)?|chains?|"
@@ -318,6 +369,109 @@ def _normalize_beat(beat: str) -> str:
     return _BEAT_ALIASES.get(key, key)
 
 
+def plan_matrix_shots(
+    n_acts: int,
+    roles: Sequence[str],
+    beats: Sequence[str] | None = None,
+    spoken_chunks: Sequence[str] | None = None,
+) -> list[str | None]:
+    """
+    Assign shot keys for each act.
+
+    Among Matrix/slave frames enforce ~70% wide vistas / ~30% biomechanical detail,
+    max ONE visceral close-up per video, and ban consecutive VR-style close-ups.
+    """
+    n = max(1, int(n_acts))
+    roles_l = list(roles or [])
+    beats_l = list(beats or assign_frame_beats(n))
+    chunks = list(spoken_chunks or [])
+    while len(roles_l) < n:
+        roles_l.append(ROLE_SLAVE)
+    while len(beats_l) < n:
+        beats_l.append(BEAT_MAYA)
+
+    matrix_idx = [
+        i for i in range(n)
+        if roles_l[i] == ROLE_SLAVE
+        or _normalize_beat(beats_l[i]) in (
+            BEAT_MAYA, BEAT_GEARS, BEAT_PANOPTICON, BEAT_DOPAMINE,
+        )
+    ]
+    n_m = len(matrix_idx)
+    plan: list[str | None] = [None] * n
+    if n_m == 0:
+        return plan
+
+    n_detail = max(1, int(round(n_m * 0.30))) if n_m >= 2 else 0
+    n_detail = min(n_detail, max(0, n_m - 1))  # keep majority wide when possible
+    n_wide = n_m - n_detail
+
+    wide_cycle = [SHOT_WIDE_MASS, SHOT_WIDE_SUBJUGATED, SHOT_WIDE_LUDOVICO]
+    detail_cycle = [SHOT_DETAIL_BIOMECH, SHOT_SEDUCTION]
+    wide_i = detail_i = 0
+    visceral_used = False
+    assigned: list[str] = []
+
+    for rank, act_i in enumerate(matrix_idx):
+        beat = _normalize_beat(beats_l[act_i])
+        chunk = chunks[act_i] if act_i < len(chunks) else ""
+        want_detail = rank >= n_wide  # trailing slots → detail (30%)
+        # Spoken-beat soft bias
+        if _SYNC_SEDUCTION.search(chunk) or beat == BEAT_DOPAMINE:
+            want_detail = True if n_detail > 0 else False
+        if _SYNC_SYSTEMIC.search(chunk) or beat in (BEAT_GEARS, BEAT_PANOPTICON):
+            want_detail = False
+
+        prev = assigned[-1] if assigned else None
+        if want_detail and len([s for s in assigned if s in _DETAIL_SHOTS]) < n_detail:
+            # Anti-redundancy: never consecutive VR close-ups of single subjects
+            if prev in _VR_CLOSEUP_SHOTS:
+                shot = wide_cycle[wide_i % len(wide_cycle)]
+                wide_i += 1
+            elif not visceral_used and rank == matrix_idx[-1] and n_detail >= 1:
+                shot = SHOT_DETAIL_VISCERAL
+                visceral_used = True
+            else:
+                shot = detail_cycle[detail_i % len(detail_cycle)]
+                detail_i += 1
+                if shot in _VR_CLOSEUP_SHOTS and prev in _VR_CLOSEUP_SHOTS:
+                    shot = SHOT_WIDE_MASS
+        else:
+            if beat == BEAT_DOPAMINE:
+                shot = SHOT_WIDE_LUDOVICO if rank % 2 == 0 else SHOT_SEDUCTION
+                if shot == SHOT_SEDUCTION and prev in _VR_CLOSEUP_SHOTS:
+                    shot = SHOT_WIDE_LUDOVICO
+            else:
+                shot = wide_cycle[wide_i % len(wide_cycle)]
+                wide_i += 1
+
+        # Final guard: consecutive VR close-ups → force wide
+        if prev in _VR_CLOSEUP_SHOTS and shot in _VR_CLOSEUP_SHOTS:
+            shot = SHOT_WIDE_MASS
+        assigned.append(shot)
+        plan[act_i] = shot
+
+    # Enforce ratio: if detail overshot, convert extras to wide (keep ≤1 visceral)
+    detail_positions = [i for i, s in enumerate(plan) if s in _DETAIL_SHOTS]
+    while len(detail_positions) > n_detail:
+        victim = detail_positions.pop(0)
+        if plan[victim] == SHOT_DETAIL_VISCERAL and not any(
+            plan[j] == SHOT_DETAIL_VISCERAL for j in detail_positions
+        ):
+            continue  # keep the sole visceral if it's the only one
+        plan[victim] = SHOT_WIDE_MASS
+
+    # Cap visceral at 1
+    seen_visceral = False
+    for i, s in enumerate(plan):
+        if s == SHOT_DETAIL_VISCERAL:
+            if seen_visceral:
+                plan[i] = SHOT_WIDE_SUBJUGATED
+            else:
+                seen_visceral = True
+    return plan
+
+
 def build_role_prompt(
     *,
     role: str,
@@ -327,6 +481,7 @@ def build_role_prompt(
     act_index: int = 0,
     hook_env: str = "",
     beat: str = "",
+    shot_key: str | None = None,
 ) -> tuple[str, str]:
     """
     Build (positive_prompt, negative_prompt) for one lore-aligned scene.
@@ -390,14 +545,17 @@ def build_role_prompt(
             f"Spoken beat: {chunk}."
         )
     elif beat in (BEAT_MAYA, BEAT_GEARS, BEAT_PANOPTICON, BEAT_DOPAMINE):
-        # Dynamic Narrative Synchronization Matrix (spoken-beat → shot type)
-        sync = _sync_shot_for_chunk(chunk, beat)
+        sync = _sync_shot_for_chunk(chunk, beat, shot_key=shot_key)
         positive = (
             f"{ROLE_C_STYLE}. "
             f"[MATRIX SYNC:{sync['label']}] {sync['shot']}. "
-            f"{_SAFETY_BAN}. Spoken beat: {chunk}."
+            f"Composition rule: prefer wide mass vistas; avoid repetitive single-person "
+            f"VR-goggle close-ups. {_SAFETY_BAN}. Spoken beat: {chunk}."
         )
-        negative = ROLE_C_NEGATIVE
+        negative = (
+            f"{ROLE_C_NEGATIVE}, repetitive VR goggle portrait, identical headset close-up, "
+            "same face consecutive shots"
+        )
     elif beat == BEAT_BREAKFREE:
         positive = (
             f"{ROLE_B_STYLE}. "
@@ -419,13 +577,15 @@ def build_role_prompt(
         )
     else:
         # Role C fallback — still apply Narrative Synchronization Matrix
-        sync = _sync_shot_for_chunk(chunk, beat or BEAT_MAYA)
+        sync = _sync_shot_for_chunk(chunk, beat or BEAT_MAYA, shot_key=shot_key)
         positive = (
             f"{ROLE_C_STYLE}. "
             f"[MATRIX SYNC:{sync['label']}] {sync['shot']}. "
             f"{_SAFETY_BAN}. Spoken beat: {chunk}."
         )
-        negative = ROLE_C_NEGATIVE
+        negative = (
+            f"{ROLE_C_NEGATIVE}, repetitive VR goggle portrait, identical headset close-up"
+        )
 
     positive = re.sub(r"\s{2,}", " ", positive).strip()
     return positive, negative
@@ -442,51 +602,36 @@ def _clean_mei_dna(visual_dna: str) -> str:
     return re.sub(r"\s{2,}", " ", mei).strip(" ,.")
 
 
-def _sync_shot_for_chunk(chunk: str, beat: str) -> dict[str, str]:
+def _sync_shot_for_chunk(
+    chunk: str,
+    beat: str,
+    *,
+    shot_key: str | None = None,
+) -> dict[str, str]:
     """
-    Map voiceover beat → wide / close / seduction shot language.
+    Map planned shot key (preferred) or spoken beat → visual language.
 
-    Seduction & Instant Dopamine → sleek devices / headbands
-    Insidious Enslavement → clean implant close-ups (no gore)
-    Systemic Slavery → wide wasteland / gears / panopticon
+    Shot plan enforces 70% wide mass vistas / 30% biomechanical detail.
     """
+    key = (shot_key or "").strip().lower()
+    if key in _SHOT_PROMPT:
+        return {
+            "label": key.upper(),
+            "shot": f"{_SHOT_PROMPT[key]}. {_SAFETY_BAN}",
+        }
+
     text = chunk or ""
     if _SYNC_SEDUCTION.search(text) or beat == BEAT_DOPAMINE:
-        return {
-            "label": "SEDUCTION_DOPAMINE",
-            "shot": (
-                f"{_SEDUCTION_DEVICE}. Optional soft {_CLOSEUP_IMPLANT} if beat implies "
-                f"deeper trap — still {_SAFETY_BAN}"
-            ),
-        }
-    if _SYNC_INSIDIOUS.search(text) or beat == BEAT_MAYA:
-        return {
-            "label": "INSIDIOUS_ENSLAVEMENT",
-            "shot": (
-                f"{_CLOSEUP_IMPLANT}. Metaphoric Maya / digital illusion energy around the "
-                f"subject — clean cyberpunk, {_SAFETY_BAN}"
-            ),
-        }
+        return {"label": "SEDUCTION_DOPAMINE", "shot": f"{_SEDUCTION_DEVICE}. {_SAFETY_BAN}"}
     if _SYNC_SYSTEMIC.search(text) or beat in (BEAT_GEARS, BEAT_PANOPTICON):
         return {
             "label": "SYSTEMIC_SLAVERY",
             "shot": (
-                f"{_WIDE_WASTELAND}; endless human masses tied to giant biomechanical gears "
-                f"and panopticon surveillance monitors — {_SAFETY_BAN}"
+                f"{_WIDE_MASS_MATRIX}; masses tied to giant biomechanical gears "
+                f"and panopticon monitors — {_SAFETY_BAN}"
             ),
         }
-    # Beat-default fallbacks
-    if beat == BEAT_GEARS:
-        return {
-            "label": "SYSTEMIC_GEARS",
-            "shot": f"{_WIDE_WASTELAND}; slaves tethered to massive mechanical gears. {_SAFETY_BAN}",
-        }
-    if beat == BEAT_PANOPTICON:
-        return {
-            "label": "SYSTEMIC_PANOPTICON",
-            "shot": f"{_WIDE_WASTELAND}. {_SAFETY_BAN}",
-        }
-    return {
-        "label": "MATRIX_DEFAULT",
-        "shot": f"{_CLOSEUP_IMPLANT}. {_SAFETY_BAN}",
-    }
+    if _SYNC_INSIDIOUS.search(text):
+        return {"label": "BIOMECH_DETAIL", "shot": f"{_DETAIL_BIOMECH}. {_SAFETY_BAN}"}
+    # Default to WIDE mass vista (not another VR close-up)
+    return {"label": "WIDE_MASS_DEFAULT", "shot": f"{_WIDE_MASS_MATRIX}. {_SAFETY_BAN}"}

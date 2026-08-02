@@ -7,7 +7,9 @@ Episode theme lock, CTA dedupe, high-RPM SEO metadata, philosopher roster.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 try:
@@ -40,8 +42,111 @@ except Exception:  # noqa: BLE001 — allow import outside package context
 
 # ---------------------------------------------------------------------------
 # Approved philosophical roster — ONE thinker/concept per episode (High-RPM)
+# Autonomous rotation across Western + Eastern authorities.
 # ---------------------------------------------------------------------------
 PHILOSOPHER_ROSTER: dict[str, dict[str, Any]] = {
+    "plato": {
+        "key": "plato",
+        "philosopher": "Plato",
+        "concept": "The Allegory of the Cave",
+        "label": "Plato's Allegory of the Cave",
+        "core": (
+            "Didactically explain Plato's Cave: glowing screens are the shadow-wall; "
+            "digital propaganda keeps minds chained facing illusions while true sovereignty "
+            "requires turning toward the light of disciplined focus and independence."
+        ),
+        "seduction": "shadow-feeds, viral illusions, and comfortable darkness",
+        "practice": "turn from the feed — daily attention austerity and truth-seeking",
+        "seo_hook": "Plato's Allegory of the Cave",
+        "hashtag": "Plato",
+        "principles": ["Escape illusion", "Mental sovereignty", "Seek truth over feed"],
+        "keywords": (
+            "plato", "cave", "allegory", "shadow", "illusion", "chains", "prison",
+            "screen", "propaganda", "matrix", "awakening", "truth",
+        ),
+        "siren": False,
+    },
+    "nietzsche": {
+        "key": "nietzsche",
+        "philosopher": "Friedrich Nietzsche",
+        "concept": "The Will to Power",
+        "label": "Nietzsche's Will to Power",
+        "core": (
+            "Didactically explain Nietzsche's will to power: the Machine breeds herd morality "
+            "and soft comfort; reclaiming focus and financial independence is self-overcoming "
+            "against digital nihilism."
+        ),
+        "seduction": "herd outrage, comfort addiction, and slave morality of the feed",
+        "practice": "self-overcoming drills — create, don't scroll; build capital, don't consume",
+        "seo_hook": "Nietzsche's Will to Power",
+        "hashtag": "Nietzsche",
+        "principles": ["Self-overcoming", "Anti-herd mindset", "Creative power"],
+        "keywords": (
+            "nietzsche", "will to power", "ubermensch", "herd", "nihilism", "overcome",
+            "slave morality", "strength", "create", "power",
+        ),
+        "siren": False,
+    },
+    "schopenhauer": {
+        "key": "schopenhauer",
+        "philosopher": "Arthur Schopenhauer",
+        "concept": "The World as Will and Representation",
+        "label": "Schopenhauer's Will and Representation",
+        "core": (
+            "Didactically explain Schopenhauer: endless craving is the will; digital apps "
+            "weaponize representation — images that never satisfy — trapping attention and wealth."
+        ),
+        "seduction": "infinite craving loops, lust of the eyes, never-enough dopamine",
+        "practice": "deny the will's next hit — scheduled silence and capital restraint",
+        "seo_hook": "Schopenhauer's Will and Representation",
+        "hashtag": "Schopenhauer",
+        "principles": ["Deny craving", "See through representation", "Quiet the will"],
+        "keywords": (
+            "schopenhauer", "will", "representation", "craving", "pessimism", "desire",
+            "suffering", "appetite", "lust", "never enough",
+        ),
+        "siren": False,
+    },
+    "epictetus": {
+        "key": "epictetus",
+        "philosopher": "Epictetus",
+        "concept": "The Dichotomy of Control",
+        "label": "Epictetus' Dichotomy of Control",
+        "core": (
+            "Didactically explain Epictetus: only judgment and action are yours — not likes, "
+            "not algorithms. Mental sovereignty begins by releasing what the Machine controls."
+        ),
+        "seduction": "rage-bait, notification anxiety, and outcomes you cannot command",
+        "practice": "morning dichotomy review — act only on what is yours",
+        "seo_hook": "Epictetus' Dichotomy of Control",
+        "hashtag": "Epictetus",
+        "principles": ["Dichotomy of control", "Inner freedom", "Action over reaction"],
+        "keywords": (
+            "epictetus", "dichotomy", "control", "judgment", "stoic", "freedom",
+            "anxiety", "notification", "reaction", "handbook",
+        ),
+        "siren": False,
+    },
+    "bentham": {
+        "key": "bentham",
+        "philosopher": "Jeremy Bentham",
+        "concept": "The Panopticon",
+        "label": "Bentham's Panopticon",
+        "core": (
+            "Didactically explain Bentham's Panopticon: you behave as if always watched — "
+            "social media and corporate dashboards are the modern inspection tower draining focus."
+        ),
+        "seduction": "performative posting, metric anxiety, and self-surveillance",
+        "practice": "leave the tower — private work blocks without an audience",
+        "seo_hook": "Bentham's Panopticon",
+        "hashtag": "Panopticon",
+        "principles": ["Anti-surveillance", "Private mastery", "Quit performing"],
+        "keywords": (
+            "bentham", "panopticon", "watch", "inspection", "tower", "prison",
+            "metrics", "perform", "surveillance", "visibility",
+        ),
+        "siren": False,
+    },
     "foucault": {
         "key": "foucault",
         "philosopher": "Michel Foucault",
@@ -88,7 +193,7 @@ PHILOSOPHER_ROSTER: dict[str, dict[str, Any]] = {
         "concept": "Stoic Sovereignty",
         "label": "Marcus Aurelius' Stoic Sovereignty",
         "core": (
-            "Didactically explain the Stoic inner citadel (Aurelius/Epictetus): control what is "
+            "Didactically explain the Stoic inner citadel (Aurelius): control what is "
             "yours — judgment and action — and total resistance to external digital distractions."
         ),
         "seduction": "external outrage, comfort feeds, and moods the Machine hands you",
@@ -97,7 +202,7 @@ PHILOSOPHER_ROSTER: dict[str, dict[str, Any]] = {
         "hashtag": "Stoicism",
         "principles": ["Inner citadel", "Impulse control", "Resistance to externals"],
         "keywords": (
-            "marcus", "aurelius", "epictetus", "stoic", "citadel", "sovereignty",
+            "marcus", "aurelius", "stoic", "citadel", "sovereignty",
             "discipline", "impulse", "resilience", "meditations", "hardship",
         ),
         "siren": False,
@@ -156,7 +261,18 @@ EPISODE_THEMES: dict[str, dict[str, Any]] = {
     "buddha": PHILOSOPHER_ROSTER["buddha"],
     "siren": PHILOSOPHER_ROSTER["siren"],
     "maya": PHILOSOPHER_ROSTER["buddha"],
+    "plato": PHILOSOPHER_ROSTER["plato"],
+    "nietzsche": PHILOSOPHER_ROSTER["nietzsche"],
+    "schopenhauer": PHILOSOPHER_ROSTER["schopenhauer"],
+    "epictetus": PHILOSOPHER_ROSTER["epictetus"],
+    "bentham": PHILOSOPHER_ROSTER["bentham"],
+    "cave": PHILOSOPHER_ROSTER["plato"],
 }
+
+_ROTATION_STATE_PATH = (
+    Path(__file__).resolve().parents[1] / "outputs" / "master_mei" / ".philosopher_rotation.json"
+)
+_RECENT_THEME_LIMIT = 4
 
 _APPROVED_CTA = (
     "Master your mind. Follow Master Mei to reclaim your sovereignty."
@@ -192,18 +308,71 @@ _FOLLOW_CTA_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+def _autonomous_pool() -> list[str]:
+    """Thinker keys available for free rotation (excludes siren unless enabled)."""
+    keys = [k for k, m in PHILOSOPHER_ROSTER.items() if not m.get("siren")]
+    if is_siren_enabled() and "siren" in PHILOSOPHER_ROSTER:
+        keys.append("siren")
+    return keys or ["stoic"]
+
+
+def _load_recent_theme_keys() -> list[str]:
+    try:
+        if _ROTATION_STATE_PATH.is_file():
+            data = json.loads(_ROTATION_STATE_PATH.read_text(encoding="utf-8"))
+            recent = data.get("recent") or []
+            return [str(x) for x in recent if str(x) in PHILOSOPHER_ROSTER]
+    except Exception:  # noqa: BLE001
+        pass
+    return []
+
+
+def _remember_theme_key(key: str) -> None:
+    try:
+        recent = _load_recent_theme_keys()
+        recent = [key] + [k for k in recent if k != key]
+        recent = recent[:_RECENT_THEME_LIMIT]
+        _ROTATION_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _ROTATION_STATE_PATH.write_text(
+            json.dumps({"recent": recent}, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+_TOPIC_THEME_CACHE: dict[str, str] = {}
+
+
 def classify_episode_theme(topic: str) -> str:
-    """Return ONE philosopher roster key (Single-Concept Episodic Rule)."""
-    lo = (topic or "").lower()
+    """Return ONE philosopher roster key (Single-Concept Episodic Rule).
+
+    Keyword match when strong; otherwise autonomous hash rotation across the
+    full Western/Eastern roster, avoiding the last few used thinkers.
+    Cached per topic so title/script/description stay locked in one run.
+    """
+    cache_key = (topic or "").strip().lower()
+    if cache_key in _TOPIC_THEME_CACHE:
+        return _TOPIC_THEME_CACHE[cache_key]
+
+    lo = cache_key
     scores = {
         key: sum(1 for kw in meta["keywords"] if kw in lo)
         for key, meta in PHILOSOPHER_ROSTER.items()
     }
     if not is_siren_enabled():
         scores["siren"] = -10**9
+    recent = _load_recent_theme_keys()
+    for rk in recent:
+        if rk in scores:
+            scores[rk] -= 3  # soft penalty — keep variety across episodes
     best = max(scores, key=scores.get)
     if scores[best] <= 0:
-        return "stoic"
+        # Autonomous rotation: topic hash into non-recent pool
+        pool = [k for k in _autonomous_pool() if k not in recent] or _autonomous_pool()
+        digest = hashlib.md5((topic or "mei").encode("utf-8")).hexdigest()
+        best = pool[int(digest, 16) % len(pool)]
+    _TOPIC_THEME_CACHE[cache_key] = best
     return best
 
 
@@ -211,6 +380,7 @@ def episode_theme_meta(topic: str) -> dict[str, Any]:
     key = classify_episode_theme(topic)
     meta = dict(PHILOSOPHER_ROSTER.get(key) or PHILOSOPHER_ROSTER["stoic"])
     meta["key"] = meta.get("key") or key
+    _remember_theme_key(meta["key"])
     return meta
 
 
@@ -317,16 +487,21 @@ def mei_voice_prompt_block() -> str:
             "ENGINE: V4.0_CINEMATIC_STORY_ARC (IMMUTABLE WHILE ACTIVE):\n"
             "1. COHERENT STORY — Beginning, Middle, End. NEVER loose tip lists "
             "('do this, don't do that'). Narrative must flow organically.\n"
-            "2. EXPLICIT AUTHORITY CITATIONS — name the thinker/framework clearly "
-            "(Sun Tzu's Art of War, Marcus Aurelius / Stoicism, Siddhartha Gautama / "
-            "Buddhism, Foucault's Panopticon). ONE thinker + ONE concept per episode.\n"
-            "3. THE MACHINE — seduces focus with cheap digital dopamine; silent war for the mind.\n"
-            "4. RESOLUTION — breaking digital bondage → focus, spiritual freedom, "
+            "2. MANDATORY PHILOSOPHICAL AUTHORITY — every script MUST explicitly introduce "
+            "and credit at least one major Western or Eastern thinker by name "
+            "(e.g. Plato's Allegory of the Cave, Nietzsche, Schopenhauer, Marcus Aurelius, "
+            "Epictetus, Sun Tzu, Buddha, Bentham's Panopticon, Foucault). "
+            "ONE thinker + ONE concept per episode. Speak the name aloud in Act I.\n"
+            "3. CORE THEMES — connect that philosophy directly to modern digital manipulation, "
+            "reclaiming focus, mental sovereignty, and financial/personal independence.\n"
+            "4. THE MACHINE — seduces focus with cheap digital dopamine; silent war for the mind.\n"
+            "5. RESOLUTION — breaking digital bondage → focus, spiritual freedom, "
             "financial sovereignty.\n"
             "TONE: highly stern, accessible, cinematic authority.\n"
             "VOICE PACING: Stoic, visceral, deliberate. Ellipses between heavy truths. "
             "~80–90 s / 150–180 words MAX.\n"
-            "FORBIDDEN: emotion tags, SSML, Follow/Subscribe lines, tip-list cadence."
+            "FORBIDDEN: emotion tags, SSML, Follow/Subscribe lines, tip-list cadence, "
+            "generic pep-talks with zero named philosopher."
         )
     return (
         "ENGINE: V3.0_DIDACTIC_STOIC_STORY_ARC (IMMUTABLE WHILE ACTIVE):\n"

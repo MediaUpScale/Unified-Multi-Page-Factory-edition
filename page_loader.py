@@ -835,15 +835,15 @@ class PageContext:
         """
         Ambient BGM bed volume (0–1) mixed under voiceover.
         Sourced from AMBIENT_VOLUME in page_config.py.
-        Master Mei cinematic bed locked to 0.35–0.40 (distinctly audible under VO).
+        Master Mei cinematic bed locked near 0.45 (distinctly audible under VO).
         """
         try:
-            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.38))
+            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.45))
             if (self.page_id or "").lower() == "master_mei":
-                return max(0.35, min(0.40, val))
+                return max(0.40, min(0.50, val))
             return max(0.08, min(1.0, val))
         except (TypeError, ValueError):
-            return 0.38
+            return 0.45
 
     @property
     def ambient_duck_ratio(self) -> float:

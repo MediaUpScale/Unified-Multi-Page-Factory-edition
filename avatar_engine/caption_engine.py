@@ -593,6 +593,11 @@ def build_reel_narration_prompt(
             ── CRITICAL SINGLE-CONCEPT RULE ──
             Transform THIS core concept into ONE cohesive didactic story (Acts I–III).
             This video is ONLY about "{_ep['label']}". Never mix philosophies.
+            MANDATORY: explicitly introduce and credit {_ep.get('philosopher', 'the thinker')}
+            by name in Act I (e.g. Plato's Cave, Nietzsche, Schopenhauer, Marcus Aurelius,
+            Epictetus, Sun Tzu, Buddha, Bentham's Panopticon). Connect that philosophy to
+            modern digital manipulation, reclaiming focus, mental sovereignty, and
+            financial/personal independence.
             Avoid disconnected quotes or generic soundbites.
             Core purpose (immutable): building real wealth and sovereignty through ruthless
             physical, mental, and spiritual discipline.

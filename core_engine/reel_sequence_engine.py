@@ -312,8 +312,8 @@ def _resolve_sequence_mp4_path(
 _REEL_WIDTH: int  = 1080
 _REEL_HEIGHT: int = 1920
 _DEFAULT_FPS: int = 30
-_AMBIENT_VOLUME: float = 0.38   # cinematic bed 35–40%; ducked under VO
-_VOICE_VOLUME_GAIN: float = 1.0   # no raw stream gain — loudnorm handles VO levels
+_AMBIENT_VOLUME: float = 0.45   # cinematic bed ~0.45; ducked under VO
+_VOICE_VOLUME_GAIN: float = 1.20  # +20% VO mix gain (Master Mei default)
 _AMBIENT_GAIN_MUL_DEFAULT: float = 1.0  # no compounding SFX boost (distortion fix)
 _AMBIENT_DUCK_RATIO_DEFAULT: float = 0.70  # × bed while voice plays (still audible)
 _MASTER_AUDIO_GAIN_DEFAULT: float = 1.15   # +15% overall master after mix
@@ -374,7 +374,7 @@ def _synthesize_ambient_drone(
         combined = drone * swell
         peak = float(np.max(np.abs(combined)))
         vol = (
-            max(0.35, min(0.40, float(volume)))
+            max(0.40, min(0.50, float(volume)))
             if (profile or "").lower() == "warrior"
             else max(0.08, float(volume))
         )
@@ -747,27 +747,40 @@ def _sanitize_subtitle_timings(
     min_gap: float = 0.05,
     min_duration: float = 0.10,
 ) -> "list[tuple[str, float, float]]":
-    """Guarantee no two consecutive subtitle blocks overlap.
+    """Build a strictly exclusive, non-overlapping subtitle timeline.
 
-    For each adjacent pair (N, N+1):
-    * If ``end_time[N] >= start_time[N+1]``, clamp ``end_time[N]`` to
-      ``max(start_time[N] + min_duration, start_time[N+1] - min_gap)``.
-    * Phrases whose ``start_time >= end_time`` after clamping are dropped.
-
-    The default 50 ms gap prevents any visual stacking at act seams,
-    clip transitions, or wherever word-level API timestamps overlap.
+    * Sort by start time.
+    * Clamp each end before the next start (``min_gap``).
+    * Merge identical consecutive phrases (prevents shadowed double lines).
+    * Drop degenerate intervals.
     """
     if not timings:
         return timings
-    result: list[tuple[str, float, float]] = list(timings)
-    for i in range(len(result) - 1):
-        word_i, ws_i, we_i = result[i]
-        _,      ws_next, _ = result[i + 1]
-        if we_i >= ws_next:
-            clamped_end = max(ws_i + min_duration, ws_next - min_gap)
-            result[i]   = (word_i, ws_i, clamped_end)
-    # Drop degenerate entries (start >= end)
-    return [(w, ws, we) for w, ws, we in result if ws < we]
+    result = sorted(
+        ((str(w).strip(), float(ws), float(we)) for w, ws, we in timings if str(w).strip()),
+        key=lambda x: (x[1], x[2]),
+    )
+    if not result:
+        return []
+    # Merge identical adjacent text into one interval
+    merged: list[tuple[str, float, float]] = [result[0]]
+    for word, ws, we in result[1:]:
+        prev_w, prev_s, prev_e = merged[-1]
+        if word == prev_w and ws <= prev_e + min_gap:
+            merged[-1] = (prev_w, prev_s, max(prev_e, we))
+        else:
+            merged.append((word, ws, we))
+    # Exclusive non-overlap pass
+    exclusive: list[tuple[str, float, float]] = []
+    for i, (word, ws, we) in enumerate(merged):
+        end = we
+        if i + 1 < len(merged):
+            next_s = merged[i + 1][1]
+            if end >= next_s:
+                end = max(ws + min_duration, next_s - min_gap)
+        if ws < end:
+            exclusive.append((word, ws, end))
+    return exclusive
 
 
 # ---------------------------------------------------------------------------
@@ -931,7 +944,7 @@ def _build_act_clip(
 
     _subtitle_y = subtitle_y_position if subtitle_y_position is not None else int(_REEL_HEIGHT * 0.82)
 
-    # ── Word-to-phrase grouping ───────────────────────────────────────────────
+    # ── Word-to-phrase grouping (SINGLE exclusive timeline) ───────────────────
     # Clamp every phrase end to the act duration so subtitles NEVER bleed past
     # the clip (root cause of "entire script stacked on final frame").
     _raw_phrases = _chunk_words_into_phrases(word_timings, words_per_phrase)
@@ -946,15 +959,34 @@ def _build_act_clip(
             if len(_toks) > max(1, int(words_per_phrase or 4)):
                 _ph = " ".join(_toks[: max(1, int(words_per_phrase or 4))])
             _display_timings.append((_ph, _ps2, _pe2))
+    # Re-sanitize after act clamp (exclusive single-active intervals only)
+    _display_timings = _sanitize_subtitle_timings(_display_timings)
+
+    # Pre-render each unique phrase ONCE as an RGBA layer — single blit per frame
+    # (eliminates overlapping/shadowed double TextClip/PIL draws).
+    _phrase_layer_cache: dict[str, "np.ndarray"] = {}
+    for _ph, _, _ in _display_timings:
+        if _ph in _phrase_layer_cache:
+            continue
+        _layer = Image.new("RGBA", (_REEL_WIDTH, _REEL_HEIGHT), (0, 0, 0, 0))
+        _ldraw = ImageDraw.Draw(_layer)
+        _draw_wrapped_text(
+            _ldraw, _ph, _font_subtitle, _subtitle_y, _REEL_WIDTH,
+            fill=subtitle_fill,
+            stroke_width=subtitle_stroke_width,
+            stroke_fill=subtitle_stroke_fill,
+        )
+        _phrase_layer_cache[_ph] = np.array(_layer)
 
     def _current_phrase(t: float) -> str:
-        """Return active phrase for local time t; empty = buffer flushed."""
+        """Return the single active phrase for local time t; empty = flushed."""
         if t < 0 or t >= _act_cut:
             return ""
+        # Exclusive half-open intervals — at most one match after sanitize
         for phrase, ws, we in _display_timings:
-            if ws <= t < we:  # half-open interval — no double-draw at seams
+            if ws <= t < we:
                 return phrase
-        return ""  # explicit flush — no ghost text
+        return ""
 
     # ── Diagonal pan direction (acts rotate through 8 compass directions) ─────
     # ── Motion profile (cycles across acts for varied camera dynamics) ────────
@@ -1040,29 +1072,24 @@ def _build_act_clip(
         frame = Image.fromarray(arr, mode="RGB").convert("RGBA")
         draw  = ImageDraw.Draw(frame)
 
-        # ── 8. Hook headline — Act 1 only ────────────────────────────────────
+        # ── 8. Hook headline — Act 1 only (never duplicates subtitle stream) ─
         if enable_hook_text and hook_text and act_index == 0:
             hook_y = int(_REEL_HEIGHT * hook_y_frac)
             _draw_centered_text(draw, hook_text, _font_hook, hook_y, _REEL_WIDTH)
 
-        # ── 9. Lower-third phrase subtitle ───────────────────────────────────
+        # ── 9. Lower-third phrase subtitle — SINGLE pre-rendered blit ────────
         phrase = _current_phrase(t)
-        if phrase:
-            _draw_wrapped_text(
-                draw, phrase, _font_subtitle, _subtitle_y, _REEL_WIDTH,
-                fill=subtitle_fill,
-                stroke_width=subtitle_stroke_width,
-                stroke_fill=subtitle_stroke_fill,
-            )
+        frame_arr = np.array(frame)
+        if phrase and phrase in _phrase_layer_cache:
+            _alpha_composite_numpy(frame_arr, _phrase_layer_cache[phrase], 0, 0)
 
         # ── 10. Logo layer ────────────────────────────────────────────────────
         if logo_static_array is not None:
             lh, lw   = logo_static_array.shape[:2]
             lx       = (_REEL_WIDTH  - lw) // 2
             ly       = _REEL_HEIGHT  - lh - 100
-            frame_arr = np.array(frame)
             _alpha_composite_numpy(frame_arr, logo_static_array, lx, ly)
-            frame    = Image.fromarray(frame_arr)
+        frame = Image.fromarray(frame_arr)
 
         # ── 11. Film grain ────────────────────────────────────────────────────
         rgb_arr = np.array(frame.convert("RGB"), dtype=np.float32)
@@ -1663,7 +1690,7 @@ def compile_sequence_reel(
     )
     _amb_profile = (ambient_profile or "mystery").strip().lower() or "mystery"
     if _amb_profile == "warrior":
-        _amb_vol = max(0.35, min(0.40, float(_amb_vol) * _AMBIENT_GAIN_MUL))
+        _amb_vol = max(0.40, min(0.50, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     else:
         _amb_vol = max(0.08, min(1.0, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     _duck = (

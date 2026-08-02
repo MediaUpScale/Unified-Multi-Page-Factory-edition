@@ -29,11 +29,34 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+class B2StorageCapError(RuntimeError):
+    """Raised when B2 rejects an upload due to storage/cap AccessDenied."""
+
+
 # Public URL base is derived at import time from the bucket name + endpoint.
 # Format: https://<bucket>.s3.<region>.backblazeb2.com
 _B2_ENDPOINT_URL  = "https://s3.us-east-005.backblazeb2.com"
 _B2_BUCKET_NAME   = "MediaupscaleStorage"
 _B2_PUBLIC_BASE   = f"https://{_B2_BUCKET_NAME}.s3.us-east-005.backblazeb2.com"
+
+
+def _is_storage_cap_error(exc: BaseException) -> bool:
+    """True for B2/S3 AccessDenied / cap / quota style failures."""
+    text = str(exc or "").lower()
+    if "accessdenied" in text or "access denied" in text:
+        return True
+    if "storage" in text and ("cap" in text or "quota" in text or "limit" in text):
+        return True
+    try:
+        code = getattr(exc, "response", {}) or {}
+        err = code.get("Error") or {}
+        ec = str(err.get("Code") or "")
+        if ec in ("AccessDenied", "403", "QuotaExceeded"):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
 
 # Upload resilience: 30-second connect/read timeout, up to 2 retries (3 total
 # attempts) with a short backoff between attempts. Callers (main.py) already
@@ -144,19 +167,33 @@ class B2VideoUploader:
                     break
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
+                    # Storage cap / AccessDenied — do not retry or dump stack traces
+                    if _is_storage_cap_error(exc):
+                        msg = (
+                            f"[B2] Storage cap / AccessDenied for '{key}' — "
+                            "skipping B2; using local/ImgBB paths."
+                        )
+                        logger.warning(msg)
+                        print(msg)
+                        raise B2StorageCapError(msg) from None
                     if attempt < _B2_MAX_ATTEMPTS:
                         logger.warning(
                             "[B2] Upload attempt %d/%d failed for %s (%s) — retrying in %.1fs…",
-                            attempt, _B2_MAX_ATTEMPTS, key, exc, _B2_RETRY_BACKOFF_S,
+                            attempt, _B2_MAX_ATTEMPTS, key, type(exc).__name__,
+                            _B2_RETRY_BACKOFF_S,
                         )
                         time.sleep(_B2_RETRY_BACKOFF_S)
                     else:
                         logger.warning(
                             "[B2] Upload failed for %s after %d attempt(s): %s — "
                             "caller will fall back to local path.",
-                            key, _B2_MAX_ATTEMPTS, exc,
+                            key, _B2_MAX_ATTEMPTS, type(exc).__name__,
                         )
             if last_exc is not None:
+                if _is_storage_cap_error(last_exc):
+                    raise B2StorageCapError(
+                        f"[B2] Storage cap / AccessDenied for '{key}'"
+                    ) from None
                 raise last_exc
 
             print(f"[B2] Upload complete: {key}")
@@ -194,11 +231,11 @@ class B2VideoUploader:
                 code = exc.response["Error"]["Code"]   # type: ignore[attr-defined]
                 if code in ("404", "NoSuchKey"):
                     return False
-                if code == "403":
-                    logger.warning(
-                        "[B2] HeadObject 403 for '%s' — "
-                        "treating as not-yet-uploaded, proceeding.",
-                        key,
+                if code in ("403", "AccessDenied"):
+                    # Quiet — private buckets often 403 on missing keys
+                    logger.debug(
+                        "[B2] HeadObject %s for '%s' — treating as not uploaded.",
+                        code, key,
                     )
                     return False
             except AttributeError:

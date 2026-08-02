@@ -35,10 +35,12 @@ _DEFAULT_VOICE_SETTINGS = {
 }
 _NARRATION_SPEED: float = 1.05   # 1.05× for crisp energetic short-form delivery
 _AMBIENT_PROMPT: str = (
-    "Dark atmospheric synth pad combined with an inspiring cinematic sub-bass drone, "
-    "deep low-frequency swell, subtle inspirational harmonic pad, seamless loop, 60 BPM, "
-    "warm dark cinematic underscore, no vocals, no melody lead, "
-    "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm"
+    "Inspiring dark-synth cinematic soundscape: deep atmospheric synth pads, "
+    "powerful sub-bass drones, futuristic machinery reverberations, distant industrial hum, "
+    "warm dark cinematic underscore, seamless loop, 60 BPM, high production value, "
+    "no vocals, no melody lead, "
+    "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm, "
+    "NO generic noise bed"
 )
 _TARGET_SAMPLE_RATE_HZ: int = 48000
 # Fixed SFX clip length — ElevenLabs loop=true guarantees a seamless 20 s tile.

@@ -69,7 +69,8 @@ TRADITIONAL_STYLE_ANCHOR: str = (
 
 MANDATORY_NEGATIVE_PROMPT: str = (
     "gore, blood, open wounds, open flesh, graphic body horror, mutilation, "
-    "exposed organs, mouth, teeth, tongue, liquid dripping, "
+    "exposed organs, body mutilation, bloody cables, liquid dripping, "
+    "repetitive VR goggle portrait, identical headset close-up, "
     "purple light, gym, tank top, sneakers, "
     "static portrait, blank stare into camera, idle pose, standing frozen, "
     "posing for camera, looking at viewer, "

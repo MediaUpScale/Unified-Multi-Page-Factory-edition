@@ -126,7 +126,7 @@ from avatar_engine.caption_engine import (
     build_smart_bait_image_prompt,
     maybe_inject_horror_mutation,
 )
-from avatar_engine.b2_client import B2VideoUploader
+from avatar_engine.b2_client import B2StorageCapError, B2VideoUploader
 from avatar_engine.imgbb_client import upload_image_file_to_imgbb
 from avatar_engine.publishers.youtube_publisher import (
     upload_short_from_envelope as _yt_upload_short,
@@ -3158,8 +3158,16 @@ def _produce_variant_worker(
                 )
                 _sub_sw = page_ctx.subtitle_stroke_width if page_ctx and _styled_subs else 0
                 _sub_sf = page_ctx.subtitle_stroke_fill if page_ctx and _styled_subs else None
-                # No raw VO gain scaling (loudnorm already applied). SFX at page ambient vol.
-                _voice_gain = 1.0
+                # Master Mei: VO +20% (VOICE_VOLUME_GAIN=1.20). SFX at page ambient vol.
+                _voice_gain = (
+                    float(page_ctx.voice_volume_gain)
+                    if page_ctx and page_ctx.voice_volume_gain is not None
+                    else (
+                        1.20
+                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
+                        else 1.0
+                    )
+                )
                 _amb_mul = (
                     page_ctx.ambient_sfx_gain_mul
                     if page_ctx and page_ctx.ambient_sfx_gain_mul is not None
@@ -3274,18 +3282,30 @@ def _produce_variant_worker(
             # ── PHASE E1: Backblaze B2 upload ────────────────────────────────
             # Upload the finished MP4 to B2 and store the public URL so the
             # postplanner MEDIA URL column contains a live, shareable link.
+            # On storage-cap AccessDenied: quiet warn → local/ImgBB only.
             _b2_video_url: str = ""
             try:
                 _b2 = B2VideoUploader()
                 _b2_video_url = _b2.upload(reel_path)
                 _LOG.info("B2 upload OK → %s", _b2_video_url)
                 print(f"[B2] Public URL: {_b2_video_url}")
+            except B2StorageCapError as _b2_cap:
+                _LOG.warning("%s", _b2_cap)
+                _b2_video_url = ""
             except Exception as _b2_exc:  # noqa: BLE001
-                _LOG.warning(
-                    "B2 upload failed for %s (%s) — postplanner will use local path.",
-                    reel_path.name,
-                    _b2_exc,
-                )
+                _err_l = str(_b2_exc).lower()
+                if "accessdenied" in _err_l or "access denied" in _err_l:
+                    _LOG.warning(
+                        "[B2] Storage cap / AccessDenied for %s — using local/ImgBB.",
+                        reel_path.name,
+                    )
+                else:
+                    _LOG.warning(
+                        "B2 upload failed for %s (%s) — postplanner will use local path.",
+                        reel_path.name,
+                        type(_b2_exc).__name__,
+                    )
+                _b2_video_url = ""
         except Exception as reel_exc:  # noqa: BLE001
             _LOG.error(
                 "ECONOMIC_REEL video compilation failed (variant %s): %s",

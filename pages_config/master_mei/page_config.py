@@ -244,20 +244,21 @@ MASTER_STYLE_ANCHOR: str = (
 
 # ---------------------------------------------------------------------------
 # Ambient audio — Dark Atmospheric Synth Pad + Inspiring Cinematic Sub-Bass Drone
-# Bed 35–40%; ducked under VO (~70% of bed) so pads stay distinctly audible.
-# Final master mix gets +15% after loudnorm (see reel_sequence_engine).
+# Bed 0.45; ducked under VO (~70% of bed). VO +20% via VOICE_VOLUME_GAIN.
+# ElevenLabs SFX generates custom pads (see audio_engine.generate_ambient_track).
 # ---------------------------------------------------------------------------
-AMBIENT_VOLUME: float = 0.38
-VOICE_VOLUME_GAIN: float = 1.0       # no raw API/stream gain — loudnorm handles levels
+AMBIENT_VOLUME: float = 0.45
+VOICE_VOLUME_GAIN: float = 1.20      # +20% voiceover output in the mix
 AMBIENT_SFX_GAIN_MUL: float = 1.0    # disable compounding SFX boost (distortion fix)
 AMBIENT_DUCK_RATIO: float = 0.70     # ambient × this while voice plays (still audible)
 MASTER_AUDIO_GAIN: float = 1.15      # +15% overall master output after mix
 AMBIENT_SFX_PROMPT: str = (
-    "Dark atmospheric synth pad combined with an inspiring cinematic sub-bass drone, "
-    "futuristic environmental ambience, deep low-frequency swell, subtle inspirational "
-    "harmonic pad, seamless loop, 60 BPM, warm dark cinematic underscore, "
+    "Inspiring dark-synth cinematic soundscape: deep atmospheric synth pads, "
+    "powerful sub-bass drones, futuristic machinery reverberations, distant industrial "
+    "hum, warm dark cinematic underscore, seamless loop, 60 BPM, high production value, "
     "no vocals, no melody lead, "
-    "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm"
+    "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm, "
+    "NO generic noise bed"
 )
 # Prefer new cinematic pad; do NOT use legacy rain/martial rain loops
 AMBIENT_AUDIO_RELPATH: str = "assets/master_mei/audio/ambient_cinematic_pad.mp3"
