@@ -144,6 +144,7 @@ from avatar_engine.audio_engine import (
     generate_voiceover,
     generate_voiceover_with_timestamps,
     generate_ambient_track,
+    generate_master_mei_soundscape,
 )
 from avatar_engine.video_engine import compile_dynamic_reel
 from core_engine.cost_tracker import CostTracker
@@ -2943,15 +2944,21 @@ def _produce_variant_worker(
             _voice_id = page_ctx.elevenlabs_voice_id if page_ctx else None
             _tts_speed = page_ctx.tts_narration_speed if page_ctx else None
             _tts_vs = page_ctx.elevenlabs_voice_settings if page_ctx else None
+            _tts_expressive = (
+                page_ctx.tts_expressive_mode
+                if page_ctx and hasattr(page_ctx, "tts_expressive_mode")
+                else ((page_ctx.page_id or "").lower() == "master_mei" if page_ctx else False)
+            )
             try:
                 _voice_path, _word_timings = generate_voiceover_with_timestamps(
                     _voiceover_script,
                     _narration_out,
                     voice_id=_voice_id or None,
-                    model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_multilingual_v2",
+                    model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_v3",
                     speed=_tts_speed,
                     voice_settings=_tts_vs or None,
                     enable_ssml=_tts_ssml,
+                    expressive_mode=_tts_expressive,
                 )
                 _word_timings = _filter_audio_tag_timings(_word_timings)
             except Exception as vaudio_exc:  # noqa: BLE001
@@ -2981,9 +2988,10 @@ def _produce_variant_worker(
                         _cta_text,
                         _cta_out,
                         voice_id=_voice_id or None,
-                        model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_multilingual_v2",
+                        model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_v3",
                         speed=_tts_speed,
                         voice_settings=_tts_vs or None,
+                        expressive_mode=_tts_expressive,
                     )
                     _cta_word_timings = _filter_audio_tag_timings(_cta_word_timings)
                     _LOG.info("CTA voiceover generated | %s (%d chars)", _cta_path.name, len(_cta_text))
@@ -3049,10 +3057,25 @@ def _produce_variant_worker(
                 sfx=bool(app_config.ELEVENLABS_API_KEY),
             )
 
-        # -- Ambient soundscape (ElevenLabs SFX, page-specific prompt when set) --
-        if app_config.ELEVENLABS_API_KEY:
+        # -- Dual-layer soundscape (Master Mei: Music v2 + Impact SFX) ----------
+        _impact_sfx_path: "Path | None" = None
+        _target_dur = page_ctx.reel_duration if page_ctx else 80.0
+        _is_mei = bool(page_ctx and (page_ctx.page_id or "").lower() == "master_mei")
+        if app_config.ELEVENLABS_API_KEY and _is_mei and getattr(page_ctx, "use_music_v2_bed", True):
+            _music_bed, _impact_sfx_path = generate_master_mei_soundscape(
+                _reel_dir,
+                stem=f"{stem}_v{variant + 1:02d}",
+                duration_seconds=_target_dur,
+            )
+            if _music_bed is not None:
+                _ambient_path = _music_bed
+                _LOG.info(
+                    "MASTER_MEI | Music v2 bed ready → %s | impact=%s",
+                    Path(_music_bed).name,
+                    Path(_impact_sfx_path).name if _impact_sfx_path else "none",
+                )
+        elif app_config.ELEVENLABS_API_KEY:
             _ambient_out = _reel_dir / f"{stem}_v{variant + 1:02d}_ambient.mp3"
-            _target_dur = page_ctx.reel_duration if page_ctx else 25.0
             _sfx_prompt = page_ctx.ambient_sfx_prompt if page_ctx else ""
             _ambient_path = generate_ambient_track(
                 _ambient_out,
@@ -3062,13 +3085,20 @@ def _produce_variant_worker(
 
         # -- Prefer page-local ambient loop when present on disk ──────────────
         # ancient_knowledge → assets/audio/ambient_mystery_loop.mp3
-        # master_mei        → assets/master_mei/audio/ambient_cinematic_pad.mp3
+        # master_mei        → local pad ONLY if Music v2 bed missing
         # NEVER prefer legacy rain/martial rain loops (hiss/clipping).
         if page_ctx:
             _local_ambient = page_ctx.ambient_audio_path
             _ban_rain = ("rain", "martial_loop", "storm", "thunder", "hiss")
+            _mei_has_music = (
+                _is_mei
+                and _ambient_path is not None
+                and Path(_ambient_path).is_file()
+                and "music_v2" in Path(_ambient_path).name.lower()
+            )
             if (
-                _local_ambient is not None
+                not _mei_has_music
+                and _local_ambient is not None
                 and _local_ambient.is_file()
                 and not any(b in _local_ambient.name.lower() for b in _ban_rain)
             ):
@@ -3216,6 +3246,12 @@ def _produce_variant_worker(
                     cta_start_s=locals().get("_narr_dur", -1.0) + 1.0
                     if locals().get("_narr_dur", -1.0) >= 0 else -1.0,
                     ambient_volume=page_ctx.ambient_volume if page_ctx else None,
+                    impact_sfx_audio=_impact_sfx_path,
+                    impact_sfx_volume=(
+                        page_ctx.impact_sfx_volume
+                        if page_ctx and _is_mei
+                        else None
+                    ),
                     voice_volume_gain=_voice_gain,
                     ambient_gain_mul=_amb_mul,
                     ambient_duck_ratio=(

@@ -1,14 +1,18 @@
-Master Mei ambient bed
-======================
-Preferred file: ambient_cinematic_pad.mp3
-Prompt (ElevenLabs SFX):
-  Dark ambient cinematic synth pad, deep sub-bass drone, subtle futuristic
-  industrial machine hum, inspiring stoic atmosphere
-  (no rain / thunder / white noise / hiss / generic static)
+Master Mei dual-layer sound engine
+==================================
+Primary bed: ElevenLabs Music API (music_v2) composition plan
+  Chunk 1 (0–15s):  [Ominous Matrix Siege] — dark ambient / sub-bass drone
+  Chunk 2 (15s–end): [Stoic Sovereign Awakening] — epic dark synth / stoic pads
 
-Bed volume: AMBIENT_VOLUME=0.38, ducked to ~70% while voiceover plays,
-then restored for CTA/tail. Voiceover mix gain +15% (VOICE_VOLUME_GAIN=1.15).
-Master mix +15% (MASTER_AUDIO_GAIN=1.15) applied post-encode after loudnorm.
+Impact hook (t=0): ElevenLabs SFX
+  "Cinematic Braam, Dystopian Sub-Bass Heavy Drop" (2.5s) @ IMPACT_SFX_VOLUME=0.50
 
-Do not drop legacy rain/martial rain loops here — filenames matching rain
-are banned by the ambient resolver.
+Mix balances:
+  VOICE_VOLUME_GAIN = 1.15 (+15%)
+  AMBIENT_VOLUME    = 0.32 (music bed)
+  IMPACT_SFX_VOLUME = 0.50
+
+Fallback local pad (only if music_v2 fails):
+  ambient_cinematic_pad.mp3
+
+Do not drop legacy rain/martial rain loops here.

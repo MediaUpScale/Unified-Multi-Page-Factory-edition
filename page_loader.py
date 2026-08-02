@@ -351,7 +351,20 @@ class PageContext:
     @property
     def elevenlabs_model(self) -> str:
         """ElevenLabs TTS model for ECONOMIC_REEL voiceover generation."""
-        return str(self.page_cfg.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")).strip()
+        default = (
+            "eleven_v3"
+            if (self.page_id or "").lower() == "master_mei"
+            else "eleven_multilingual_v2"
+        )
+        return str(self.page_cfg.get("ELEVENLABS_MODEL", default)).strip() or default
+
+    @property
+    def tts_expressive_mode(self) -> bool:
+        """Prefer expressive eleven_v3 delivery when True (Master Mei default)."""
+        raw = self.page_cfg.get("TTS_EXPRESSIVE_MODE", None)
+        if raw is None:
+            return (self.page_id or "").lower() == "master_mei"
+        return bool(raw)
 
     @property
     def tts_voice_preference(self) -> str:
@@ -835,15 +848,41 @@ class PageContext:
         """
         Ambient BGM bed volume (0–1) mixed under voiceover.
         Sourced from AMBIENT_VOLUME in page_config.py.
-        Master Mei cinematic bed locked near 0.38 (powerful under VO, not masking).
+        Master Mei music bed locked near 0.32 (clear voice separation).
         """
         try:
-            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.38))
+            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.32))
             if (self.page_id or "").lower() == "master_mei":
-                return max(0.35, min(0.42, val))
+                return max(0.28, min(0.38, val))
             return max(0.08, min(1.0, val))
         except (TypeError, ValueError):
-            return 0.38
+            return 0.32
+
+    @property
+    def impact_sfx_volume(self) -> float:
+        """Cinematic impact SFX gain at t=0 (Master Mei default 0.50)."""
+        try:
+            val = float(self.page_cfg.get("IMPACT_SFX_VOLUME", 0.50))
+            return max(0.0, min(1.0, val))
+        except (TypeError, ValueError):
+            return 0.50
+
+    @property
+    def use_music_v2_bed(self) -> bool:
+        """When True, prefer Eleven Music v2 composition over local ambient pad."""
+        raw = self.page_cfg.get("USE_MUSIC_V2_BED", None)
+        if raw is None:
+            return (self.page_id or "").lower() == "master_mei"
+        return bool(raw)
+
+    @property
+    def impact_sfx_prompt(self) -> str:
+        return str(
+            self.page_cfg.get(
+                "IMPACT_SFX_PROMPT",
+                "Cinematic Braam, Dystopian Sub-Bass Heavy Drop",
+            )
+        ).strip()
 
     @property
     def ambient_duck_ratio(self) -> float:

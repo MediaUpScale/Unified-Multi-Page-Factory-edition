@@ -139,19 +139,20 @@ LOGO_POSITION: str = "top_right"
 # Voice ID xf4rL1r9hbGxkztMunKX — deep, slow, highly meditative ancient master
 # ---------------------------------------------------------------------------
 ELEVENLABS_VOICE_ID: str = "xf4rL1r9hbGxkztMunKX"
-ELEVENLABS_MODEL: str = "eleven_multilingual_v2"
+ELEVENLABS_MODEL: str = "eleven_v3"  # expressive stoic delivery
+TTS_EXPRESSIVE_MODE: bool = True
 TTS_VOICE_PREFERENCE: str = (
     "Master Mei — ancient, deep, authoritative, calm, grounded Eastern master; "
     "stoic Pai Mei sternness; slow deliberate delivery via punctuation pauses; never rushes"
 )
-# Slightly slower deliberate pace (0.92×) — avoids rushed delivery / distortion
+# Slow stoic authoritative pace (0.92×)
 TTS_NARRATION_SPEED: float = 0.92
 
 # Official ElevenLabs voice_settings payload for Master Mei (stoic / deliberate)
 ELEVENLABS_VOICE_SETTINGS: dict = {
     "stability": 0.80,
     "similarity_boost": 0.85,
-    "style": 0.0,
+    "style": 0.20,           # mild expressiveness with eleven_v3
     "use_speaker_boost": True,
     "speed": 0.92,
 }
@@ -243,15 +244,16 @@ MASTER_STYLE_ANCHOR: str = (
 )
 
 # ---------------------------------------------------------------------------
-# Ambient audio — Dark Atmospheric Synth Pad + Inspiring Cinematic Sub-Bass Drone
-# Bed 0.38 (powerful without masking VO). VO +15% via VOICE_VOLUME_GAIN.
-# ElevenLabs SFX generates custom pads (see audio_engine.generate_ambient_track).
+# Dual-layer sound engine — Music v2 bed + Impact SFX braam at t=0
+# VO +15%; BGM 0.32 (clear voice); Impact SFX 0.50
 # ---------------------------------------------------------------------------
-AMBIENT_VOLUME: float = 0.38
+AMBIENT_VOLUME: float = 0.32         # background music multiplier
 VOICE_VOLUME_GAIN: float = 1.15      # +15% voiceover narration gain in the mix
+IMPACT_SFX_VOLUME: float = 0.50      # cinematic braam at t=0
 AMBIENT_SFX_GAIN_MUL: float = 1.0    # disable compounding SFX boost (distortion fix)
 AMBIENT_DUCK_RATIO: float = 0.70     # ambient × this while voice plays (still audible)
 MASTER_AUDIO_GAIN: float = 1.15      # +15% overall master output after mix
+USE_MUSIC_V2_BED: bool = True        # prefer music_v2 composition plan over local pad
 AMBIENT_SFX_PROMPT: str = (
     "Dark ambient cinematic synth pad, deep sub-bass drone, subtle futuristic "
     "industrial machine hum, inspiring stoic atmosphere, seamless loop, 60 BPM, "
@@ -259,7 +261,8 @@ AMBIENT_SFX_PROMPT: str = (
     "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm, "
     "NO generic noise bed"
 )
-# Prefer new cinematic pad; do NOT use legacy rain/martial rain loops
+IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Heavy Drop"
+# Local pad used only when music_v2 generation fails
 AMBIENT_AUDIO_RELPATH: str = "assets/master_mei/audio/ambient_cinematic_pad.mp3"
 
 # ---------------------------------------------------------------------------

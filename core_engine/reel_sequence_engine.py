@@ -312,8 +312,9 @@ def _resolve_sequence_mp4_path(
 _REEL_WIDTH: int  = 1080
 _REEL_HEIGHT: int = 1920
 _DEFAULT_FPS: int = 30
-_AMBIENT_VOLUME: float = 0.38   # cinematic bed ~0.38; ducked under VO
+_AMBIENT_VOLUME: float = 0.32   # music bed ~0.32; clear VO separation
 _VOICE_VOLUME_GAIN: float = 1.15  # +15% VO mix gain (Master Mei default)
+_IMPACT_SFX_VOLUME_DEFAULT: float = 0.50  # cinematic braam at t=0
 _AMBIENT_GAIN_MUL_DEFAULT: float = 1.0  # no compounding SFX boost (distortion fix)
 _AMBIENT_DUCK_RATIO_DEFAULT: float = 0.70  # × bed while voice plays (still audible)
 _MASTER_AUDIO_GAIN_DEFAULT: float = 1.15   # +15% overall master after mix
@@ -374,7 +375,7 @@ def _synthesize_ambient_drone(
         combined = drone * swell
         peak = float(np.max(np.abs(combined)))
         vol = (
-            max(0.35, min(0.42, float(volume)))
+            max(0.28, min(0.38, float(volume)))
             if (profile or "").lower() == "warrior"
             else max(0.08, float(volume))
         )
@@ -1304,6 +1305,8 @@ def compile_sequence_reel(
     *,
     voice_audio: "Path | None" = None,
     ambient_audio: "Path | None" = None,
+    impact_sfx_audio: "Path | None" = None,
+    impact_sfx_volume: "float | None" = None,
     output_path: "Path | None" = None,
     target_duration: float = _DEFAULT_DURATION,
     act_duration_s: "float | None" = None,
@@ -1623,6 +1626,32 @@ def compile_sequence_reel(
             )
     audio_clips: list = []
 
+    # ── Cinematic impact SFX at exact t=0 (hook braam) ────────────────────────
+    _impact_vol = (
+        float(impact_sfx_volume)
+        if impact_sfx_volume is not None and float(impact_sfx_volume) > 0
+        else _IMPACT_SFX_VOLUME_DEFAULT
+    )
+    _impact_vol = max(0.0, min(1.0, _impact_vol))
+    if impact_sfx_audio and Path(impact_sfx_audio).is_file() and _impact_vol > 0.01:
+        try:
+            _imp = AudioFileClip(str(impact_sfx_audio))
+            if abs(_impact_vol - 1.0) > 0.01:
+                try:
+                    _imp = _imp.with_volume_scaled(_impact_vol)
+                except Exception:
+                    pass
+            _imp = _imp.with_start(0.0)
+            audio_clips.append(_imp)
+            logger.info(
+                "Impact SFX layered at t=0 | dur=%.2fs vol=%.2f | %s",
+                float(getattr(_imp, "duration", 0) or 0),
+                _impact_vol,
+                Path(impact_sfx_audio).name,
+            )
+        except Exception as _imp_exc:
+            logger.warning("Impact SFX load failed (%s) — skipping hook hit.", _imp_exc)
+
     # ── Sub-bass transition booms ─────────────────────────────────────────────
     # A short (400 ms) decaying sine-wave boom at ~65 Hz is placed 50 ms before
     # each scene cut.  This adds cinematic weight to transitions with no
@@ -1690,7 +1719,7 @@ def compile_sequence_reel(
     )
     _amb_profile = (ambient_profile or "mystery").strip().lower() or "mystery"
     if _amb_profile == "warrior":
-        _amb_vol = max(0.35, min(0.42, float(_amb_vol) * _AMBIENT_GAIN_MUL))
+        _amb_vol = max(0.28, min(0.38, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     else:
         _amb_vol = max(0.08, min(1.0, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     _duck = (

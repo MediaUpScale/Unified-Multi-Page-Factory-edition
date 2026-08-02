@@ -457,6 +457,9 @@ def prepare_mei_tts_text(text: str) -> str:
         return " "
 
     clean = _ANY_BRACKET_TAG.sub(_replace_bracket, clean)
+    # Curly / code-fence markers (never read aloud)
+    clean = re.sub(r"\{[^}]*\}", " ", clean)
+    clean = re.sub(r"`{1,3}[^`]*`{1,3}", " ", clean)
     # Safety: drop any leftover spoken emotion words the model wrote outside brackets
     clean = _EMOTION_WORDS.sub(" ", clean)
 

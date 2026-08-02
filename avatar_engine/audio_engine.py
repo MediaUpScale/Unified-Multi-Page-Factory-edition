@@ -1,39 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-ElevenLabs audio generation for ECONOMIC_REEL.
+ElevenLabs audio generation for ECONOMIC_REEL / Master Mei.
 
-  generate_voiceover()     — TTS narration from hook text.
-  generate_ambient_track() — Dark ambient soundscape via ElevenLabs SFX API.
-
-Both functions return the output Path on success and raise on unrecoverable
-failure so the caller can decide whether to proceed without audio.
+  generate_voiceover()              — TTS narration (speed + expressive model).
+  generate_ambient_track()          — Legacy SFX ambient tile.
+  generate_impact_sfx()             — Cinematic braam at t=0.
+  generate_music_v2_bed()           — Dual-chunk music_v2 composition plan.
+  generate_master_mei_soundscape()  — Music bed + impact SFX pair.
 """
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
+from typing import Any
 
 import config as app_config
 
 logger = logging.getLogger(__name__)
 
 # Brian — deep, authoritative, high-engagement narrative tone
-# eleven_multilingual_v2 gives the best character-per-credit efficiency for long scripts
 _DEFAULT_VOICE_ID: str = "nPczCjzI2devNBz1zQrb"
-_DEFAULT_TTS_MODEL: str = "eleven_multilingual_v2"
+# Master Mei defaults to expressive eleven_v3; other pages may override
+_DEFAULT_TTS_MODEL: str = "eleven_v3"
 
-# Voice performance settings tuned for psychological documentary narration:
-#   stability=0.45  — slight expressiveness variance keeps the voice human
-#   similarity_boost=0.85 — locks the deep vocal character tightly
-#   style=0.15      — subtle emotional colouring without over-acting
-#   speed=1.07      — 1.05–1.10× for crisp, energetic short-form delivery
+# Voice performance — stoic / authoritative Master Mei delivery
 _DEFAULT_VOICE_SETTINGS = {
-    "stability": 0.45,
+    "stability": 0.80,
     "similarity_boost": 0.85,
-    "style": 0.15,
+    "style": 0.20,           # mild expressiveness with eleven_v3
     "use_speaker_boost": True,
 }
-_NARRATION_SPEED: float = 1.05   # 1.05× for crisp energetic short-form delivery
+_NARRATION_SPEED: float = 0.92   # slow, stoic, authoritative
 _AMBIENT_PROMPT: str = (
     "Dark ambient cinematic synth pad, deep sub-bass drone, subtle futuristic "
     "industrial machine hum, inspiring stoic atmosphere, seamless loop, 60 BPM, "
@@ -42,17 +40,42 @@ _AMBIENT_PROMPT: str = (
     "NO generic noise bed"
 )
 _TARGET_SAMPLE_RATE_HZ: int = 48000
-# Fixed SFX clip length — ElevenLabs loop=true guarantees a seamless 20 s tile.
-# The MoviePy layer in reel_sequence_engine.py concatenates enough copies to
-# cover the full video duration, so the SFX request is always exactly 20 s.
 _SFX_CLIP_DURATION: float = 20.0
 _SFX_MODEL_ID: str = "eleven_text_to_sound_v2"
+_IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Heavy Drop"
+_IMPACT_SFX_DURATION_S: float = 2.5
+_MUSIC_V2_MODEL: str = "music_v2"
+_MUSIC_V1_MODEL: str = "music_v1"
+
+# Strip raw code / bracket markers before TTS (never read aloud)
+_TTS_BRACKET_RE = re.compile(r"\[[^\]]*\]")
+_TTS_ANGLE_RE = re.compile(r"<[^>]+>")
+_TTS_CURLY_RE = re.compile(r"\{[^}]*\}")
+_TTS_CODE_FENCE_RE = re.compile(r"`{1,3}[^`]*`{1,3}")
 
 
-def _resolve_voice_settings(overrides: dict | None = None) -> dict:
+def strip_tts_markers(text: str) -> str:
+    """Remove brackets, SSML, curly cues, and code fences from TTS input."""
+    clean = text or ""
+    clean = re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", clean, flags=re.IGNORECASE)
+    clean = _TTS_ANGLE_RE.sub(" ", clean)
+    clean = _TTS_BRACKET_RE.sub(" ", clean)
+    clean = _TTS_CURLY_RE.sub(" ", clean)
+    clean = _TTS_CODE_FENCE_RE.sub(" ", clean)
+    clean = re.sub(r"[ \t]{2,}", " ", clean)
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    return clean.strip()
+
+
+def _resolve_voice_settings(
+    overrides: dict | None = None,
+    *,
+    expressive_mode: bool = False,
+) -> dict:
     """Merge page-level VoiceSettings overrides onto engine defaults.
 
     Supports official ElevenLabs keys including ``speed`` (0.25–4.0).
+    When *expressive_mode* is True, slightly raise ``style`` for eleven_v3.
     """
     merged = dict(_DEFAULT_VOICE_SETTINGS)
     if overrides:
@@ -64,6 +87,8 @@ def _resolve_voice_settings(overrides: dict | None = None) -> dict:
                     pass
         if "use_speaker_boost" in overrides:
             merged["use_speaker_boost"] = bool(overrides["use_speaker_boost"])
+    if expressive_mode and float(merged.get("style") or 0.0) < 0.20:
+        merged["style"] = 0.25
     return merged
 
 
@@ -97,6 +122,7 @@ def generate_voiceover(
     speed: float | None = None,
     voice_settings: dict | None = None,
     enable_ssml: bool | None = None,
+    expressive_mode: bool = True,
 ) -> Path:
     """
     Generate a TTS voiceover from hook text using the ElevenLabs API.
@@ -130,7 +156,8 @@ def generate_voiceover(
 
     client = ElevenLabs(api_key=api_key)
     vid = voice_id or _DEFAULT_VOICE_ID
-    _vs = _resolve_voice_settings(voice_settings)
+    text = strip_tts_markers(text)
+    _vs = _resolve_voice_settings(voice_settings, expressive_mode=expressive_mode)
     # Prefer explicit speed arg, else voice_settings.speed, else engine default
     if speed is not None:
         _speed = float(speed)
@@ -138,33 +165,49 @@ def generate_voiceover(
         _speed = float(_vs["speed"])
     else:
         _speed = _NARRATION_SPEED
-    _ssml = bool(enable_ssml) if enable_ssml is not None else ("<break" in (text or "").lower())
+    _ssml = bool(enable_ssml) if enable_ssml is not None else False
     vs_obj, _speed = _build_voice_settings_obj(_VoiceSettings, _vs, _speed)
+    _model = (model_id or _DEFAULT_TTS_MODEL).strip() or _DEFAULT_TTS_MODEL
 
     logger.info(
-        "Generating voiceover | voice=%s | model=%s | chars=%d | speed=%.2f | stability=%.2f | ssml=%s",
-        vid, model_id, len(text), _speed, _vs["stability"], _ssml,
+        "Generating voiceover | voice=%s | model=%s | chars=%d | speed=%.2f | "
+        "stability=%.2f | expressive=%s | ssml=%s",
+        vid, _model, len(text), _speed, _vs["stability"], expressive_mode, _ssml,
     )
     _tts_kwargs: dict = dict(
         voice_id=vid,
         text=text,
-        model_id=model_id or _DEFAULT_TTS_MODEL,
+        model_id=_model,
         voice_settings=vs_obj,
         output_format="mp3_44100_128",
     )
     if _ssml:
         _tts_kwargs["enable_ssml_parsing"] = True
+    # Some SDK builds accept expressive_mode; ignore if unsupported
+    if expressive_mode:
+        _tts_kwargs["expressive_mode"] = True
     try:
-        # Prefer speed inside voice_settings; also pass top-level for SDK variants
         audio_stream = client.text_to_speech.convert(**_tts_kwargs, speed=_speed)
     except TypeError:
-        # Older SDK — speed / ssml params may be unsupported
         logger.debug("ElevenLabs SDK param mismatch — retrying with reduced kwargs")
         _tts_kwargs.pop("enable_ssml_parsing", None)
+        _tts_kwargs.pop("expressive_mode", None)
         try:
             audio_stream = client.text_to_speech.convert(**_tts_kwargs, speed=_speed)
         except TypeError:
             audio_stream = client.text_to_speech.convert(**_tts_kwargs)
+    except Exception as _tts_exc:
+        # eleven_v3 unavailable → fall back to multilingual_v2 once
+        if _model == "eleven_v3" and "model" in str(_tts_exc).lower():
+            logger.warning("eleven_v3 unavailable (%s) — falling back to multilingual_v2", _tts_exc)
+            _tts_kwargs["model_id"] = "eleven_multilingual_v2"
+            _tts_kwargs.pop("expressive_mode", None)
+            try:
+                audio_stream = client.text_to_speech.convert(**_tts_kwargs, speed=_speed)
+            except TypeError:
+                audio_stream = client.text_to_speech.convert(**_tts_kwargs)
+        else:
+            raise
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +260,7 @@ def generate_voiceover_with_timestamps(
     speed: float | None = None,
     voice_settings: dict | None = None,
     enable_ssml: bool | None = None,
+    expressive_mode: bool = True,
 ) -> tuple[Path, list[tuple[str, float, float]]]:
     """
     Generate a TTS voiceover AND return word-level timing data for auto-subtitles.
@@ -244,19 +288,22 @@ def generate_voiceover_with_timestamps(
 
     client = ElevenLabs(api_key=api_key)
     vid = voice_id or _DEFAULT_VOICE_ID
-    _vs = _resolve_voice_settings(voice_settings)
+    text = strip_tts_markers(text)
+    _vs = _resolve_voice_settings(voice_settings, expressive_mode=expressive_mode)
     if speed is not None:
         _speed = float(speed)
     elif _vs.get("speed") is not None:
         _speed = float(_vs["speed"])
     else:
         _speed = _NARRATION_SPEED
-    _ssml = bool(enable_ssml) if enable_ssml is not None else ("<break" in (text or "").lower())
+    _ssml = bool(enable_ssml) if enable_ssml is not None else False
     vs, _speed = _build_voice_settings_obj(_VoiceSettings, _vs, _speed)
+    _model = (model_id or _DEFAULT_TTS_MODEL).strip() or _DEFAULT_TTS_MODEL
 
     logger.info(
-        "Generating voiceover+timestamps | voice=%s | model=%s | chars=%d | speed=%.2f | stability=%.2f | ssml=%s",
-        vid, model_id, len(text), _speed, _vs["stability"], _ssml,
+        "Generating voiceover+timestamps | voice=%s | model=%s | chars=%d | "
+        "speed=%.2f | stability=%.2f | expressive=%s | ssml=%s",
+        vid, _model, len(text), _speed, _vs["stability"], expressive_mode, _ssml,
     )
 
     word_timings: list[tuple[str, float, float]] = []
@@ -270,12 +317,14 @@ def generate_voiceover_with_timestamps(
         _ts_kwargs: dict = dict(
             voice_id=vid,
             text=text,
-            model_id=model_id or _DEFAULT_TTS_MODEL,
+            model_id=_model,
             voice_settings=vs,
             output_format="mp3_44100_128",
         )
         if _ssml:
             _ts_kwargs["enable_ssml_parsing"] = True
+        if expressive_mode:
+            _ts_kwargs["expressive_mode"] = True
         try:
             result = client.text_to_speech.convert_with_timestamps(
                 **_ts_kwargs, speed=_speed
@@ -283,6 +332,7 @@ def generate_voiceover_with_timestamps(
         except TypeError:
             logger.debug("convert_with_timestamps: speed/ssml unsupported — retrying reduced kwargs")
             _ts_kwargs.pop("enable_ssml_parsing", None)
+            _ts_kwargs.pop("expressive_mode", None)
             try:
                 result = client.text_to_speech.convert_with_timestamps(
                     **_ts_kwargs, speed=_speed
@@ -320,8 +370,12 @@ def generate_voiceover_with_timestamps(
             "convert_with_timestamps() failed (%s). "
             "Falling back to convert() — no subtitle timing.", exc,
         )
+        _fb_model = _model
+        if _fb_model == "eleven_v3" and "model" in str(exc).lower():
+            _fb_model = "eleven_multilingual_v2"
+            logger.warning("eleven_v3 unavailable — falling back to multilingual_v2")
         _fb_kwargs: dict = dict(
-            voice_id=vid, text=text, model_id=model_id,
+            voice_id=vid, text=text, model_id=_fb_model,
             voice_settings=vs, output_format="mp3_44100_128",
         )
         try:
@@ -533,3 +587,192 @@ def generate_ambient_track(
         "to add background music without an API call."
     )
     return None
+
+
+def _write_audio_iterator(audio_iter: Any, output_path: Path) -> Path:
+    """Write an ElevenLabs byte iterator / bytes payload to *output_path*."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as fh:
+        if isinstance(audio_iter, (bytes, bytearray)):
+            fh.write(audio_iter)
+        else:
+            for chunk in audio_iter:
+                if chunk:
+                    fh.write(chunk)
+    return output_path
+
+
+def generate_impact_sfx(
+    output_path: Path,
+    *,
+    prompt: str = _IMPACT_SFX_PROMPT,
+    duration_seconds: float = _IMPACT_SFX_DURATION_S,
+) -> "Path | None":
+    """
+    Generate a 2–3 s cinematic braam / sub-bass drop for the t=0 video hook.
+
+    Uses ``client.text_to_sound_effects.convert``. Returns None on failure.
+    """
+    api_key = app_config.ELEVENLABS_API_KEY
+    if not api_key:
+        logger.warning("ELEVENLABS_API_KEY not set — impact SFX skipped.")
+        return None
+
+    output_path = Path(output_path)
+    dur = max(2.0, min(3.0, float(duration_seconds or _IMPACT_SFX_DURATION_S)))
+    text = (prompt or _IMPACT_SFX_PROMPT).strip()
+
+    try:
+        from elevenlabs import ElevenLabs  # type: ignore
+
+        client = ElevenLabs(api_key=api_key)
+        logger.info("Generating impact SFX | dur=%.1fs | %s", dur, text[:80])
+        audio = client.text_to_sound_effects.convert(
+            text=text,
+            duration_seconds=dur,
+            prompt_influence=0.75,
+            model_id=_SFX_MODEL_ID,
+            output_format="mp3_44100_128",
+        )
+        _write_audio_iterator(audio, output_path)
+        resample_audio_48k(output_path, apply_loudnorm=False)
+        logger.info("Impact SFX saved → %s (%.1f KB)", output_path.name, output_path.stat().st_size / 1024)
+        return output_path
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Impact SFX generation failed (%s) — continuing without hook hit.", type(exc).__name__)
+        return None
+
+
+def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
+    """
+    Build the definitive 2-chunk Master Mei ``music_v2`` composition plan.
+
+    Chunk 1 (0–15000 ms): Ominous Matrix Siege
+    Chunk 2 (15000–total): Stoic Sovereign Awakening
+    """
+    total = max(18_000, int(total_ms))
+    chunk1 = 15_000
+    chunk2 = max(3_000, min(120_000, total - chunk1))
+    return {
+        "chunks": [
+            {
+                "text": "[Ominous Matrix Siege]\n{instrumental}",
+                "duration_ms": chunk1,
+                "positive_styles": [
+                    "dark ambient drone",
+                    "heavy sub-bass drone",
+                    "eerie mechanical tension",
+                    "dystopian cybernetic atmosphere",
+                    "low frequency rumble",
+                    "instrumental",
+                    "cinematic production",
+                ],
+                "negative_styles": [
+                    "upbeat melodies",
+                    "bright synth",
+                    "fast drums",
+                    "vocals",
+                ],
+                "context_adherence": "high",
+            },
+            {
+                "text": "[Stoic Sovereign Awakening]\n{instrumental}",
+                "duration_ms": chunk2,
+                "positive_styles": [
+                    "epic dark synth theme",
+                    "inspiring cinematic pads",
+                    "driving stoic bassline",
+                    "heroic resolve",
+                    "powerful dark synthwave",
+                    "100 bpm",
+                    "instrumental",
+                ],
+                "negative_styles": [
+                    "overly cheerful",
+                    "pop acoustic",
+                    "screaming vocals",
+                ],
+                "context_adherence": "high",
+            },
+        ]
+    }
+
+
+def generate_music_v2_bed(
+    output_path: Path,
+    *,
+    duration_seconds: float = 80.0,
+) -> "Path | None":
+    """
+    Compose a Master Mei background bed via ElevenLabs Music ``music_v2``.
+
+    Falls back to ``music_v1`` then legacy SFX ambient on failure.
+    """
+    api_key = app_config.ELEVENLABS_API_KEY
+    if not api_key:
+        logger.warning("ELEVENLABS_API_KEY not set — music_v2 bed skipped.")
+        return None
+
+    output_path = Path(output_path)
+    total_ms = max(18_000, int(float(duration_seconds) * 1000))
+    plan = build_mei_music_v2_plan(total_ms)
+
+    try:
+        from elevenlabs import ElevenLabs  # type: ignore
+
+        client = ElevenLabs(api_key=api_key)
+        for model in (_MUSIC_V2_MODEL, _MUSIC_V1_MODEL):
+            try:
+                logger.info(
+                    "Composing music bed | model=%s total_ms=%d chunks=%d",
+                    model, total_ms, len(plan["chunks"]),
+                )
+                audio = client.music.compose(
+                    composition_plan=plan,
+                    model_id=model,
+                    force_instrumental=True,
+                )
+                _write_audio_iterator(audio, output_path)
+                if output_path.is_file() and output_path.stat().st_size > 1000:
+                    resample_audio_48k(output_path, apply_loudnorm=True)
+                    logger.info(
+                        "Music bed saved → %s (%.1f KB, model=%s)",
+                        output_path.name, output_path.stat().st_size / 1024, model,
+                    )
+                    return output_path
+            except Exception as model_exc:  # noqa: BLE001
+                logger.warning(
+                    "music.compose failed for %s (%s) — trying next fallback.",
+                    model, type(model_exc).__name__,
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Music SDK unavailable (%s) — falling back to SFX ambient.", type(exc).__name__)
+
+    # Final fallback: looping cinematic SFX pad
+    return generate_ambient_track(output_path, duration_seconds=duration_seconds)
+
+
+def generate_master_mei_soundscape(
+    output_dir: Path,
+    *,
+    stem: str = "mei",
+    duration_seconds: float = 80.0,
+) -> tuple["Path | None", "Path | None"]:
+    """
+    Generate the dual-layer Master Mei soundscape.
+
+    Returns ``(music_bed_path, impact_sfx_path)``.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    music = generate_music_v2_bed(
+        out / f"{stem}_music_v2.mp3",
+        duration_seconds=duration_seconds,
+    )
+    impact = generate_impact_sfx(
+        out / f"{stem}_impact_braam.mp3",
+        prompt=_IMPACT_SFX_PROMPT,
+        duration_seconds=_IMPACT_SFX_DURATION_S,
+    )
+    return music, impact
