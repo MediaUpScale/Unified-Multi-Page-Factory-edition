@@ -22,12 +22,14 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import avatar_engine.audio_engine as _audio_engine  # noqa: E402
 from avatar_engine.audio_engine import (  # noqa: E402
     _MUSIC_SIMPLE_PROMPT,
     _clamp_music_duration_ms,
     _is_unprocessable_entity,
     _sanitize_style_list,
     _styles_to_csv,
+    build_mei_music_v1_plan,
     build_mei_music_v2_plan,
     generate_impact_sfx,
     generate_music_v2_bed,
@@ -137,54 +139,67 @@ def test_3_music_api_payload() -> bool:
         _ok("Style CSV -> list", f"pos={pos_list}")
         _ok("Style list -> CSV", f"pos={pos_csv!r} | neg={neg_csv!r}")
 
-        total_ms = _clamp_music_duration_ms(10_000)  # 10 s sample -> clamped ≥ 5 s
-        plan = build_mei_music_v2_plan(total_ms)
-        # Inject user-requested flat styles into section 1 for payload realism
-        plan["sections"][0]["positive_local_styles"] = pos_list
-        plan["sections"][0]["negative_local_styles"] = neg_list
-        plan["sections"][0]["duration_ms"] = int(
+        # music_v2 chunk plan (primary)
+        total_ms = 20_000
+        v2_plan = build_mei_music_v2_plan(total_ms)
+        if "chunks" not in v2_plan or "sections" in v2_plan:
+            raise AssertionError(f"Expected music_v2 chunks plan, got keys={list(v2_plan)}")
+        v2_plan["chunks"][0]["positive_styles"] = pos_list
+        v2_plan["chunks"][0]["negative_styles"] = neg_list
+        v2_plan["chunks"][0]["duration_ms"] = int(
             _clamp_music_duration_ms(10_000, lo=3_000, hi=120_000)
         )
-        # Keep second section short so total stays near 10–20 s for a cheap test
-        plan["sections"][1]["duration_ms"] = int(
-            _clamp_music_duration_ms(5_000, lo=3_000, hi=120_000)
+        v2_plan["chunks"][1]["duration_ms"] = int(
+            _clamp_music_duration_ms(10_000, lo=3_000, hi=120_000)
         )
+        chunk0 = v2_plan["chunks"][0]
+        for key in ("text", "duration_ms", "positive_styles", "negative_styles", "context_adherence"):
+            if key not in chunk0:
+                raise AssertionError(f"music_v2 chunk missing {key}")
+        _ok("music_v2 chunk plan", f"chunks={len(v2_plan['chunks'])}")
 
-        if "chunks" in plan or "positive_styles" in plan.get("sections", [{}])[0]:
-            raise AssertionError("Legacy chunk schema leaked into MusicPrompt plan")
-
+        # music_v1 typed MusicPrompt (fallback schema)
+        v1_plan = build_mei_music_v1_plan(total_ms)
         try:
             from elevenlabs import MusicPrompt  # type: ignore
 
-            MusicPrompt.model_validate(plan)
-            _ok("MusicPrompt schema validate", f"sections={len(plan['sections'])}")
+            if isinstance(v1_plan, MusicPrompt):
+                MusicPrompt.model_validate(v1_plan.model_dump())
+                n_sec = len(v1_plan.sections)
+            else:
+                MusicPrompt.model_validate(v1_plan)
+                n_sec = len(v1_plan["sections"])
+            _ok("music_v1 MusicPrompt typed", f"sections={n_sec}")
         except ImportError:
-            _ok("MusicPrompt schema validate", "skipped (type import unavailable)")
+            _ok("music_v1 MusicPrompt typed", "skipped (import unavailable)")
 
-        # 422 detector sanity
         class _Fake422(Exception):
             status_code = 422
 
         if not _is_unprocessable_entity(_Fake422()):
             raise AssertionError("422 detector failed")
-        _ok("422 detector", "UnprocessableEntityError / status_code=422 recognized")
+        _ok("422 detector", "ready (prompt fallback still available)")
         _ok("Simple prompt fallback ready", _MUSIC_SIMPLE_PROMPT[:64] + "...")
 
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         MUSIC_OUT.unlink(missing_ok=True)
 
-        # Live compose via production fallback chain (~10–15 s bed)
-        path = generate_music_v2_bed(MUSIC_OUT, duration_seconds=10.0)
+        # Live compose — primary composition_plan must succeed (no prompt fallback)
+        path = generate_music_v2_bed(MUSIC_OUT, duration_seconds=20.0)
+        mode = _audio_engine.LAST_MUSIC_COMPOSE_MODE
         if path is None or not _file_ok(Path(path), min_bytes=500):
             raise RuntimeError(
                 "Music generation returned no usable file "
                 "(API + ambient + local fail-safes all empty)."
             )
+        if not mode or not str(mode).startswith("plan/"):
+            raise AssertionError(
+                f"composition_plan did not win primary call; mode={mode!r} "
+                "(expected plan/music_v2 or plan/music_v1, not prompt fallback)"
+            )
         kb = Path(path).stat().st_size / 1024
-        src = Path(path).resolve()
-        note = "engine output" if src == MUSIC_OUT.resolve() else f"fail-safe -> {src.name}"
-        _ok("Music generate", f"{note} ({kb:.1f} KB)")
-        print(f"[OK]   Music module SUCCESS -> {path}")
+        _ok("Music composition_plan primary", f"mode={mode} ({kb:.1f} KB)")
+        print(f"[OK]   Music module SUCCESS -> {path} [{mode}]")
         return True
     except Exception as exc:  # noqa: BLE001
         _fail("Music module", exc)

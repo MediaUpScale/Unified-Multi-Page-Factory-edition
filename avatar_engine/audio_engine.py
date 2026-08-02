@@ -749,38 +749,13 @@ def _local_music_failsafe(output_path: Path | None = None) -> "Path | None":
     return None
 
 
-def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
-    """
-    Build a Master Mei ``MusicPrompt`` composition plan for ``music.compose``.
+# Last successful compose path for tests / diagnostics:
+#   "plan/music_v2" | "plan/music_v1" | "prompt/..." | "ambient" | "local" | None
+LAST_MUSIC_COMPOSE_MODE: str | None = None
 
-    SDK schema (elevenlabs>=2.x)::
 
-        {
-          "positive_global_styles": list[str],
-          "negative_global_styles": list[str],
-          "sections": [
-            {
-              "section_name": str,
-              "positive_local_styles": list[str],
-              "negative_local_styles": list[str],
-              "duration_ms": int,
-              "lines": list[str],
-            },
-            ...
-          ],
-        }
-
-    Section 1 (0–15000 ms): Ominous Matrix Siege
-    Section 2 (15000–total): Stoic Sovereign Awakening
-    """
-    total = _clamp_music_duration_ms(total_ms, lo=18_000, hi=_MUSIC_DURATION_MS_MAX)
-    section1 = _clamp_music_duration_ms(
-        15_000, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
-    )
-    section2 = _clamp_music_duration_ms(
-        total - section1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
-    )
-
+def _mei_section_styles() -> tuple[list[str], list[str], list[str], list[str]]:
+    """Shared positive/negative style lists for Matrix Siege → Sovereign Awakening."""
     siege_pos = _sanitize_style_list([
         "dark ambient drone",
         "heavy sub-bass drone",
@@ -795,6 +770,7 @@ def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
         "bright synth",
         "fast drums",
         "vocals",
+        "lyrics",
     ])
     awaken_pos = _sanitize_style_list([
         "epic dark synth theme",
@@ -809,39 +785,131 @@ def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
         "overly cheerful",
         "pop acoustic",
         "screaming vocals",
+        "lyrics",
     ])
+    return siege_pos, siege_neg, awaken_pos, awaken_neg
+
+
+def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
+    """
+    Build a ``music_v2`` chunk-based composition plan.
+
+    Official ElevenLabs ``music_v2`` layout (NOT MusicPrompt)::
+
+        {
+          "chunks": [
+            {
+              "text": "[Section]\\n{instrumental}",
+              "duration_ms": int,          # 3000–120000
+              "positive_styles": list[str],
+              "negative_styles": list[str],
+              "context_adherence": "high",
+            },
+            ...
+          ]
+        }
+
+    Chunk 1 (0–15000 ms): Ominous Matrix Siege
+    Chunk 2 (15000–total): Stoic Sovereign Awakening
+    """
+    total = _clamp_music_duration_ms(total_ms, lo=18_000, hi=_MUSIC_DURATION_MS_MAX)
+    chunk1 = _clamp_music_duration_ms(
+        15_000, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
+    )
+    chunk2 = _clamp_music_duration_ms(
+        total - chunk1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
+    )
+    siege_pos, siege_neg, awaken_pos, awaken_neg = _mei_section_styles()
 
     return {
-        "positive_global_styles": _sanitize_style_list([
-            "instrumental",
-            "cinematic",
-            "dark ambient",
-            "no vocals",
-        ]),
-        "negative_global_styles": _sanitize_style_list([
-            "vocals",
-            "lyrics",
-            "pop",
-            "upbeat",
-            "cheerful",
-        ]),
-        "sections": [
+        "chunks": [
             {
-                "section_name": "Ominous Matrix Siege",
-                "positive_local_styles": siege_pos,
-                "negative_local_styles": siege_neg,
-                "duration_ms": int(section1),
-                "lines": [],  # instrumental — empty lyric lines
+                "text": "[Ominous Matrix Siege]\n{instrumental}",
+                "duration_ms": int(chunk1),
+                "positive_styles": siege_pos,
+                "negative_styles": siege_neg,
+                "context_adherence": "high",
             },
             {
-                "section_name": "Stoic Sovereign Awakening",
-                "positive_local_styles": awaken_pos,
-                "negative_local_styles": awaken_neg,
-                "duration_ms": int(section2),
-                "lines": [],
+                "text": "[Stoic Sovereign Awakening]\n{instrumental}",
+                "duration_ms": int(chunk2),
+                "positive_styles": awaken_pos,
+                "negative_styles": awaken_neg,
+                "context_adherence": "high",
             },
-        ],
+        ]
     }
+
+
+def build_mei_music_v1_plan(total_ms: int) -> Any:
+    """
+    Build a typed ``MusicPrompt`` (``SongSection``) for ``music_v1`` only.
+
+    Docs: MusicPrompt with ``sections`` / ``positive_global_styles`` is valid
+    exclusively for ``model_id=\"music_v1\"``. Using it with ``music_v2`` → 422.
+    """
+    total = _clamp_music_duration_ms(total_ms, lo=18_000, hi=_MUSIC_DURATION_MS_MAX)
+    section1 = _clamp_music_duration_ms(
+        15_000, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
+    )
+    section2 = _clamp_music_duration_ms(
+        total - section1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
+    )
+    siege_pos, siege_neg, awaken_pos, awaken_neg = _mei_section_styles()
+
+    try:
+        from elevenlabs import MusicPrompt, SongSection  # type: ignore
+    except ImportError:
+        # Dict fallback matching MusicPrompt JSON schema
+        return {
+            "positive_global_styles": _sanitize_style_list([
+                "instrumental", "cinematic", "dark ambient",
+            ]),
+            "negative_global_styles": _sanitize_style_list([
+                "vocals", "lyrics", "pop", "upbeat", "cheerful",
+            ]),
+            "sections": [
+                {
+                    "section_name": "Ominous Matrix Siege",
+                    "positive_local_styles": siege_pos,
+                    "negative_local_styles": siege_neg,
+                    "duration_ms": int(section1),
+                    "lines": ["{instrumental}"],
+                },
+                {
+                    "section_name": "Stoic Sovereign Awakening",
+                    "positive_local_styles": awaken_pos,
+                    "negative_local_styles": awaken_neg,
+                    "duration_ms": int(section2),
+                    "lines": ["{instrumental}"],
+                },
+            ],
+        }
+
+    return MusicPrompt(
+        positive_global_styles=_sanitize_style_list([
+            "instrumental", "cinematic", "dark ambient",
+        ]),
+        negative_global_styles=_sanitize_style_list([
+            "vocals", "lyrics", "pop", "upbeat", "cheerful",
+        ]),
+        sections=[
+            SongSection(
+                section_name="Ominous Matrix Siege",
+                positive_local_styles=siege_pos,
+                negative_local_styles=siege_neg,
+                duration_ms=int(section1),
+                lines=["{instrumental}"],
+            ),
+            SongSection(
+                section_name="Stoic Sovereign Awakening",
+                positive_local_styles=awaken_pos,
+                negative_local_styles=awaken_neg,
+                duration_ms=int(section2),
+                lines=["{instrumental}"],
+            ),
+        ],
+    )
 
 
 def generate_music_v2_bed(
@@ -854,14 +922,22 @@ def generate_music_v2_bed(
 
     Fallback chain (never aborts the reel pipeline)
     -----------------------------------------------
-    1. ``composition_plan`` (MusicPrompt sections) with ``music_v2`` / ``music_v1``
-    2. On HTTP 422 / ``UnprocessableEntityError`` → simple prompt string mode
-    3. Legacy SFX ambient tile (``generate_ambient_track``)
-    4. Local ambient pad under ``assets/`` — or ``None`` (TTS + SFX only)
+    1. ``music_v2`` chunk ``composition_plan`` (no ``force_instrumental``)
+    2. ``music_v1`` typed ``MusicPrompt`` / ``SongSection`` plan
+    3. On HTTP 422 → simple prompt string (``force_instrumental`` allowed here)
+    4. Legacy SFX ambient tile
+    5. Local ambient pad — or ``None`` (TTS + SFX only)
+
+    Important: ``force_instrumental`` may ONLY be sent with ``prompt``.
+    Sending it with ``composition_plan`` returns HTTP 422.
     """
+    global LAST_MUSIC_COMPOSE_MODE
+    LAST_MUSIC_COMPOSE_MODE = None
+
     api_key = app_config.ELEVENLABS_API_KEY
     if not api_key:
         logger.warning("ELEVENLABS_API_KEY not set — music bed skipped.")
+        LAST_MUSIC_COMPOSE_MODE = "local"
         return _local_music_failsafe(Path(output_path) if output_path else None)
 
     output_path = Path(output_path)
@@ -871,13 +947,16 @@ def generate_music_v2_bed(
         lo=18_000,
         hi=_MUSIC_DURATION_MS_MAX,
     )
-    plan = build_mei_music_v2_plan(total_ms)
+    v2_plan = build_mei_music_v2_plan(total_ms)
+    v1_plan = build_mei_music_v1_plan(total_ms)
     saw_422 = False
 
     def _persist(audio: Any, *, label: str) -> "Path | None":
+        global LAST_MUSIC_COMPOSE_MODE
         _write_audio_iterator(audio, output_path)
         if output_path.is_file() and output_path.stat().st_size > 1000:
             resample_audio_48k(output_path, apply_loudnorm=True)
+            LAST_MUSIC_COMPOSE_MODE = label
             logger.info(
                 "Music bed saved → %s (%.1f KB, %s)",
                 output_path.name, output_path.stat().st_size / 1024, label,
@@ -895,54 +974,87 @@ def generate_music_v2_bed(
             _UE = ()  # type: ignore[assignment]
 
         client = ElevenLabs(api_key=api_key)
-        models = (_MUSIC_V2_MODEL, _MUSIC_V1_MODEL)
 
-        # --- Pass 1: structured composition_plan (MusicPrompt) ---
-        for model in models:
-            try:
-                n_sec = len(plan.get("sections") or [])
-                logger.info(
-                    "Composing music bed | model=%s total_ms=%d sections=%d",
-                    model, total_ms, n_sec,
+        # --- Pass 1a: music_v2 chunk plan (official v2 schema) ---
+        # Never pass force_instrumental / music_length_ms with composition_plan.
+        try:
+            n_chunks = len(v2_plan.get("chunks") or [])
+            logger.info(
+                "Composing music bed | model=%s total_ms=%d chunks=%d",
+                _MUSIC_V2_MODEL, total_ms, n_chunks,
+            )
+            audio = client.music.compose(
+                composition_plan=v2_plan,  # type: ignore[arg-type]
+                model_id=_MUSIC_V2_MODEL,  # type: ignore[arg-type]
+            )
+            saved = _persist(audio, label=f"plan/{_MUSIC_V2_MODEL}")
+            if saved is not None:
+                return saved
+        except Exception as model_exc:  # noqa: BLE001
+            if (_UE and isinstance(model_exc, _UE)) or _is_unprocessable_entity(model_exc):
+                saw_422 = True
+                logger.warning(
+                    "music.compose composition_plan HTTP 422 (%s / %s: %s) — "
+                    "trying music_v1 MusicPrompt.",
+                    _MUSIC_V2_MODEL,
+                    type(model_exc).__name__,
+                    str(getattr(model_exc, "body", model_exc))[:200],
                 )
-                # Do NOT pass music_length_ms with composition_plan — section
-                # duration_ms already defines length; both together → HTTP 422.
-                kwargs: dict[str, Any] = {
-                    "composition_plan": plan,
-                    "force_instrumental": True,
-                }
-                # SDK typing only lists music_v1; still try music_v2 at runtime
-                if model:
-                    kwargs["model_id"] = model
-                audio = client.music.compose(**kwargs)
-                saved = _persist(audio, label=f"plan/{model}")
-                if saved is not None:
-                    return saved
-            except Exception as model_exc:  # noqa: BLE001
-                if (_UE and isinstance(model_exc, _UE)) or _is_unprocessable_entity(model_exc):
-                    saw_422 = True
-                    logger.warning(
-                        "music.compose composition_plan HTTP 422 (%s / %s) — "
-                        "will retry with simple prompt.",
-                        model, type(model_exc).__name__,
-                    )
-                else:
-                    logger.warning(
-                        "music.compose plan failed for %s (%s: %s) — trying next.",
-                        model, type(model_exc).__name__, str(model_exc)[:180],
-                    )
+            else:
+                logger.warning(
+                    "music.compose v2 plan failed (%s: %s) — trying music_v1.",
+                    type(model_exc).__name__, str(model_exc)[:180],
+                )
 
-        # --- Pass 2: simple prompt string (422 / plan failure fallback) ---
+        # --- Pass 1b: music_v1 typed MusicPrompt / SongSection ---
+        try:
+            n_sec = (
+                len(getattr(v1_plan, "sections", None) or [])
+                if not isinstance(v1_plan, dict)
+                else len(v1_plan.get("sections") or [])
+            )
+            logger.info(
+                "Composing music bed | model=%s total_ms=%d sections=%d (MusicPrompt)",
+                _MUSIC_V1_MODEL, total_ms, n_sec,
+            )
+            audio = client.music.compose(
+                composition_plan=v1_plan,
+                model_id=_MUSIC_V1_MODEL,
+                respect_sections_durations=True,
+            )
+            saved = _persist(audio, label=f"plan/{_MUSIC_V1_MODEL}")
+            if saved is not None:
+                return saved
+        except Exception as model_exc:  # noqa: BLE001
+            if (_UE and isinstance(model_exc, _UE)) or _is_unprocessable_entity(model_exc):
+                saw_422 = True
+                logger.warning(
+                    "music.compose composition_plan HTTP 422 (%s / %s: %s) — "
+                    "will retry with simple prompt.",
+                    _MUSIC_V1_MODEL,
+                    type(model_exc).__name__,
+                    str(getattr(model_exc, "body", model_exc))[:200],
+                )
+            else:
+                logger.warning(
+                    "music.compose v1 plan failed (%s: %s) — trying simple prompt.",
+                    type(model_exc).__name__, str(model_exc)[:180],
+                )
+
+        # --- Pass 2: simple prompt (force_instrumental OK only here) ---
         simple_prompt = _MUSIC_SIMPLE_PROMPT
-        # Also expose styles as CSV in the prompt for clearer model guidance
         style_csv = _styles_to_csv(
-            (plan.get("positive_global_styles") or [])
-            + ["epic dark synth theme", "heavy sub-bass drone", "stoic cinematic atmosphere"]
+            _sanitize_style_list([
+                "epic dark synth theme",
+                "heavy sub-bass drone",
+                "stoic cinematic atmosphere",
+                "instrumental",
+            ])
         )
         if style_csv and style_csv.lower() not in simple_prompt.lower():
             simple_prompt = f"{simple_prompt}. Styles: {style_csv}"
 
-        for model in models:
+        for model in (_MUSIC_V2_MODEL, _MUSIC_V1_MODEL):
             try:
                 logger.info(
                     "Composing music bed (simple prompt)%s | model=%s total_ms=%d",
@@ -950,7 +1062,7 @@ def generate_music_v2_bed(
                     model,
                     total_ms,
                 )
-                kwargs = {
+                kwargs: dict[str, Any] = {
                     "prompt": simple_prompt,
                     "force_instrumental": True,
                     "music_length_ms": int(total_ms),
@@ -983,9 +1095,11 @@ def generate_music_v2_bed(
     # --- Pass 3: SFX ambient tile ---
     ambient = generate_ambient_track(output_path, duration_seconds=duration_seconds)
     if ambient is not None:
+        LAST_MUSIC_COMPOSE_MODE = "ambient"
         return ambient
 
     # --- Pass 4: local pad / TTS+SFX-only ---
+    LAST_MUSIC_COMPOSE_MODE = "local"
     return _local_music_failsafe(output_path)
 
 
