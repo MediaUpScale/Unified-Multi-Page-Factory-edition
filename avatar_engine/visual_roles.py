@@ -14,6 +14,7 @@ Avatar / DNA injection: ROLE A frames only (1, 5–7, 10).
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Sequence
 
@@ -116,25 +117,58 @@ ROLE_B_NEGATIVE: str = (
     "deformed hands, extra limbs, blurry face, looking at viewer"
 )
 
-# Generalized Discipline / Forge training environments (rotate per act)
+# Generalized Discipline / Forge training environments — UNIQUE per episode (never
+# recycle the same post-balancing / kata template every reel).
 _TRAINING_ENVIRONMENTS: tuple[str, ...] = (
-    # Option 1 — Alpine Cliff Balance
     (
         "ALPINE CLIFF BALANCE: 2 to 5 disciples balancing on one leg atop high wooden "
         "posts over mist-shrouded mountain abysses — full bodies visible, extreme "
         "focus and physical strain, wind whipping robes"
     ),
-    # Option 2 — Torrential Temple Rain
     (
         "TORRENTIAL TEMPLE RAIN: 2 to 5 disciples performing synchronized heavy "
         "staff and sword katas under pounding freezing rain outside an ancient "
         "temple — water splashes, grit, full-body martial motion"
     ),
-    # Option 3 — Extreme Strength
     (
         "EXTREME STRENGTH: 2 to 5 disciples carrying massive carved stone blocks "
         "up steep mountain staircases through snow or sandstorm — visible muscle "
         "strain, sweat, full bodies in resistance training"
+    ),
+    (
+        "WATERFALL IMPACT MEDITATION: 2 to 5 disciples standing under a crushing "
+        "mountain waterfall while holding low horse stances — water hammering "
+        "shoulders, steam, full-body endurance, robes soaked"
+    ),
+    (
+        "UNDERWATER BREATH DISCIPLINE: 2 to 5 disciples submerged in a clear "
+        "mountain lake performing slow martial forms underwater — bubbles, "
+        "extreme lung control, full bodies in motion beneath the surface"
+    ),
+    (
+        "HEAVY IRON RING TRAINING: 2 to 5 disciples swinging and catching massive "
+        "iron rings / stone weights in a torchlit courtyard — explosive full-body "
+        "power drills, dust, impact, dynamic motion"
+    ),
+    (
+        "MOUNTAIN BLIZZARD MANEUVERS: 2 to 5 disciples executing spear and staff "
+        "forms on a snow ridge in a howling blizzard — frost, wind shear, "
+        "full-body combat footwork against whiteout"
+    ),
+    (
+        "VOLCANIC ASH ENDURANCE: 2 to 5 disciples running uphill through volcanic "
+        "ash and heat haze while carrying weapons — grit, silhouette motion, "
+        "extreme cardiovascular forge"
+    ),
+    (
+        "BAMBOO FOREST SPRINT DUELS: 2 to 5 disciples weaving through dense bamboo "
+        "in high-speed paired sparring — broken stalks flying, dynamic chase, "
+        "no idle standing"
+    ),
+    (
+        "CLIFFSIDE ROPE ASCENTS: 2 to 5 disciples climbing vertical wet cliffs on "
+        "hemp ropes with weapons strapped — hanging full bodies, strain, "
+        "vertical motion, no ground portraits"
     ),
 )
 
@@ -384,11 +418,11 @@ def negative_for_role(role: str) -> str:
     return ROLE_C_NEGATIVE
 
 
-def environment_for_role(role: str, act_index: int) -> str:
+def environment_for_role(role: str, act_index: int, *, episode_seed: str = "") -> str:
     if role == ROLE_MASTER:
         return ROLE_A_ENVIRONMENTS[act_index % len(ROLE_A_ENVIRONMENTS)]
     if role == ROLE_DISCIPLE:
-        return _TRAINING_ENVIRONMENTS[act_index % len(_TRAINING_ENVIRONMENTS)]
+        return pick_training_environment(act_index=act_index, episode_seed=episode_seed)
     return (
         "desolate cyberpunk wasteland under propaganda screens",
         "panopticon tower casting surveillance light on wired masses",
@@ -396,21 +430,39 @@ def environment_for_role(role: str, act_index: int) -> str:
     )[act_index % 3]
 
 
+def pick_training_environment(
+    *,
+    act_index: int = 0,
+    episode_seed: str = "",
+) -> str:
+    """Pick a unique training environment (hash-rotated; avoids same kata every reel)."""
+    n = len(_TRAINING_ENVIRONMENTS)
+    if not n:
+        return "DYNAMIC FORGE: 2 to 5 disciples in extreme martial motion"
+    if episode_seed:
+        digest = hashlib.md5(f"{episode_seed}|{act_index}".encode("utf-8")).hexdigest()
+        idx = int(digest[:8], 16) % n
+    else:
+        idx = int(act_index) % n
+    return _TRAINING_ENVIRONMENTS[idx]
+
+
 def build_training_discipline_prompt(
     *,
     visual_dna: str = "",
     act_index: int = 0,
     include_mei_supervisor: bool = True,
+    episode_seed: str = "",
 ) -> tuple[str, str]:
     """
     GENERAL RULE — Discipline / Forge / martial training frames.
 
-    NEVER static passive close-ups of a single idle monk.
-    ALWAYS dynamic wide-to-medium shot of 2–5 disciples in extreme training
-    under adversity, with Master Mei stoically supervising in the background
-    when ``include_mei_supervisor`` is True.
+    NEVER static passive close-ups of a single idle monk staring at camera.
+    NEVER reuse the exact same post-balancing / kata scene every episode.
+    ALWAYS invent/select a unique high-intensity environment with 2–5 disciples
+    in active motion, Master Mei supervising in the background when enabled.
     """
-    env = _TRAINING_ENVIRONMENTS[int(act_index) % len(_TRAINING_ENVIRONMENTS)]
+    env = pick_training_environment(act_index=act_index, episode_seed=episode_seed)
     mei = _clean_mei_dna(visual_dna) if include_mei_supervisor else ""
     supervisor = (
         f"In the BACKGROUND: {mei}, stoically supervising the forge with "
@@ -421,18 +473,25 @@ def build_training_discipline_prompt(
     positive = (
         f"{ROLE_A_STYLE if include_mei_supervisor else ROLE_B_STYLE}. "
         f"DYNAMIC WIDE-TO-MEDIUM DISCIPLINE SHOT: 2 to 5 disciples undergoing "
-        f"extreme martial arts, weapons, or physical resistance training under "
-        f"severe adversity — full bodies in action, visible physical strain, "
+        f"extreme martial arts, weapons, breath, or physical endurance training under "
+        f"severe adversity — full bodies in ACTIVE MOTION, visible physical strain, "
         f"sweat and water splashes, gritty realism, dynamic lighting. "
         f"{supervisor}"
-        f"ENVIRONMENT / ACTION: {env}. "
+        f"UNIQUE ENVIRONMENT / ACTION THIS EPISODE: {env}. "
         f"Traditional organic world only — no cybernetics. "
-        f"STRICT PROHIBITION: never a static passive close-up of a single idle monk. "
-        f"Pure visual scene, no text."
+        f"STRICT PROHIBITION 1: never a static passive close-up of a single idle monk "
+        f"looking idle or staring into the camera. "
+        f"STRICT PROHIBITION 2: never reuse the same post-balancing or kata template "
+        f"every episode — this environment must feel fresh. "
+        f"Pure visual scene, no text, no words, no typography."
     )
     negative = (
         f"{ROLE_A_NEGATIVE if include_mei_supervisor else ROLE_B_NEGATIVE}, "
-        f"{_IDLE_MONK_BAN}, selfie pose, looking at viewer"
+        f"{_IDLE_MONK_BAN}, "
+        "text, words, typography, font, letters, sample, watermark, signature, "
+        "caption, quotes, UI elements, subtitles, labels, "
+        "selfie pose, looking at viewer, blank stare into camera, "
+        "single monk portrait, recycled kata pose, identical training scene"
     )
     return re.sub(r"\s{2,}", " ", positive).strip(), negative
 
@@ -584,10 +643,13 @@ def build_role_prompt(
     hook_env: str = "",
     beat: str = "",
     shot_key: str | None = None,
+    episode_seed: str = "",
 ) -> tuple[str, str]:
     """
     Build (positive_prompt, negative_prompt) for one lore-aligned scene.
     """
+    # Hash seed so training environments diversify across topics / episodes
+    _seed = (episode_seed or subject or spoken_beat or "").strip()
     role = (role or ROLE_SLAVE).strip().lower()
     if role not in VALID_ROLES:
         role = ROLE_SLAVE
@@ -642,6 +704,7 @@ def build_role_prompt(
             visual_dna=visual_dna,
             act_index=act_index,
             include_mei_supervisor=True,
+            episode_seed=_seed,
         )
     elif beat in (BEAT_MAYA, BEAT_GEARS, BEAT_PANOPTICON, BEAT_DOPAMINE):
         sync = _sync_shot_for_chunk(chunk, beat, shot_key=shot_key)
@@ -675,6 +738,7 @@ def build_role_prompt(
             visual_dna=visual_dna,
             act_index=act_index,
             include_mei_supervisor=bool(visual_dna),
+            episode_seed=_seed,
         )
     else:
         # Role C fallback — still apply Narrative Synchronization Matrix

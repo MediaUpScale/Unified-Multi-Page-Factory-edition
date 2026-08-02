@@ -67,12 +67,13 @@ TRADITIONAL_STYLE_ANCHOR: str = (
     "warm ember gold and charcoal stone, ancestral temple aesthetic"
 )
 
-# Hard ban: FLUX must never paint words / UI / captions onto the frame
+# Hard ban: FLUX / Nano Banana must never paint words / UI / captions onto the frame
 _TEXT_OVERLAY_NEGATIVE: str = (
-    "text, subtitles, words, typography, watermark, signature, caption, quotes, "
-    "letters, script, labels, UI elements, overlay text, lower thirds, "
-    "written text, logos, inscriptions, speech bubbles, closed captions, "
-    "burned-in subtitles, on-screen text, title cards, hashtags"
+    "text, words, typography, font, letters, sample, watermark, signature, "
+    "caption, quotes, UI elements, subtitles, labels, "
+    "script, overlay text, lower thirds, written text, logos, inscriptions, "
+    "speech bubbles, closed captions, burned-in subtitles, on-screen text, "
+    "title cards, hashtags, glyphs, alphabets, readable text"
 )
 
 MANDATORY_NEGATIVE_PROMPT: str = (

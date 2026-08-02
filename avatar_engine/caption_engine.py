@@ -1507,12 +1507,14 @@ class CaptionEngine:
         )
 
         raw = ""
-        # Soft acceptance: Master Mei 4-Act drafts (~150–180 words) must pass on attempt 1.
-        # Pass when words ≥ page min OR cleaned chars ≥ 240 (no expand-loop stalls).
+        # Soft acceptance: Master Mei drafts (~190–230 words / 80–100 s @ 0.92×).
+        # Warrior mode requires the word floor (char OR is too loose for 0.92× timing).
         _min_words = int(getattr(app_config, "SEQUENCE_VOICEOVER_MIN_WORDS", 110) or 110)
-        if (narrative_mode or "").strip().lower() == "warrior_discipline":
-            _min_words = max(_min_words, 150)
-        _min_chars = 240 if (narrative_mode or "").strip().lower() == "warrior_discipline" else 150
+        _warrior = (narrative_mode or "").strip().lower() == "warrior_discipline"
+        if _warrior:
+            _min_words = max(_min_words, 190)
+        _min_chars = 900 if _warrior else 150
+        _max_words = 230 if _warrior else 10**9
         _full_prompt = _sys_base + "\n\n" + prompt + cta_instruction
 
         def _clean_script(text: str) -> str:
@@ -1541,7 +1543,10 @@ class CaptionEngine:
             cleaned = _clean_script(text)
             if not cleaned:
                 return False
-            return _word_count(cleaned) >= _min_words or len(cleaned) >= _min_chars
+            wc = _word_count(cleaned)
+            if _warrior:
+                return _min_words <= wc <= _max_words + 20  # soft upper slack before trim
+            return wc >= _min_words or len(cleaned) >= _min_chars
 
         def _try_gemini(*, attempt: int = 1, expand: bool = False) -> str:
             try:
@@ -1563,12 +1568,21 @@ class CaptionEngine:
                 chain = chain_with_preferred_first(base or [preferred], preferred)
                 boost = ""
                 if expand or attempt > 1:
-                    boost = (
-                        f"\n\nCRITICAL EXPAND/RETRY: Your previous draft was TOO SHORT "
-                        f"(under {_min_chars} characters AND under {_min_words} words). "
-                        f"EXPAND it. Write AT LEAST {_min_words} words "
-                        f"(target {total_words_target}). Fill the {duration_s:.0f}-second narration."
-                    )
+                    if _warrior:
+                        boost = (
+                            f"\n\nCRITICAL EXPAND/RETRY (MASTER MEI): Previous draft failed the "
+                            f"STRICT {_min_words}–{_max_words} word band (target {total_words_target}). "
+                            f"Rewrite the FULL first-person script to {_min_words}–{_max_words} words "
+                            f"for ~{duration_s:.0f}s at 0.92× TTS. Keep FIRST PERSON. "
+                            f"Do NOT say 'Master Mei' in third person. No Follow/Subscribe CTA."
+                        )
+                    else:
+                        boost = (
+                            f"\n\nCRITICAL EXPAND/RETRY: Your previous draft was TOO SHORT "
+                            f"(under {_min_chars} characters AND under {_min_words} words). "
+                            f"EXPAND it. Write AT LEAST {_min_words} words "
+                            f"(target {total_words_target}). Fill the {duration_s:.0f}-second narration."
+                        )
                 response = generate_content_with_model_fallback(
                     self._gemini, chain,
                     contents=[_full_prompt + boost],
@@ -1617,8 +1631,12 @@ class CaptionEngine:
 
         clean = _clean_script(raw)
         if (narrative_mode or "").strip().lower() == "warrior_discipline":
-            from avatar_engine.mei_narrative import strip_inline_follow_cta
+            from avatar_engine.mei_narrative import (
+                sanitize_mei_narration_body,
+                strip_inline_follow_cta,
+            )
             clean = strip_inline_follow_cta(clean)
+            clean = sanitize_mei_narration_body(clean)
         logger.info(
             "generate_sequence_voiceover | final script %d words / %d chars "
             "(target_words=%d min_words=%d) [Gemini-only]",

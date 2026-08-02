@@ -193,14 +193,14 @@ PHILOSOPHER_ROSTER: dict[str, dict[str, Any]] = {
         "concept": "Stoic Sovereignty",
         "label": "Marcus Aurelius' Stoic Sovereignty",
         "core": (
-            "Didactically explain the Stoic inner citadel (Aurelius): control what is "
+            "Didactically explain Stoic sovereignty (Aurelius): control what is "
             "yours — judgment and action — and total resistance to external digital distractions."
         ),
         "seduction": "external outrage, comfort feeds, and moods the Machine hands you",
-        "practice": "morning citadel review and cold refusal of impulse",
+        "practice": "dawn judgment audit and cold refusal of impulse",
         "seo_hook": "Marcus Aurelius' Stoic Sovereignty",
         "hashtag": "Stoicism",
-        "principles": ["Inner citadel", "Impulse control", "Resistance to externals"],
+        "principles": ["Inner judgment", "Impulse control", "Resistance to externals"],
         "keywords": (
             "marcus", "aurelius", "stoic", "citadel", "sovereignty",
             "discipline", "impulse", "resilience", "meditations", "hardship",
@@ -278,6 +278,43 @@ _APPROVED_CTA = (
     "Master your mind. Follow Master Mei to reclaim your sovereignty."
 )
 
+# Narration word budget @ 0.92× TTS → ~80–100 s voiceover body (CTA separate)
+_NARRATION_WORDS_MIN: int = 190
+_NARRATION_WORDS_TARGET: int = 210
+_NARRATION_WORDS_MAX: int = 230
+
+# Cross-episode cliché blacklist — never recycle these fixed templates
+_BANNED_NARRATION_PHRASES: tuple[str, ...] = (
+    "citadel",
+    "biomechanical cords",
+    "sirens",
+    "master mei offers no comfort",
+    "relentless practice",
+    "silent war for your essence",
+    "techno-slave",
+    "techno slave",
+    "silent war for the mind",  # near-duplicate of banned essence line
+)
+
+_BANNED_PHRASE_RES: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(re.escape(p), re.IGNORECASE) for p in _BANNED_NARRATION_PHRASES
+)
+
+# Third-person Master Mei → first-person rewrites (narrator IS Mei)
+_THIRD_PERSON_MEI_FIXES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bMaster\s+Mei\s+offers\s+no\s+comfort\b", re.IGNORECASE), "I offer no comfort"),
+    (re.compile(r"\bMaster\s+Mei\s+does\s+not\s+offer\s+comfort\b", re.IGNORECASE), "I do not offer comfort"),
+    (re.compile(r"\bMaster\s+Mei\s+demands?\b", re.IGNORECASE), "I demand"),
+    (re.compile(r"\bMaster\s+Mei\s+teaches?\b", re.IGNORECASE), "I teach"),
+    (re.compile(r"\bMaster\s+Mei\s+guides?\b", re.IGNORECASE), "I guide"),
+    (re.compile(r"\bMaster\s+Mei\s+trains?\b", re.IGNORECASE), "I train"),
+    (re.compile(r"\bMaster\s+Mei\s+offers?\b", re.IGNORECASE), "I offer"),
+    (re.compile(r"\bMaster\s+Mei\s+says?\b", re.IGNORECASE), "I say"),
+    (re.compile(r"\bMaster\s+Mei\s+warns?\b", re.IGNORECASE), "I warn"),
+    (re.compile(r"\bFollow\s+Master\s+Mei\b", re.IGNORECASE), "Walk my path"),
+    (re.compile(r"\bMaster\s+Mei\b", re.IGNORECASE), "I"),
+)
+
 # Common TTS / LLM misspellings → correct form (CTA must never say "sovereianty")
 _CTA_TYPO_FIXES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bsovereianty\b", re.IGNORECASE), "sovereignty"),
@@ -293,6 +330,46 @@ def fix_cta_typos(text: str) -> str:
     for pat, repl in _CTA_TYPO_FIXES:
         out = pat.sub(repl, out)
     return out
+
+
+def narration_word_budget() -> tuple[int, int, int]:
+    """Return ``(min, target, max)`` narration word counts for Master Mei VO."""
+    return _NARRATION_WORDS_MIN, _NARRATION_WORDS_TARGET, _NARRATION_WORDS_MAX
+
+
+def banned_narration_phrases() -> tuple[str, ...]:
+    """Frozen cliché blacklist enforced in prompts and post-process scrubbing."""
+    return _BANNED_NARRATION_PHRASES
+
+
+def scrub_banned_narration_phrases(text: str) -> str:
+    """Remove blacklisted cliché phrases from a narration body."""
+    out = text or ""
+    for pat in _BANNED_PHRASE_RES:
+        out = pat.sub(" ", out)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"\s+([,.;:!?])", r"\1", out)
+    return out.strip()
+
+
+def enforce_first_person_mei(text: str) -> str:
+    """Rewrite third-person 'Master Mei' references into first-person POV."""
+    out = text or ""
+    for pat, repl in _THIRD_PERSON_MEI_FIXES:
+        out = pat.sub(repl, out)
+    # Clean awkward artifacts like "I 's path" after naive replacements
+    out = re.sub(r"\bI\s+'s\b", "my", out, flags=re.IGNORECASE)
+    out = re.sub(r"\bI\s+is\b", "I am", out, flags=re.IGNORECASE)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return out.strip()
+
+
+def sanitize_mei_narration_body(text: str) -> str:
+    """Apply POV lock + phrase blacklist to narration (not the separate CTA)."""
+    out = scrub_banned_narration_phrases(text or "")
+    out = enforce_first_person_mei(out)
+    return out
+
 
 # Phrases that must NOT appear in narration body (CTA is a separate stitched block)
 _FOLLOW_CTA_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -460,53 +537,76 @@ def prepare_mei_tts_text(text: str) -> str:
     clean = re.sub(r"\n{3,}", "\n\n", clean)
     clean = re.sub(r"\s*\.\.\.\s*", " ... ", clean)
     clean = re.sub(r"(?:\s*\.\.\.\s*){2,}", " ... ", clean)
+    # POV lock + cliché blacklist (narrator IS Mei; CTA stays separate)
+    clean = sanitize_mei_narration_body(clean)
     return clean.strip()
 
 
 def mei_voice_prompt_block() -> str:
-    """Inject into script LLM prompts — punctuation pacing, zero sound tags."""
+    """Inject into script LLM prompts — POV, depth, pacing, zero sound tags."""
+    blacklist = ", ".join(f'"{p}"' for p in _BANNED_NARRATION_PHRASES[:7])
+    pov = (
+        "POV LOCK (IMMUTABLE): You ARE Master Mei. Write ONLY in FIRST PERSON "
+        "('I', 'My disciples', 'I demand', 'My path'). "
+        "NEVER refer to 'Master Mei' in the third person inside the script body."
+    )
+    depth = (
+        "PHILOSOPHICAL DEPTH: Introduce an original concept from Stoicism, Taoism, Zen, "
+        "Seneca, Marcus Aurelius, Lao Tzu, Miyamoto Musashi, and/or Epictetus. "
+        "Explicitly break down how sensory numbness, instant gratification, and propaganda "
+        "hijack human perception to enslave the spirit and destroy financial/spiritual sovereignty."
+    )
+    diversity = (
+        f"PHRASE BLACKLIST (never use): {blacklist}. "
+        "Every script must invent a UNIQUE allegory or lesson on discipline and financial freedom — "
+        "no recycled template lines across episodes."
+    )
+    words = (
+        f"VOICE PACING: Stoic, cinematic. Ellipses between heavy truths. "
+        f"STRICT WORD COUNT: {_NARRATION_WORDS_MIN}–{_NARRATION_WORDS_MAX} words "
+        f"(target ~{_NARRATION_WORDS_TARGET}) for 80–100 s at 0.92× TTS."
+    )
     if not is_v3_active():
         return (
             "CONTENT PHILOSOPHY (V2 ACTION LAYOUT):\n"
-            "1. ONE profound concept (Sun Tzu / Foucault Panopticon / Stoic Hardship / "
-            "Sovereign Wealth). Teach BODY, MIND, SPIRIT, FINANCIAL SOVEREIGNTY.\n"
-            "2. THREAT — dopamine, scrolling, algorithms, trap beauty, soft comfort.\n"
-            "3. SOLUTION — self-mastery, brutal physical discipline, strategic patience.\n"
-            "4. TONE — authoritative, solemn; NEVER wellness fluff or hustle-bro clichés.\n"
-            "VOICE PACING: Stoic, cinematic. Ellipses between heavy statements. "
-            "Short sentences. ~80–90 s / 150–180 words MAX.\n"
-            "FORBIDDEN: emotion tags, SSML, bracketed sound directions."
+            f"1. {pov}\n"
+            f"2. {depth}\n"
+            "3. THREAT — dopamine, scrolling, algorithms, trap beauty, soft comfort.\n"
+            "4. SOLUTION — self-mastery, brutal physical discipline, strategic patience.\n"
+            f"5. {diversity}\n"
+            "6. TONE — authoritative, solemn; NEVER wellness fluff or hustle-bro clichés.\n"
+            f"{words}\n"
+            "FORBIDDEN: emotion tags, SSML, bracketed sound directions, third-person 'Master Mei'."
         )
     if is_v4_active():
         return (
             "ENGINE: V4.0_CINEMATIC_STORY_ARC (IMMUTABLE WHILE ACTIVE):\n"
-            "1. COHERENT STORY — Beginning, Middle, End. NEVER loose tip lists "
-            "('do this, don't do that'). Narrative must flow organically.\n"
-            "2. MANDATORY PHILOSOPHICAL AUTHORITY — every script MUST explicitly introduce "
-            "and credit at least one major Western or Eastern thinker by name "
-            "(e.g. Plato's Allegory of the Cave, Nietzsche, Schopenhauer, Marcus Aurelius, "
-            "Epictetus, Sun Tzu, Buddha, Bentham's Panopticon, Foucault). "
-            "ONE thinker + ONE concept per episode. Speak the name aloud in Act I.\n"
-            "3. CORE THEMES — connect that philosophy directly to modern digital manipulation, "
-            "reclaiming focus, mental sovereignty, and financial/personal independence.\n"
-            "4. THE MACHINE — seduces focus with cheap digital dopamine; silent war for the mind.\n"
-            "5. RESOLUTION — breaking digital bondage → focus, spiritual freedom, "
-            "financial sovereignty.\n"
-            "TONE: highly stern, accessible, cinematic authority.\n"
-            "VOICE PACING: Stoic, visceral, deliberate. Ellipses between heavy truths. "
-            "~80–90 s / 150–180 words MAX.\n"
+            f"1. {pov}\n"
+            "2. COHERENT STORY — Beginning, Middle, End. NEVER loose tip lists. "
+            "Narrative must flow as one original allegory.\n"
+            "3. MANDATORY PHILOSOPHICAL AUTHORITY — credit ONE major Western or Eastern thinker "
+            "by name in Act I (Stoicism / Taoism / Zen / Seneca / Marcus Aurelius / Lao Tzu / "
+            "Miyamoto Musashi / Epictetus / Plato / Sun Tzu).\n"
+            f"4. {depth}\n"
+            "5. THE MACHINE — sensory numbness + instant gratification + propaganda "
+            "hijack perception; spirit and capital are the spoils.\n"
+            "6. RESOLUTION — I lead disciples from digital bondage to focus, spiritual freedom, "
+            "and financial sovereignty.\n"
+            f"7. {diversity}\n"
+            "TONE: highly stern, accessible, cinematic authority — spoken as ME.\n"
+            f"{words}\n"
             "FORBIDDEN: emotion tags, SSML, Follow/Subscribe lines, tip-list cadence, "
-            "generic pep-talks with zero named philosopher."
+            "third-person 'Master Mei', generic pep-talks with zero named philosopher."
         )
     return (
         "ENGINE: V3.0_DIDACTIC_STOIC_STORY_ARC (IMMUTABLE WHILE ACTIVE):\n"
-        "1. SINGLE-CONCEPT RULE — ONE thinker and ONE concept per video.\n"
-        "2. DIDACTIC EXPLANATION — simple, clear, stern Master Mei voice.\n"
-        "3. THE MACHINE — cheap pleasure/comfort → docile batteries.\n"
-        "4. RESOLUTION — discipline → spiritual freedom AND financial wealth.\n"
-        "VOICE PACING: Stoic, cinematic. Ellipses between heavy truths. "
-        "~80–90 s / 150–180 words MAX.\n"
-        "FORBIDDEN: emotion tags, SSML, Follow/Subscribe lines."
+        f"1. {pov}\n"
+        "2. SINGLE-CONCEPT RULE — ONE thinker and ONE concept per video.\n"
+        f"3. {depth}\n"
+        "4. RESOLUTION — my discipline path → spiritual freedom AND financial wealth.\n"
+        f"5. {diversity}\n"
+        f"{words}\n"
+        "FORBIDDEN: emotion tags, SSML, Follow/Subscribe lines, third-person 'Master Mei'."
     )
 
 
@@ -660,36 +760,40 @@ def _build_v2_three_act_script_instructions(n_acts: int, episode: dict[str, Any]
     end1, end2, n = three_act_bounds(n_acts)
     label = episode.get("label", "The Art of War Against the Neural Matrix")
     core = episode.get("core", "")
+    blacklist = ", ".join(f'"{p}"' for p in _BANNED_NARRATION_PHRASES[:7])
     return f"""
+POV LOCK: You ARE Master Mei — FIRST PERSON only ("I", "My disciples", "I demand").
+NEVER third-person "Master Mei" in the script body.
+
 SINGLE-TOPIC RULE (IMMUTABLE):
 This entire video is ONE cohesive cinematic lesson: "{label}".
 Philosophical spine: THE ART OF WAR AGAINST THE NEURAL MATRIX.
 Stay on THIS theme: {core}
 
 TONE: cinematic battle-cry — authoritative, solemn, uncompromising.
-Ancient wisdom meeting biomechanical cyberpunk dystopia.
+Ancient wisdom meeting dystopian tech critique.
 AUDIENCE: Western / US men seeking self-mastery and tech-critique.
 NEVER wellness fluff, hustle-bro clichés, or therapy-speak.
+PHRASE BLACKLIST: {blacklist}. Invent a UNIQUE allegory every episode.
 
 3-ACT STORY ARC (MANDATORY — write as ONE continuous war story, not a list of tips):
 
 - ACT I — THE TRAP / DIGITAL SLAVERY ([ACT 1]–[ACT {end1}] | ~30%):
-  Human minds and bodies consumed by the tech matrix. Gaunt figures hooked into
-  machines, absorbing false comfort and glowing digital propaganda.
+  I expose human minds consumed by the tech matrix — false comfort and glowing propaganda.
   VISUAL SYNC: enslaved masses — gaunt, passive, plugged into glowing neural feeds.
-  NO Master Mei. NO idle portraits.
+  NO idle monk portraits.
 
-- ACT II — THE FORGE / MASTER MEI'S TRAINING ([ACT {end1 + 1}]–[ACT {end2}] | ~40%):
-  Master Mei is the active central guide. He instructs disciples in brutal martial
-  conditioning through cold rain, sweat, and physical resistance.
-  VISUAL SYNC: Master Mei demonstrating sword stance / channeling energy / overseeing kata.
+- ACT II — THE FORGE / MY TRAINING ([ACT {end1 + 1}]–[ACT {end2}] | ~40%):
+  I supervise my disciples in unique high-intensity martial conditioning.
+  VISUAL SYNC: 2–5 disciples in extreme motion; I supervise in the background.
 
 - ACT III — LIBERATION / RECLAIMING SOVEREIGNTY ([ACT {end2 + 1}]–[ACT {n}] | ~30%):
-  Disciples sever digital cords; stand unbroken. DO NOT speak Follow/Subscribe.
-  VISUAL SYNC: disciples ripping glowing cybernetic cables mid kung-fu strike.
+  My disciples cut free of digital tethers; stand unbroken. DO NOT speak Follow/Subscribe.
+  VISUAL SYNC: disciples ripping free of glowing feeds mid strike.
 
-STRICT BAN: emotion tags, SSML, "Follow Master Mei", "Subscribe".
-Each [ACT N] ≈ one 4–5 second spoken beat. Target 150–180 words total @ 0.80× delivery.
+STRICT BAN: emotion tags, SSML, "Follow Master Mei", "Subscribe", third-person "Master Mei".
+Each [ACT N] ≈ one spoken beat. STRICT TOTAL: {_NARRATION_WORDS_MIN}–{_NARRATION_WORDS_MAX} words
+(target ~{_NARRATION_WORDS_TARGET}) for 80–100 s at 0.92× TTS.
 """.strip()
 
 
@@ -703,8 +807,12 @@ def build_three_act_script_instructions(n_acts: int, episode: dict[str, Any]) ->
     concept = episode.get("concept") or episode.get("label") or "Stoic Sovereignty"
     label = episode.get("label") or f"{philosopher}'s {concept}"
     core = episode.get("core", "")
-    seduction = episode.get("seduction") or "cheap dopamine and soft digital comfort"
-    practice = episode.get("practice") or "ruthless daily martial discipline"
+    seduction = scrub_banned_narration_phrases(
+        episode.get("seduction") or "cheap dopamine and soft digital comfort"
+    )
+    practice = scrub_banned_narration_phrases(
+        episode.get("practice") or "ruthless daily martial discipline"
+    )
     is_siren = bool(episode.get("siren")) and is_siren_enabled()
     cite = is_explicit_philosopher_citations_enabled() or is_didactic_philosophy_enabled()
     western = is_western_majority_masses_enabled()
@@ -728,48 +836,50 @@ def build_three_act_script_instructions(n_acts: int, episode: dict[str, Any]) ->
             + mass_visual
         )
 
+    blacklist = ", ".join(f'"{p}"' for p in _BANNED_NARRATION_PHRASES[:7])
+
     if is_v4_active():
         act1_formula = (
-            f'Voiceover directive (adapt — cite {philosopher} explicitly): '
-            f'"{philosopher} taught that a battle is won before it is fought, yet you '
-            f"surrender your mind daily to the Machine's silent war… The Machine seduces "
-            f'you with {seduction}."'
+            f'FIRST-PERSON voiceover directive (adapt — cite {philosopher} explicitly): '
+            f'"I studied {philosopher}. {philosopher} revealed {concept} — yet you hand your '
+            f"perception to the Machine every dawn through {seduction}. Sensory numbness and "
+            f'instant gratification are not entertainment… they are the leash on your spirit."'
             if cite
-            else "Expose the digital trap with stern philosophical diagnosis."
+            else "In FIRST PERSON, expose the digital trap with stern philosophical diagnosis."
         )
         act2_formula = (
-            f'Voiceover directive (adapt): '
-            f'"Stoic discipline demands total command over your internal citadel. '
-            f'Master Mei does not offer comfort; he demands relentless practice — {practice}."'
+            f'FIRST-PERSON voiceover directive (adapt — invent a UNIQUE forge allegory): '
+            f'"I do not comfort you. On my path, my disciples endure {practice}. '
+            f'I demand you reclaim command of attention before you reclaim capital."'
             if cite
-            else "Explain the martial/mental counter-strategy."
+            else "In FIRST PERSON, invent a unique martial/mental counter-strategy (never reuse prior episode templates)."
         )
         act3_formula = (
-            'Voiceover directive (adapt): '
-            '"Sever the cords. Protect your focus and your capital. '
-            'Master your mind through daily discipline, and reclaim your ultimate freedom."'
+            "FIRST-PERSON voiceover directive (adapt — unique liberation close): "
+            '"I cut the feed. I guard my focus and my capital. '
+            'Walk my path of daily discipline — reclaim your spirit and your freedom."'
         )
         engine_line = "ENGINE: V4.0_CINEMATIC_STORY_ARC"
         act1_title = "THE SEDUCTION & PHILOSOPHICAL DIAGNOSIS"
         act3_title = "LIBERATION & WEALTH SOVEREIGNTY"
     else:
         act1_formula = (
-            f'Voiceover formula (adapt): '
-            f'"You live inside {philosopher}\'s {concept} without knowing it. '
+            f'FIRST-PERSON voiceover formula (adapt): '
+            f'"I warn you — you live inside {philosopher}\'s {concept} without knowing it. '
             f'The Machine seduces you with {seduction}."'
             if cite
-            else "Introduce the trap with stern authority."
+            else "In FIRST PERSON, introduce the trap with stern authority."
         )
         act2_formula = (
-            f'Voiceover formula (adapt): '
-            f'"To break this cage, {philosopher} / Master Mei demands {practice}."'
+            f'FIRST-PERSON voiceover formula (adapt): '
+            f'"To break this cage, I demand {practice} — as {philosopher} taught."'
             if cite
-            else "Explain the disciplined counter-strategy."
+            else "In FIRST PERSON, explain the disciplined counter-strategy."
         )
         act3_formula = (
-            'Voiceover formula (adapt): '
-            '"Sever the cords. Protect your energy and your capital. '
-            'Master your mind through daily discipline, and reclaim your ultimate freedom."'
+            "FIRST-PERSON voiceover formula (adapt): "
+            '"I sever the feed. I protect my energy and my capital. '
+            'Walk my path — reclaim your ultimate freedom."'
         )
         engine_line = "ENGINE: V3.0_DIDACTIC_STOIC_STORY_ARC"
         act1_title = "THE SEDUCTION & CONCEPT INTRO"
@@ -777,13 +887,25 @@ def build_three_act_script_instructions(n_acts: int, episode: dict[str, Any]) ->
 
     return f"""
 {engine_line}
+POV LOCK (IMMUTABLE): The narrator IS Master Mei.
+Write ONLY in FIRST PERSON ("I", "My disciples", "I demand", "My path").
+PROHIBITED in narration body: third-person "Master Mei …", "Follow Master Mei".
+(CTA audio is stitched separately AFTER narration — never inside the script.)
+
 SINGLE-CONCEPT RULE (IMMUTABLE):
 This entire video is ONE coherent cinematic story about "{label}".
 ONE thinker only: {philosopher}. ONE concept only: {concept}.
 Never mix philosophies. Philosophical spine: {core}
-EXPLICIT CITATIONS REQUIRED: name {philosopher} / {concept} aloud in Act I.
+EXPLICIT CITATIONS REQUIRED: name {philosopher} / {concept} aloud in Act I (still in first person).
 
-TONE: highly stern, accessible, cinematic authority — Master Mei teaching warriors.
+PHILOSOPHICAL DEPTH (MANDATORY):
+Explain how sensory numbness, instant gratification, and propaganda hijack perception
+to enslave the spirit and destroy financial/spiritual sovereignty.
+Invent a UNIQUE allegory this episode — do not recycle prior episode templates.
+
+PHRASE BLACKLIST (NEVER USE): {blacklist}.
+
+TONE: highly stern, accessible, cinematic authority — I teach warriors as their master.
 AUDIENCE: Western / US men — self-mastery, tech-critique, financial sovereignty.
 NEVER tip lists, wellness fluff, hustle-bro clichés, or therapy-speak.
 
@@ -797,27 +919,27 @@ NEVER tip lists, wellness fluff, hustle-bro clichés, or therapy-speak.
 
 - ACT II — THE FORGE OF DISCIPLINE ([ACT {end1 + 1}]–[ACT {end2}] | ~40%):
   Transition from passive slavery to active resistance through martial and mental training.
-  Master Mei must dominate this act (50%+ screen presence).
-  He actively guides disciples, executes precise sword katas, trains through heavy cold
-  rain and neon smoke — disciples sweating and enduring the forge.
+  I dominate this act (50%+ screen presence) supervising my disciples — NOT a static portrait.
+  Invent a UNIQUE high-intensity training environment this episode (never the same kata scene).
   {act2_formula}
-  VISUAL SYNC: Master Mei demonstrating sword strikes / channeling energy / instructing
-  stances. HIGH MOTION. NO static portraits.
+  VISUAL SYNC: I supervise 2–5 disciples in extreme motion. HIGH MOTION. NO idle monk close-ups.
 
 - ACT III — {act3_title} ([ACT {end2 + 1}]–[ACT {n}] | ~30%):
   Climax: breaking free → ultimate focus, spiritual freedom, financial sovereignty.
   {act3_formula}
-  VISUAL SYNC: disciples physically severing / cutting / ripping biomechanical neural
-  cords from necks; standing unbroken as digital illusions shatter.
+  VISUAL SYNC: disciples ripping free of glowing digital tethers / propaganda feeds;
+  standing unbroken as the illusion collapses.
   DO NOT speak Follow/Subscribe (CTA is stitched separately after narration).
 
 CHARACTER RULES (mental picture only — spoken prose, no stage directions):
-- Enslaved masses = Western-majority diverse genders, holographic feeds, VR cords.
-- Disciples = active, sweating, kata, severing cords.
-- Master Mei = persistent Act II active Oriental/Asian ancestral instructor (not a cameo).
+- Enslaved masses = Western-majority diverse genders, holographic feeds, VR tethers.
+- Disciples = active, sweating, martial motion, cutting free of digital bondage.
+- I (Master Mei) = Act II Oriental/Asian ancestral instructor supervising in the background.
 
-STRICT BAN in narration: emotion tags, SSML, "Follow Master Mei", "Subscribe", tip lists.
-Each [ACT N] ≈ one 4–5 second spoken beat. Target 150–180 words total @ 0.80× delivery.
+STRICT BAN in narration: emotion tags, SSML, "Follow Master Mei", "Subscribe", tip lists,
+third-person "Master Mei", and all blacklisted clichés above.
+Each [ACT N] ≈ one spoken beat. STRICT TOTAL: {_NARRATION_WORDS_MIN}–{_NARRATION_WORDS_MAX} words
+(target ~{_NARRATION_WORDS_TARGET}) for 80–100 s at 0.92× TTS delivery.
 """.strip()
 
 

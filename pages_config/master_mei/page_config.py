@@ -202,10 +202,10 @@ AVATAR_IMAGE_WEIGHT: float = 0.92
 # ---------------------------------------------------------------------------
 # Sequence reel — July-24 golden keyframe cadence (v12/v14/v15 reference)
 # Hard-cap 8–10 images per clip — NO dense ~19-image micro-segmentation
-# Narration 150–180 words @ 0.92× + 1 s gap + CTA
+# Narration 190–230 words @ 0.92× ≈ 80–100 s VO + 1 s gap + CTA
 # ---------------------------------------------------------------------------
-REEL_DURATION: float = 80.0
-REEL_SECONDS_PER_ACT: float = 9.0    # ~80s / 9 ≈ 9 keyframes
+REEL_DURATION: float = 90.0
+REEL_SECONDS_PER_ACT: float = 9.0    # ~90s / 9 ≈ 10 keyframes
 REEL_ACT_DURATION: float = 9.0
 ENABLE_SEQUENCE_REEL: bool = True
 # Total Images = round(audio_seconds / REEL_SECONDS_PER_ACT), clamped to
@@ -215,10 +215,10 @@ REEL_IMAGE_COUNT: int = 10           # ceiling: never more than 10 distinct shot
 REEL_OVERLAY_OPACITY: float = 0.32
 REEL_TAIL_PAD_S: float = 2.0
 REEL_FORCE_EXACT_DURATION: bool = False
-# 150–180 words @ 0.80× deliberate delivery ≈ 80–90 s story + separate CTA
-REEL_NARRATION_WORDS: int = 165
-REEL_NARRATION_MIN_WORDS: int = 150
-REEL_NARRATION_MAX_WORDS: int = 180
+# 190–230 words @ 0.92× deliberate delivery ≈ 80–100 s story + separate CTA
+REEL_NARRATION_WORDS: int = 210
+REEL_NARRATION_MIN_WORDS: int = 190
+REEL_NARRATION_MAX_WORDS: int = 230
 
 # Single approved CTA — stitched AFTER narration; never duplicated inside the script
 REEL_CTA_TEXT: str = (
@@ -366,23 +366,32 @@ TOPIC_POOL: list = [
 NICHE_DISCLAIMER: str = (
     "CHANNEL DIRECTIVE — MASTER MEI | MIND CONTROL (V4.0 CINEMATIC STORY ARC — IMMUTABLE): "
     "Engine: V4.0_CINEMATIC_STORY_ARC. Coherent Beginning/Middle/End story — NEVER tip lists. "
-    "EXPLICIT philosopher citations required (Sun Tzu Art of War / Marcus Aurelius Stoicism / "
-    "Siddhartha Gautama Buddhism / Foucault Panopticon). ONE thinker + ONE concept per video. "
-    "Tone: highly stern, accessible, cinematic — ancient wisdom × biomechanical cyberpunk. "
+    "POV LOCK: The narrator IS Master Mei — write ONLY in FIRST PERSON "
+    "('I', 'My disciples', 'I demand', 'My path'). "
+    "PROHIBITED: third-person references to 'Master Mei' inside narration "
+    "(banned: 'Master Mei offers…', 'Follow Master Mei' in the script body). "
+    "EXPLICIT philosopher citations required (Stoicism, Taoism, Zen, Seneca, Marcus Aurelius, "
+    "Lao Tzu, Miyamoto Musashi, Epictetus, Sun Tzu, Plato). ONE thinker + ONE concept per video. "
+    "Depth: explain how sensory numbness, instant gratification, and propaganda hijack perception "
+    "to enslave the spirit and destroy financial/spiritual sovereignty. "
+    "Tone: highly stern, accessible, cinematic — ancestral discipline × dystopian tech critique. "
     "AUDIENCE: Western / US men — self-mastery, tech-critique, financial sovereignty. "
-    "3-ACT ARC (~80–90 s): "
-    "(I) SEDUCTION & PHILOSOPHICAL DIAGNOSIS — cite authority; Machine's silent war; "
-    "(II) FORGE OF DISCIPLINE — Master Mei 50%+; sword katas in cold rain/neon smoke; "
-    "(III) LIBERATION & WEALTH SOVEREIGNTY — 'Sever the cords. Protect your focus and "
-    "your capital… reclaim your ultimate freedom.' "
-    "WORD TARGET: 150–180 words MAX at 0.80×. "
+    "3-ACT ARC (~80–100 s @ 0.92× TTS): "
+    "(I) SEDUCTION & PHILOSOPHICAL DIAGNOSIS — cite authority; diagnose the Machine; "
+    "(II) FORGE OF DISCIPLINE — I train disciples in unique high-intensity practice; "
+    "(III) LIBERATION & WEALTH SOVEREIGNTY — reclaim focus, spirit, and capital. "
+    "WORD TARGET: 190–230 words STRICT (≈80–100 s at 0.92×). "
+    "PHRASE BLACKLIST (never reuse): citadel, biomechanical cords, sirens, "
+    "'Master Mei offers no comfort', relentless practice, 'silent war for your essence', techno-slave. "
+    "Every episode needs a UNIQUE allegory — never recycle the same lesson template. "
     "DO NOT write Follow/Subscribe CTA inside narration — stitched separately after. "
     "Approved CTA (separate audio only): "
     "'Master your mind. Follow Master Mei to reclaim your sovereignty.' "
     "CLOTHING SAFETY: no nudity, no nipple exposure, no gym-tank fitness looks. "
-    "VISUAL: Western-majority enslaved masses + stylish women on holographic/VR feeds (Act I); "
-    "Master Mei Oriental/Asian ancestral forge guide (Act II); cord-severing liberation (Act III). "
-    "BAN distorted limbs, extra fingers, warped faces, static portraits, idle samurai. "
+    "VISUAL: Western-majority enslaved masses on holographic/VR feeds (Act I); "
+    "dynamic 2–5 disciple training with me supervising in background (Act II); "
+    "liberation / severing digital bondage (Act III). "
+    "BAN idle single-monk close-ups, static staring portraits, text/typography on frames. "
     "VOICE: pure spoken prose, ellipses between heavy truths. "
     "FORBIDDEN: emotion tags, SSML, wellness fluff, hustle-bro clichés, therapy-speak."
 )

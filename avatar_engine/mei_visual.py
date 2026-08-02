@@ -217,7 +217,10 @@ MONK_BAN: str = (
 )
 
 NEGATIVE_PROMPT_BAN_LIST: str = (
-    "NO repetitive monk headshots, NO static talking faces, NO generic temples, "
+    "text, words, typography, font, letters, sample, watermark, signature, "
+    "caption, quotes, UI elements, subtitles, labels, "
+    "NO repetitive monk headshots, NO static talking faces, NO idle single monk close-up, "
+    "NO blank stare into camera, NO generic temples, "
     "NO clean/happy futuristic cities, NO bare breasts, NO cleavage, NO nudity, "
     "NO missing limbs, NO broken sword, NO warped blade, NO floating metal, "
     "NO external VR goggles, NO floating sci-fi glasses, NO holding smartphone, "
@@ -227,10 +230,12 @@ NEGATIVE_PROMPT_BAN_LIST: str = (
 )
 
 FIXED_NEGATIVE_PROMPT: str = (
-    "--no old monk, bare breasts, cleavage, nudity, missing limbs, broken sword, "
-    "warped blade, floating metal, cartoon, glossy CGI, neon superhero suit, "
-    "figurine posing, VR goggles, floating glasses, clean skin, fitness model, "
-    "gym posing, high-fashion posing"
+    "--no text, words, typography, font, letters, sample, watermark, signature, "
+    "caption, quotes, UI elements, subtitles, labels, "
+    "idle monk close-up, static single monk, blank stare, bare breasts, cleavage, "
+    "nudity, missing limbs, broken sword, warped blade, floating metal, cartoon, "
+    "glossy CGI, neon superhero suit, figurine posing, VR goggles, floating glasses, "
+    "clean skin, fitness model, gym posing, high-fashion posing"
 )
 
 MEI_DNA_FALLBACK: str = (

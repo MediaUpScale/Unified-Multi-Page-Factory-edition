@@ -542,8 +542,8 @@ def build_sequence_script_prompt(
     _mode = (narrative_mode or "").strip().lower()
     if not _mode:
         _mode = "investigative"
-    _word_cap = 180 if _mode == "warrior_discipline" else 240
-    _word_cap_pad = 10 if _mode == "warrior_discipline" else 20
+    _word_cap = 230 if _mode == "warrior_discipline" else 240
+    _word_cap_pad = 20 if _mode == "warrior_discipline" else 20
 
     if total_words_target is not None:
         words_per_act = total_words_target // n_acts
@@ -560,19 +560,20 @@ def build_sequence_script_prompt(
             f"\n\nPREVIOUSLY USED OPENING LINES (DO NOT REPEAT OR PARAPHRASE):\n{lines}\n"
         )
 
-    _max_seconds_target = 90 if _mode == "warrior_discipline" else 100
+    _max_seconds_target = 100 if _mode == "warrior_discipline" else 100
+    _mei_min = 190 if _mode == "warrior_discipline" else 200
     pacing_note = (
-        f"Write for a SLOW, deliberate, solemn delivery (~100–110 spoken WPM before 0.80× TTS). "
+        f"Write for a SLOW, deliberate, solemn delivery (~130–140 spoken WPM before 0.92× TTS). "
         f"Each act must be approximately {words_per_act} words "
         f"(total EXACTLY {total_words}–{min(_word_cap, total_words + _word_cap_pad)} words across all {n_acts} acts; "
-        f"HARD CAP {_word_cap}). "
+        f"HARD CAP {_word_cap}; FLOOR {_mei_min} for Master Mei). "
         f"The spoken narration MUST naturally fill "
-        f"~{max(80, int(duration_s) - 10)}–{min(_max_seconds_target, int(duration_s))} "
+        f"~{max(80, int(duration_s) - 10)}–{min(_max_seconds_target, max(int(duration_s), 100))} "
         f"seconds of airtime. Do NOT write a short viral caption — write a FULL 4-Act script."
         if total_words_target is not None else
         f"Each act must be approximately {words_per_act} words "
         f"(total ~{total_words} words across all acts; Master Mei target "
-        f"{150 if _mode == 'warrior_discipline' else 200}–{_word_cap})."
+        f"{_mei_min}–{_word_cap})."
     )
 
     _directive_block = f"\nCHANNEL DIRECTIVE:\n{niche_disclaimer}\n" if niche_disclaimer else ""
@@ -604,16 +605,17 @@ AUDIENCE: Western / US men focused on self-mastery, discipline, tech-critique, a
 STRICT RULES:
 1. Divide the script into exactly {n_acts} acts using markers: [ACT 1], [ACT 2], ... [ACT {n_acts}].
 2. {pacing_note}
-3. Tone: deeply authoritative, solemn, uncompromising. Implacable. Brutally direct. DO NOT rush; heavy pauses between hard truths.
-4. VOICE PACING: Pure spoken prose only. Insert deliberate ellipses (`...`) between heavy statements. Prefer short sentences and strategic commas. Example: "Look around you... What do you truly see?"
-5. FORBIDDEN: ALL emotion/expression tags and SSML — never write `[cold chuckle]`, `[arrogant scoff]`, `[deep subtle laugh]`, `[cackles]`, or `<break …/>`.
-6. {_four_act}
-7. Core purpose (immutable): teach resilience of body, mind, spirit, and financial sovereignty — escape digital slavery, cheap dopamine, and trap beauty through uncompromising self-mastery.
-8. NEVER use hustle-bro clichés, therapy-speak, wellness fluff, or ancient-mystery conspiracy content. Never dump disconnected quotes.
-9. Do NOT write "Follow Master Mei", "Subscribe", or any channel follow CTA in the script — that CTA is stitched separately AFTER narration.
-10. NO headers, NO bullet points, NO markdown — pure spoken prose only (ellipsis pauses ARE required; bracketed sound tags are FORBIDDEN).
-11. Target 150–180 words total (≈80–90 s at 0.80× deliberate delivery). HARD CAP 180.
-12. Output ONLY the script with [ACT N] markers. No preamble, no labels, no meta commentary.
+3. POV LOCK: You ARE Master Mei. FIRST PERSON only ("I", "My disciples", "I demand", "My path"). NEVER third-person "Master Mei" in the script body.
+4. Tone: deeply authoritative, solemn, uncompromising. Implacable. Brutally direct. DO NOT rush; heavy pauses between hard truths.
+5. VOICE PACING: Pure spoken prose only. Insert deliberate ellipses (`...`) between heavy statements. Prefer short sentences and strategic commas. Example: "Look around you... What do you truly see?"
+6. FORBIDDEN: ALL emotion/expression tags and SSML — never write `[cold chuckle]`, `[arrogant scoff]`, `[deep subtle laugh]`, `[cackles]`, or `<break …/>`.
+7. {_four_act}
+8. Core purpose (immutable): teach resilience of body, mind, spirit, and financial sovereignty — diagnose how sensory numbness, instant gratification, and propaganda hijack perception.
+9. NEVER use hustle-bro clichés, therapy-speak, wellness fluff, or recycled template phrases (citadel, biomechanical cords, sirens, relentless practice, techno-slave, "silent war for your essence"). Invent a UNIQUE allegory every episode.
+10. Do NOT write "Follow Master Mei", "Subscribe", or any channel follow CTA in the script — that CTA is stitched separately AFTER narration.
+11. NO headers, NO bullet points, NO markdown — pure spoken prose only (ellipsis pauses ARE required; bracketed sound tags are FORBIDDEN).
+12. STRICT WORD COUNT: 190–230 words total (≈80–100 s at 0.92× deliberate delivery). HARD CAP 230. FLOOR 190.
+13. Output ONLY the script with [ACT N] markers. No preamble, no labels, no meta commentary.
 {anti_repeat_block}
 Write the complete {n_acts}-act script now:"""
 
