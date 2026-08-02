@@ -80,6 +80,7 @@ ROLE_A_NEGATIVE: str = (
     f"{_ORDINARY_BAN}, "
     "text, subtitles, words, typography, watermark, signature, caption, quotes, "
     "letters, script, labels, UI elements, overlay text, lower thirds, "
+    "static idle monk close-up, single idle monk portrait, passive meditation close-up, "
     "bionic implants, cybernetics, VR headset, glowing wires, neural cables, "
     "neon lights, cyberpunk city, smartphone, digital chains, robot arm, "
     "mechanical eye, futuristic tech on body, biomechanical, CRT monitors, "
@@ -87,23 +88,54 @@ ROLE_A_NEGATIVE: str = (
 )
 
 ROLE_B_SUBJECT: str = (
-    "Hardened Shaolin-style martial arts monks and disciples, male and female, "
-    "intense determined expressions, visible sweat, high-intensity physical discipline, "
-    "traditional martial training garments — NOT ordinary modern people"
+    "2 to 5 hardened Shaolin-style martial arts disciples, male and female, "
+    "full bodies in extreme physical action, intense determined expressions, "
+    "visible sweat and strain, high-intensity martial discipline, "
+    "traditional martial training garments — NOT ordinary modern people, "
+    "NEVER a single idle monk close-up"
 )
 
 ROLE_B_STYLE: str = (
     "Cinematic 8k photorealistic raw photography, high-intensity martial discipline, "
-    "dramatic rim lighting, sweat and water spray, organic grounded aesthetic"
+    "dynamic wide-to-medium action framing, dramatic rim lighting, "
+    "sweat and water spray, gritty realism, organic grounded aesthetic"
+)
+
+_IDLE_MONK_BAN: str = (
+    "static idle monk close-up, single idle monk portrait, passive meditation close-up, "
+    "blank stare monk, posing monk, frozen standing monk, headshot of one monk, "
+    "passive close-up of single disciple"
 )
 
 ROLE_B_NEGATIVE: str = (
-    f"{_ORDINARY_BAN}, "
+    f"{_ORDINARY_BAN}, {_IDLE_MONK_BAN}, "
     "text, subtitles, words, typography, watermark, signature, caption, quotes, "
     "letters, script, labels, UI elements, overlay text, lower thirds, "
     "Master Mei, elder sage, white beard mentor, bionic implants, cybernetics, "
     "VR headset, glowing wires, neon megacity, casual t-shirt, jeans, sneakers, "
     "deformed hands, extra limbs, blurry face, looking at viewer"
+)
+
+# Generalized Discipline / Forge training environments (rotate per act)
+_TRAINING_ENVIRONMENTS: tuple[str, ...] = (
+    # Option 1 — Alpine Cliff Balance
+    (
+        "ALPINE CLIFF BALANCE: 2 to 5 disciples balancing on one leg atop high wooden "
+        "posts over mist-shrouded mountain abysses — full bodies visible, extreme "
+        "focus and physical strain, wind whipping robes"
+    ),
+    # Option 2 — Torrential Temple Rain
+    (
+        "TORRENTIAL TEMPLE RAIN: 2 to 5 disciples performing synchronized heavy "
+        "staff and sword katas under pounding freezing rain outside an ancient "
+        "temple — water splashes, grit, full-body martial motion"
+    ),
+    # Option 3 — Extreme Strength
+    (
+        "EXTREME STRENGTH: 2 to 5 disciples carrying massive carved stone blocks "
+        "up steep mountain staircases through snow or sandstorm — visible muscle "
+        "strain, sweat, full bodies in resistance training"
+    ),
 )
 
 ROLE_C_SUBJECT: str = (
@@ -356,16 +388,53 @@ def environment_for_role(role: str, act_index: int) -> str:
     if role == ROLE_MASTER:
         return ROLE_A_ENVIRONMENTS[act_index % len(ROLE_A_ENVIRONMENTS)]
     if role == ROLE_DISCIPLE:
-        return (
-            "single focused monk tearing free from glowing digital chains in neon rain",
-            "martial monk mid-stance breaking a dopamine VR tether, determination",
-            "lone disciple running from megacity glow toward mountain temple silhouette",
-        )[act_index % 3]
+        return _TRAINING_ENVIRONMENTS[act_index % len(_TRAINING_ENVIRONMENTS)]
     return (
         "desolate cyberpunk wasteland under propaganda screens",
         "panopticon tower casting surveillance light on wired masses",
         "dark high-tech chamber of neural-collar slaves",
     )[act_index % 3]
+
+
+def build_training_discipline_prompt(
+    *,
+    visual_dna: str = "",
+    act_index: int = 0,
+    include_mei_supervisor: bool = True,
+) -> tuple[str, str]:
+    """
+    GENERAL RULE — Discipline / Forge / martial training frames.
+
+    NEVER static passive close-ups of a single idle monk.
+    ALWAYS dynamic wide-to-medium shot of 2–5 disciples in extreme training
+    under adversity, with Master Mei stoically supervising in the background
+    when ``include_mei_supervisor`` is True.
+    """
+    env = _TRAINING_ENVIRONMENTS[int(act_index) % len(_TRAINING_ENVIRONMENTS)]
+    mei = _clean_mei_dna(visual_dna) if include_mei_supervisor else ""
+    supervisor = (
+        f"In the BACKGROUND: {mei}, stoically supervising the forge with "
+        f"absolute stillness and authority — NOT a close-up portrait of Mei. "
+        if mei
+        else ""
+    )
+    positive = (
+        f"{ROLE_A_STYLE if include_mei_supervisor else ROLE_B_STYLE}. "
+        f"DYNAMIC WIDE-TO-MEDIUM DISCIPLINE SHOT: 2 to 5 disciples undergoing "
+        f"extreme martial arts, weapons, or physical resistance training under "
+        f"severe adversity — full bodies in action, visible physical strain, "
+        f"sweat and water splashes, gritty realism, dynamic lighting. "
+        f"{supervisor}"
+        f"ENVIRONMENT / ACTION: {env}. "
+        f"Traditional organic world only — no cybernetics. "
+        f"STRICT PROHIBITION: never a static passive close-up of a single idle monk. "
+        f"Pure visual scene, no text."
+    )
+    negative = (
+        f"{ROLE_A_NEGATIVE if include_mei_supervisor else ROLE_B_NEGATIVE}, "
+        f"{_IDLE_MONK_BAN}, selfie pose, looking at viewer"
+    )
+    return re.sub(r"\s{2,}", " ", positive).strip(), negative
 
 
 _BEAT_ALIASES: dict[str, str] = {
@@ -563,22 +632,16 @@ def build_role_prompt(
             "bionic implants, cybernetics, VR headset, glowing wires, "
             "neon city fused onto Master Mei, deformed hands, extra limbs, blurry face"
         )
-    elif beat == BEAT_TRAINING:
-        mei = _clean_mei_dna(visual_dna)
-        variants = (
-            "Master Mei actively instructing martial monks carrying heavy stone blocks "
-            "up ancient steps in harsh cold rain — sweat, grit, high physical intensity",
-            "Master Mei standing over disciples in waterfall training, barking form "
-            "corrections, cold rain and mist exploding around them",
-            "Master Mei demonstrating a martial stance while monks strain under "
-            "stone loads in storm light — cinematic hardship conditioning",
-        )
-        action = variants[act_index % len(variants)]
-        positive = (
-            f"{style}. "
-            f"{mei}. {action}. "
-            f"Traditional organic world only — no cybernetics on Master Mei. "
-            f"Pure visual scene, no text."
+    elif beat == BEAT_TRAINING or (
+        role == ROLE_MASTER
+        and _ROLE_B_KEYWORDS.search(chunk)
+        and beat not in (BEAT_INTRO, BEAT_OUTRO)
+    ):
+        # GENERAL RULE: Discipline / Forge — dynamic 2–5 disciples + Mei supervising
+        positive, negative = build_training_discipline_prompt(
+            visual_dna=visual_dna,
+            act_index=act_index,
+            include_mei_supervisor=True,
         )
     elif beat in (BEAT_MAYA, BEAT_GEARS, BEAT_PANOPTICON, BEAT_DOPAMINE):
         sync = _sync_shot_for_chunk(chunk, beat, shot_key=shot_key)
@@ -607,10 +670,11 @@ def build_role_prompt(
             f"{style}. {mei}. Environment: {env}. Pure visual scene, no text."
         )
     elif role == ROLE_DISCIPLE:
-        positive = (
-            f"{style}. {ROLE_B_SUBJECT}, intense training. "
-            f"Environment: {environment_for_role(role, act_index)}. "
-            f"Pure visual scene, no text."
+        # GENERAL RULE applies to any disciple martial/endurance frame
+        positive, negative = build_training_discipline_prompt(
+            visual_dna=visual_dna,
+            act_index=act_index,
+            include_mei_supervisor=bool(visual_dna),
         )
     else:
         # Role C fallback — still apply Narrative Synchronization Matrix

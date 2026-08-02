@@ -5,7 +5,7 @@ Primary bed: ElevenLabs Music API (music_v2) composition plan
   Chunk 2 (15s–end): [Stoic Sovereign Awakening] — epic dark synth / stoic pads
 
 Impact hook (t=0): ElevenLabs SFX
-  "Cinematic Braam, Dystopian Sub-Bass Heavy Drop" (2.5s) @ IMPACT_SFX_VOLUME=0.50
+  "Cinematic Braam, Dystopian Sub-Bass Drop" (2.5s) @ IMPACT_SFX_VOLUME=0.50
 
 Mix balances:
   VOICE_VOLUME_GAIN = 1.15 (+15%)

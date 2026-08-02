@@ -400,25 +400,26 @@ def compile_theme_prompt(
             f"{_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
         )
 
-    if t in ("training", "forge"):
-        # ROLE B default when DNA empty — disciples only (no Master contamination)
-        if dna:
-            return strip_banned_terms(
-                f"{style}. "
-                f"B-ROLL — MASTER + DISCIPLINE. {dna}. "
-                f"Master Mei guiding disciples at misty mountain peaks, roaring waterfall "
-                f"training, rain-soaked ancient temple — NO cybernetics on Master. "
-                f"Spoken beat: {chunk}. "
-                f"[Camera Motion]: {cam}. {_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
+    if t in ("training", "forge", "discipline"):
+        # GENERAL RULE: dynamic 2–5 disciples + Mei supervising (never idle monk close-up)
+        try:
+            from avatar_engine.visual_roles import build_training_discipline_prompt
+
+            pos, _neg = build_training_discipline_prompt(
+                visual_dna=dna,
+                act_index=hash(chunk or subject or "0") % 3,
+                include_mei_supervisor=bool(dna),
             )
-        return strip_banned_terms(
-            f"{style}. "
-            f"B-ROLL — DISCIPLES / CONDITIONING (ACTIVE). "
-            f"Young martial arts disciples carrying heavy stones, waterfall training, "
-            f"stances in torrential rain — organic physical discipline. {_NO_MEI_ON_CAMERA}. "
-            f"Spoken beat: {chunk}. "
-            f"[Camera Motion]: {cam}. {_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
-        )
+            return strip_banned_terms(
+                f"{pos} [Camera Motion]: {cam}. {_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
+            )
+        except Exception:
+            return strip_banned_terms(
+                f"{style}. DYNAMIC WIDE-TO-MEDIUM: 2 to 5 disciples in extreme martial "
+                f"training under adversity; Master Mei supervising in background. "
+                f"Never a static idle monk close-up. [Camera Motion]: {cam}. "
+                f"{_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
+            )
 
     if t == "focus":
         if dna:

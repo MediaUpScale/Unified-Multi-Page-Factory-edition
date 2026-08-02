@@ -42,24 +42,28 @@ _AMBIENT_PROMPT: str = (
 _TARGET_SAMPLE_RATE_HZ: int = 48000
 _SFX_CLIP_DURATION: float = 20.0
 _SFX_MODEL_ID: str = "eleven_text_to_sound_v2"
-_IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Heavy Drop"
+_IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Drop"
 _IMPACT_SFX_DURATION_S: float = 2.5
 _MUSIC_V2_MODEL: str = "music_v2"
 _MUSIC_V1_MODEL: str = "music_v1"
 
 # Strip raw code / bracket markers before TTS (never read aloud)
-_TTS_BRACKET_RE = re.compile(r"\[[^\]]*\]")
 _TTS_ANGLE_RE = re.compile(r"<[^>]+>")
 _TTS_CURLY_RE = re.compile(r"\{[^}]*\}")
 _TTS_CODE_FENCE_RE = re.compile(r"`{1,3}[^`]*`{1,3}")
 
 
 def strip_tts_markers(text: str) -> str:
-    """Remove brackets, SSML, curly cues, and code fences from TTS input."""
+    """Remove brackets, SSML, curly cues, and code fences from TTS input.
+
+    Primary filter (mandatory): ``re.sub(r'\\[.*?\\]', '', text)`` so tags like
+    ``[stoic]`` / ``[ACT 1]`` are never spoken aloud.
+    """
     clean = text or ""
+    # Mandatory bracket wipe (non-greedy, DOTALL for multi-line tags)
+    clean = re.sub(r"\[.*?\]", "", clean, flags=re.DOTALL)
     clean = re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", clean, flags=re.IGNORECASE)
     clean = _TTS_ANGLE_RE.sub(" ", clean)
-    clean = _TTS_BRACKET_RE.sub(" ", clean)
     clean = _TTS_CURLY_RE.sub(" ", clean)
     clean = _TTS_CODE_FENCE_RE.sub(" ", clean)
     clean = re.sub(r"[ \t]{2,}", " ", clean)

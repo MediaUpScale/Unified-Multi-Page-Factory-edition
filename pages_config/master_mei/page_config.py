@@ -261,7 +261,7 @@ AMBIENT_SFX_PROMPT: str = (
     "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm, "
     "NO generic noise bed"
 )
-IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Heavy Drop"
+IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Drop"
 # Local pad used only when music_v2 generation fails
 AMBIENT_AUDIO_RELPATH: str = "assets/master_mei/audio/ambient_cinematic_pad.mp3"
 

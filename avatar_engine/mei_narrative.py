@@ -447,16 +447,8 @@ def prepare_mei_tts_text(text: str) -> str:
     )
     clean = _SSML_OR_XML.sub(" ", clean)
 
-    # All bracket tags (emotion, ACT markers, pause tokens) → space or ellipsis
-    def _replace_bracket(m: re.Match[str]) -> str:
-        inner = (m.group(0) or "").strip("[]").strip().lower()
-        if re.match(r"act\s*\d+", inner):
-            return " "
-        if re.search(r"pause|beat|silence|chuckle|scoff|laugh|cackle|giggle|sigh|whisper", inner):
-            return " ... "
-        return " "
-
-    clean = _ANY_BRACKET_TAG.sub(_replace_bracket, clean)
+    # Mandatory: strip ALL bracketed tags so TTS never reads "[stoic]" aloud
+    clean = re.sub(r"\[.*?\]", "", clean, flags=re.DOTALL)
     # Curly / code-fence markers (never read aloud)
     clean = re.sub(r"\{[^}]*\}", " ", clean)
     clean = re.sub(r"`{1,3}[^`]*`{1,3}", " ", clean)
