@@ -3215,6 +3215,11 @@ def _produce_variant_worker(
                         else None
                     ),
                     ambient_duck_until_s=locals().get("_narr_dur", None),
+                    master_audio_gain=(
+                        page_ctx.master_audio_gain
+                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
+                        else None
+                    ),
                     ambient_profile=(
                         "warrior"
                         if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"

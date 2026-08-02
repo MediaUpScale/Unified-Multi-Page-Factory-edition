@@ -312,10 +312,11 @@ def _resolve_sequence_mp4_path(
 _REEL_WIDTH: int  = 1080
 _REEL_HEIGHT: int = 1920
 _DEFAULT_FPS: int = 30
-_AMBIENT_VOLUME: float = 0.16   # cinematic bed 14–18%; ducked under VO
+_AMBIENT_VOLUME: float = 0.38   # cinematic bed 35–40%; ducked under VO
 _VOICE_VOLUME_GAIN: float = 1.0   # no raw stream gain — loudnorm handles VO levels
 _AMBIENT_GAIN_MUL_DEFAULT: float = 1.0  # no compounding SFX boost (distortion fix)
-_AMBIENT_DUCK_RATIO_DEFAULT: float = 0.55  # × bed while voice plays
+_AMBIENT_DUCK_RATIO_DEFAULT: float = 0.70  # × bed while voice plays (still audible)
+_MASTER_AUDIO_GAIN_DEFAULT: float = 1.15   # +15% overall master after mix
 _AUDIO_SAMPLE_RATE: int = 48000   # force all mix tracks / AAC encode to 48 kHz
 
 _DEFAULT_N_ACTS: int   = 4
@@ -373,7 +374,7 @@ def _synthesize_ambient_drone(
         combined = drone * swell
         peak = float(np.max(np.abs(combined)))
         vol = (
-            max(0.14, min(0.18, float(volume)))
+            max(0.35, min(0.40, float(volume)))
             if (profile or "").lower() == "warrior"
             else max(0.08, float(volume))
         )
@@ -1317,10 +1318,12 @@ def compile_sequence_reel(
     voice_volume_gain: "float | None" = None,
     # Extra ambient/SFX multiplier after ambient_volume (default 1.40).
     ambient_gain_mul: "float | None" = None,
-    # Duck ambient under voice (0.55 = bed×55% while VO plays).
+    # Duck ambient under voice (0.70 = bed×70% while VO plays).
     ambient_duck_ratio: "float | None" = None,
     # Seconds of voice to duck under; default = full voice clip duration.
     ambient_duck_until_s: "float | None" = None,
+    # Overall master mix gain after loudnorm (+15% = 1.15).
+    master_audio_gain: "float | None" = None,
     # Procedural drone profile when no ambient file: "mystery" | "warrior"
     ambient_profile: str = "mystery",
     # Extra seconds after final audio so CTA sentence/subtitles never clip
@@ -1660,7 +1663,7 @@ def compile_sequence_reel(
     )
     _amb_profile = (ambient_profile or "mystery").strip().lower() or "mystery"
     if _amb_profile == "warrior":
-        _amb_vol = max(0.14, min(0.18, float(_amb_vol) * _AMBIENT_GAIN_MUL))
+        _amb_vol = max(0.35, min(0.40, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     else:
         _amb_vol = max(0.08, min(1.0, float(_amb_vol) * _AMBIENT_GAIN_MUL))
     _duck = (
@@ -1669,6 +1672,12 @@ def compile_sequence_reel(
         else _AMBIENT_DUCK_RATIO_DEFAULT
     )
     _duck = max(0.30, min(1.0, _duck))
+    _master_gain = (
+        float(master_audio_gain)
+        if master_audio_gain is not None and float(master_audio_gain) > 0
+        else _MASTER_AUDIO_GAIN_DEFAULT
+    )
+    _master_gain = max(1.0, min(1.50, _master_gain))
     _duck_until = (
         float(ambient_duck_until_s)
         if ambient_duck_until_s is not None and float(ambient_duck_until_s) > 0
@@ -1818,15 +1827,19 @@ def compile_sequence_reel(
                 pass
         gc.collect()
 
-    # Post-encode: force 48 kHz + loudnorm on the full mix (zero distortion)
-    _normalize_sequence_audio_48k(Path(output_path))
+    # Post-encode: 48 kHz + loudnorm + optional master gain (+15%)
+    _normalize_sequence_audio_48k(Path(output_path), master_gain=_master_gain)
 
     logger.info("Sequence reel complete: %s", output_path)
     return output_path
 
 
-def _normalize_sequence_audio_48k(mp4_path: Path) -> None:
-    """Re-mux MP4 audio through loudnorm + 48 kHz resample (video stream copy)."""
+def _normalize_sequence_audio_48k(
+    mp4_path: Path,
+    *,
+    master_gain: float = 1.15,
+) -> None:
+    """Re-mux MP4 audio through loudnorm + 48 kHz + master gain (video copy)."""
     import shutil
     import subprocess
 
@@ -1836,6 +1849,8 @@ def _normalize_sequence_audio_48k(mp4_path: Path) -> None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return
+    gain = max(1.0, min(1.50, float(master_gain or 1.0)))
+    af = f"loudnorm=I=-16:TP=-1.5:LRA=11,volume={gain:.3f}"
     tmp = path.with_suffix(".loudnorm48k_tmp.mp4")
     try:
         subprocess.run(
@@ -1843,7 +1858,7 @@ def _normalize_sequence_audio_48k(mp4_path: Path) -> None:
                 ffmpeg, "-y",
                 "-i", str(path),
                 "-c:v", "copy",
-                "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+                "-af", af,
                 "-ar", str(_AUDIO_SAMPLE_RATE),
                 "-c:a", "aac", "-b:a", "192k",
                 str(tmp),
@@ -1853,7 +1868,10 @@ def _normalize_sequence_audio_48k(mp4_path: Path) -> None:
             timeout=600,
         )
         tmp.replace(path)
-        logger.info("Final mix loudnorm+48kHz applied → %s", path.name)
+        logger.info(
+            "Final mix loudnorm+48kHz+master_gain=%.2f applied → %s",
+            gain, path.name,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Final mix loudnorm skipped: %s", exc)
         if tmp.is_file():

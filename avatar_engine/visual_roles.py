@@ -104,27 +104,72 @@ ROLE_B_NEGATIVE: str = (
 
 ROLE_C_SUBJECT: str = (
     "High-concept cinematic cyberpunk digital slaves — pale exhausted faces, "
-    "glowing neural collars, neon wires connected to brain and neck, "
-    "futuristic VR face visors — NOT ordinary modern people in t-shirts"
+    "clean futuristic neural interfaces, sleek fiber-optic tethers to necks, "
+    "advanced sensory-deprivation VR headsets — NOT ordinary people in t-shirts"
 )
 
 ROLE_C_STYLE: str = (
     "Cinematic 8k photorealistic raw photography, high-concept dark cyberpunk dystopia, "
     "Matrix / Maya illusion aesthetic, neon glow, high contrast, moody haze, "
-    "extreme production value — never ordinary lifestyle photography"
+    "clean futuristic technology, extreme production value — never ordinary lifestyle"
+)
+
+# STRICT: high-concept cyberpunk only — never gore / body horror
+_SAFETY_BAN: str = (
+    "NO blood, NO gore, NO open flesh wounds, NO graphic body horror, NO mutilation, "
+    "NO exposed organs, NO Giger biomechanical horror — clean sleek cybernetic integration only"
 )
 
 ROLE_C_NEGATIVE: str = (
-    f"{_ORDINARY_BAN}, "
+    f"{_ORDINARY_BAN}, {_SAFETY_BAN}, "
     "Master Mei, elder sage, white beard, topknot master, ancient Asian master, "
     "temple balcony, bamboo forest, tatami room, waterfall training monks, "
-    "casual t-shirt, jeans, sneakers, bland crowd, "
+    "casual t-shirt, jeans, sneakers, bland crowd, blood, gore, open wounds, "
     "deformed hands, extra limbs, blurry face, looking at viewer"
+)
+
+# Wide-angle mass-control vistas
+_WIDE_WASTELAND: str = (
+    "WIDE-ANGLE: desolate devastated futuristic wasteland dominated by colossal matrix "
+    "propaganda towers, glowing neon monoliths, and panopticon structures; vast masses of "
+    "enslaved humans standing in uniform trance-like states, physically controlled by ambient "
+    "energy fields and massive sky-high digital screens"
+)
+
+# Close-up biomechanical enslavement (clean tech — no gore)
+_CLOSEUP_IMPLANT: str = (
+    "CLOSE-UP DETAIL: gradual technological integration — microchips and neural nodes "
+    "integrated cleanly into the base of the skull and temples; glowing high-tech electrical "
+    "circuitry illuminated subtly beneath skin tracing along the spine; sleek fiber-optic "
+    "cables and glowing data cords connected to neck and upper body tethering to a central "
+    "power grid; advanced sensory-deprivation VR headset / cybernetic goggles clamped tightly "
+    f"over eyes. {_SAFETY_BAN}"
+)
+
+_SEDUCTION_DEVICE: str = (
+    "SEDUCTION / INSTANT DOPAMINE: sleek personal devices, subtle glowing headbands, "
+    "alluring holographic interfaces, soft neon UI reflecting on trance faces — "
+    "seductive clean tech addiction, no gore"
 )
 
 _ROLE_C_KEYWORDS: re.Pattern[str] = re.compile(
     r"\b(?:machine|dopamine|digital|matrix|slaver(?:y|ies)?|chains?|"
-    r"scroll|distract|addict|phone|maya|propaganda|panopticon|gear)\b",
+    r"scroll|distract|addict|phone|maya|propaganda|panopticon|gear|"
+    r"seduc|allure|tempt|instant|enslav|implant|headset|vr)\b",
+    re.IGNORECASE,
+)
+
+# Spoken-beat sync cues (within Matrix / Trap bands)
+_SYNC_SEDUCTION: re.Pattern[str] = re.compile(
+    r"\b(?:seduc|allure|tempt|dopamine|instant|pleasure|scroll|phone|device|feed)\b",
+    re.IGNORECASE,
+)
+_SYNC_INSIDIOUS: re.Pattern[str] = re.compile(
+    r"\b(?:enslav|implant|skull|spine|eye|headset|vr|neural|wire|cable|integration|trap)\b",
+    re.IGNORECASE,
+)
+_SYNC_SYSTEMIC: re.Pattern[str] = re.compile(
+    r"\b(?:system|mass|crowd|tower|panopticon|gear|propaganda|wasteland|surveillance|herd)\b",
     re.IGNORECASE,
 )
 _ROLE_B_KEYWORDS: re.Pattern[str] = re.compile(
@@ -252,6 +297,27 @@ def environment_for_role(role: str, act_index: int) -> str:
     )[act_index % 3]
 
 
+_BEAT_ALIASES: dict[str, str] = {
+    "dopamine": BEAT_DOPAMINE,
+    "dopamine_trap": BEAT_DOPAMINE,
+    "breakfree": BEAT_BREAKFREE,
+    "break_free": BEAT_BREAKFREE,
+    "matrix": BEAT_MAYA,
+    "maya": BEAT_MAYA,
+    "gears": BEAT_GEARS,
+    "panopticon": BEAT_PANOPTICON,
+    "intro": BEAT_INTRO,
+    "outro": BEAT_OUTRO,
+    "training": BEAT_TRAINING,
+    "cta": BEAT_OUTRO,
+}
+
+
+def _normalize_beat(beat: str) -> str:
+    key = (beat or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return _BEAT_ALIASES.get(key, key)
+
+
 def build_role_prompt(
     *,
     role: str,
@@ -273,6 +339,7 @@ def build_role_prompt(
     if not beat:
         lore = frame_lore_for_acts(max(act_index + 1, 10))
         beat = lore[min(act_index, len(lore) - 1)][1]
+    beat = _normalize_beat(beat)
 
     chunk = (spoken_beat or subject or "").strip()
     style = style_for_role(role)
@@ -322,37 +389,13 @@ def build_role_prompt(
             f"Traditional organic world ONLY — no cybernetics on Master Mei. "
             f"Spoken beat: {chunk}."
         )
-    elif beat == BEAT_MAYA:
+    elif beat in (BEAT_MAYA, BEAT_GEARS, BEAT_PANOPTICON, BEAT_DOPAMINE):
+        # Dynamic Narrative Synchronization Matrix (spoken-beat → shot type)
+        sync = _sync_shot_for_chunk(chunk, beat)
         positive = (
             f"{ROLE_C_STYLE}. "
-            f"[FRAMES 2-4 MATRIX / ILLUSION OF MAYA]: Rich metaphoric imagery — "
-            f"a biomechanical Maya goddess/entity holding glowing digital chains "
-            f"around human necks in a desolate cyberpunk wasteland. "
-            f"High-concept cinematic, NOT ordinary people. Spoken beat: {chunk}."
-        )
-        negative = ROLE_C_NEGATIVE
-    elif beat == BEAT_GEARS:
-        positive = (
-            f"{ROLE_C_STYLE}. "
-            f"[FRAMES 2-4 MATRIX]: Masses of cyberpunk slaves tethered to massive "
-            f"mechanical gears and propaganda screens in a desolate wasteland — "
-            f"glowing neural collars, neon wires, VR face visors. Spoken beat: {chunk}."
-        )
-        negative = ROLE_C_NEGATIVE
-    elif beat == BEAT_PANOPTICON:
-        positive = (
-            f"{ROLE_C_STYLE}. "
-            f"[FRAMES 2-4 MATRIX]: Panopticon surveillance towers loom over herds of "
-            f"wired digital slaves in neon rain — biomechanical control imagery, "
-            f"high-concept dystopia. Spoken beat: {chunk}."
-        )
-        negative = ROLE_C_NEGATIVE
-    elif beat == BEAT_DOPAMINE:
-        positive = (
-            f"{ROLE_C_STYLE}. "
-            f"[FRAMES 8-9 DIGITAL TRAP]: Dystopian crowds consumed by cheap dopamine "
-            f"devices, glowing screens fused to faces, slumped posture, neural tethers — "
-            f"high-concept Matrix addiction. Spoken beat: {chunk}."
+            f"[MATRIX SYNC:{sync['label']}] {sync['shot']}. "
+            f"{_SAFETY_BAN}. Spoken beat: {chunk}."
         )
         negative = ROLE_C_NEGATIVE
     elif beat == BEAT_BREAKFREE:
@@ -375,10 +418,14 @@ def build_role_prompt(
             f"ENVIRONMENT: {environment_for_role(role, act_index)}. Spoken beat: {chunk}."
         )
     else:
+        # Role C fallback — still apply Narrative Synchronization Matrix
+        sync = _sync_shot_for_chunk(chunk, beat or BEAT_MAYA)
         positive = (
-            f"{style}. [SUBJECT]: {ROLE_C_SUBJECT}. "
-            f"ENVIRONMENT: {environment_for_role(role, act_index)}. Spoken beat: {chunk}."
+            f"{ROLE_C_STYLE}. "
+            f"[MATRIX SYNC:{sync['label']}] {sync['shot']}. "
+            f"{_SAFETY_BAN}. Spoken beat: {chunk}."
         )
+        negative = ROLE_C_NEGATIVE
 
     positive = re.sub(r"\s{2,}", " ", positive).strip()
     return positive, negative
@@ -393,3 +440,53 @@ def _clean_mei_dna(visual_dna: str) -> str:
         flags=re.IGNORECASE,
     )
     return re.sub(r"\s{2,}", " ", mei).strip(" ,.")
+
+
+def _sync_shot_for_chunk(chunk: str, beat: str) -> dict[str, str]:
+    """
+    Map voiceover beat → wide / close / seduction shot language.
+
+    Seduction & Instant Dopamine → sleek devices / headbands
+    Insidious Enslavement → clean implant close-ups (no gore)
+    Systemic Slavery → wide wasteland / gears / panopticon
+    """
+    text = chunk or ""
+    if _SYNC_SEDUCTION.search(text) or beat == BEAT_DOPAMINE:
+        return {
+            "label": "SEDUCTION_DOPAMINE",
+            "shot": (
+                f"{_SEDUCTION_DEVICE}. Optional soft {_CLOSEUP_IMPLANT} if beat implies "
+                f"deeper trap — still {_SAFETY_BAN}"
+            ),
+        }
+    if _SYNC_INSIDIOUS.search(text) or beat == BEAT_MAYA:
+        return {
+            "label": "INSIDIOUS_ENSLAVEMENT",
+            "shot": (
+                f"{_CLOSEUP_IMPLANT}. Metaphoric Maya / digital illusion energy around the "
+                f"subject — clean cyberpunk, {_SAFETY_BAN}"
+            ),
+        }
+    if _SYNC_SYSTEMIC.search(text) or beat in (BEAT_GEARS, BEAT_PANOPTICON):
+        return {
+            "label": "SYSTEMIC_SLAVERY",
+            "shot": (
+                f"{_WIDE_WASTELAND}; endless human masses tied to giant biomechanical gears "
+                f"and panopticon surveillance monitors — {_SAFETY_BAN}"
+            ),
+        }
+    # Beat-default fallbacks
+    if beat == BEAT_GEARS:
+        return {
+            "label": "SYSTEMIC_GEARS",
+            "shot": f"{_WIDE_WASTELAND}; slaves tethered to massive mechanical gears. {_SAFETY_BAN}",
+        }
+    if beat == BEAT_PANOPTICON:
+        return {
+            "label": "SYSTEMIC_PANOPTICON",
+            "shot": f"{_WIDE_WASTELAND}. {_SAFETY_BAN}",
+        }
+    return {
+        "label": "MATRIX_DEFAULT",
+        "shot": f"{_CLOSEUP_IMPLANT}. {_SAFETY_BAN}",
+    }

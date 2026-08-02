@@ -835,24 +835,33 @@ class PageContext:
         """
         Ambient BGM bed volume (0–1) mixed under voiceover.
         Sourced from AMBIENT_VOLUME in page_config.py.
-        Master Mei cinematic bed locked to 0.14–0.18 (audible + ducked under VO).
+        Master Mei cinematic bed locked to 0.35–0.40 (distinctly audible under VO).
         """
         try:
-            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.16))
+            val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.38))
             if (self.page_id or "").lower() == "master_mei":
-                return max(0.14, min(0.18, val))
+                return max(0.35, min(0.40, val))
             return max(0.08, min(1.0, val))
         except (TypeError, ValueError):
-            return 0.16
+            return 0.38
 
     @property
     def ambient_duck_ratio(self) -> float:
-        """Multiply ambient by this while voiceover plays (Master Mei default 0.55)."""
+        """Multiply ambient by this while voiceover plays (Master Mei default 0.70)."""
         try:
-            val = float(self.page_cfg.get("AMBIENT_DUCK_RATIO", 0.55))
+            val = float(self.page_cfg.get("AMBIENT_DUCK_RATIO", 0.70))
             return max(0.30, min(1.0, val))
         except (TypeError, ValueError):
-            return 0.55
+            return 0.70
+
+    @property
+    def master_audio_gain(self) -> float:
+        """Overall master mix gain after loudnorm (Master Mei default +15% = 1.15)."""
+        try:
+            val = float(self.page_cfg.get("MASTER_AUDIO_GAIN", 1.15))
+            return max(1.0, min(1.50, val))
+        except (TypeError, ValueError):
+            return 1.15
 
     @property
     def voice_volume_gain(self) -> "float | None":

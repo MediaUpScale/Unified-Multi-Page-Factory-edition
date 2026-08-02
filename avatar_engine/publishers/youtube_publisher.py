@@ -44,6 +44,11 @@ class YouTubeQuotaExceededError(RuntimeError):
     ``queue_pending_upload`` / ``queue_pending_upload_from_envelope`` and let
     the pipeline complete gracefully instead of crashing."""
 
+
+class YouTubeChannelMismatchError(RuntimeError):
+    """Raised when the OAuth token is authorized for the wrong Brand Account."""
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -109,9 +114,10 @@ _PAGE_PLAYLIST_DESCRIPTIONS: dict[str, str] = {
     "master_mei": _MASTER_MEI_PLAYLIST_DESCRIPTION,
 }
 
-# Optional expected channel title hints (logged as warnings on mismatch only).
+# Expected channel title substrings (enforce on upload; mismatch → token wipe + re-auth).
+# Master Mei matches "Master Mei" / "Master Mei | Mind Control" — rejects Ancient Knowledge tokens.
 _PAGE_EXPECTED_CHANNEL_HINTS: dict[str, str] = {
-    "master_mei": "Master Mei | Mind Control",
+    "master_mei": "Master Mei",
     "ancient_knowledge": "Ancient Knowledge",
 }
 
@@ -334,12 +340,21 @@ def fetch_authorized_channel(youtube) -> dict[str, str]:
 def verify_authorized_channel(
     youtube,
     page_name: str = "",
+    *,
+    enforce: bool = True,
 ) -> dict[str, str]:
-    """Fetch and log the authorised channel before any upload."""
+    """
+    Fetch and log the authorised channel before any upload.
+
+    When *enforce* is True and the channel title does not match the page hint
+    (e.g. Master Mei token authorized for Ancient Knowledge), raises
+    ``YouTubeChannelMismatchError`` so callers can delete the token and re-auth.
+    """
     info = fetch_authorized_channel(youtube)
     title = info["title"]
     ch_id = info["id"]
     custom = info["customUrl"]
+    slug = _sanitize_page_name(page_name) if page_name else "?"
 
     msg = (
         f'[YouTube Uploader] Authorized target channel: "{title}" '
@@ -349,23 +364,77 @@ def verify_authorized_channel(
     print(msg)
     _LOG.info(
         "YouTube channel verified | page=%s title=%r id=%s customUrl=%s",
-        _sanitize_page_name(page_name) if page_name else "?",
+        slug,
         title,
         ch_id,
         custom,
     )
 
-    hint = _PAGE_EXPECTED_CHANNEL_HINTS.get(_sanitize_page_name(page_name), "")
+    hint = _PAGE_EXPECTED_CHANNEL_HINTS.get(slug, "")
     if hint and hint.lower() not in title.lower():
         warn = (
-            f'[YouTube Uploader] WARNING: page="{page_name}" expected a channel '
-            f'containing "{hint}", but token is authorized for "{title}". '
-            "Abort and re-auth if this is the wrong Brand Account."
+            f'[YouTube Uploader] CHANNEL MISMATCH: page="{page_name}" expected a channel '
+            f'containing "{hint}", but token is authorized for "{title}".'
         )
         print(warn)
         _LOG.warning(warn)
+        if enforce:
+            raise YouTubeChannelMismatchError(
+                f'Page "{slug}" expects channel containing "{hint}", '
+                f'but OAuth token is for "{title}".'
+            )
 
     return info
+
+
+def invalidate_youtube_token(
+    page_name: str,
+    token_dir: Optional[str | Path] = None,
+) -> Path | None:
+    """Delete the page-isolated YouTube token so the next auth is a clean OAuth."""
+    path = resolve_youtube_token_path(page_name, token_dir)
+    if path.is_file():
+        try:
+            path.unlink()
+            _LOG.warning("Deleted mismatched YouTube token → %s", path)
+            print(f"[YouTube Auth] Deleted mismatched token → {path}")
+            return path
+        except OSError as exc:
+            _LOG.error("Failed to delete YouTube token %s: %s", path, exc)
+    return None
+
+
+def build_youtube_client_for_page(
+    page_name: str,
+    client_secrets_path: Optional[str | Path] = None,
+    token_dir: Optional[str | Path] = None,
+    *,
+    enforce_channel: bool = True,
+):
+    """
+    Build an authorised YouTube client and enforce the expected channel.
+
+    On mismatch: delete ``youtube_token_{page}.json`` and re-run OAuth once.
+    """
+    slug = _sanitize_page_name(page_name)
+    creds = build_credentials(slug, client_secrets_path, token_dir)
+    youtube = build_youtube_client(creds)
+    try:
+        verify_authorized_channel(youtube, page_name=slug, enforce=enforce_channel)
+    except YouTubeChannelMismatchError:
+        if not enforce_channel:
+            raise
+        print(
+            f"\n[YouTube Auth] Wrong channel for '{slug}'. "
+            "Invalidating token and launching clean OAuth re-auth …\n"
+            "Select the correct Brand Account "
+            f'("{_PAGE_EXPECTED_CHANNEL_HINTS.get(slug, slug)}").\n'
+        )
+        invalidate_youtube_token(slug, token_dir)
+        creds = build_credentials(slug, client_secrets_path, token_dir)
+        youtube = build_youtube_client(creds)
+        verify_authorized_channel(youtube, page_name=slug, enforce=True)
+    return youtube
 
 
 def _get_channel_id(youtube) -> str:
@@ -652,6 +721,34 @@ def _extract_hashtags(text: str) -> list[str]:
     return list(dict.fromkeys(tag.lower() for tag in _re.findall(r"#(\w+)", text or "")))
 
 
+def sanitize_youtube_title(
+    title: str,
+    page_name: str = "",
+) -> tuple[str, list[str]]:
+    """
+    High-CTR US title sanitizer.
+
+    Strips ``#hashtags`` and brand strings (``MASTER MEI``, ``Master Mei | …``)
+    from the title. Returns ``(clean_title, hashtags_for_description)``.
+    """
+    raw = (title or "").strip() or "Untitled Short"
+    tags = _extract_hashtags(raw)
+    clean = _re.sub(r"#\w+", " ", raw)
+    slug = _sanitize_page_name(page_name)
+    if slug == "master_mei":
+        clean = _re.sub(r"(?i)\bMASTER\s*MEI\b", " ", clean)
+        clean = _re.sub(r"(?i)\bMaster\s*Mei\b", " ", clean)
+        clean = _re.sub(r"(?i)\|\s*Mind\s*Control\b", " ", clean)
+        clean = _re.sub(r"(?i)\bMind\s*Control\b", " ", clean)
+    # Collapse leftover pipes / punctuation noise
+    clean = _re.sub(r"\s*[|·•]\s*", " — ", clean)
+    clean = _re.sub(r"(?:\s*—\s*){2,}", " — ", clean)
+    clean = _re.sub(r"\s{2,}", " ", clean).strip(" —-|·•")
+    if not clean:
+        clean = "The Discipline They Don't Want You to Learn"
+    return clean[:100], tags
+
+
 def _default_tags_for_page(page_name: str) -> list[str]:
     slug = _sanitize_page_name(page_name)
     if slug == "master_mei":
@@ -799,7 +896,8 @@ def upload_short(
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
     page_slug = _sanitize_page_name(page_name)
-    safe_title = (title or "Untitled Short")[:100]
+    # High-CTR title: strip #hashtags + MASTER MEI brand; move tags to description
+    safe_title, title_hashtags = sanitize_youtube_title(title, page_slug)
     # Sanitize to a plain string + truncate to 4000 chars BEFORE any further
     # string-only processing below — prevents HttpError 400 (invalidDescription)
     # from raw JSON structures or oversized text leaking into the API payload.
@@ -813,9 +911,19 @@ def upload_short(
             description,
         )
         if "Warrior Discipline" in safe_title or "warrior discipline" in safe_title.lower():
-            safe_title = "Stoic Financial Freedom | Master Mei"
+            safe_title = "Stoic Financial Freedom"
+    # Append title-stripped hashtags into description (never leave them in the title)
+    if title_hashtags:
+        hash_line = " ".join(f"#{t}" for t in title_hashtags)
+        if hash_line.lower() not in (description or "").lower():
+            description = (
+                f"{description.rstrip()}\n\n{hash_line}" if description else hash_line
+            )
+            description = sanitize_youtube_description(description)
     file_mb = video_path.stat().st_size / 1_048_576
-    tag_list = _normalize_tags(tags, page_slug, description)
+    tag_list = _normalize_tags(
+        list(tags or []) + title_hashtags, page_slug, description
+    )
     # Never ship deprecated martial tags on Master Mei uploads.
     if page_slug == "master_mei":
         tag_list = [
@@ -848,15 +956,24 @@ def upload_short(
         )
 
     if youtube is None:
-        creds = build_credentials(page_slug, client_secrets_path, token_dir)
-        youtube = build_youtube_client(creds)
-
-    # CRITICAL: confirm which channel this page token actually owns
-    verify_authorized_channel(youtube, page_name=page_slug)
+        # Enforces channel match; deletes token + re-auths on mismatch
+        youtube = build_youtube_client_for_page(
+            page_slug, client_secrets_path, token_dir, enforce_channel=True
+        )
+    else:
+        # CRITICAL: confirm which channel this page token actually owns
+        try:
+            verify_authorized_channel(youtube, page_name=page_slug, enforce=True)
+        except YouTubeChannelMismatchError:
+            youtube = build_youtube_client_for_page(
+                page_slug, client_secrets_path, token_dir, enforce_channel=True
+            )
 
     status_body: dict = {
         "privacyStatus": effective_privacy,
         "selfDeclaredMadeForKids": False,
+        # YouTube AI / synthetic media disclosure (best practice)
+        "containsSyntheticMedia": True,
     }
     if scheduled_str:
         status_body["publishAt"] = scheduled_str
@@ -878,20 +995,36 @@ def upload_short(
         resumable=True,
     )
 
-    request = youtube.videos().insert(
-        part=",".join(body.keys()),
-        body=body,
-        media_body=media,
-    )
+    def _insert(yt_client, payload: dict):
+        return yt_client.videos().insert(
+            part=",".join(payload.keys()),
+            body=payload,
+            media_body=media,
+        )
 
+    request = _insert(youtube, body)
     response = None
     last_pct = -1
     file_bytes = video_path.stat().st_size
+    _synthetic_retried = False
 
     while response is None:
         try:
             status_chunk, response = request.next_chunk()
         except HttpError as exc:
+            # Older API surfaces may reject containsSyntheticMedia — retry once without it
+            err_txt = str(exc).lower()
+            if not _synthetic_retried and (
+                "containssyntheticmedia" in err_txt
+                or ("synthetic" in err_txt and "invalid" in err_txt)
+            ):
+                _synthetic_retried = True
+                status_body.pop("containsSyntheticMedia", None)
+                _LOG.warning(
+                    "containsSyntheticMedia rejected by API — retrying upload without it."
+                )
+                request = _insert(youtube, body)
+                continue
             if _is_upload_limit_error(exc):
                 _LOG.warning(
                     "[YouTube] Daily upload limit (20 videos) reached for this channel."

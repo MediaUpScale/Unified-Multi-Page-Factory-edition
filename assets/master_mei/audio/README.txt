@@ -1,10 +1,12 @@
-Optional: drop ambient_cinematic_pad.mp3 here.
-If present, the reel pipeline prefers this local cinematic pad over ElevenLabs SFX.
-Otherwise AMBIENT_SFX_PROMPT from page_config.py is sent to ElevenLabs sound-generation.
+Master Mei ambient bed
+======================
+Preferred file: ambient_cinematic_pad.mp3
+Prompt: dark atmospheric synth pad + cinematic sub-bass drone
+        (no rain / thunder / white noise / hiss)
 
-Target soundscape: Dark Atmospheric Synth Pad + Inspiring Cinematic Sub-Bass Drone.
-DO NOT use rain / storm / white-noise loops — they cause hiss and clipping.
-Legacy ambient_martial_loop.mp3 (rain) is intentionally ignored.
+Bed volume: AMBIENT_VOLUME=0.38 (clamped 0.35–0.40), ducked to ~70% while
+voiceover plays, then restored for CTA/tail. Master mix +15%
+(MASTER_AUDIO_GAIN=1.15) applied post-encode after loudnorm.
 
-Bed volume: AMBIENT_VOLUME=0.16 (14–18%), ducked to ~55% while voiceover plays,
-then restored for CTA/tail. All tracks force-resampled to 48000 Hz.
+Do not drop legacy rain/martial rain loops here — filenames matching rain
+are banned by the ambient resolver.

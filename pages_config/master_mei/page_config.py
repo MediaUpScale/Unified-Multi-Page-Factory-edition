@@ -244,16 +244,19 @@ MASTER_STYLE_ANCHOR: str = (
 
 # ---------------------------------------------------------------------------
 # Ambient audio — Dark Atmospheric Synth Pad + Inspiring Cinematic Sub-Bass Drone
-# Bed 14–18%; ducked under VO (~55% of bed) so it stays impactful without clipping.
+# Bed 35–40%; ducked under VO (~70% of bed) so pads stay distinctly audible.
+# Final master mix gets +15% after loudnorm (see reel_sequence_engine).
 # ---------------------------------------------------------------------------
-AMBIENT_VOLUME: float = 0.16
+AMBIENT_VOLUME: float = 0.38
 VOICE_VOLUME_GAIN: float = 1.0       # no raw API/stream gain — loudnorm handles levels
 AMBIENT_SFX_GAIN_MUL: float = 1.0    # disable compounding SFX boost (distortion fix)
-AMBIENT_DUCK_RATIO: float = 0.55     # ambient × this while voice plays
+AMBIENT_DUCK_RATIO: float = 0.70     # ambient × this while voice plays (still audible)
+MASTER_AUDIO_GAIN: float = 1.15      # +15% overall master output after mix
 AMBIENT_SFX_PROMPT: str = (
     "Dark atmospheric synth pad combined with an inspiring cinematic sub-bass drone, "
-    "deep low-frequency swell, subtle inspirational harmonic pad, seamless loop, 60 BPM, "
-    "warm dark cinematic underscore, no vocals, no melody lead, "
+    "futuristic environmental ambience, deep low-frequency swell, subtle inspirational "
+    "harmonic pad, seamless loop, 60 BPM, warm dark cinematic underscore, "
+    "no vocals, no melody lead, "
     "NO rain, NO thunder, NO white noise, NO hiss, NO static, NO water drops, NO storm"
 )
 # Prefer new cinematic pad; do NOT use legacy rain/martial rain loops
