@@ -108,6 +108,53 @@ def list_reference_images(style_folder: Path | str) -> list[Path]:
     ]
 
 
+def _build_lofi_critic_instruction(
+    channel_name: str,
+    rules: dict[str, Any],
+    quality_threshold: float,
+    n_refs: int,
+) -> str:
+    forbidden = ", ".join(rules.get("forbidden_tokens") or [])
+    mandatory = ", ".join(rules.get("mandatory_elements") or [])
+    lighting = rules.get("lighting_style") or ""
+    audience = rules.get("target_audience_rules") or ""
+    return f"""
+You are an Art Director for LOFI economic illustration reels ("{channel_name}").
+
+You are given:
+- IMAGE 1 = NEW CANDIDATE (judge the PIXELS, not the prompt text)
+- OPTIONAL REFERENCE STYLE IMAGES 1–{n_refs}
+
+CHANNEL RULES:
+- FORBIDDEN: {forbidden}
+- MANDATORY: {mandatory}
+- LIGHTING: {lighting}
+- AUDIENCE: {audience}
+
+EVALUATE ONLY:
+1) Illustration style consistency — ink/graphic-novel look; FAIL if photorealistic drift.
+2) Anatomy — malformed hands/faces beyond acceptable illustration threshold.
+3) Text artifacts — no embedded/garbled letters, logos, or UI burned into the image.
+4) Framing — vertical/portrait-friendly composition suitable for 9:16 reels; subject readable.
+
+Do NOT apply Master Mei dystopian / body-horror criteria.
+Do NOT require fitness-model hard caps.
+
+SCORING GUIDE:
+- 9.0–10.0: clean LOFI illustration, on-style, no text artifacts
+- {quality_threshold}–8.9: minor issues, still approvable
+- Below {quality_threshold}: FAIL (photoreal drift, bad anatomy, text artifacts, wrong framing)
+
+Set passed=true ONLY if score >= {quality_threshold} AND no hard flaws above.
+
+Return JSON fields exactly:
+  score (float 0–10),
+  passed (boolean),
+  flaws (list of strings),
+  fix_instructions (string — actionable FLUX rewrite directives; empty if passed).
+""".strip()
+
+
 def _build_critic_instruction(
     channel_name: str,
     rules: dict[str, Any],
@@ -115,6 +162,12 @@ def _build_critic_instruction(
     hard_cap: float,
     n_refs: int,
 ) -> str:
+    profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
+    if profile == "lofi_economic" or channel_name == "lofi_economic":
+        return _build_lofi_critic_instruction(
+            channel_name, rules, quality_threshold, n_refs,
+        )
+
     forbidden = ", ".join(rules.get("forbidden_tokens") or [])
     mandatory = ", ".join(rules.get("mandatory_elements") or [])
     lighting = rules.get("lighting_style") or ""
@@ -285,9 +338,13 @@ def evaluate_image(
     if not model_id.startswith("models/"):
         model_id = f"models/{model_id}"
 
+    profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
+    is_lofi = profile == "lofi_economic" or channel_name == "lofi_economic"
+
     _console.print(
         f"[cyan]CRITIC[/cyan] Gemini Vision | candidate={candidate_label} | "
         f"refs={len(refs)} (ALL loaded) | channel={channel_name} | model={model_id}"
+        + (" | profile=lofi_economic" if is_lofi else "")
     )
 
     response = client.models.generate_content(
@@ -319,7 +376,8 @@ def evaluate_image(
         except Exception:
             verdict = CriticVerdict.model_validate(json.loads(text))
 
-    verdict = _apply_hard_cap(verdict, hard_cap)
+    if not is_lofi:
+        verdict = _apply_hard_cap(verdict, hard_cap)
 
     if verdict.score < threshold:
         verdict.passed = False

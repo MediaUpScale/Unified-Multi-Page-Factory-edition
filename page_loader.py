@@ -4,12 +4,13 @@ Page context loader for the Unified Multi-Page Factory.
 
 Resolves page-specific paths and pipeline flags from the active --page,
 --avatar, and --format CLI arguments. Each page lives in an isolated
-directory under pages_config/{page_id}/ and carries its own:
+directory under channels_config/{page_id}/ and carries its own:
 
   - master_dna.json      — persona data, environments, voice, CTAs
   - persona_dna.py       — Python interface over master_dna.json
   - page_config.py       — page-level overrides (aspect ratio, atmosphere style, etc.)
   - avatar_reference/    — optional: avatar.png for likeness-locked generation
+  - voice_reference/     — optional: F5-TTS ref wav + matching transcript .txt
   - product_reference/   — optional: PDF corpus for the research brain
 
 Supported pages
@@ -136,7 +137,19 @@ VALID_FORMATS: tuple[str, ...] = (
 )
 
 _ENGINE_ROOT: Path = Path(__file__).resolve().parent
-_PAGES_CONFIG_ROOT: Path = _ENGINE_ROOT / "pages_config"
+_CHANNELS_CONFIG_ROOT: Path = _ENGINE_ROOT / "channels_config"
+_LEGACY_PAGES_CONFIG_ROOT: Path = _ENGINE_ROOT / "pages_config"
+
+
+def _resolve_channels_config_root() -> Path:
+    """Prefer channels_config/; fall back to historic pages_config/."""
+    if _CHANNELS_CONFIG_ROOT.is_dir():
+        return _CHANNELS_CONFIG_ROOT
+    return _LEGACY_PAGES_CONFIG_ROOT
+
+
+# Back-compat alias for callers that imported the private constant.
+_channels_config_ROOT = _CHANNELS_CONFIG_ROOT
 
 
 # ---------------------------------------------------------------------------
@@ -162,18 +175,21 @@ class PageContext:
         'HYBRID_VIDEO'      — 7-second Ken Burns zoom loop from generated image.
         'TEXT_QUOTE'        — brand-colour solid backdrop + text only (no Gemini image call).
     page_dir:
-        Absolute path to pages_config/{page_id}/.
+        Absolute path to channels_config/{page_id}/.
     persona_dna_path:
-        Absolute path to pages_config/{page_id}/persona_dna.py.
+        Absolute path to channels_config/{page_id}/persona_dna.py.
     master_dna_path:
-        Absolute path to pages_config/{page_id}/master_dna.json.
+        Absolute path to channels_config/{page_id}/master_dna.json.
     avatar_reference_dir:
-        Absolute path to pages_config/{page_id}/avatar_reference/ (auto-created).
+        Absolute path to channels_config/{page_id}/avatar_reference/ (auto-created).
+    voice_reference_dir:
+        Absolute path to channels_config/{page_id}/voice_reference/ (auto-created).
+        Drop ``{page_id}_voice_ref_10s.wav`` + matching ``.txt`` transcript for F5-TTS.
     logo_dir:
-        Absolute path to pages_config/{page_id}/logo/ (auto-created).
+        Absolute path to channels_config/{page_id}/logo/ (auto-created).
         Drop a transparent PNG here to activate the logo watermark layer.
     product_reference_dir:
-        Absolute path to pages_config/{page_id}/product_reference/ (may not exist).
+        Absolute path to channels_config/{page_id}/product_reference/ (may not exist).
     outputs_dir:
         Absolute path to outputs/{page_id}/ for all page-namespaced artifacts.
     page_cfg:
@@ -187,6 +203,7 @@ class PageContext:
     persona_dna_path: Path
     master_dna_path: Path
     avatar_reference_dir: Path
+    voice_reference_dir: Path
     logo_dir: Path
     product_reference_dir: Path
     outputs_dir: Path
@@ -246,6 +263,72 @@ class PageContext:
     def uses_avatar_reference(self) -> bool:
         """Whether the page was designed to use a human likeness reference."""
         return bool(self.page_cfg.get("USES_AVATAR_REFERENCE", False))
+
+    @property
+    def voice_reference_wav(self) -> Path | None:
+        """
+        Preferred F5-TTS reference wav under ``voice_reference/``, if present.
+
+        Resolution order:
+          1. ``VOICE_REFERENCE_AUDIO`` from page_config.py (filename or absolute path)
+          2. ``{page_id}_voice_ref_10s.wav``
+          3. First ``*_voice_ref*.wav`` / sole ``.wav`` in the folder
+        """
+        from core_engine.remote_gpu_manager import resolve_page_voice_reference  # noqa: PLC0415
+
+        audio, _text = resolve_page_voice_reference(self.page_id, page_dir=self.page_dir)
+        return audio
+
+    @property
+    def voice_reference_text(self) -> str | None:
+        """Exact transcript for the page voice-reference clip (F5 ``sample_text``)."""
+        from core_engine.remote_gpu_manager import resolve_page_voice_reference  # noqa: PLC0415
+
+        _audio, text = resolve_page_voice_reference(self.page_id, page_dir=self.page_dir)
+        return text
+
+    @property
+    def voice_reference_ready(self) -> bool:
+        """True when both the reference wav and its matching transcript exist."""
+        from core_engine.remote_gpu_manager import resolve_page_voice_reference  # noqa: PLC0415
+
+        audio, text = resolve_page_voice_reference(self.page_id, page_dir=self.page_dir)
+        return audio is not None and bool((text or "").strip())
+
+    @property
+    def remote_gpu_lora_enabled(self) -> bool:
+        """True when this channel has a Flux LoRA configured for remote GPU."""
+        from core_engine.remote_gpu_manager import resolve_page_lora_config  # noqa: PLC0415
+
+        return bool(
+            resolve_page_lora_config(self.page_id, page_dir=self.page_dir).get("enabled")
+        )
+
+    @property
+    def remote_gpu_lora_name(self) -> str | None:
+        from core_engine.remote_gpu_manager import resolve_page_lora_config  # noqa: PLC0415
+
+        return resolve_page_lora_config(self.page_id, page_dir=self.page_dir).get("lora_name")
+
+    @property
+    def remote_gpu_lora_trigger(self) -> str:
+        from core_engine.remote_gpu_manager import resolve_page_lora_config  # noqa: PLC0415
+
+        return str(
+            resolve_page_lora_config(self.page_id, page_dir=self.page_dir).get("trigger") or ""
+        )
+
+    @property
+    def remote_gpu_lora_strength(self) -> float:
+        from core_engine.remote_gpu_manager import resolve_page_lora_config  # noqa: PLC0415
+
+        try:
+            return float(
+                resolve_page_lora_config(self.page_id, page_dir=self.page_dir).get("strength")
+                or 0.8
+            )
+        except (TypeError, ValueError):
+            return 0.8
 
     @property
     def logo_png(self) -> Path | None:
@@ -377,11 +460,144 @@ class PageContext:
 
     @property
     def reel_duration(self) -> float:
-        """Target ECONOMIC_REEL duration in seconds (fallback if no audio)."""
+        """Target ECONOMIC_REEL duration in seconds (fallback if no audio).
+
+        ``VIDEO_LENGTH_OVERRIDE`` (CLI ``--video-length``) always wins and is
+        not clamped into the channel window.
+        """
+        override = self.page_cfg.get("VIDEO_LENGTH_OVERRIDE", None)
+        if override is not None:
+            try:
+                return max(5.0, float(override))
+            except (TypeError, ValueError):
+                pass
         try:
-            return max(5.0, float(self.page_cfg.get("REEL_DURATION", 30.0)))
+            dur = max(5.0, float(self.page_cfg.get("REEL_DURATION", 30.0)))
         except (TypeError, ValueError):
-            return 30.0
+            dur = 30.0
+        # Clamp into optional ECONOMIC_REEL window (independent of WAN_REEL).
+        lo = self.reel_duration_target_min
+        hi = self.reel_duration_target_max
+        if lo and hi and hi >= lo:
+            dur = max(lo, min(hi, dur))
+        return dur
+
+    @property
+    def scene_duration(self) -> str:
+        """
+        Scene pacing spec for ``plan_scenes`` (CLI ``--scene-duration`` wins via
+        ``SCENE_DURATION`` override). Factory default ``equal`` preserves legacy
+        equal-split behaviour for channels that do not set this.
+        """
+        raw = self.page_cfg.get("SCENE_DURATION", None)
+        if raw is None or str(raw).strip() == "":
+            return "equal"
+        return str(raw).strip()
+
+    @property
+    def scene_progressive_start_s(self) -> float:
+        try:
+            return max(0.5, float(self.page_cfg.get("SCENE_PROGRESSIVE_START_S", 4.0)))
+        except (TypeError, ValueError):
+            return 4.0
+
+    @property
+    def scene_progressive_step_every(self) -> int:
+        try:
+            return max(1, int(self.page_cfg.get("SCENE_PROGRESSIVE_STEP_EVERY", 3)))
+        except (TypeError, ValueError):
+            return 3
+
+    @property
+    def scene_progressive_step_s(self) -> float:
+        try:
+            return float(self.page_cfg.get("SCENE_PROGRESSIVE_STEP_S", 1.0))
+        except (TypeError, ValueError):
+            return 1.0
+
+    @property
+    def scene_progressive_cap_s(self) -> float:
+        try:
+            return max(
+                self.scene_progressive_start_s,
+                float(self.page_cfg.get("SCENE_PROGRESSIVE_CAP_S", 7.5)),
+            )
+        except (TypeError, ValueError):
+            return 7.5
+
+    @property
+    def wan_scene_duration(self) -> str:
+        """WAN_REEL pacing spec (independent of ECONOMIC_REEL SCENE_DURATION)."""
+        raw = self.page_cfg.get("WAN_SCENE_DURATION", None)
+        if raw is None or str(raw).strip() == "":
+            return "fixed:7"
+        return str(raw).strip()
+
+    @property
+    def reel_duration_target_min(self) -> float:
+        """ECONOMIC_REEL duration floor (default 70). Not used for WAN_REEL."""
+        try:
+            return max(5.0, float(self.page_cfg.get("REEL_DURATION_TARGET_MIN", 70.0)))
+        except (TypeError, ValueError):
+            return 70.0
+
+    @property
+    def reel_duration_target_max(self) -> float:
+        """ECONOMIC_REEL duration ceiling (default 90). Not used for WAN_REEL."""
+        try:
+            return max(
+                self.reel_duration_target_min,
+                float(self.page_cfg.get("REEL_DURATION_TARGET_MAX", 90.0)),
+            )
+        except (TypeError, ValueError):
+            return 90.0
+
+    @property
+    def wan_reel_duration_target_min(self) -> float:
+        """WAN_REEL duration floor (default 80). Independent of ECONOMIC_REEL."""
+        try:
+            return max(5.0, float(self.page_cfg.get("WAN_REEL_DURATION_TARGET_MIN", 80.0)))
+        except (TypeError, ValueError):
+            return 80.0
+
+    @property
+    def wan_reel_duration_target_max(self) -> float:
+        """WAN_REEL duration ceiling (default 120). Independent of ECONOMIC_REEL."""
+        try:
+            return max(
+                self.wan_reel_duration_target_min,
+                float(self.page_cfg.get("WAN_REEL_DURATION_TARGET_MAX", 120.0)),
+            )
+        except (TypeError, ValueError):
+            return 120.0
+
+    @property
+    def wan_reel_duration(self) -> float:
+        """WAN_REEL planning target, clamped to its own 80–120 s window."""
+        try:
+            dur = max(5.0, float(self.page_cfg.get("WAN_REEL_DURATION", 100.0)))
+        except (TypeError, ValueError):
+            dur = 100.0
+        return max(
+            self.wan_reel_duration_target_min,
+            min(self.wan_reel_duration_target_max, dur),
+        )
+
+    @property
+    def reel_hook_hold_s(self) -> float:
+        """First-act still hold (ECONOMIC_REEL pacing). Default 5 s."""
+        try:
+            return max(1.0, float(self.page_cfg.get("REEL_HOOK_HOLD_S", 5.0)))
+        except (TypeError, ValueError):
+            return 5.0
+
+    @property
+    def reel_body_hold_s(self) -> float:
+        """Subsequent-act still hold (ECONOMIC_REEL). Default 7.5 s (7–8 band)."""
+        try:
+            return max(3.0, float(self.page_cfg.get("REEL_BODY_HOLD_S", 7.5)))
+        except (TypeError, ValueError):
+            return 7.5
 
     @property
     def reel_overlay_opacity(self) -> float:
@@ -594,7 +810,7 @@ class PageContext:
         """
         MODULE 3 — dynamic per-page style reference resolution.
 
-        Base directory pattern: ``pages_config/<page_id>/style_reference/``
+        Base directory pattern: ``channels_config/<page_id>/style_reference/``
         (or the explicit ``STYLE_REFERENCE_DIR`` override when set). Loads all
         valid ``*.png`` / ``*.jpg`` / ``*.jpeg`` assets, sorted by filename,
         capped at ``max_images`` (defaults to ``style_reference_max_images``,
@@ -624,7 +840,7 @@ class PageContext:
         """
         MODULE 2 — Gemini Vision style-reference extraction.
 
-        Loads ``pages_config/<page_id>/style_reference/`` images (via
+        Loads ``channels_config/<page_id>/style_reference/`` images (via
         ``resolve_style_reference_images``), sends them ONCE to
         ``gemini-2.5-flash`` to extract a dense ~40-word visual style anchor,
         and caches the result (``DYNAMIC_STYLE_ANCHOR``) on this PageContext
@@ -690,51 +906,71 @@ class PageContext:
     @property
     def reel_image_count(self) -> int:
         """
-        Max distinct images stitched in a SEQUENCE_REEL (dense ~4 s/act).
-        Sourced from REEL_IMAGE_COUNT in page_config.py; defaults to 18.
+        Max distinct images in a SEQUENCE_REEL.
+        Defaults to 11 (ECONOMIC_REEL paced); dense pages may still set 18.
         """
         try:
-            return max(2, int(self.page_cfg.get("REEL_IMAGE_COUNT", 18)))
+            return max(2, int(self.page_cfg.get("REEL_IMAGE_COUNT", 11)))
         except (TypeError, ValueError):
-            return 18
+            return 11
 
     @property
     def reel_seconds_per_act(self) -> float:
         """
-        Target spoken seconds per visual act for dense scene sync (3.5–5.0).
-        Sourced from REEL_SECONDS_PER_ACT; defaults to 4.0.
-        NOTE: upper clamp is 5.0 (not 4.0) so pages configured for the
-        strict "4-5 s per image" pacing rule (e.g. master_mei @ 4.5) are
-        never silently forced back down to a faster/denser cadence.
+        Target seconds per visual act (legacy dense path / body-hold alias).
+        Upper clamp raised to 8.5 so ECONOMIC_REEL 7–8 s body holds are kept.
         """
         try:
-            spa = float(self.page_cfg.get("REEL_SECONDS_PER_ACT", 4.0))
+            spa = float(
+                self.page_cfg.get(
+                    "REEL_SECONDS_PER_ACT",
+                    self.page_cfg.get("REEL_BODY_HOLD_S", 4.0),
+                )
+            )
         except (TypeError, ValueError):
             spa = 4.0
-        return max(3.5, min(5.0, spa))
+        return max(3.5, min(8.5, spa))
 
     @property
     def reel_image_min_count(self) -> int:
         """
-        Min distinct images/acts (floor) for dense scene sync.
-        Sourced from REEL_IMAGE_MIN_COUNT in page_config.py; defaults to 12.
+        Min distinct images/acts (floor) for scene sync.
+        Defaults to 10 for ECONOMIC_REEL paced path.
         """
         try:
-            return max(2, int(self.page_cfg.get("REEL_IMAGE_MIN_COUNT", 12)))
+            return max(2, int(self.page_cfg.get("REEL_IMAGE_MIN_COUNT", 10)))
         except (TypeError, ValueError):
-            return 12
+            return 10
 
     @property
     def reel_act_duration(self) -> float:
         """
-        Per-act clip length in seconds used when no audio drives the timeline.
-        Sourced from REEL_ACT_DURATION in page_config.py; defaults to 4.0.
-        Audio-driven compiles use ``total_audio_duration / n_acts`` instead.
+        Per-act clip length when no audio drives the timeline.
+        Audio-driven compiles use weighted ``act_durations`` / equal split.
         """
         try:
-            return max(3.5, float(self.page_cfg.get("REEL_ACT_DURATION", 4.0)))
+            return max(3.5, float(self.page_cfg.get("REEL_ACT_DURATION", 7.5)))
         except (TypeError, ValueError):
-            return 4.0
+            return 7.5
+
+    @property
+    def reel_use_hook_body_pacing(self) -> bool:
+        """
+        Legacy hook/body pacing (REEL_HOOK_HOLD_S). Prefer ``scene_duration`` /
+        ``plan_scenes`` when SCENE_DURATION is progressive/fixed.
+        """
+        # Shared engine wins when explicitly configured.
+        mode = (self.scene_duration or "equal").strip().lower()
+        if mode and mode not in ("equal", "legacy", "default"):
+            return False
+        raw = self.page_cfg.get("REEL_HOOK_HOLD_S", None)
+        return raw is not None and float(raw or 0) > 0
+
+    @property
+    def uses_plan_scenes_pacing(self) -> bool:
+        """True when SCENE_DURATION is fixed:* or progressive (shared engine)."""
+        mode = (self.scene_duration or "equal").strip().lower()
+        return bool(mode) and mode not in ("equal", "legacy", "default")
 
     @property
     def enable_top_hook_text(self) -> bool:
@@ -853,7 +1089,8 @@ class PageContext:
         try:
             val = float(self.page_cfg.get("AMBIENT_VOLUME", 0.32))
             if (self.page_id or "").lower() == "master_mei":
-                return max(0.28, min(0.38, val))
+                # Absolute BGM mix (default 0.24) — under voice for narration clarity (−20% from 0.30)
+                return max(0.10, min(0.55, val))
             return max(0.08, min(1.0, val))
         except (TypeError, ValueError):
             return 0.32
@@ -874,6 +1111,56 @@ class PageContext:
         if raw is None:
             return (self.page_id or "").lower() == "master_mei"
         return bool(raw)
+
+    @property
+    def ambient_music_style(self) -> str:
+        """``warrior`` (mei) or ``mystery`` (ancient_knowledge) music_prompt profile."""
+        raw = str(self.page_cfg.get("AMBIENT_MUSIC_STYLE", "") or "").strip().lower()
+        if raw:
+            return raw
+        return (
+            "warrior"
+            if (self.page_id or "").lower() == "master_mei"
+            else "mystery"
+        )
+
+    @property
+    def music_prompt_directive_path(self) -> "Path | None":
+        """Optional per-page music_prompt directive file (absolute Path)."""
+        from pathlib import Path as _P
+
+        rel = str(self.page_cfg.get("MUSIC_PROMPT_DIRECTIVE_RELPATH", "") or "").strip()
+        if not rel:
+            # Convention: channels_config/<page>/prompts/music_prompt_directive.txt
+            cand = (
+                _P(__file__).resolve().parent
+                / "channels_config"
+                / (self.page_id or "")
+                / "prompts"
+                / "music_prompt_directive.txt"
+            )
+            return cand if cand.is_file() else None
+        p = _P(rel)
+        if not p.is_absolute():
+            p = _P(__file__).resolve().parent / p
+        return p if p.is_file() else None
+
+    @property
+    def atmosphere_sfx_volume(self) -> float:
+        try:
+            return max(
+                0.10,
+                min(0.60, float(self.page_cfg.get("ATMOSPHERE_SFX_VOLUME", 0.35))),
+            )
+        except (TypeError, ValueError):
+            return 0.35
+
+    @property
+    def atmosphere_sfx_fade_in(self) -> float:
+        try:
+            return max(0.0, float(self.page_cfg.get("ATMOSPHERE_SFX_FADE_IN", 0.2)))
+        except (TypeError, ValueError):
+            return 0.2
 
     @property
     def impact_sfx_prompt(self) -> str:
@@ -927,11 +1214,44 @@ class PageContext:
             return None
 
     @property
+    def bgm_start_time(self) -> float:
+        """Seconds before background music enters (Master Mei default 8.0)."""
+        try:
+            return max(0.0, float(self.page_cfg.get("BGM_START_TIME", 0.0)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @property
+    def bgm_fade_in_duration(self) -> float:
+        """BGM fade-in duration in seconds (Master Mei default 2.5)."""
+        try:
+            return max(0.0, float(self.page_cfg.get("BGM_FADE_IN_DURATION", 0.0)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @property
+    def sfx_volume_gain_db(self) -> float:
+        """Global ambient/SFX gain boost in dB (Master Mei default +2.5)."""
+        try:
+            return float(self.page_cfg.get("SFX_VOLUME_GAIN_DB", 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @property
     def hook_environments(self) -> list:
         """
-        Rotating scenic environments for Master Mei Act-1 seated-meditation hook.
-        Sourced from HOOK_ENVIRONMENTS in page_config.py.
+        Scenic environments for Master Mei Act-1 meditation hook.
+        Prefers PRIMARY+SECONDARY pools (70/30 at runtime via pick_mei_meditation_environment).
         """
+        primary = self.page_cfg.get("HOOK_ENVIRONMENTS_PRIMARY", [])
+        secondary = self.page_cfg.get("HOOK_ENVIRONMENTS_SECONDARY", [])
+        pooled: list = []
+        if isinstance(primary, list):
+            pooled.extend(primary)
+        if isinstance(secondary, list):
+            pooled.extend(secondary)
+        if pooled:
+            return [str(t).strip() for t in pooled if t and str(t).strip()]
         raw = self.page_cfg.get("HOOK_ENVIRONMENTS", [])
         if not isinstance(raw, list):
             return []
@@ -961,7 +1281,7 @@ class PageContext:
         Absolute path to the page's mandatory avatar.png.
 
         For master_mei: ALWAYS resolves to
-        pages_config/master_mei/avatar_reference/avatar.png (zero-hallucination lock).
+        channels_config/master_mei/avatar_reference/avatar.png (zero-hallucination lock).
         """
         page_id = (self.page_id or "").lower()
         if page_id == "master_mei":
@@ -1055,7 +1375,7 @@ class PageContext:
         """
         Priority directory of cycleable avatar reference portraits.
         Sourced from AVATAR_ASSETS_DIR in page_config.py (relative to engine root).
-        Falls back to pages_config/{page}/avatar_reference/ when unset.
+        Falls back to channels_config/{page}/avatar_reference/ when unset.
         """
         rel = str(self.page_cfg.get("AVATAR_ASSETS_DIR", "")).strip()
         if rel:
@@ -1065,7 +1385,7 @@ class PageContext:
     def list_avatar_references(self) -> list:
         """
         Return sorted portrait paths for likeness cycling.
-        Priority: AVATAR_ASSETS_DIR images, then pages_config avatar_reference/.
+        Priority: AVATAR_ASSETS_DIR images, then channels_config avatar_reference/.
         """
         found: list = []
         seen: set = set()
@@ -1201,7 +1521,7 @@ def load_page_context(
     Build and return a PageContext for the given page slug.
 
     Validates all three runtime flags and resolves filesystem paths.
-    Loads page_config.py from pages_config/{page_id}/ if present.
+    Loads page_config.py from channels_config/{page_id}/ if present.
 
     Parameters
     ----------
@@ -1237,7 +1557,12 @@ def load_page_context(
             f"Valid options: {', '.join(VALID_FORMATS)}"
         )
 
-    page_dir = _PAGES_CONFIG_ROOT / page_id
+    root = _resolve_channels_config_root()
+    page_dir = root / page_id
+    if not page_dir.is_dir() and _LEGACY_PAGES_CONFIG_ROOT.is_dir():
+        legacy = _LEGACY_PAGES_CONFIG_ROOT / page_id
+        if legacy.is_dir():
+            page_dir = legacy
     outputs_dir = _ENGINE_ROOT / "outputs" / page_id
 
     # Ensure outputs directory exists at load time.
@@ -1247,6 +1572,7 @@ def load_page_context(
 
     # Ensure brand asset subfolders exist inside the page config directory.
     (page_dir / "avatar_reference").mkdir(parents=True, exist_ok=True)
+    (page_dir / "voice_reference").mkdir(parents=True, exist_ok=True)
     (page_dir / "logo").mkdir(parents=True, exist_ok=True)
 
     page_cfg = _load_page_config(page_dir, page_id)
@@ -1259,6 +1585,7 @@ def load_page_context(
         persona_dna_path=page_dir / "persona_dna.py",
         master_dna_path=page_dir / "master_dna.json",
         avatar_reference_dir=page_dir / "avatar_reference",
+        voice_reference_dir=page_dir / "voice_reference",
         logo_dir=page_dir / "logo",
         product_reference_dir=page_dir / "product_reference",
         outputs_dir=outputs_dir,
@@ -1268,14 +1595,14 @@ def load_page_context(
 
 def _load_page_config(page_dir: Path, page_id: str) -> dict[str, Any]:
     """
-    Dynamically import pages_config/{page_id}/page_config.py and return
+    Dynamically import channels_config/{page_id}/page_config.py and return
     its public symbols as a plain dict. Returns empty dict if file is absent.
     """
     config_py = page_dir / "page_config.py"
     if not config_py.is_file():
         return {}
 
-    module_name = f"pages_config.{page_id}.page_config"
+    module_name = f"channels_config.{page_id}.page_config"
     spec = importlib.util.spec_from_file_location(module_name, config_py)
     if spec is None or spec.loader is None:
         return {}

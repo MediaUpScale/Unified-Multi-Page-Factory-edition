@@ -153,7 +153,7 @@ class B2VideoUploader:
             logger.info("[B2] Already uploaded: %s — skipping re-upload.", key)
         else:
             size_mb = path.stat().st_size / (1024 * 1024)
-            print(f"[B2] Uploading {key} ({size_mb:.1f} MB) → {self.bucket_name} …")
+            print(f"[B2] Uploading {key} ({size_mb:.1f} MB) -> {self.bucket_name} ...")
             logger.info("[B2] Uploading %s (%.1f MB)", key, size_mb)
 
             last_exc: Exception | None = None

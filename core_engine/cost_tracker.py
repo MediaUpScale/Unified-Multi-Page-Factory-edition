@@ -65,6 +65,18 @@ _PRICE: dict[str, float] = {
     # Audio — ElevenLabs TTS
     "tts_per_char":        0.000_030, # ~$30 / 1M characters
     "sfx_per_call":        0.002_0,   # per SFX generation call
+
+    # Remote GPU — RunPod RTX 4090 (override via env — see track_gpu_seconds)
+    # Pod on-demand (public pricing page): Community $0.34/hr, Secure $0.69/hr
+    "gpu_pod_rtx4090_community_per_sec": 0.34 / 3600.0,   # ≈ $0.0000944/s
+    "gpu_pod_rtx4090_secure_per_sec":    0.69 / 3600.0,   # ≈ $0.0001917/s
+    # Serverless: official endpoint-config table lists "4090 PRO" at $0.00031/s
+    # (docs.runpod.io/serverless/endpoints/endpoint-configurations). Older blog
+    # posts cited $0.00044 flex / $0.00026 active — do NOT prefer those when they
+    # disagree with the current docs table. Active workers: apply −40% when the
+    # account still uses that discount; confirm in RunPod console when keyed.
+    "gpu_serverless_rtx4090_flex_per_sec":   0.000_31,
+    "gpu_serverless_rtx4090_active_per_sec": 0.000_186,  # 0.00031 * 0.60
 }
 
 # Map cost_tier → default image model key (all tiers → FLUX Schnell)
@@ -196,6 +208,93 @@ class CostTracker:
             total,
         )
 
+    def track_gpu_seconds(
+        self,
+        seconds: float,
+        *,
+        mode: str | None = None,
+        jobs: int = 1,
+        model_key: str | None = None,
+    ) -> float:
+        """
+        Record estimated RunPod GPU cost for *seconds* of billed GPU time.
+
+        Parameters
+        ----------
+        seconds:
+            Wall-clock GPU time to bill. For **pod** mode this is typically
+            dedicated uptime attributed to the run; for **serverless** it is
+            the sum of per-job active GPU seconds (workers bill in parallel).
+        mode:
+            ``\"comfyui\"`` / ``\"pod\"`` → pod hourly rate.
+            ``\"runpod\"`` / ``\"serverless\"`` → serverless per-second rate.
+            Default: ``REMOTE_GPU_MODE`` from config/env.
+        jobs:
+            Informational unit count (e.g. number of image jobs).
+        """
+        import os
+
+        secs = max(0.0, float(seconds or 0.0))
+        if secs <= 0:
+            return 0.0
+
+        mode_raw = (
+            mode
+            or os.getenv("REMOTE_GPU_MODE")
+            or "comfyui"
+        ).strip().lower()
+        is_serverless = mode_raw in ("runpod", "serverless")
+
+        # Optional explicit $/unit overrides from env/config
+        try:
+            import config as app_config
+
+            pod_override = float(getattr(app_config, "RUNPOD_POD_RTX4090_USD_PER_HOUR", 0) or 0)
+            srv_override = float(
+                getattr(app_config, "RUNPOD_SERVERLESS_RTX4090_USD_PER_SEC", 0) or 0
+            )
+            cloud = str(getattr(app_config, "RUNPOD_CLOUD_TYPE", "community") or "community").lower()
+            worker_t = str(
+                getattr(app_config, "RUNPOD_SERVERLESS_WORKER_TYPE", "flex") or "flex"
+            ).lower()
+        except Exception:
+            pod_override = float(os.getenv("RUNPOD_POD_RTX4090_USD_PER_HOUR") or 0)
+            srv_override = float(os.getenv("RUNPOD_SERVERLESS_RTX4090_USD_PER_SEC") or 0)
+            cloud = (os.getenv("RUNPOD_CLOUD_TYPE") or "community").strip().lower()
+            worker_t = (os.getenv("RUNPOD_SERVERLESS_WORKER_TYPE") or "flex").strip().lower()
+
+        if model_key:
+            key = model_key
+            rate = float(_PRICE.get(key, 0.0))
+        elif is_serverless:
+            if srv_override > 0:
+                key = "gpu_serverless_rtx4090_custom_per_sec"
+                rate = srv_override
+            elif worker_t in ("active", "always_on", "min_workers"):
+                key = "gpu_serverless_rtx4090_active_per_sec"
+                rate = _PRICE[key]
+            else:
+                key = "gpu_serverless_rtx4090_flex_per_sec"
+                rate = _PRICE[key]
+        else:
+            if pod_override > 0:
+                key = "gpu_pod_rtx4090_custom_per_sec"
+                rate = pod_override / 3600.0
+            elif cloud in ("secure", "secure_cloud"):
+                key = "gpu_pod_rtx4090_secure_per_sec"
+                rate = _PRICE[key]
+            else:
+                key = "gpu_pod_rtx4090_community_per_sec"
+                rate = _PRICE[key]
+
+        total = rate * secs
+        return self._add(
+            "gpu_compute",
+            key,
+            secs,
+            total,
+        )
+
     # ------------------------------------------------------------------
     # Aggregation
     # ------------------------------------------------------------------
@@ -261,3 +360,27 @@ class CostTracker:
         except OSError as exc:
             logger.warning("CostTracker | failed to write telemetry: %s", exc)
         return out
+
+
+def print_cost_summary(
+    variant_index: int,
+    total_variants: int,
+    images_this_reel: int,
+    total_batch_images: int,
+    total_reel_cost: float,
+) -> None:
+    """
+    Prints an accurate summary log separating individual reel assets from cumulative batch metrics.
+    """
+    print("=" * 62)
+    print(f"| COST ANALYSIS SUMMARY - REEL {variant_index}/{total_variants}")
+    print("=" * 62)
+    print(
+        f"  Visual Assets (This Reel) : {images_this_reel} AI Base Images "
+        f"-> Compiled to MP4 Reel v{variant_index}"
+    )
+    print(
+        f"  Batch Visual Assets Total : {total_batch_images} AI Base Images generated so far"
+    )
+    print(f"  Estimated Cost (This Reel): ${total_reel_cost:.4f} USD")
+    print("=" * 62)

@@ -1,0 +1,11 @@
+Generate a unique ElevenLabs music prompt for a slow, enigmatic ancient-mysteries documentary bed.
+
+STYLE: Quiet atmospheric underscore from the first second — low drones, distant hollow resonance, sparse tension. NO dance beat, NO party energy, NO driving percussion. Music must sit under narration and never compete with the voice.
+
+CONSTRAINT: Keep each section line/prompt concise, descriptive, and strictly under 150 characters. Do not write long paragraphs or excessive descriptors.
+
+PARAMETERS (every video — unique wording required):
+- Mood: Enigmatic, mysterious, solemn, ancient, hushed awe, investigative stillness.
+- Tempo: Very slow / ambient (approx 45–60 BPM feel — or free-tempo drone with almost no pulse).
+- Instrumentation: Deep drone pads, sparse cello or contrabass whispers, soft wind textures, distant wordless choir beds, faint temple resonance. Percussion only if extremely sparse and soft (no drums, no rhythmic groove).
+- Avoid: upbeat, festive, celebratory, party, EDM, pop, industrial cyberpunk drums, fast BPM, driving beats, bright synth leads, vocals with lyrics, long silent intros.

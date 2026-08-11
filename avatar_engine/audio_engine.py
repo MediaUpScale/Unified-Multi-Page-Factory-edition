@@ -11,6 +11,7 @@ ElevenLabs audio generation for ECONOMIC_REEL / Master Mei.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,7 @@ _DEFAULT_VOICE_SETTINGS = {
     "style": 0.20,           # mild expressiveness with eleven_v3
     "use_speaker_boost": True,
 }
-_NARRATION_SPEED: float = 0.92   # slow, stoic, authoritative
+_NARRATION_SPEED: float = 0.86   # deliberate stoic pace (Master Mei 100–120 s band)
 _AMBIENT_PROMPT: str = (
     "Dark ambient cinematic synth pad, deep sub-bass drone, subtle futuristic "
     "industrial machine hum, inspiring stoic atmosphere, seamless loop, 60 BPM, "
@@ -40,10 +41,17 @@ _AMBIENT_PROMPT: str = (
     "NO generic noise bed"
 )
 _TARGET_SAMPLE_RATE_HZ: int = 48000
-_SFX_CLIP_DURATION: float = 20.0
+_SFX_CLIP_DURATION: float = 10.0   # single continuous dark cyberpunk drone (looped full reel)
+_SFX_MIN_DURATION: float = 10.0
+_MUSIC_MIN_DURATION_S: float = 40.0  # ElevenLabs BGM minimum generation length
 _SFX_MODEL_ID: str = "eleven_text_to_sound_v2"
 _IMPACT_SFX_PROMPT: str = "Cinematic Braam, Dystopian Sub-Bass Drop"
 _IMPACT_SFX_DURATION_S: float = 2.5
+_ATMOSPHERE_SFX_PROMPT: str = (
+    "Continuous 10-second low-frequency dark cyberpunk atmospheric drone, ambient "
+    "industrial drone, futuristic wasteland tension, dark hum, wind in ruins, "
+    "seamless loop, no percussion hits, no braam stinger, no vocals"
+)
 _MUSIC_V2_MODEL: str = "music_v2"
 _MUSIC_V1_MODEL: str = "music_v1"
 # ElevenLabs Music duration bounds (ms) — section / total
@@ -52,8 +60,33 @@ _MUSIC_DURATION_MS_MAX: int = 180_000
 _MUSIC_SECTION_MS_MIN: int = 3_000
 _MUSIC_SECTION_MS_MAX: int = 120_000
 _MUSIC_SIMPLE_PROMPT: str = (
-    "Epic dark synth theme, heavy sub-bass drone, stoic cinematic atmosphere, dystopian 100 bpm"
+    "Industrial cyberpunk percussion, driving cinematic drums from bar one, "
+    "dark metallic hits, dystopian synth bass, 95 BPM, instrumental"
 )
+# ElevenLabs Music API: section lines / chunk text max 200 chars (422 string_too_long).
+_MUSIC_LINE_API_MAX: int = 200
+_MUSIC_LINE_MAX_CHARS: int = 180  # hard truncate headroom under API 200
+_MUSIC_PROMPT_TARGET_CHARS: int = 150  # LLM target (under hard truncate)
+MUSIC_PROMPT_SYSTEM_DIRECTIVE: str = (
+    "Generate a unique ElevenLabs music prompt for industrial cyberpunk percussion. "
+    "Driving cinematic drums from the first beat, dark metallic hits, tense rhythmic "
+    "pulse, dystopian urgency. Tempo approx 90–110 BPM. "
+    "CONSTRAINT: Keep each section line/prompt concise, descriptive, and strictly under "
+    "150 characters. Do not write long paragraphs or excessive descriptors."
+)
+_MUSIC_PROMPT_DIRECTIVE_FILE: Path = (
+    Path(__file__).resolve().parents[1]
+    / "channels_config"
+    / "master_mei"
+    / "prompts"
+    / "music_prompt_directive.txt"
+)
+# Final MoviePy mix levels (Master Mei AUDIO_CONFIG)
+_MIX_SFX_VOLUME: float = 0.35
+_MIX_BGM_VOLUME: float = 0.24
+_MIX_VOICE_VOLUME: float = 1.0
+_MIX_AMBIENT_FADE_IN_S: float = 0.2
+_MIX_MUSIC_START_OFFSET_S: float = 0.5
 
 # Strip raw code / bracket markers before TTS (never read aloud)
 _TTS_ANGLE_RE = re.compile(r"<[^>]+>")
@@ -152,7 +185,42 @@ def generate_voiceover(
     Returns
     -------
     output_path on success.  Raises RuntimeError / ValueError on failure.
+
+    Notes
+    -----
+    When ``ENABLE_REMOTE_GPU_WORKFLOWS=true``, routes to remote F5-TTS via
+    ``core_engine.remote_gpu_manager.generate_audio`` and returns early.
+    Legacy ElevenLabs code below is otherwise unchanged.
     """
+    # --- Remote GPU adapter (opt-in only; legacy path untouched when false) ---
+    # Runtime env check so --schedule-uploads long-runs honour flag flips.
+    from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+        generate_audio as _remote_generate_audio,
+        is_remote_gpu_enabled,
+    )
+
+    if is_remote_gpu_enabled("audio"):
+        cleaned = strip_tts_markers(text)
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        page_id = (
+            getattr(app_config, "ACTIVE_PAGE", None)
+            or os.getenv("ACTIVE_PAGE")
+            or None
+        )
+        logger.info(
+            "Voiceover -> RemoteGPU F5-TTS (flow/env audio provider=remote_gpu) | "
+            "page=%s | chars=%d -> %s",
+            page_id or "?", len(cleaned), out,
+        )
+        result = _remote_generate_audio(
+            cleaned,
+            output_path=out,
+            speed=speed,
+            page_id=page_id,
+        )
+        return Path(result).resolve()
+
     try:
         from elevenlabs import ElevenLabs  # type: ignore
     except ImportError as exc:
@@ -263,6 +331,56 @@ def _chars_to_word_timings(
     return words
 
 
+def _audio_file_duration_s(path: Path) -> float:
+    """Best-effort duration read for local audio (MoviePy → mutagen → 0)."""
+    p = Path(path)
+    if not p.is_file():
+        return 0.0
+    try:
+        from moviepy import AudioFileClip  # type: ignore[import]
+
+        with AudioFileClip(str(p)) as clip:
+            return float(clip.duration or 0.0)
+    except Exception:
+        pass
+    try:
+        from mutagen import File as _MutagenFile  # type: ignore[import]
+
+        meta = _MutagenFile(str(p))
+        if meta is not None and getattr(meta, "info", None) is not None:
+            return float(getattr(meta.info, "length", 0.0) or 0.0)
+    except Exception:
+        pass
+    return 0.0
+
+
+def approximate_word_timings(
+    text: str,
+    duration_s: float,
+) -> list[tuple[str, float, float]]:
+    """
+    Build character-weighted word timings when a TTS backend has no alignment
+    (e.g. remote F5-TTS). Longer words get proportionally more screen time.
+    """
+    cleaned = strip_tts_markers(text or "").strip()
+    words = [w for w in cleaned.split() if w]
+    if not words or duration_s <= 0.05:
+        return []
+    weights = [max(1, len(re.sub(r"[^\w]", "", w, flags=re.UNICODE))) for w in words]
+    total_w = float(sum(weights)) or float(len(words))
+    cursor = 0.0
+    out: list[tuple[str, float, float]] = []
+    for i, (word, weight) in enumerate(zip(words, weights)):
+        span = duration_s * (weight / total_w)
+        start = cursor
+        end = duration_s if i == len(words) - 1 else min(duration_s, cursor + span)
+        if end <= start:
+            end = min(duration_s, start + 0.05)
+        out.append((word, start, end))
+        cursor = end
+    return out
+
+
 def generate_voiceover_with_timestamps(
     text: str,
     output_path: Path,
@@ -286,7 +404,36 @@ def generate_voiceover_with_timestamps(
     (output_path, word_timings)
         word_timings is empty list [] when the timestamps endpoint is unavailable
         (older SDK versions) — the reel compiles normally without subtitles.
+
+    Notes
+    -----
+    When ``ENABLE_REMOTE_GPU_WORKFLOWS=true``, delegates audio to remote F5-TTS
+    via ``generate_voiceover`` and synthesizes character-weighted approximate
+    word timings from the returned clip duration (F5 has no alignment API).
     """
+    from core_engine.remote_gpu_manager import is_remote_gpu_enabled  # noqa: PLC0415
+
+    if is_remote_gpu_enabled("audio"):
+        path = generate_voiceover(
+            text,
+            output_path,
+            voice_id=voice_id,
+            model_id=model_id,
+            speed=speed,
+            voice_settings=voice_settings,
+            enable_ssml=enable_ssml,
+            expressive_mode=expressive_mode,
+        )
+        resolved = Path(path).resolve()
+        dur = _audio_file_duration_s(resolved)
+        word_timings = approximate_word_timings(text, dur)
+        logger.info(
+            "Voiceover+timestamps -> RemoteGPU F5-TTS | %s | dur=%.2fs | "
+            "approx_timings=%d words",
+            resolved.name, dur, len(word_timings),
+        )
+        return resolved, word_timings
+
     try:
         from elevenlabs import ElevenLabs, VoiceSettings as _VoiceSettings  # type: ignore
     except ImportError as exc:
@@ -546,11 +693,15 @@ def generate_ambient_track(
     sfx_prompt = prompt or _AMBIENT_PROMPT
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Single continuous 10s dark cyberpunk drone (looped for full video — no impact stingers)
+    _sfx_dur = max(_SFX_MIN_DURATION, min(12.0, float(duration_seconds or _SFX_CLIP_DURATION)))
+    if not prompt:
+        sfx_prompt = _ATMOSPHERE_SFX_PROMPT
 
     payload = {
         "text": sfx_prompt,
         "model_id": _SFX_MODEL_ID,
-        "duration_seconds": _SFX_CLIP_DURATION,
+        "duration_seconds": _sfx_dur,
         "loop": True,
         "prompt_influence": 0.7,
     }
@@ -561,8 +712,8 @@ def generate_ambient_track(
 
     try:
         logger.info(
-            "Generating SFX ambient tile | model=%s dur=%.0fs loop=True",
-            _SFX_MODEL_ID, _SFX_CLIP_DURATION,
+            "Generating SFX ambient tile | model=%s dur=%.0fs loop=True (min>=%.0fs)",
+            _SFX_MODEL_ID, _sfx_dur, _SFX_MIN_DURATION,
         )
         resp = _requests.post(
             "https://api.elevenlabs.io/v1/sound-generation",
@@ -570,6 +721,13 @@ def generate_ambient_track(
             headers=headers,
             timeout=15,
         )
+        if resp.status_code >= 400:
+            # Surface API body — 400s are often auth/key-format, not prompt bugs.
+            _body = (resp.text or "").strip().replace("\n", " ")[:400]
+            logger.warning(
+                "ElevenLabs SFX HTTP %s | body=%s",
+                resp.status_code, _body or "(empty)",
+            )
         resp.raise_for_status()
 
         with open(output_path, "wb") as fh:
@@ -577,11 +735,17 @@ def generate_ambient_track(
 
         # Ban rain/hiss: resample + light loudnorm so bed never distorts at mix
         resample_audio_48k(output_path, apply_loudnorm=True)
-        logger.info("Ambient SFX tile saved → %s (%.1f KB)", output_path.name, len(resp.content) / 1024)
+        logger.info(
+            "Ambient SFX tile saved -> %s (%.1f KB)",
+            output_path.name, len(resp.content) / 1024,
+        )
         return output_path
 
     except Exception as exc:  # noqa: BLE001
-        logger.warning("ElevenLabs SFX request failed (%s) — checking local fallback.", exc)
+        logger.warning(
+            "ElevenLabs SFX request failed (%s) — checking local fallback.",
+            exc,
+        )
 
     # Fallback: prefer cinematic pad; NEVER prefer legacy rain/martial rain loops
     for _rel in (
@@ -686,6 +850,61 @@ def _styles_to_csv(styles: Any) -> str:
     return ", ".join(_sanitize_style_list(styles))
 
 
+def _truncate_music_line(
+    text: Any,
+    max_chars: int = _MUSIC_LINE_MAX_CHARS,
+) -> str:
+    """Truncate a composition line/prompt under the Music API char limit."""
+    return str(text or "")[: max(1, int(max_chars))]
+
+
+def _enforce_composition_plan_line_limits(
+    composition_plan: Any,
+    max_chars: int = _MUSIC_LINE_MAX_CHARS,
+) -> Any:
+    """
+    Hard-truncate section ``lines`` and chunk ``text`` fields before music.compose.
+
+    Bulletproof fallback against ElevenLabs HTTP 422 ``string_too_long`` (max 200).
+    Mutates dict plans in place; rebuilds typed MusicPrompt sections when needed.
+    """
+    if composition_plan is None:
+        return composition_plan
+
+    if isinstance(composition_plan, dict):
+        sections = composition_plan.get("sections")
+        if isinstance(sections, list):
+            for section in sections:
+                if (
+                    isinstance(section, dict)
+                    and "lines" in section
+                    and isinstance(section["lines"], list)
+                ):
+                    section["lines"] = [
+                        _truncate_music_line(line, max_chars)
+                        for line in section["lines"]
+                    ]
+        chunks = composition_plan.get("chunks")
+        if isinstance(chunks, list):
+            for chunk in chunks:
+                if isinstance(chunk, dict) and "text" in chunk:
+                    chunk["text"] = _truncate_music_line(chunk["text"], max_chars)
+        return composition_plan
+
+    # Typed MusicPrompt / SongSection objects
+    sections = getattr(composition_plan, "sections", None)
+    if sections:
+        for section in sections:
+            lines = getattr(section, "lines", None)
+            if isinstance(lines, list):
+                truncated = [_truncate_music_line(line, max_chars) for line in lines]
+                try:
+                    section.lines = truncated
+                except Exception:  # noqa: BLE001
+                    pass
+    return composition_plan
+
+
 def _clamp_music_duration_ms(
     value: Any,
     *,
@@ -755,30 +974,33 @@ LAST_MUSIC_COMPOSE_MODE: str | None = None
 
 
 def _mei_section_styles() -> tuple[list[str], list[str], list[str], list[str]]:
-    """Shared positive/negative style lists for Matrix Siege → Sovereign Awakening."""
+    """Shared positive/negative style lists — industrial cyberpunk percussion bed."""
     siege_pos = _sanitize_style_list([
-        "dark ambient drone",
-        "heavy sub-bass drone",
-        "eerie mechanical tension",
-        "dystopian cybernetic atmosphere",
-        "low frequency rumble",
+        "industrial cyberpunk percussion",
+        "driving cinematic drums from the start",
+        "dark metallic hits",
+        "tense rhythmic pulse",
+        "dystopian synth bass",
+        "tempo 90 to 110 BPM",
+        "challenging epic build",
         "instrumental",
-        "cinematic production",
     ])
     siege_neg = _sanitize_style_list([
-        "upbeat melodies",
-        "bright synth",
-        "fast drums",
+        "cheerful pop",
+        "bright EDM drop",
+        "soft ambient only",
+        "long silent intro",
         "vocals",
         "lyrics",
+        "acoustic folk",
     ])
     awaken_pos = _sanitize_style_list([
-        "epic dark synth theme",
-        "inspiring cinematic pads",
-        "driving stoic bassline",
-        "heroic resolve",
-        "powerful dark synthwave",
-        "100 bpm",
+        "industrial percussion swell",
+        "driving cinematic drums",
+        "metallic cyber hits",
+        "dark synth bass",
+        "tempo 100 BPM",
+        "inspiring dystopian resolve",
         "instrumental",
     ])
     awaken_neg = _sanitize_style_list([
@@ -786,33 +1008,169 @@ def _mei_section_styles() -> tuple[list[str], list[str], list[str], list[str]]:
         "pop acoustic",
         "screaming vocals",
         "lyrics",
+        "soft piano ballad",
+        "long fade-in silence",
     ])
     return siege_pos, siege_neg, awaken_pos, awaken_neg
 
 
-def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
+def _load_music_prompt_directive(directive_path: "Path | None" = None) -> str:
+    candidates: list[Path] = []
+    if directive_path is not None:
+        candidates.append(Path(directive_path))
+    candidates.append(_MUSIC_PROMPT_DIRECTIVE_FILE)
+    for path in candidates:
+        try:
+            if path.is_file():
+                text = path.read_text(encoding="utf-8").strip()
+                if text:
+                    return text
+        except Exception:  # noqa: BLE001
+            continue
+    return MUSIC_PROMPT_SYSTEM_DIRECTIVE
+
+
+def generate_dynamic_music_prompt(
+    topic: str = "",
+    *,
+    subject: str = "",
+    directive_path: "Path | None" = None,
+    style_profile: str = "warrior",
+) -> str:
+    """
+    LLM ``music_prompt`` task — unique ElevenLabs prompt per video.
+
+    ``style_profile``:
+      - ``warrior`` — industrial cyberpunk percussion (master_mei)
+      - ``mystery`` — dark documentary / ancient-temple underscore
+    Falls back to a deterministic unique prompt if Gemini is unavailable.
+    """
+    profile = (style_profile or "warrior").strip().lower()
+    directive = _load_music_prompt_directive(directive_path)
+    theme = (topic or subject or "sovereignty against the digital matrix").strip()
+    if profile == "mystery":
+        _mystery_simple = (
+            "Dark ancient mystery documentary underscore, low drone pads, "
+            "subtle ritual percussion, sparse cello, no vocals"
+        )
+        fallback = _truncate_music_line(
+            f"{_mystery_simple}. Theme: {theme[:40]}. No silent intro.",
+            _MUSIC_PROMPT_TARGET_CHARS,
+        )
+    else:
+        fallback = _truncate_music_line(
+            f"{_MUSIC_SIMPLE_PROMPT}. Theme: {theme[:40]}. No silent intro.",
+            _MUSIC_PROMPT_TARGET_CHARS,
+        )
+    api_key = getattr(app_config, "GEMINI_API_KEY", "") or ""
+    if not api_key:
+        logger.info("music_prompt | no GEMINI_API_KEY — using deterministic fallback")
+        return fallback
+
+    user_block = (
+        f"{directive}\n\n"
+        f"Video topic: {theme}\n\n"
+        "Return ONLY the ElevenLabs music prompt as ONE concise line, strictly under "
+        "150 characters. Do not write long paragraphs or excessive descriptors. "
+        "No quotes, no markdown, no explanation."
+    )
+    try:
+        from avatar_engine.providers.gemini_utils import (
+            build_model_chain,
+            generate_content_with_model_fallback,
+            make_gemini_client_with_fallback,
+        )
+
+        client = make_gemini_client_with_fallback(api_key)
+        chain = build_model_chain(client, capability_type="text", preferred=None)
+        if not chain:
+            chain = [
+                "models/gemini-2.5-flash",
+                "models/gemini-2.0-flash",
+                "models/gemini-flash-latest",
+            ]
+        response = generate_content_with_model_fallback(
+            client, chain, contents=[user_block],
+        )
+        text = ""
+        if response is not None:
+            text = (getattr(response, "text", None) or "").strip()
+            if not text and getattr(response, "candidates", None):
+                try:
+                    parts = response.candidates[0].content.parts
+                    text = " ".join(getattr(p, "text", "") or "" for p in parts).strip()
+                except Exception:  # noqa: BLE001
+                    text = ""
+        # Strip fences / quotes
+        text = re.sub(r"^```(?:\w+)?\s*|\s*```$", "", text).strip()
+        text = text.strip('"').strip("'").strip()
+        # Collapse whitespace / newlines into a single line before length checks
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) >= 20:
+            # Soft-enforce style cues if LLM omitted them (then hard-cap)
+            low = text.lower()
+            if profile == "mystery":
+                # Strip festive / upbeat bleed from the LLM before soft-enforce.
+                for bad in (
+                    "upbeat", "party", "festa", "festive", "dance", "edm",
+                    "driving beat", "driving drums", "percussion groove",
+                    "90 bpm", "95 bpm", "100 bpm", "110 bpm",
+                ):
+                    if bad in low:
+                        text = re.sub(re.escape(bad), "", text, flags=re.IGNORECASE)
+                        text = re.sub(r"\s+", " ", text).strip(" .")
+                        low = text.lower()
+                if "bpm" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 18:
+                    text = f"{text} Tempo 50 BPM."
+                if (
+                    "drone" not in low
+                    and "ambient" not in low
+                    and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 28
+                ):
+                    text = f"{text} Slow enigmatic temple drone."
+                if "mysterious" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 14:
+                    text = f"{text} Mysterious."
+            else:
+                if "bpm" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 18:
+                    text = f"{text} Tempo 95 BPM."
+                if (
+                    "drum" not in low
+                    and "percussion" not in low
+                    and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 28
+                ):
+                    text = f"{text} Industrial cyberpunk drums."
+            if "instrumental" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 14:
+                text = f"{text} Instrumental only."
+            text = _truncate_music_line(text, _MUSIC_PROMPT_TARGET_CHARS)
+            logger.info(
+                "music_prompt | LLM generated (%d chars, style=%s)",
+                len(text), profile,
+            )
+            return text
+        logger.warning("music_prompt | LLM empty/short — using fallback")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "music_prompt | LLM failed (%s: %s) — using fallback",
+            type(exc).__name__, str(exc)[:160],
+        )
+    return fallback
+
+
+def build_mei_music_v2_plan(
+    total_ms: int,
+    *,
+    music_prompt: str = "",
+) -> dict[str, Any]:
     """
     Build a ``music_v2`` chunk-based composition plan.
 
-    Official ElevenLabs ``music_v2`` layout (NOT MusicPrompt)::
-
-        {
-          "chunks": [
-            {
-              "text": "[Section]\\n{instrumental}",
-              "duration_ms": int,          # 3000–120000
-              "positive_styles": list[str],
-              "negative_styles": list[str],
-              "context_adherence": "high",
-            },
-            ...
-          ]
-        }
-
-    Chunk 1 (0–15000 ms): Ominous Matrix Siege
-    Chunk 2 (15000–total): Stoic Sovereign Awakening
+    Chunk 1 (0–15000 ms): Melancholic siege
+    Chunk 2 (15000–total): Inspiring / challenging resolve
+    Optional ``music_prompt`` (LLM) is injected into both chunk texts.
     """
-    total = _clamp_music_duration_ms(total_ms, lo=18_000, hi=_MUSIC_DURATION_MS_MAX)
+    total = _clamp_music_duration_ms(
+        total_ms, lo=int(_MUSIC_MIN_DURATION_S * 1000), hi=_MUSIC_DURATION_MS_MAX,
+    )
     chunk1 = _clamp_music_duration_ms(
         15_000, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
     )
@@ -820,18 +1178,28 @@ def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
         total - chunk1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
     )
     siege_pos, siege_neg, awaken_pos, awaken_neg = _mei_section_styles()
+    # Cap prompt body so "HEADER + body + {instrumental}" stays ≤180 chars.
+    # Longest header here is "[Challenging Resolve] " (22) + " {instrumental}" (15).
+    _v2_body_budget = max(
+        40,
+        _MUSIC_LINE_MAX_CHARS - len("[Challenging Resolve] ") - len(" {instrumental}"),
+    )
+    prompt_body = _truncate_music_line(
+        (music_prompt or _MUSIC_SIMPLE_PROMPT).strip(),
+        min(_MUSIC_PROMPT_TARGET_CHARS, _v2_body_budget),
+    )
 
-    return {
+    plan = {
         "chunks": [
             {
-                "text": "[Ominous Matrix Siege]\n{instrumental}",
+                "text": f"[Melancholic Siege] {prompt_body} {{instrumental}}",
                 "duration_ms": int(chunk1),
                 "positive_styles": siege_pos,
                 "negative_styles": siege_neg,
                 "context_adherence": "high",
             },
             {
-                "text": "[Stoic Sovereign Awakening]\n{instrumental}",
+                "text": f"[Challenging Resolve] {prompt_body} {{instrumental}}",
                 "duration_ms": int(chunk2),
                 "positive_styles": awaken_pos,
                 "negative_styles": awaken_neg,
@@ -839,9 +1207,14 @@ def build_mei_music_v2_plan(total_ms: int) -> dict[str, Any]:
             },
         ]
     }
+    return _enforce_composition_plan_line_limits(plan)
 
 
-def build_mei_music_v1_plan(total_ms: int) -> Any:
+def build_mei_music_v1_plan(
+    total_ms: int,
+    *,
+    music_prompt: str = "",
+) -> Any:
     """
     Build a typed ``MusicPrompt`` (``SongSection``) for ``music_v1`` only.
 
@@ -856,69 +1229,79 @@ def build_mei_music_v1_plan(total_ms: int) -> Any:
         total - section1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
     )
     siege_pos, siege_neg, awaken_pos, awaken_neg = _mei_section_styles()
+    line = _truncate_music_line(
+        (music_prompt or _MUSIC_SIMPLE_PROMPT).strip() or "{instrumental}",
+        _MUSIC_LINE_MAX_CHARS,
+    )
 
     try:
         from elevenlabs import MusicPrompt, SongSection  # type: ignore
     except ImportError:
         # Dict fallback matching MusicPrompt JSON schema
-        return {
+        plan = {
             "positive_global_styles": _sanitize_style_list([
-                "instrumental", "cinematic", "dark ambient",
+                "instrumental", "cinematic", "melancholic", "cello",
             ]),
             "negative_global_styles": _sanitize_style_list([
-                "vocals", "lyrics", "pop", "upbeat", "cheerful",
+                "vocals", "lyrics", "pop", "upbeat", "cheerful", "fast drums",
             ]),
             "sections": [
                 {
-                    "section_name": "Ominous Matrix Siege",
+                    "section_name": "Melancholic Siege",
                     "positive_local_styles": siege_pos,
                     "negative_local_styles": siege_neg,
                     "duration_ms": int(section1),
-                    "lines": ["{instrumental}"],
+                    "lines": [line, "{instrumental}"],
                 },
                 {
-                    "section_name": "Stoic Sovereign Awakening",
+                    "section_name": "Challenging Resolve",
                     "positive_local_styles": awaken_pos,
                     "negative_local_styles": awaken_neg,
                     "duration_ms": int(section2),
-                    "lines": ["{instrumental}"],
+                    "lines": [line, "{instrumental}"],
                 },
             ],
         }
+        return _enforce_composition_plan_line_limits(plan)
 
-    return MusicPrompt(
+    plan = MusicPrompt(
         positive_global_styles=_sanitize_style_list([
-            "instrumental", "cinematic", "dark ambient",
+            "instrumental", "cinematic", "melancholic", "cello",
         ]),
         negative_global_styles=_sanitize_style_list([
-            "vocals", "lyrics", "pop", "upbeat", "cheerful",
+            "vocals", "lyrics", "pop", "upbeat", "cheerful", "fast drums",
         ]),
         sections=[
             SongSection(
-                section_name="Ominous Matrix Siege",
+                section_name="Melancholic Siege",
                 positive_local_styles=siege_pos,
                 negative_local_styles=siege_neg,
                 duration_ms=int(section1),
-                lines=["{instrumental}"],
+                lines=[line, "{instrumental}"],
             ),
             SongSection(
-                section_name="Stoic Sovereign Awakening",
+                section_name="Challenging Resolve",
                 positive_local_styles=awaken_pos,
                 negative_local_styles=awaken_neg,
                 duration_ms=int(section2),
-                lines=["{instrumental}"],
+                lines=[line, "{instrumental}"],
             ),
         ],
     )
+    return _enforce_composition_plan_line_limits(plan)
 
 
 def generate_music_v2_bed(
     output_path: Path,
     *,
     duration_seconds: float = 80.0,
+    music_prompt: str = "",
+    topic: str = "",
+    directive_path: "Path | None" = None,
+    style_profile: str = "warrior",
 ) -> "Path | None":
     """
-    Compose a Master Mei background bed via ElevenLabs Music ``music.compose``.
+    Compose a background music bed via ElevenLabs Music ``music.compose``.
 
     Fallback chain (never aborts the reel pipeline)
     -----------------------------------------------
@@ -930,6 +1313,9 @@ def generate_music_v2_bed(
 
     Important: ``force_instrumental`` may ONLY be sent with ``prompt``.
     Sending it with ``composition_plan`` returns HTTP 422.
+
+    When ``music_prompt`` is empty, generates a unique LLM prompt via
+    ``generate_dynamic_music_prompt(topic, style_profile=…)`` for every video.
     """
     global LAST_MUSIC_COMPOSE_MODE
     LAST_MUSIC_COMPOSE_MODE = None
@@ -942,13 +1328,35 @@ def generate_music_v2_bed(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Generate ≥40s of BGM, then loop in mix
+    _dur_s = max(_MUSIC_MIN_DURATION_S, float(duration_seconds or _MUSIC_MIN_DURATION_S))
     total_ms = _clamp_music_duration_ms(
-        int(round(float(duration_seconds) * 1000.0)),
-        lo=18_000,
+        int(round(_dur_s * 1000.0)),
+        lo=int(_MUSIC_MIN_DURATION_S * 1000),
         hi=_MUSIC_DURATION_MS_MAX,
     )
-    v2_plan = build_mei_music_v2_plan(total_ms)
-    v1_plan = build_mei_music_v1_plan(total_ms)
+    _style = (style_profile or "warrior").strip().lower()
+    dyn_prompt = _truncate_music_line(
+        (music_prompt or "").strip(),
+        _MUSIC_PROMPT_TARGET_CHARS,
+    )
+    if not dyn_prompt:
+        dyn_prompt = generate_dynamic_music_prompt(
+            topic=topic,
+            directive_path=directive_path,
+            style_profile=_style,
+        )
+    dyn_prompt = _truncate_music_line(dyn_prompt, _MUSIC_PROMPT_TARGET_CHARS)
+    logger.info(
+        "Music v2 bed request | duration=%.1fs (min=%.0fs) | prompt_chars=%d",
+        _dur_s, _MUSIC_MIN_DURATION_S, len(dyn_prompt),
+    )
+    v2_plan = _enforce_composition_plan_line_limits(
+        build_mei_music_v2_plan(total_ms, music_prompt=dyn_prompt)
+    )
+    v1_plan = _enforce_composition_plan_line_limits(
+        build_mei_music_v1_plan(total_ms, music_prompt=dyn_prompt)
+    )
     saw_422 = False
 
     def _persist(audio: Any, *, label: str) -> "Path | None":
@@ -983,6 +1391,7 @@ def generate_music_v2_bed(
                 "Composing music bed | model=%s total_ms=%d chunks=%d",
                 _MUSIC_V2_MODEL, total_ms, n_chunks,
             )
+            v2_plan = _enforce_composition_plan_line_limits(v2_plan)
             audio = client.music.compose(
                 composition_plan=v2_plan,  # type: ignore[arg-type]
                 model_id=_MUSIC_V2_MODEL,  # type: ignore[arg-type]
@@ -1017,6 +1426,7 @@ def generate_music_v2_bed(
                 "Composing music bed | model=%s total_ms=%d sections=%d (MusicPrompt)",
                 _MUSIC_V1_MODEL, total_ms, n_sec,
             )
+            v1_plan = _enforce_composition_plan_line_limits(v1_plan)
             audio = client.music.compose(
                 composition_plan=v1_plan,
                 model_id=_MUSIC_V1_MODEL,
@@ -1042,17 +1452,35 @@ def generate_music_v2_bed(
                 )
 
         # --- Pass 2: simple prompt (force_instrumental OK only here) ---
-        simple_prompt = _MUSIC_SIMPLE_PROMPT
-        style_csv = _styles_to_csv(
-            _sanitize_style_list([
-                "epic dark synth theme",
-                "heavy sub-bass drone",
-                "stoic cinematic atmosphere",
-                "instrumental",
-            ])
+        simple_prompt = _truncate_music_line(
+            dyn_prompt or _MUSIC_SIMPLE_PROMPT,
+            _MUSIC_LINE_MAX_CHARS,
         )
+        if _style == "mystery":
+            _style_tags = [
+                "slow enigmatic ancient mystery underscore",
+                "low drone pads only",
+                "no drums no dance beat",
+                "tempo 50 BPM",
+                "instrumental atmospheric",
+            ]
+        else:
+            _style_tags = [
+                "industrial cyberpunk percussion",
+                "driving cinematic drums",
+                "dark metallic hits",
+                "tempo 95 BPM",
+                "instrumental",
+            ]
+        style_csv = _styles_to_csv(_sanitize_style_list(_style_tags))
         if style_csv and style_csv.lower() not in simple_prompt.lower():
-            simple_prompt = f"{simple_prompt}. Styles: {style_csv}"
+            # Keep total under line max even after style append
+            room = _MUSIC_LINE_MAX_CHARS - len(simple_prompt) - 10
+            if room > 20:
+                simple_prompt = (
+                    f"{simple_prompt}. Styles: {_truncate_music_line(style_csv, room)}"
+                )
+            simple_prompt = _truncate_music_line(simple_prompt, _MUSIC_LINE_MAX_CHARS)
 
         for model in (_MUSIC_V2_MODEL, _MUSIC_V1_MODEL):
             try:
@@ -1108,21 +1536,278 @@ def generate_master_mei_soundscape(
     *,
     stem: str = "mei",
     duration_seconds: float = 80.0,
+    include_impact_sfx: bool = False,
+    topic: str = "",
+    music_prompt: str = "",
+    directive_path: "Path | None" = None,
+    style_profile: str = "warrior",
 ) -> tuple["Path | None", "Path | None"]:
     """
-    Generate the dual-layer Master Mei soundscape.
+    Generate music_v2 BGM bed (≥40s) + optional impact.
 
-    Returns ``(music_bed_path, impact_sfx_path)``.
+    Used by master_mei (warrior) and ancient_knowledge (mystery) three-channel mix.
+    Atmosphere drone is generated separately via ``generate_ambient_track``.
+
+    Returns ``(music_bed_path, impact_sfx_path|None)``.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     music = generate_music_v2_bed(
         out / f"{stem}_music_v2.mp3",
-        duration_seconds=duration_seconds,
+        duration_seconds=max(_MUSIC_MIN_DURATION_S, float(duration_seconds or 40.0)),
+        music_prompt=music_prompt,
+        topic=topic,
+        directive_path=directive_path,
+        style_profile=style_profile,
     )
-    impact = generate_impact_sfx(
-        out / f"{stem}_impact_braam.mp3",
-        prompt=_IMPACT_SFX_PROMPT,
-        duration_seconds=_IMPACT_SFX_DURATION_S,
-    )
+    impact: "Path | None" = None
+    if include_impact_sfx:
+        impact = generate_impact_sfx(
+            out / f"{stem}_impact_braam.mp3",
+            prompt=_IMPACT_SFX_PROMPT,
+            duration_seconds=_IMPACT_SFX_DURATION_S,
+        )
     return music, impact
+
+
+# ---------------------------------------------------------------------------
+# CTA cache + local audio assembly (credit optimization)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CTA_CACHE: Path = (
+    Path(__file__).resolve().parents[1]
+    / "channels_config"
+    / "master_mei"
+    / "audio"
+    / "cta_cache.mp3"
+)
+_DEFAULT_BGM_DIR: Path = (
+    Path(__file__).resolve().parents[1]
+    / "channels_config"
+    / "master_mei"
+    / "audio"
+    / "bgm"
+)
+_DEFAULT_SFX_LOOP: Path = (
+    Path(__file__).resolve().parents[1]
+    / "channels_config"
+    / "master_mei"
+    / "audio"
+    / "sfx"
+    / "dark_atmosphere_loop.wav"
+)
+
+
+def default_cta_cache_path() -> Path:
+    """Canonical on-disk CTA cache for Master Mei (shared across reel variants)."""
+    return _DEFAULT_CTA_CACHE
+
+
+def default_bgm_folder() -> Path:
+    return _DEFAULT_BGM_DIR
+
+
+def default_sfx_loop_path() -> Path:
+    return _DEFAULT_SFX_LOOP
+
+
+def ensure_cached_cta_voiceover(
+    cta_text: str,
+    cache_path: "Path | None" = None,
+    *,
+    voice_id: str | None = None,
+    model_id: str = _DEFAULT_TTS_MODEL,
+    speed: float | None = None,
+    voice_settings: dict | None = None,
+    expressive_mode: bool = True,
+    force_regenerate: bool = False,
+) -> "Path | None":
+    """
+    Return a reusable CTA mp3, generating it via ElevenLabs only when missing.
+
+    Saves ~30% TTS character spend by avoiding re-synthesizing the same CTA
+    on every reel variant.
+    """
+    text = (cta_text or "").strip()
+    if not text:
+        return None
+    out = Path(cache_path) if cache_path else default_cta_cache_path()
+    if out.is_file() and out.stat().st_size > 500 and not force_regenerate:
+        logger.info("CTA cache HIT → %s (%d bytes)", out, out.stat().st_size)
+        return out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("CTA cache MISS — generating once | chars=%d → %s", len(text), out)
+    return generate_voiceover(
+        text,
+        out,
+        voice_id=voice_id,
+        model_id=model_id,
+        speed=speed,
+        voice_settings=voice_settings,
+        expressive_mode=expressive_mode,
+    )
+
+
+def generate_optimized_voiceover(
+    text_body: str,
+    output_path: Path,
+    *,
+    cta_cache_path: "Path | None" = None,
+    cta_text: str = "",
+    voice_id: str | None = None,
+    model_id: str = _DEFAULT_TTS_MODEL,
+    speed: float | None = None,
+    voice_settings: dict | None = None,
+    enable_ssml: bool | None = None,
+    expressive_mode: bool = True,
+    gap_s: float = 0.4,
+) -> tuple[Path, float]:
+    """
+    Generate ElevenLabs speech only for the unique script body, then append a
+    pre-recorded / cached CTA locally to preserve API credits.
+
+    Returns ``(combined_mp3_path, total_duration_s)``.
+    """
+    from moviepy import AudioFileClip, concatenate_audioclips
+    from moviepy.audio.AudioClip import AudioArrayClip
+    import numpy as np
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    body_path = output_path.with_name(output_path.stem + "_body.mp3")
+
+    generate_voiceover(
+        text_body,
+        body_path,
+        voice_id=voice_id,
+        model_id=model_id,
+        speed=speed,
+        voice_settings=voice_settings,
+        enable_ssml=enable_ssml,
+        expressive_mode=expressive_mode,
+    )
+
+    cache = Path(cta_cache_path) if cta_cache_path else default_cta_cache_path()
+    if cta_text and (not cache.is_file() or cache.stat().st_size < 500):
+        ensure_cached_cta_voiceover(
+            cta_text,
+            cache,
+            voice_id=voice_id,
+            model_id=model_id,
+            speed=speed,
+            voice_settings=voice_settings,
+            expressive_mode=expressive_mode,
+        )
+
+    body_clip = AudioFileClip(str(body_path))
+    body_dur = float(body_clip.duration or 0.0)
+
+    if cache.is_file() and cache.stat().st_size > 500:
+        cta_clip = AudioFileClip(str(cache))
+        sr = 44100
+        sil = np.zeros((int(sr * max(0.0, gap_s)), 2), dtype=np.float32)
+        silence = AudioArrayClip(sil, fps=sr)
+        combined = concatenate_audioclips([body_clip, silence, cta_clip])
+        combined.write_audiofile(str(output_path), fps=sr, logger=None)
+        total = float(combined.duration or (body_dur + gap_s + float(cta_clip.duration or 0.0)))
+        for c in (body_clip, cta_clip, silence, combined):
+            try:
+                c.close()
+            except Exception:
+                pass
+        logger.info(
+            "Optimized VO | body=%.2fs + gap=%.2fs + cached CTA → total=%.2fs → %s",
+            body_dur, gap_s, total, output_path.name,
+        )
+        return output_path, total
+
+    # No CTA cache — copy body as final
+    try:
+        output_path.write_bytes(body_path.read_bytes())
+    except Exception:
+        body_clip.close()
+        return body_path, body_dur
+    body_clip.close()
+    logger.warning("CTA cache not found — using narration body only → %s", output_path.name)
+    return output_path, body_dur
+
+
+def assemble_final_audio_track(
+    vo_path: Path,
+    output_path: Path,
+    *,
+    bgm_folder: "Path | None" = None,
+    sfx_loop_path: "Path | None" = None,
+    bgm_start_s: float = _MIX_MUSIC_START_OFFSET_S,
+    bgm_fade_in_s: float = _MIX_AMBIENT_FADE_IN_S,
+    bgm_fade_out_s: float = 3.0,
+    sfx_volume: float = _MIX_SFX_VOLUME,
+    bgm_volume: float = _MIX_BGM_VOLUME,
+    sfx_fade_in_s: float = _MIX_AMBIENT_FADE_IN_S,
+) -> Path:
+    """
+    Mix continuous ambient SFX + delayed randomized BGM under a voiceover file.
+
+    Pure local MoviePy assemble — no ElevenLabs / Flux spend.
+    """
+    import random
+    from moviepy import AudioFileClip, CompositeAudioClip
+    from moviepy.audio.fx import AudioFadeIn, AudioFadeOut, AudioLoop, MultiplyVolume
+
+    vo_path = Path(vo_path)
+    output_path = Path(output_path)
+    bgm_dir = Path(bgm_folder) if bgm_folder else default_bgm_folder()
+    sfx_path = Path(sfx_loop_path) if sfx_loop_path else default_sfx_loop_path()
+
+    if not vo_path.is_file():
+        raise FileNotFoundError(f"Voiceover not found: {vo_path}")
+    if not sfx_path.is_file():
+        raise FileNotFoundError(f"SFX loop not found: {sfx_path}")
+    if not bgm_dir.is_dir():
+        raise FileNotFoundError(f"BGM folder not found: {bgm_dir}")
+
+    bgm_files = [
+        p for p in bgm_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in {".mp3", ".wav"}
+    ]
+    if not bgm_files:
+        raise FileNotFoundError(f"No BGM mp3/wav in {bgm_dir}")
+
+    vo_clip = AudioFileClip(str(vo_path))
+    total_duration = float(vo_clip.duration or 0.0)
+
+    sfx_clip = AudioFileClip(str(sfx_path))
+    _sfx_fx: list[Any] = [
+        AudioLoop(duration=total_duration),
+        MultiplyVolume(float(sfx_volume)),
+    ]
+    if float(sfx_fade_in_s or 0.0) > 0.01:
+        _sfx_fx.insert(0, AudioFadeIn(float(sfx_fade_in_s)))
+    sfx_loop = sfx_clip.with_effects(_sfx_fx)
+
+    selected = random.choice(bgm_files)
+    bgm_clip = AudioFileClip(str(selected))
+    play_s = max(1.0, total_duration - float(bgm_start_s))
+    bgm_slice = bgm_clip.subclipped(0, min(float(bgm_clip.duration or 1.0), play_s))
+    bgm_timed = bgm_slice.with_effects(
+        [
+            AudioFadeIn(float(bgm_fade_in_s)),
+            AudioFadeOut(float(bgm_fade_out_s)),
+            MultiplyVolume(float(bgm_volume)),
+        ]
+    ).with_start(float(bgm_start_s))
+
+    final = CompositeAudioClip([sfx_loop, bgm_timed, vo_clip])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    final.write_audiofile(str(output_path), fps=44100, logger=None)
+    logger.info(
+        "Final audio assembled | vo=%.1fs bgm=%s start=%.1fs → %s",
+        total_duration, selected.name, bgm_start_s, output_path.name,
+    )
+    for c in (vo_clip, sfx_clip, sfx_loop, bgm_clip, bgm_slice, bgm_timed, final):
+        try:
+            c.close()
+        except Exception:
+            pass
+    return output_path
+

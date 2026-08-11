@@ -15,7 +15,7 @@ Dry-run / simulation mode (no browser clicks, no sheet writes):
 Fill schedule datetimes only (no posting):
     python facebook_scheduler/main.py --fill-times-only
 
-Record mode (launch Playwright Codegen):
+Record workflow session (manual 6-step capture → recorded_workflow.json):
     python facebook_scheduler/main.py --record
 
 Override sheet or worksheet:
@@ -25,7 +25,8 @@ Options
 -------
   --dry-run           Simulate all actions (no browser interaction, no sheet writes).
   --fill-times-only   Only fill empty Column B datetimes, then exit.
-  --record            Launch Playwright Codegen and exit.
+  --record            Record the background + scheduler workflow (English UI), then exit.
+  --workflow          Override path for recorded_workflow.json (save + load).
   --sheet-id          Override GSHEET_ID from config.
   --worksheet         Override WORKSHEET_NAME from config.
   --background        Background preset name (default: no background).
@@ -77,7 +78,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--record",
         action="store_true",
         default=False,
-        help="Launch Playwright Codegen for workflow recording.",
+        help=(
+            "Record a workflow session (Open Backgrounds → … → Open Scheduler) "
+            "against the English Meta Business Suite UI and save it for live runs."
+        ),
+    )
+    ap.add_argument(
+        "--workflow",
+        default="",
+        help=(
+            "Path to recorded_workflow.json (used for --record save and live-run "
+            "replay). Default: credentials/recorded_workflow.json"
+        ),
     )
     ap.add_argument("--sheet-id",   default="", help="Override Google Sheet ID.")
     ap.add_argument("--worksheet",  default="", help="Override worksheet tab name.")
@@ -127,9 +139,10 @@ def main(argv: "list[str] | None" = None) -> int:
         config.CDP_ENDPOINT = args.cdp
     dry_run = args.dry_run
 
-    # ------------------------------------------------------------------
-    # Mode: Playwright Codegen recorder
-    # ------------------------------------------------------------------
+    # Resolve workflow path once — shared by --record and live-run.
+    from facebook_scheduler.workflow_recorder import workflow_path as _default_wf_path
+    wf_path = Path(args.workflow).expanduser() if args.workflow else _default_wf_path()
+
     # ------------------------------------------------------------------
     # Mode: Workflow recording session
     # ------------------------------------------------------------------
@@ -139,14 +152,12 @@ def main(argv: "list[str] | None" = None) -> int:
             FacebookScheduler,
             attach_to_dolphin_profile,
         )
-        from facebook_scheduler.workflow_recorder import (
-            run_recording_session,
-            workflow_path as _wf_path,
-        )
+        from facebook_scheduler.workflow_recorder import run_recording_session
 
-        _log.info("Starting workflow recording session...")
+        _log.info("Starting workflow recording session → %s", wf_path)
         print()
         print("[Record] Connecting to Dolphin profile...")
+        print("[Record] Meta Business Suite UI language must be ENGLISH.")
 
         cdp_port: int | None = None
         if args.cdp:
@@ -162,8 +173,12 @@ def main(argv: "list[str] | None" = None) -> int:
                 _log.error("Could not attach to browser: %s", exc)
                 return 1
 
-            # Step 1: open composer and type sample text
-            scheduler = FacebookScheduler(page=page, dry_run=False)
+            # Open composer and type sample text, then hand off to the recorder.
+            scheduler = FacebookScheduler(
+                page=page,
+                dry_run=False,
+                workflow_path=wf_path,
+            )
             print("[Record] Opening composer and typing sample text...")
             try:
                 scheduler.open_composer()
@@ -176,11 +191,10 @@ def main(argv: "list[str] | None" = None) -> int:
                 _log.error("Could not open composer: %s", exc)
                 return 1
 
-            # Step 2: hand control to the user + capture their actions
-            run_recording_session(page)
+            run_recording_session(page, workflow_path=wf_path)
 
-        print(f"[Record] Workflow saved to: {_wf_path()}")
-        print("[Record] Run without --record to use the recorded workflow.")
+        print(f"[Record] Workflow saved to: {wf_path}")
+        print("[Record] Run without --record to replay this workflow on live posts.")
         return 0
 
     # ------------------------------------------------------------------
@@ -297,7 +311,9 @@ def main(argv: "list[str] | None" = None) -> int:
             page=page,
             dry_run=False,
             training_mode=args.set_bg,
+            workflow_path=wf_path,
         )
+        _log.info("Live run using workflow_path=%s", wf_path)
         stats = scheduler.run(rows, sheet_queue=queue)
 
     _print_summary(stats)

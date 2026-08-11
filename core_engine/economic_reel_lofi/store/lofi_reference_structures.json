@@ -1,0 +1,97 @@
+[
+  {
+    "id": "ref_001",
+    "module": "relationship",
+    "hook_type": "definition",
+    "scene_count": 8,
+    "lines": [
+      "Trust is not a feeling.",
+      "It is a pattern you notice over time.",
+      "Not the promise they made once.",
+      "The quiet consistency after.",
+      "When words match the follow-through.",
+      "When absence does not rewrite the story.",
+      "That is where safety begins.",
+      "Choose the pattern, not the performance."
+    ],
+    "rhyme_pattern": "anaphora",
+    "theme": "trust",
+    "has_authority_quote": false
+  },
+  {
+    "id": "ref_002",
+    "module": "relationship",
+    "hook_type": "rhetorical_question",
+    "scene_count": 8,
+    "lines": [
+      "What if love is not intensity?",
+      "What if it is steadiness?",
+      "The text that arrives without chase.",
+      "The apology that lands without theater.",
+      "The space that still feels close.",
+      "Intensity fades. Character stays.",
+      "Look for the calm, not the spike.",
+      "That is the love that lasts."
+    ],
+    "rhyme_pattern": "anaphora",
+    "theme": "secure_love",
+    "has_authority_quote": false
+  },
+  {
+    "id": "ref_003",
+    "module": "relationship",
+    "hook_type": "authority_quote",
+    "scene_count": 8,
+    "lines": [
+      "\"Don't bend; don't water it down.\" — Franz Kafka",
+      "People who ask you to shrink are not home.",
+      "Your softness is not a flaw to edit.",
+      "Your boundaries are not a rejection of love.",
+      "The right connection makes room for both.",
+      "You do not owe anyone a smaller self.",
+      "Stand in the version that feels true.",
+      "Love that asks you to disappear is not love."
+    ],
+    "rhyme_pattern": "none",
+    "theme": "self_respect",
+    "has_authority_quote": true
+  },
+  {
+    "id": "ref_004",
+    "module": "parenting",
+    "hook_type": "definition",
+    "scene_count": 8,
+    "lines": [
+      "Patience is not silence.",
+      "It is staying soft while they melt down.",
+      "Not fixing every feeling in five seconds.",
+      "Not measuring the day by perfect behavior.",
+      "It is presence when nothing is tidy.",
+      "They borrow your calm before they own theirs.",
+      "That borrowed calm becomes their nervous system.",
+      "You are building safety, not performance."
+    ],
+    "rhyme_pattern": "anaphora",
+    "theme": "patience",
+    "has_authority_quote": false
+  },
+  {
+    "id": "ref_005",
+    "module": "parenting",
+    "hook_type": "rhetorical_question",
+    "scene_count": 8,
+    "lines": [
+      "What if the mess is the memory?",
+      "The sticky hands. The unfinished lunch.",
+      "The bedtime that took too long.",
+      "You will miss this chaos one day.",
+      "Not because it was easy.",
+      "Because it was theirs — and yours.",
+      "Slow down for one ordinary minute.",
+      "This season does not come twice."
+    ],
+    "rhyme_pattern": "none",
+    "theme": "fleeting_season",
+    "has_authority_quote": false
+  }
+]

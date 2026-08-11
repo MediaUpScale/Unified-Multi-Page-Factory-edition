@@ -579,6 +579,21 @@ class GeminiImageAdapter(ImageProvider):
 
 # Back-compat / explicit export
 def get_image_adapter(*args, **kwargs):
-    """Factory: returns the active (Together FLUX) image adapter."""
+    """
+    Factory: returns the active image adapter.
+
+    When ``ENABLE_REMOTE_GPU_WORKFLOWS=true``, routes to the ComfyUI/RunPod
+    Flux adapter. Otherwise returns the legacy Together-backed
+    ``GeminiImageAdapter`` unchanged.
+    """
+    from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+        RemoteGPUImageAdapter,
+        is_remote_gpu_enabled,
+    )
+
+    # Runtime / flow-preset check (media-aware) for long-running schedulers
+    if is_remote_gpu_enabled("image"):
+        logger.info("Image adapter -> RemoteGPU (flow/env image provider=remote_gpu)")
+        return RemoteGPUImageAdapter(*args, **kwargs)
     return GeminiImageAdapter(*args, **kwargs)
 

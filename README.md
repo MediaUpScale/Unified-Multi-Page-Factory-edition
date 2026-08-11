@@ -1,4 +1,4 @@
-﻿# Unified Multi-Page Content Factory
+# Unified Multi-Page Content Factory
 
 > **A multi-persona, AI-powered social-media production engine** that generates brand-aligned images, kinetic video reels, and scheduled postplanner sheets across multiple independent page identities — from a single CLI command.
 
@@ -50,11 +50,11 @@ main.py --page wonder_feed --post-type ECONOMIC_REEL --qty 3
          ├─► config.py resolves all page-scoped paths
          └─► page_loader.load_page_context() builds PageContext
                   │
-                  └─► imports pages_config/{page_id}/page_config.py
+                  └─► imports channels_config/{page_id}/page_config.py
                        └─► master_dna.json  (persona voice, environments, CTAs)
 ```
 
-Each persona lives under `pages_config/{page_id}/`:
+Each persona lives under `channels_config/{page_id}/`:
 
 | Asset | Purpose |
 |---|---|
@@ -254,7 +254,7 @@ Unified Multi-Page Factory/
 │       ├── image_provider.py   # Gemini image generation adapter
 │       └── gemini_utils.py     # Gemini model chains and text helpers
 │
-├── pages_config/
+├── channels_config/
 │   ├── wonder_feed/
 │   │   ├── page_config.py      # Page overrides, TOPIC_POOL, reel settings
 │   │   ├── persona_dna.py
@@ -410,7 +410,7 @@ STYLE_CHARACTERS    = "melancholic portrait subject, serpentine horror mask"
 ```
 
 Add a new page by:
-1. Creating `pages_config/{your_page_id}/` with the files above.
+1. Creating `channels_config/{your_page_id}/` with the files above.
 2. Adding `master_dna.json`, `logo/logo.png`, and (optionally) `avatar_reference/`.
 3. Running `python main.py --page your_page_id --post-type STANDARD_QUOTE`.
 

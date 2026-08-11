@@ -5,7 +5,7 @@ VisualQA_Agent configuration — API keys, global outputs paths, guardrails.
 Judge outputs live under:
 ``PROJECT_ROOT/outputs/{channel}/VisualQA_Agent_Judge/{attempts,approved,logs}/``
 
-Style references remain under ``pages_config/{channel}/style_reference/``.
+Style references remain under ``channels_config/{channel}/style_reference/``.
 """
 from __future__ import annotations
 
@@ -18,7 +18,14 @@ from pathlib import Path
 AGENT_ROOT: Path = Path(__file__).resolve().parent
 PROJECT_ROOT: Path = AGENT_ROOT.parent
 FACTORY_ROOT: Path = PROJECT_ROOT  # alias
-PAGES_CONFIG_ROOT: Path = PROJECT_ROOT / "pages_config"
+CHANNELS_CONFIG_ROOT: Path = PROJECT_ROOT / "channels_config"
+_LEGACY_PAGES_CONFIG_ROOT: Path = PROJECT_ROOT / "pages_config"
+# Prefer channels_config/; fall back to historic pages_config/ if present.
+PAGES_CONFIG_ROOT: Path = (
+    CHANNELS_CONFIG_ROOT
+    if CHANNELS_CONFIG_ROOT.is_dir()
+    else _LEGACY_PAGES_CONFIG_ROOT
+)
 OUTPUTS_ROOT: Path = PROJECT_ROOT / "outputs"
 JUDGE_FOLDER_NAME: str = "VisualQA_Agent_Judge"
 
@@ -39,10 +46,14 @@ try:
     _FACTORY_GEMINI = getattr(_factory_cfg, "GEMINI_API_KEY", None)
     _FACTORY_TOGETHER = getattr(_factory_cfg, "TOGETHER_API_KEY", None)
     _FACTORY_FLUX = getattr(_factory_cfg, "TOGETHER_IMAGE_MODEL", None)
+    _FACTORY_REMOTE_GPU = bool(
+        getattr(_factory_cfg, "ENABLE_REMOTE_GPU_WORKFLOWS", False)
+    )
 except Exception:  # noqa: BLE001
     _FACTORY_GEMINI = None
     _FACTORY_TOGETHER = None
     _FACTORY_FLUX = None
+    _FACTORY_REMOTE_GPU = False
 
 # ---------------------------------------------------------------------------
 # API keys (google-genai + Together AI / FLUX)
@@ -68,6 +79,13 @@ FLUX_MODEL: str = (
     or "black-forest-labs/FLUX.1-schnell"
 )
 FLUX_FALLBACK_MODEL: str = "black-forest-labs/FLUX.1-dev"
+
+# Mirror factory remote-GPU flag (env wins when explicitly set)
+_REMOTE_GPU_ENV = (os.getenv("ENABLE_REMOTE_GPU_WORKFLOWS") or "").strip().lower()
+if _REMOTE_GPU_ENV:
+    ENABLE_REMOTE_GPU_WORKFLOWS: bool = _REMOTE_GPU_ENV in ("1", "true", "yes", "on")
+else:
+    ENABLE_REMOTE_GPU_WORKFLOWS = bool(_FACTORY_REMOTE_GPU)
 
 # ---------------------------------------------------------------------------
 # Concise positive style anchors (no negative-word stuffing for FLUX Schnell)
@@ -101,7 +119,7 @@ DEFAULT_STYLE_REFERENCE_FOLDER: Path = (
     PAGES_CONFIG_ROOT / "master_mei" / "style_reference"
 ).resolve()
 
-MAX_PROMPT_WORDS: int = 120
+MAX_PROMPT_WORDS: int = 180  # FLUX.1-schnell natural-language budget (120–180 words)
 
 # ---------------------------------------------------------------------------
 # Cost & safety guardrails
@@ -124,8 +142,14 @@ IMAGE_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp")
 
 
 def channel_config_root(channel_name: str) -> Path:
-    """``pages_config/{channel}/`` (config + style refs only)."""
-    return (PAGES_CONFIG_ROOT / channel_name).resolve()
+    """``channels_config/{channel}/`` (config + style refs only)."""
+    primary = CHANNELS_CONFIG_ROOT / channel_name
+    if primary.is_dir():
+        return primary.resolve()
+    legacy = _LEGACY_PAGES_CONFIG_ROOT / channel_name
+    if legacy.is_dir():
+        return legacy.resolve()
+    return primary.resolve()
 
 
 def channel_output_root(channel_name: str) -> Path:
@@ -139,7 +163,7 @@ def judge_root(channel_name: str) -> Path:
 
 
 def style_folder_for_channel(channel_name: str) -> Path:
-    """``pages_config/{channel}/style_reference`` (fallback: master_mei)."""
+    """``channels_config/{channel}/style_reference`` (fallback: master_mei)."""
     candidate = channel_config_root(channel_name) / "style_reference"
     if candidate.is_dir():
         return candidate

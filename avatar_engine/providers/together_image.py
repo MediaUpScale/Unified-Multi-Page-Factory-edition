@@ -56,28 +56,34 @@ _DRAFT_ORIENTATION_SIZE: dict[str, tuple[int, int]] = {
 MASTER_STYLE_ANCHOR: str = (
     "dark 80s dystopian cyberpunk, brutalist concrete architecture, ancient stone "
     "monoliths, dark muted cinematic tones, heavy ash rain, rusted iron, monochrome "
-    "CRT monitor walls, high contrast cinematic lighting, 35mm film grain, "
-    "8k photorealistic shot"
+    "CRT monitor walls, high contrast cinematic lighting with fine film grain"
 )
 
 # ROLE A / B — traditional organic finish (no cyberpunk bleed)
 TRADITIONAL_STYLE_ANCHOR: str = (
-    "cinematic 8k photorealistic raw photography, volumetric natural mist and dawn light, "
-    "detailed skin textures, octane render, 35mm film grain, photorealistic shot, "
-    "warm ember gold and charcoal stone, ancestral temple aesthetic"
+    "cinematic natural photography, volumetric mist and dawn light, detailed skin "
+    "textures, fine film grain, warm ember gold and charcoal stone, ancestral temple aesthetic"
 )
 
 # Hard ban: FLUX / Nano Banana must never paint words / UI / captions onto the frame
 _TEXT_OVERLAY_NEGATIVE: str = (
-    "text, words, typography, font, letters, sample, watermark, signature, "
-    "caption, quotes, UI elements, subtitles, labels, "
+    "text, watermark, typography, close-up, cropped head, face zoom, "
+    "subtitles, UI elements, "
+    "words, font, letters, sample, signature, caption, quotes, labels, "
     "script, overlay text, lower thirds, written text, logos, inscriptions, "
     "speech bubbles, closed captions, burned-in subtitles, on-screen text, "
-    "title cards, hashtags, glyphs, alphabets, readable text"
+    "title cards, hashtags, glyphs, alphabets, readable text, "
+    "tight shot, macro, single monk portrait, sweating close-up"
+)
+
+_WIDE_ANGLE_NEGATIVE: str = (
+    "close-up, tight shot, face zoom, macro, single monk portrait, "
+    "sweating close-up, cropped head, headshot, extreme facial close-up, "
+    "portrait framing, bust shot, selfie framing"
 )
 
 MANDATORY_NEGATIVE_PROMPT: str = (
-    f"{_TEXT_OVERLAY_NEGATIVE}, "
+    f"{_TEXT_OVERLAY_NEGATIVE}, {_WIDE_ANGLE_NEGATIVE}, "
     "gore, blood, open wounds, open flesh, graphic body horror, mutilation, "
     "exposed organs, body mutilation, bloody cables, liquid dripping, "
     "repetitive VR goggle portrait, identical headset close-up, "
@@ -91,6 +97,19 @@ MANDATORY_NEGATIVE_PROMPT: str = (
     "(deformed samurai, warped body, extra limbs, mutated hands, "
     "glitched geometry, bad anatomy, blurry faces:1.5), "
     "distorted limbs, extra fingers, warped faces, glitched samurai bodies"
+)
+
+_BANNED_FRAMING_RE = re.compile(
+    r"\b(?:"
+    r"close[- ]?ups?|tight\s+shots?|face\s+zooms?|macros?|"
+    r"single\s+monk\s+portraits?|sweating\s+close[- ]?ups?|"
+    r"cropped\s+heads?|headshots?|bust\s+shots?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_WIDE_ANGLE_MANDATORY: str = (
+    "cinematic wide angle shot, extreme long shot, full body view, epic scope"
 )
 
 # Forbidden positive-prompt leaks (brutalist engine)
@@ -316,6 +335,25 @@ def sanitize_prompt_for_flux(
     if role not in ("master", "disciple", "slave"):
         role = _infer_visual_role(text)
 
+    # CRITICAL — wipe legacy wonder_feed graphite / pencil-drawing pollution
+    text = re.sub(
+        r"(?i)\b(?:a\s+precise\s+)?graphite\s+(?:drawing|scene|sketch|illustration|pencil)"
+        r"(?:\s+of(?:\s+a)?\s+(?:man|woman|couple))?[^.]*\.?",
+        " ",
+        text,
+    )
+    text = re.sub(r"(?i)\bOriginal\s+scene\s+concept\s*:\s*", "", text)
+    text = re.sub(
+        r"(?i)\b(?:charcoal|pencil)\s+(?:sketch|drawing|illustration)\b[^.]*\.?",
+        " ",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\bin the style of a detailed,?\s*emotional\s+charcoal[^.]*\.?",
+        " ",
+        text,
+    )
+
     for marker in _META_RULE_MARKERS:
         pattern = re.compile(
             rf"{re.escape(marker)}\s*:?.*?(?:\.(?=\s|$)|$)",
@@ -418,16 +456,42 @@ def sanitize_prompt_for_flux(
     text = re.sub(r"\s+,", ",", text)
     text = text.strip(" ,.\u2014-")
 
+    # Preserve intentional extreme close-ups (Scene 7 cyborg lock); otherwise
+    # strip banned tight framing and prefer wide cinematic scope.
+    lo_pre = text.lower()
+    _allow_closeup = bool(
+        re.search(
+            r"\b(?:extreme\s+close[- ]?up|cyborg|cybernetic\s+visor|brass\s+visor)\b",
+            lo_pre,
+        )
+    )
+    if not _allow_closeup:
+        text = _BANNED_FRAMING_RE.sub(" ", text)
     lo = text.lower()
-    if "35mm film grain" not in lo and "photorealistic shot" not in lo:
+    # Natural-language style finish only (no 8k / photorealistic / masterpiece tags)
+    if "film grain" not in lo and "cinematic lighting" not in lo:
         if role == "slave":
-            text = f"{text}, {MASTER_STYLE_ANCHOR}"
+            text = f"{text}. {MASTER_STYLE_ANCHOR}"
         else:
-            text = f"{text}, {TRADITIONAL_STYLE_ANCHOR}"
+            text = f"{text}. {TRADITIONAL_STYLE_ANCHOR}"
+    if (
+        not _allow_closeup
+        and "wide angle" not in lo
+        and "extreme long shot" not in lo
+        and "epic scope" not in lo
+        and "wide dynamic" not in lo
+    ):
+        text = f"{_WIDE_ANGLE_MANDATORY}. {text}"
 
     text = re.sub(r"\s{2,}", " ", text)
-    text = re.sub(r"(?:\s*[,.]){2,}", ", ", text)
-    return text.strip(" ,.\u2014-")
+    text = re.sub(r"(?:\s*[,.]){2,}", ". ", text)
+    text = text.strip(" ,.\u2014-")
+
+    # FLUX.1-schnell hard limits: strip tag spam, ≤60 words, ≤400 chars
+    from avatar_engine.prompt_builder import finalize_flux_prompt
+
+    # Cyberpunk mandatory prefix only for slave / dystopia frames — never on Mei temple DNA
+    return finalize_flux_prompt(text, require_prefix=(role == "slave"))
 
 
 def merge_negative_prompt(role_negative: str | None = None) -> str:
@@ -708,6 +772,33 @@ class TogetherImageGenerator:
                         "n": 1,
                         "response_format": "base64",
                     }
+                    # Optional Together LoRA (Dev-tier URL path — never Schnell).
+                    try:
+                        from model_api_flows import (  # noqa: PLC0415
+                            resolve_effective_lora,
+                            together_image_loras_payload,
+                        )
+
+                        _lora_cfg = resolve_effective_lora()
+                        _loras = together_image_loras_payload(
+                            _lora_cfg, model_id=active_model,
+                        )
+                        if _loras:
+                            gen_kwargs["image_loras"] = _loras
+                            _trig = (_lora_cfg or {}).get("trigger") or ""
+                            if _trig and _trig.lower() not in (prompt or "").lower():
+                                prompt = f"{_trig}, {prompt}"
+                                gen_kwargs["prompt"] = prompt
+                            # Prefer dedicated LoRA model id when still on plain Dev.
+                            if (
+                                "dev-lora" not in active_model.lower()
+                                and "schnell" not in active_model.lower()
+                                and "flux.1-dev" in active_model.lower()
+                            ):
+                                active_model = "black-forest-labs/FLUX.1-dev-lora"
+                                gen_kwargs["model"] = active_model
+                    except Exception as _lora_exc:  # noqa: BLE001
+                        logger.debug("Together LoRA inject skipped: %s", _lora_exc)
                     # FLUX.1-schnell supports negative_prompt on Together
                     if "schnell" in active_model.lower() or "flux.1" in active_model.lower():
                         gen_kwargs["negative_prompt"] = merge_negative_prompt(
@@ -716,8 +807,9 @@ class TogetherImageGenerator:
                     try:
                         response = self.client.images.generate(**gen_kwargs)
                     except TypeError:
-                        # SDK/model may reject negative_prompt — retry without it
+                        # SDK/model may reject negative_prompt / image_loras — strip & retry
                         gen_kwargs.pop("negative_prompt", None)
+                        gen_kwargs.pop("image_loras", None)
                         response = self.client.images.generate(**gen_kwargs)
                     b64 = self._extract_b64(response)
                     image_bytes = base64.b64decode(b64)

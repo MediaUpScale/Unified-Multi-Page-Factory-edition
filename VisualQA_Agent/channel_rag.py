@@ -53,61 +53,141 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
             "lifestyle soft-focus",
             "pastel wellness",
             "modern athletic wear",
+            # Global firearm / action-movie ban (QA enforced)
+            "firearm",
+            "handgun",
+            "revolver",
+            "rifle",
+            "pistol",
+            "shotgun",
+            "gunfight",
+            "assault rifle",
         ],
         "mandatory_elements": [
-            "10-FRAME LORE LOCK: F1 Master Mei primal nature; F2-4 Matrix/Maya "
-            "biomechanical illusion; F5-7 Master instructing monks in harsh rain; "
-            "F8-9 dopamine trap vs monk break-free; F10 Master Mei temple eyes-on-camera",
-            "cinematic 8k photorealistic raw photography",
-            "detailed skin textures, octane render, volumetric lighting",
+            "8–10 FRAME LORE (90–120s): F1 Master Mei base anchor + meditation (≤8s); "
+            "F3 agonizing human slaves / cybernetic implants (RAG override); "
+            "F7 extreme close-up human cyborg (9–10 frame lore); "
+            "penultimate matrix pod facility breakout (RAG override); "
+            "final Master Mei base anchor + temple eyes-on-camera",
+            "Master Mei DNA: snow-white topknot + two long white chest locks, "
+            "extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white "
+            "beard + flowing mustache, white inner robe + black vest gold lapels + mala beads",
+            "Mei environments: ~70% high-altitude nature (cliffs/ridges/sea of clouds), "
+            "~30% open-air mountain shrines; templates are references — match script philosophy",
+            "FLUX dystopia: 120–180 words, mandatory prefix "
+            "'Cyberpunk dystopian Earth, attention monopoly era:', no tag spam",
+            "Environment: neon billboards, hanging cable bundles, industrial haze, cybernetic conduits",
             "role-separated: never fuse cybernetics onto Master Mei",
-            "charcoal + neon cyan/magenta + cold steel + ember gold temple light",
+            "NO firearms / handguns / rifles / modern action-movie tropes",
         ],
         "lighting_style": (
-            "volumetric lighting, octane-render quality, dark atmospheric — "
+            "moody cinematic lighting, dark atmospheric — "
             "cold moonlight / storm lightning / dawn rim light / warm torchfire, "
-            "neon cyan/magenta accents against charcoal"
+            "dystopian red neon reflections against deep dramatic shadows"
         ),
         "target_audience_rules": (
-            "Western/US men seeking self-mastery. STRICT 10-frame lore distribution. "
-            "Frame 1 + Frame 10 MUST show Master Mei (elderly Asian master, dark robes). "
-            "No ordinary modern people. NEVER Gossip Goblin, gore, gym fitness, bedroom teens."
+            "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. "
+            "Scene 1 ≤8s meditation landscapes. Scenes 2+ ≈10–12s. "
+            "Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens."
         ),
         "frame_lore": {
-            "1_intro": "Master Mei standing/meditating in primal mountain temple / misty waterfall / bamboo — NO tech",
-            "2_4_matrix": "Biomechanical Maya goddess with digital chains; slaves on gears; panopticon towers",
-            "5_7_training": "Master Mei instructing monks carrying heavy stones in harsh cold rain",
-            "8_9_trap": "Dopamine crowds vs single focused monk breaking free",
-            "10_outro": "Master Mei in exuberant ancestral temple, looking directly at camera",
+            "1_intro": (
+                "Master Mei base anchor meditating on high-altitude cliff / misty ridge "
+                "or open-air mountain shrine — white robe + black vest gold trim — NO tech"
+            ),
+            "3_human_slaves": (
+                "RAG OVERRIDE scene_03: pale agonizing human men, cybernetic goggles, "
+                "wires in skin, faces twisted in pain, dystopian red neon reflections"
+            ),
+            "2_4_matrix": "Matrix/Maya illusion; panopticon; systemic gears (except Scene 3 override)",
+            "5_7_training": "Master Mei instructing monks; Scene 7 = human cyborg close-up override",
+            "7_cyborg_closeup": (
+                "RAG OVERRIDE scene_07: extreme close-up agonizing human face, "
+                "crude brass cybernetic visors, temple wires, dramatic cinematic lighting"
+            ),
+            "penultimate_pods": (
+                "RAG OVERRIDE penultimate: dark matrix pod facility, rows of glass pods, "
+                "muscular Asian warrior smashing out of liquid capsule"
+            ),
+            "10_outro": (
+                "Master Mei base anchor on mountain ridge / open-air shrine, "
+                "looking directly at camera"
+            ),
         },
         "visual_concepts": {
             "dopamine": (
-                "High-concept cyberpunk slaves with neural collars / VR visors, "
-                "NOT ordinary people in t-shirts"
+                "Scene 7 close-up: agonizing human cyborg face with brass cybernetic visors + temple wires"
             ),
             "training": (
                 "Master Mei instructing martial monks carrying stone blocks "
                 "in harsh cold rain — high physical intensity"
             ),
             "system": (
-                "Panopticon towers + mechanical gears + propaganda screens "
-                "over wired masses in desolate wasteland"
+                "Scene 3 RAG: pale agonizing human slaves, cybernetic goggles, wires in skin"
             ),
             "maya": (
                 "Biomechanical Maya goddess/entity holding glowing digital "
                 "chains around human necks"
             ),
             "focus": (
-                "Single focused monk tearing free from digital chains"
+                "Penultimate RAG: warrior smashing out of liquid-filled matrix pod"
             ),
             "outro": (
-                "Master Mei in exuberant ancestral temple, eyes locked on camera"
+                "Master Mei base anchor on mountain ridge / open-air shrine, "
+                "eyes locked on camera"
             ),
         },
+        "prompt_file_overrides": {
+            "scene_01": "channels_config/master_mei/prompts/scene_01_hook_meditation.txt",
+            "scene_03": "channels_config/master_mei/prompts/scene_03_biomechanical_slaves.txt",
+            "scene_07": "channels_config/master_mei/prompts/scene_07_human_cyborg_closeup.txt",
+            "scene_final": "channels_config/master_mei/prompts/scene_final_hook.txt",
+            "mei_anchor": "channels_config/master_mei/prompts/master_mei_base_anchor.txt",
+            "penultimate": "channels_config/master_mei/prompts/penultimate_frame.txt",
+            "qa_rules": "channels_config/master_mei/prompts/visual_qa_rules.txt",
+            "music_prompt": "channels_config/master_mei/prompts/music_prompt_directive.txt",
+        },
         "golden_prompt_anchor": (
-            "Cinematic 8k photorealistic raw photography, detailed skin textures, "
-            "octane render, volumetric lighting — role-separated temple / training / dystopia"
+            "Cyberpunk dystopian Earth, attention monopoly era: natural FLUX sentences "
+            "(120–180 words) — Subject + Action/Emotion + Environment/Lighting; "
+            "no 8k/photorealistic/masterpiece tags"
         ),
+    },
+    # ECONOMIC_REEL_LOFI — ink / graphic-novel stills (no LoRA, Flux Schnell)
+    "lofi_economic": {
+        "critic_profile": "lofi_economic",
+        "forbidden_tokens": [
+            "photorealistic",
+            "photograph",
+            "selfie",
+            "stock photo",
+            "nsfw",
+            "nude",
+            "pornographic",
+            "logo watermark baked in",
+            "readable UI text",
+            "garbled letters",
+        ],
+        "mandatory_elements": [
+            "ink / graphic-novel illustration style with consistent line weight",
+            "halftone or limited duotone shading (not photoreal skin)",
+            "vertical 9:16 framing with centrally composed subject",
+            "no embedded captions, logos, or garbled typography in the pixels",
+            "hands/faces within acceptable illustration deformity threshold",
+        ],
+        "lighting_style": (
+            "flat-to-soft illustrated lighting, graphic novel mood, "
+            "muted charcoal and teal duotone atmosphere — never studio softbox beauty"
+        ),
+        "target_audience_rules": (
+            "Emotional LOFI reels for relationship/parenting education. "
+            "Reject photorealism drift from Flux Schnell. "
+            "Reject embedded text artifacts. Accept stylized illustration anatomy."
+        ),
+        "visual_concepts": {
+            "relationship": "quiet domestic or symbolic figures, trust/attachment beats",
+            "parenting": "warm caregiving moments, soft ordinary chaos, no exploitation",
+        },
     },
 }
 
@@ -244,13 +324,16 @@ def _normalize_rules(rules: dict[str, Any]) -> dict[str, Any]:
     concepts = rules.get("visual_concepts") or {}
     if not isinstance(concepts, dict):
         concepts = {}
-    return {
+    out = {
         "forbidden_tokens": list(rules.get("forbidden_tokens") or []),
         "mandatory_elements": list(rules.get("mandatory_elements") or []),
         "lighting_style": str(rules.get("lighting_style") or ""),
         "target_audience_rules": str(rules.get("target_audience_rules") or ""),
         "visual_concepts": {str(k): str(v) for k, v in concepts.items()},
     }
+    if rules.get("critic_profile"):
+        out["critic_profile"] = str(rules.get("critic_profile"))
+    return out
 
 
 def _rules_to_document(channel_name: str, rules: dict[str, Any]) -> str:

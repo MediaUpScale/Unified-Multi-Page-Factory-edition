@@ -15,3 +15,6 @@ google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.1.0
 # Google Sheets queue (Facebook scheduler)
 gspread>=6.0.0
+# Reels scheduler — OS file-dialog bypass for CDP >50MB uploads
+pyautogui>=0.9.54
+pyperclip>=1.8.2

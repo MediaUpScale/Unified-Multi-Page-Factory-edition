@@ -12,24 +12,62 @@
       "smartphone desk",
       "lifestyle soft-focus",
       "pastel wellness",
-      "modern athletic wear"
+      "modern athletic wear",
+      "firearm",
+      "handgun",
+      "revolver",
+      "rifle",
+      "pistol",
+      "shotgun",
+      "gunfight",
+      "assault rifle"
     ],
     "mandatory_elements": [
-      "hybrid ancestral samurai-temple mysticism × cyberpunk dystopia",
-      "cinematic 8k photorealistic raw photography",
-      "detailed skin textures, octane render, volumetric lighting",
-      "Master Mei elder sage OR neon megacity neural-wire slaves",
-      "ancestral temple / misty mountain OR neon rain megacity",
-      "charcoal + neon cyan/magenta + cold steel + ember gold temple light"
+      "8–10 FRAME LORE (90–120s): F1 Master Mei base anchor + meditation (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate matrix pod facility breakout (RAG override); final Master Mei base anchor + temple eyes-on-camera",
+      "Master Mei DNA: snow-white topknot + two long white chest locks, extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white beard + flowing mustache, white inner robe + black vest gold lapels + mala beads",
+      "Mei environments: ~70% high-altitude nature (cliffs/ridges/sea of clouds), ~30% open-air mountain shrines; templates are references — match script philosophy",
+      "FLUX dystopia: 120–180 words, mandatory prefix 'Cyberpunk dystopian Earth, attention monopoly era:', no tag spam",
+      "Environment: neon billboards, hanging cable bundles, industrial haze, cybernetic conduits",
+      "role-separated: never fuse cybernetics onto Master Mei",
+      "NO firearms / handguns / rifles / modern action-movie tropes"
     ],
-    "lighting_style": "volumetric lighting, octane-render quality, dark atmospheric — cold moonlight / storm lightning / dawn rim light / warm torchfire, neon cyan/magenta accents against charcoal",
-    "target_audience_rules": "Western/US men seeking self-mastery; GOLDEN LOCK visuals = hybrid ancestral samurai-temple mysticism × cyberpunk dystopia from the 2026-07-24 successful reels — NEVER Gossip Goblin, gore, Giger, tactical gear, gym fitness, or bedroom teens",
+    "lighting_style": "moody cinematic lighting, dark atmospheric — cold moonlight / storm lightning / dawn rim light / warm torchfire, dystopian red neon reflections against deep dramatic shadows",
+    "target_audience_rules": "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. Scene 1 ≤8s meditation landscapes. Scenes 2+ ≈10–12s. Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens.",
     "visual_concepts": {
-      "dopamine": "Cyberpunk slaves chained by glowing neon neural wires, bio-mechanical screens, neon rain megacity",
-      "training": "Master Mei ACTIVE in misty peaks / roaring waterfall / rain-soaked ancestral temple hardship conditioning",
-      "system": "Bleak dystopian megacity — neon towers, mass-control holograms, herds of wired citizens under rain",
-      "focus": "Master Mei ancestral-temple discipline OR neon megacity vs distant ancestral temple silhouette",
-      "business": "Ancient stone altar with holographic financial charts; molten gold on cyber-armor"
+      "dopamine": "Scene 7 close-up: agonizing human cyborg face with brass cybernetic visors + temple wires",
+      "training": "Master Mei instructing martial monks carrying stone blocks in harsh cold rain — high physical intensity",
+      "system": "Scene 3 RAG: pale agonizing human slaves, cybernetic goggles, wires in skin",
+      "maya": "Biomechanical Maya goddess/entity holding glowing digital chains around human necks",
+      "focus": "Penultimate RAG: warrior smashing out of liquid-filled matrix pod",
+      "outro": "Master Mei base anchor on mountain ridge / open-air shrine, eyes locked on camera"
     }
+  },
+  "lofi_economic": {
+    "forbidden_tokens": [
+      "photorealistic",
+      "photograph",
+      "selfie",
+      "stock photo",
+      "nsfw",
+      "nude",
+      "pornographic",
+      "logo watermark baked in",
+      "readable UI text",
+      "garbled letters"
+    ],
+    "mandatory_elements": [
+      "ink / graphic-novel illustration style with consistent line weight",
+      "halftone or limited duotone shading (not photoreal skin)",
+      "vertical 9:16 framing with centrally composed subject",
+      "no embedded captions, logos, or garbled typography in the pixels",
+      "hands/faces within acceptable illustration deformity threshold"
+    ],
+    "lighting_style": "flat-to-soft illustrated lighting, graphic novel mood, muted charcoal and teal duotone atmosphere — never studio softbox beauty",
+    "target_audience_rules": "Emotional LOFI reels for relationship/parenting education. Reject photorealism drift from Flux Schnell. Reject embedded text artifacts. Accept stylized illustration anatomy.",
+    "visual_concepts": {
+      "relationship": "quiet domestic or symbolic figures, trust/attachment beats",
+      "parenting": "warm caregiving moments, soft ordinary chaos, no exploitation"
+    },
+    "critic_profile": "lofi_economic"
   }
 }

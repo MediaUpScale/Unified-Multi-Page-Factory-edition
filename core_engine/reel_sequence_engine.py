@@ -198,6 +198,59 @@ def compute_dense_act_count(
     return max(lo, min(hi, n))
 
 
+def compute_hook_body_act_count(
+    duration_s: float,
+    *,
+    hook_hold_s: float = 5.0,
+    body_hold_s: float = 7.5,
+    min_acts: int = 10,
+    max_acts: int = 11,
+) -> int:
+    """
+    ECONOMIC_REEL paced count: first still holds ``hook_hold_s``, each later
+    still holds ``body_hold_s`` (typically 7–8 s).
+
+    ``n = 1 + ceil((duration - hook) / body)``, then clamped to
+    ``[min_acts, max_acts]``. For an ~80 s target with 5 s / 7.5 s this lands
+    around 10–11 images (half the old dense 18-act budget).
+    """
+    import math
+
+    dur = max(1.0, float(duration_s or _DEFAULT_DURATION))
+    hook = max(1.0, float(hook_hold_s or 5.0))
+    body = max(3.0, float(body_hold_s or 7.5))
+    remaining = max(0.0, dur - hook)
+    n_body = max(1, int(math.ceil(remaining / body - 1e-9)))
+    n = 1 + n_body
+    lo = max(2, int(min_acts))
+    hi = max(lo, int(max_acts))
+    return max(lo, min(hi, n))
+
+
+def build_hook_body_act_durations(
+    n_acts: int,
+    total_duration: float,
+    *,
+    hook_hold_s: float = 5.0,
+    body_hold_s: float = 7.5,
+) -> list[float]:
+    """
+    Ideal hook/body holds, scaled so ``sum(durs) == total_duration``.
+
+    Compile still audio-drives the timeline; these weights keep Act 1 shorter
+    (~5 s feel) and later acts longer (~7–8 s) after scaling.
+    """
+    n = max(1, int(n_acts))
+    total = max(0.05, float(total_duration))
+    if n == 1:
+        return [total]
+    hook = max(0.5, float(hook_hold_s or 5.0))
+    body = max(0.5, float(body_hold_s or 7.5))
+    ideal = [hook] + [body] * (n - 1)
+    scale = total / max(1e-6, sum(ideal))
+    return [d * scale for d in ideal]
+
+
 def segment_script_into_act_snippets(script: str, n_acts: int) -> list[str]:
     """
     Split narration into *n_acts* sequential text snippets (~4 s of speech each).
@@ -260,7 +313,7 @@ def segment_script_into_act_snippets(script: str, n_acts: int) -> list[str]:
 
 
 def _page_clips_dir(page_id: str | None = None) -> Path:
-    """Return ``outputs/{page}/clips`` and ensure it exists."""
+    """Return ``outputs/{page}/clips`` and ensure it exists (never engine root)."""
     try:
         import config as app_config
 
@@ -274,15 +327,32 @@ def _page_clips_dir(page_id: str | None = None) -> Path:
     return clips
 
 
+def _rgb_tuple_to_moviepy_color(fill: "tuple | list | str | None") -> str:
+    """Convert RGB tuple (or pass-through hex/name) for MoviePy TextClip color."""
+    if isinstance(fill, str) and fill.strip():
+        return fill.strip()
+    if isinstance(fill, (tuple, list)) and len(fill) >= 3:
+        try:
+            r, g, b = int(fill[0]), int(fill[1]), int(fill[2])
+            return f"#{max(0, min(255, r)):02x}{max(0, min(255, g)):02x}{max(0, min(255, b)):02x}"
+        except (TypeError, ValueError):
+            pass
+    return "#ffcc00"  # Master Mei cinematic warm yellow default
+
+
 def _resolve_sequence_mp4_path(
     output_path: "Path | None",
     *,
     page_id: str | None = None,
+    episode_dir: "Path | str | None" = None,
 ) -> Path:
     """
     Force final MP4s into ``outputs/{page}/clips/{sanitized_filename}.mp4``.
-    Never write sequence reels to the engine root or a random temp folder.
+
+    ``episode_dir`` is accepted for API compatibility but ignored — clips always
+    target the page-level ``clips/`` folder (never loose root / episode subfolders).
     """
+    del episode_dir  # assets live under assets/<episode_id>/; clips stay page-scoped
     clips_dir = _page_clips_dir(page_id)
     if output_path is None:
         slug = "".join(
@@ -542,12 +612,24 @@ def build_sequence_script_prompt(
     _mode = (narrative_mode or "").strip().lower()
     if not _mode:
         _mode = "investigative"
-    _word_cap = 230 if _mode == "warrior_discipline" else 240
-    _word_cap_pad = 20 if _mode == "warrior_discipline" else 20
+    _mei_prof: dict = {}
+    if _mode == "warrior_discipline":
+        try:
+            from avatar_engine.mei_narrative import resolve_mei_duration_profile
+
+            _mei_prof = resolve_mei_duration_profile(duration_s)
+        except Exception:  # noqa: BLE001
+            _mei_prof = {}
+    _word_cap = int(_mei_prof.get("words_max", 185)) if _mode == "warrior_discipline" else 240
+    _word_cap_pad = 10 if _mode == "warrior_discipline" else 20
+    _mei_min = int(_mei_prof.get("words_min", 170)) if _mode == "warrior_discipline" else 200
 
     if total_words_target is not None:
-        words_per_act = total_words_target // n_acts
+        words_per_act = max(1, int(total_words_target) // max(1, n_acts))
         total_words   = words_per_act * n_acts
+    elif _mei_prof:
+        total_words = int(_mei_prof.get("words_target", 178))
+        words_per_act = max(1, total_words // max(1, n_acts))
     else:
         words_per_act = int((duration_s / n_acts) * (130 / 60))
         total_words   = words_per_act * n_acts
@@ -560,15 +642,16 @@ def build_sequence_script_prompt(
             f"\n\nPREVIOUSLY USED OPENING LINES (DO NOT REPEAT OR PARAPHRASE):\n{lines}\n"
         )
 
-    _max_seconds_target = 100 if _mode == "warrior_discipline" else 100
-    _mei_min = 190 if _mode == "warrior_discipline" else 200
+    _max_seconds_target = int(_mei_prof.get("target_s", 120)) if _mode == "warrior_discipline" else 100
     pacing_note = (
-        f"Write for a SLOW, deliberate, solemn delivery (~130–140 spoken WPM before 0.92× TTS). "
+        f"Write for a SLOW, deliberate, solemn delivery (0.85×–0.90× TTS + "
+        f'<break time="1.5s"/> after key philosophical impacts). '
         f"Each act must be approximately {words_per_act} words "
         f"(total EXACTLY {total_words}–{min(_word_cap, total_words + _word_cap_pad)} words across all {n_acts} acts; "
         f"HARD CAP {_word_cap}; FLOOR {_mei_min} for Master Mei). "
         f"The spoken narration MUST naturally fill "
-        f"~{max(80, int(duration_s) - 10)}–{min(_max_seconds_target, max(int(duration_s), 100))} "
+        f"~{max(100, int(duration_s) - 10) if _mode == 'warrior_discipline' else max(80, int(duration_s) - 10)}"
+        f"–{min(_max_seconds_target, max(int(duration_s), 120 if _mode == 'warrior_discipline' else 100))} "
         f"seconds of airtime. Do NOT write a short viral caption — write a FULL 4-Act script."
         if total_words_target is not None else
         f"Each act must be approximately {words_per_act} words "
@@ -585,36 +668,46 @@ def build_sequence_script_prompt(
 
     if _mode == "warrior_discipline":
         from avatar_engine.mei_narrative import (
+            apply_mei_word_budget_from_duration,
             build_four_act_script_instructions,
             episode_theme_meta,
+            master_scriptwriter_directive,
         )
 
+        apply_mei_word_budget_from_duration(duration_s)
+        if _mei_prof:
+            _mei_min = int(_mei_prof.get("words_min", _mei_min))
+            _word_cap = int(_mei_prof.get("words_max", _word_cap))
         _ep = episode_theme_meta(topic)
         _four_act = build_four_act_script_instructions(n_acts, _ep)
-        return f"""You are writing a compelling {duration_s:.0f}-second 4-Act philosophical voiceover for Master Mei.
+        _msw = master_scriptwriter_directive()
+        return f"""You are writing a compelling {duration_s:.0f}-second philosophical voiceover for Master Mei.
+
+{_msw}
+
 
 TOPIC: {topic}
 CHANNEL NICHE: {niche}
 NARRATOR VOICE: {persona_voice}
-EPISODE THEME (LOCKED — SINGLE TOPIC): {_ep['label']}
-TONE: Deeply authoritative, solemn, uncompromising — ancient wisdom meeting brutal dystopian reality.
-AUDIENCE: Western / US men focused on self-mastery, discipline, tech-critique, and financial sovereignty.
+EPISODE THEME (LOCKED — ONE FOCAL IDEA ONLY): {_ep['label']}
+TONE: Deep humility, respect, ancestral tranquility — reflective, contemplative, never aggressive.
+AUDIENCE: Western / US men seeking self-mastery — address them as fellow human seekers.
 {_directive_block}
 {_batch_block}
 {_reject_block}
 STRICT RULES:
 1. Divide the script into exactly {n_acts} acts using markers: [ACT 1], [ACT 2], ... [ACT {n_acts}].
 2. {pacing_note}
-3. POV LOCK: You ARE Master Mei. FIRST PERSON only ("I", "My disciples", "I demand", "My path"). NEVER third-person "Master Mei" in the script body.
-4. Tone: deeply authoritative, solemn, uncompromising. Implacable. Brutally direct. DO NOT rush; heavy pauses between hard truths.
-5. VOICE PACING: Pure spoken prose only. Insert deliberate ellipses (`...`) between heavy statements. Prefer short sentences and strategic commas. Example: "Look around you... What do you truly see?"
+3. POV LOCK: You ARE Master Mei. FIRST PERSON with humble presence. NEVER address the audience as "my disciples", "students", or "followers". NEVER "I demand…", "do this", "don't do that". NEVER "I studied X". NEVER third-person "Master Mei" in the script body.
+4. Tone: humble, solemn, ancestral. Prefer "Consider how…", "The ancients observed that…", "When the mind ceases to fight…". DO NOT rush; heavy pauses between insights.
+5. VOICE PACING: Pure spoken prose only. Insert deliberate ellipses (`...`) between heavy statements. Prefer short sentences and strategic commas. Example: "Consider how the mind is captured... What remains when the noise falls quiet?"
 6. FORBIDDEN: ALL emotion/expression tags and SSML — never write `[cold chuckle]`, `[arrogant scoff]`, `[deep subtle laugh]`, `[cackles]`, or `<break …/>`.
 7. {_four_act}
-8. Core purpose (immutable): teach resilience of body, mind, spirit, and financial sovereignty — diagnose how sensory numbness, instant gratification, and propaganda hijack perception.
-9. NEVER use hustle-bro clichés, therapy-speak, wellness fluff, or recycled template phrases (citadel, biomechanical cords, sirens, relentless practice, techno-slave, "silent war for your essence"). Invent a UNIQUE allegory every episode.
+8. Core purpose (immutable): ONE focal idea + invariant 5-beat flow (Philosophical Hook → Focused Unconscious Trap → Spiritual & Financial Liberation → Humble Practical Discipline → Reflective Close). Financial sovereignty as energy/freedom (never stock tips). Distracted mind bleeds capital; sovereign mind retains it.
+9. NEVER use hustle-bro clichés, therapy-speak, wellness fluff, or recycled template phrases (citadel, biomechanical cords, sirens, relentless practice, techno-slave, "silent war for your essence"). Invent a UNIQUE allegory for this ONE idea — never a multi-topic instruction manual.
 10. Do NOT write "Follow Master Mei", "Subscribe", or any channel follow CTA in the script — that CTA is stitched separately AFTER narration.
-11. NO headers, NO bullet points, NO markdown — pure spoken prose only (ellipsis pauses ARE required; bracketed sound tags are FORBIDDEN).
-12. STRICT WORD COUNT: 190–230 words total (≈80–100 s at 0.92× deliberate delivery). HARD CAP 230. FLOOR 190.
+11. NO headers, NO bullet points, NO markdown — pure spoken prose. Insert <break time="1.5s"/> after 2–4 key philosophical impacts (no other SSML/emotion tags).
+12. STRICT WORD COUNT: {_mei_min}–{_word_cap} words MAX (target ~{total_words_target or total_words}) for ≈{_max_seconds_target}s at 0.86× + breaks. HARD CAP {_word_cap}. FLOOR {_mei_min}.
 13. Output ONLY the script with [ACT N] markers. No preamble, no labels, no meta commentary.
 {anti_repeat_block}
 Write the complete {n_acts}-act script now:"""
@@ -648,23 +741,32 @@ def _split_word_timings_into_acts(
     word_timings: "list[tuple[str, float, float]]",
     n_acts: int,
     total_duration: float,
+    act_durations: "list[float] | None" = None,
 ) -> "list[tuple[float, float, list[tuple[str, float, float]]]]":
-    """Divide word_timings into n_acts equal-duration segments.
+    """Divide word_timings into n_acts segments (equal or custom durations).
 
     Words that overlap an act window are included, then clamped to the local
     act timeline so no phrase can bleed past the act end (prevents final-frame
     script stacking).
     """
-    act_dur  = total_duration / max(1, n_acts)
-    segments: list[tuple[float, float, list]] = []
+    n = max(1, n_acts)
+    if act_durations and len(act_durations) == n:
+        durs = [max(0.05, float(d)) for d in act_durations]
+        # Normalize to total_duration
+        s = sum(durs) or 1.0
+        durs = [d * (total_duration / s) for d in durs]
+    else:
+        equal = total_duration / n
+        durs = [equal] * n
 
-    for i in range(n_acts):
-        t_start = i * act_dur
-        t_end   = (i + 1) * act_dur if i < n_acts - 1 else total_duration
+    segments: list[tuple[float, float, list]] = []
+    t_cursor = 0.0
+    for i in range(n):
+        t_start = t_cursor
+        t_end = total_duration if i == n - 1 else t_cursor + durs[i]
         act_len = max(0.05, t_end - t_start)
         act_words: list[tuple[str, float, float]] = []
         for w, ws, we in word_timings:
-            # Overlap test (inclusive) — capture words straddling boundaries
             if we <= t_start or ws >= t_end:
                 continue
             local_s = max(0.0, ws - t_start)
@@ -673,6 +775,7 @@ def _split_word_timings_into_acts(
                 act_words.append((w, local_s, local_e))
         act_words = _sanitize_subtitle_timings(act_words)
         segments.append((t_start, t_end, act_words))
+        t_cursor = t_end
 
     return segments
 
@@ -978,6 +1081,7 @@ def _build_act_clip(
             fill=subtitle_fill,
             stroke_width=subtitle_stroke_width,
             stroke_fill=subtitle_stroke_fill,
+            max_lines=2,  # Shorts: max 2 lines / 3–5 words per display
         )
         _phrase_layer_cache[_ph] = np.array(_layer)
 
@@ -1198,12 +1302,17 @@ def _draw_wrapped_text(
     line_spacing: int = 12,
     stroke_width: int = 0,
     stroke_fill: "tuple | None" = None,
+    max_lines: int = 2,
 ) -> None:
     """
     Draw word-wrapped text centered on the canvas within max_width_frac of width.
     Lines are stacked vertically and centred around y_center.
+
+    Hard-caps at ``max_lines`` (default 2) so Shorts overlays never stack
+    into multi-line walls that bury the subject / hurt retention.
     """
     max_w = int(canvas_width * max_width_frac)
+    max_lines = max(1, int(max_lines or 2))
     words: list[str] = text.split()
     lines: list[str] = []
     current: list[str] = []
@@ -1220,8 +1329,14 @@ def _draw_wrapped_text(
         else:
             lines.append(" ".join(current))
             current = [word]
-    if current:
+            if len(lines) >= max_lines:
+                current = []
+                break
+    if current and len(lines) < max_lines:
         lines.append(" ".join(current))
+    # Final hard truncate if a single unbroken token somehow exceeded the cap
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
     if not lines:
         return
 
@@ -1307,8 +1422,13 @@ def compile_sequence_reel(
     *,
     voice_audio: "Path | None" = None,
     ambient_audio: "Path | None" = None,
+    sfx_loop_audio: "Path | None" = None,
+    sfx_loop_volume: "float | None" = None,
+    sfx_fade_in_s: float = 0.0,
     impact_sfx_audio: "Path | None" = None,
     impact_sfx_volume: "float | None" = None,
+    act_durations: "list[float] | None" = None,
+    hook_max_s: float = 0.0,
     output_path: "Path | None" = None,
     target_duration: float = _DEFAULT_DURATION,
     act_duration_s: "float | None" = None,
@@ -1327,6 +1447,7 @@ def compile_sequence_reel(
     subtitle_y_position: "int | None" = None,
     hook_y_frac: float = 0.50,
     page_id: str = "",
+    episode_dir: "Path | str | None" = None,
     fps: int = _DEFAULT_FPS,
     words_per_phrase: int = 4,
     subtitle_fill: tuple = (255, 230, 0),
@@ -1358,6 +1479,12 @@ def compile_sequence_reel(
     master_audio_gain: "float | None" = None,
     # Procedural drone profile when no ambient file: "mystery" | "warrior"
     ambient_profile: str = "mystery",
+    # BGM enters after this many seconds (Master Mei: 8.0)
+    bgm_start_s: float = 0.0,
+    # BGM fade-in duration in seconds (Master Mei: 2.5)
+    bgm_fade_in_s: float = 0.0,
+    # Ambient / SFX track gain boost in dB (Master Mei: +2.5)
+    sfx_volume_gain_db: float = 0.0,
     # Extra seconds after final audio so CTA sentence/subtitles never clip
     tail_pad_s: float = 1.0,
     # When True, floor (and prefer) exact_duration_s so reels never undershoot
@@ -1452,12 +1579,34 @@ def compile_sequence_reel(
         if force_exact_duration:
             total_duration = max(total_duration, _exact_floor)
 
-    act_duration_locked = total_duration / n_acts
+    # Per-act durations: Master Mei hook ≤8s + body 10–12s; else equal split
+    _act_durs: list[float]
+    if act_durations and len(act_durations) == n_acts:
+        _act_durs = [max(0.05, float(d)) for d in act_durations]
+        _scale = total_duration / max(1e-6, sum(_act_durs))
+        _act_durs = [d * _scale for d in _act_durs]
+    elif (page_id or "").lower() == "master_mei" or float(hook_max_s or 0) > 0:
+        try:
+            from avatar_engine.visual_roles import compute_mei_act_durations
+
+            _act_durs = compute_mei_act_durations(
+                n_acts,
+                total_duration,
+                hook_max_s=float(hook_max_s) if hook_max_s > 0 else 8.0,
+            )
+        except Exception:
+            _act_durs = [total_duration / n_acts] * n_acts
+    else:
+        _act_durs = [total_duration / n_acts] * n_acts
+    act_duration_locked = _act_durs[0] if _act_durs else (total_duration / max(1, n_acts))
 
     logger.info(
-        "compile_sequence_reel | page=%s n_acts=%d total=%.1fs act=%.1fs "
-        "voice=%.1fs vignette=%.2f grain=%.1f flicker=%s rays=%s transition=hard_cut",
-        page_id, n_acts, total_duration, act_duration_locked,
+        "compile_sequence_reel | page=%s n_acts=%d total=%.1fs "
+        "act_durs=[%s] hook=%.1fs voice=%.1fs vignette=%.2f grain=%.1f "
+        "flicker=%s rays=%s transition=hard_cut",
+        page_id, n_acts, total_duration,
+        ", ".join(f"{d:.1f}" for d in _act_durs[:6]) + ("…" if n_acts > 6 else ""),
+        _act_durs[0] if _act_durs else 0.0,
         _voice_actual_dur, vignette_strength, grain_intensity,
         enable_flicker, enable_light_rays,
     )
@@ -1475,6 +1624,16 @@ def compile_sequence_reel(
             )
             _cta_hit = [ws for w, ws, we in wt if ws >= _narr_end]
             _resolved_cta_t0 = _cta_hit[0] if _cta_hit else max(0.0, total_duration - 6.0)
+        # Guard: CTA is an outro card — never paint for most of the reel.
+        # A failed narr-duration read used to yield start≈1s / dur≈full length.
+        _timeline = _voice_actual_dur if _voice_actual_dur > 0 else total_duration
+        if _timeline > 12.0 and _resolved_cta_t0 < (_timeline * 0.55):
+            _safe_t0 = max(0.0, _timeline - 8.0)
+            logger.warning(
+                "CTA start %.1fs is too early for %.1fs reel — clamping to outro @ %.1fs",
+                _resolved_cta_t0, _timeline, _safe_t0,
+            )
+            _resolved_cta_t0 = _safe_t0
         # Drop ANY word that starts at/after CTA — and clamp ends that spill in
         _cut = _resolved_cta_t0 - 0.05
         wt = [
@@ -1482,7 +1641,9 @@ def compile_sequence_reel(
             for w, ws, we in wt
             if ws < _cut and min(we, _cut) > ws
         ]
-    act_segments = _split_word_timings_into_acts(wt, n_acts, total_duration)
+    act_segments = _split_word_timings_into_acts(
+        wt, n_acts, total_duration, act_durations=_act_durs,
+    )
     logo_arr     = _prerender_logo(logo_image_path, logo_width_px, logo_opacity, logo_max_height_px)
 
     # Normalised (0..1) vignette mask; per-frame pulse scales the strength.
@@ -1499,15 +1660,16 @@ def compile_sequence_reel(
     for i, (img_path, (_t_start, _t_end, act_wt)) in enumerate(
         zip(image_paths, act_segments)
     ):
+        _this_act_dur = float(_act_durs[i]) if i < len(_act_durs) else act_duration_locked
         logger.info(
-            "Rendering act %d/%d | %s | zoom=%.2f→%.2f | pan_dir=%s | transition=hard_cut",
-            i + 1, n_acts, img_path.name,
+            "Rendering act %d/%d | %s | dur=%.1fs | zoom=%.2f→%.2f | pan_dir=%s | transition=hard_cut",
+            i + 1, n_acts, img_path.name, _this_act_dur,
             _ZOOM_PER_ACT_START, _ZOOM_PER_ACT_END,
             _PAN_DIRS[i % len(_PAN_DIRS)],
         )
         clip = _build_act_clip(
             img_path,
-            act_duration      = act_duration_locked,
+            act_duration      = _this_act_dur,
             word_timings      = act_wt,
             hook_text         = hook_text,
             enable_hook_text  = enable_hook_text,
@@ -1547,7 +1709,9 @@ def compile_sequence_reel(
         final_video = concatenate_videoclips(clips, method="compose")
 
     # Always route final MP4 into outputs/{page}/clips/
-    output_path = _resolve_sequence_mp4_path(output_path, page_id=page_id)
+    output_path = _resolve_sequence_mp4_path(
+        output_path, page_id=page_id, episode_dir=episode_dir,
+    )
     os.makedirs(os.path.dirname(str(output_path)), exist_ok=True)
     logger.info("Sequence reel output path → %s", output_path)
 
@@ -1560,7 +1724,7 @@ def compile_sequence_reel(
         _cta_t0 = _resolved_cta_t0
         _cta_dur = max(0.5, total_duration - _cta_t0)
         try:
-            from moviepy import TextClip, CompositeVideoClip, ColorClip  # type: ignore[import]
+            from moviepy import TextClip, CompositeVideoClip  # type: ignore[import]
             # Isolate CTA string only — strip tags + fix sovereignty typos
             _cta_safe = re.sub(
                 r"\[(?:cackles|chuckles|dry\s*laugh)\]\s*",
@@ -1587,27 +1751,28 @@ def compile_sequence_reel(
                 else:
                     _lines.append(" ".join(_cur))
                     _cur = [_w]
-            if _cur:
+                    if len(_lines) >= 2:
+                        _cur = []
+                        break
+            if _cur and len(_lines) < 2:
                 _lines.append(" ".join(_cur))
+            _lines = _lines[:2]  # Shorts: max 2 caption lines
             _cta_wrapped = "\n".join(_lines) if _lines else _cta_safe
             _cta_y = subtitle_y_position or int(_REEL_HEIGHT * 0.72)
-            # Opaque black bar behind CTA so no ghost phrase can show through
-            _bar_h = max(120, int(subtitle_fontsize * 2.8))
-            _bar = (
-                ColorClip(size=(_REEL_WIDTH, _bar_h), color=(0, 0, 0))
-                .with_opacity(0.55)
-                .with_start(_cta_t0)
-                .with_duration(_cta_dur)
-                .with_position(("center", max(0, _cta_y - _bar_h // 2)))
+            # Match main subtitle caption color/style exactly (no black banner bar)
+            _cta_color = _rgb_tuple_to_moviepy_color(subtitle_fill)
+            _cta_stroke = _rgb_tuple_to_moviepy_color(
+                subtitle_stroke_fill if subtitle_stroke_fill is not None else (0, 0, 0)
             )
+            _cta_stroke_w = max(1, int(subtitle_stroke_width or 2))
             _cta_tc = (
                 TextClip(
                     text=_cta_wrapped,
                     font_size=subtitle_fontsize,
-                    color="white",
+                    color=_cta_color,
                     font=font_path or "Arial",
-                    stroke_color="black",
-                    stroke_width=2,
+                    stroke_color=_cta_stroke,
+                    stroke_width=_cta_stroke_w,
                     method="label",
                     text_align="center",
                 )
@@ -1615,11 +1780,12 @@ def compile_sequence_reel(
                 .with_duration(_cta_dur)
                 .with_position(("center", _cta_y))
             )
-            final_video = CompositeVideoClip([final_video, _bar, _cta_tc])
+            # Transparent / natural frame behind CTA — text only, no black bar
+            final_video = CompositeVideoClip([final_video, _cta_tc])
             final_video = final_video.with_duration(total_duration)
             logger.info(
-                "CTA overlay ISOLATED | text='%s' start=%.1fs dur=%.1fs (no ghost narr)",
-                _cta_safe[:60], _cta_t0, _cta_dur,
+                "CTA overlay ISOLATED | text='%s' color=%s start=%.1fs dur=%.1fs (no bar)",
+                _cta_safe[:60], _cta_color, _cta_t0, _cta_dur,
             )
         except Exception as _cta_ov_exc:
             logger.warning(
@@ -1671,10 +1837,10 @@ def compile_sequence_reel(
             * _BOOM_AMP
         )
         _boom_stereo = np.column_stack([_boom_wave, _boom_wave])  # (N, 2) float32
+        _cut_t = 0.0
         for _bi in range(1, n_acts):
-            _t_cut = act_duration_locked * _bi - 0.05   # 50 ms before cut
-            if _t_cut < 0:
-                _t_cut = 0.0
+            _cut_t += float(_act_durs[_bi - 1]) if _bi - 1 < len(_act_durs) else act_duration_locked
+            _t_cut = max(0.0, _cut_t - 0.05)   # 50 ms before cut
             _boom_clip = AudioArrayClip(_boom_stereo, fps=_BOOM_SR).with_start(_t_cut)
             audio_clips.append(_boom_clip)
         logger.debug("Transition booms injected: %d cuts", n_acts - 1)
@@ -1720,10 +1886,60 @@ def compile_sequence_reel(
         else _AMBIENT_VOLUME
     )
     _amb_profile = (ambient_profile or "mystery").strip().lower() or "mystery"
+    # Apply SFX_VOLUME_GAIN_DB (+dB → linear multiplier)
+    try:
+        _db = float(sfx_volume_gain_db or 0.0)
+    except (TypeError, ValueError):
+        _db = 0.0
+    _db_mul = 10.0 ** (_db / 20.0) if abs(_db) > 1e-6 else 1.0
     if _amb_profile == "warrior":
-        _amb_vol = max(0.28, min(0.38, float(_amb_vol) * _AMBIENT_GAIN_MUL))
+        # Master Mei BGM target ~0.24 (−20% from 0.30) — honor explicit ambient_volume; no force-floor
+        _amb_vol = max(
+            0.10,
+            min(
+                0.55,
+                float(_amb_vol)
+                * _AMBIENT_GAIN_MUL
+                * max(1.0, _db_mul if abs(_db) > 1e-6 else 1.0),
+            ),
+        )
+        if ambient_volume is not None and float(ambient_volume) > 0:
+            # Prefer calibrated absolute volume (volumex 0.24) over gain stacking
+            _amb_vol = max(0.10, min(0.55, float(ambient_volume)))
     else:
-        _amb_vol = max(0.08, min(1.0, float(_amb_vol) * _AMBIENT_GAIN_MUL))
+        _amb_vol = max(0.08, min(1.0, float(_amb_vol) * _AMBIENT_GAIN_MUL * _db_mul))
+    try:
+        _bgm_start = max(0.0, float(bgm_start_s or 0.0))
+    except (TypeError, ValueError):
+        _bgm_start = 0.0
+    try:
+        _bgm_fade = max(0.0, float(bgm_fade_in_s or 0.0))
+    except (TypeError, ValueError):
+        _bgm_fade = 0.0
+
+    def _schedule_bgm(clip):
+        """Delay BGM to ``_bgm_start`` and apply fade-in."""
+        out = clip
+        if _bgm_fade > 0.05:
+            try:
+                out = out.audio_fadein(_bgm_fade)
+            except AttributeError:
+                try:
+                    from moviepy.audio.fx import AudioFadeIn  # type: ignore[import]
+                    out = out.with_effects([AudioFadeIn(_bgm_fade)])
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        if _bgm_start > 0.05:
+            try:
+                out = out.with_start(_bgm_start)
+            except Exception:
+                try:
+                    out = out.set_start(_bgm_start)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        return out
     _duck = (
         float(ambient_duck_ratio)
         if ambient_duck_ratio is not None and float(ambient_duck_ratio) > 0
@@ -1770,6 +1986,61 @@ def compile_sequence_reel(
             except Exception:
                 return clip
 
+    # Continuous dark-atmosphere SFX loop (t=0 → end) — separate from delayed BGM
+    if sfx_loop_audio is not None and Path(sfx_loop_audio).is_file():
+        try:
+            import math as _math_sfx
+            from moviepy.audio.fx import AudioLoop as _AudioLoopSFX  # type: ignore[import]
+
+            # Absolute mix level (Master Mei: ambient audible from t=0, default 0.35)
+            _sfx_vol = (
+                float(sfx_loop_volume)
+                if sfx_loop_volume is not None and float(sfx_loop_volume) > 0
+                else 0.35
+            )
+            _sfx_vol = max(0.10, min(0.60, _sfx_vol))
+            try:
+                _sfx_fade = max(0.0, float(sfx_fade_in_s or 0.0))
+            except (TypeError, ValueError):
+                _sfx_fade = 0.0
+            _sfx_src = AudioFileClip(str(sfx_loop_audio))
+            try:
+                _sfx_fx = [_AudioLoopSFX(duration=total_duration)]
+                if _sfx_fade > 0.01:
+                    try:
+                        from moviepy.audio.fx import AudioFadeIn as _SfxFadeIn  # type: ignore[import]
+                        _sfx_fx.insert(0, _SfxFadeIn(_sfx_fade))
+                    except Exception:
+                        pass
+                _sfx_looped = _sfx_src.with_effects(_sfx_fx)
+            except Exception:
+                n_loops = max(1, int(_math_sfx.ceil(total_duration / max(0.5, float(_sfx_src.duration or 1.0)))))
+                from moviepy import concatenate_audioclips as _cat_sfx  # type: ignore[import]
+                parts = [AudioFileClip(str(sfx_loop_audio)) for _ in range(n_loops)]
+                _sfx_looped = _cat_sfx(parts).subclipped(0, total_duration)
+            # Duck atmosphere under narration (same sidechain window as BGM)
+            # so SFX doesn't flatten the mix against the voice.
+            try:
+                _sfx_looped = _apply_voice_duck(
+                    _sfx_looped,
+                    bed_vol=_sfx_vol,
+                    duck_ratio=_duck,
+                    until_s=_duck_until,
+                )
+            except Exception:
+                try:
+                    _sfx_looped = _sfx_looped.with_volume_scaled(_sfx_vol)
+                except Exception:
+                    pass
+            # Near-instant fade-in keeps atmosphere audible from t≈0 (no dead air)
+            audio_clips.append(_sfx_looped)
+            logger.info(
+                "Atmosphere SFX loop | file=%s vol=%.2f duck=%.2f until=%.1fs dur=%.1fs",
+                Path(sfx_loop_audio).name, _sfx_vol, _duck, _duck_until, total_duration,
+            )
+        except Exception as _sfx_exc:
+            logger.warning("SFX loop mix failed: %s", _sfx_exc)
+
     if ambient_audio and ambient_audio.is_file():
         try:
             import math as _math
@@ -1777,7 +2048,7 @@ def compile_sequence_reel(
             _amb_dur   = _amb_probe.duration
             _amb_probe.close()
             logger.info(
-                "Ambient track FOUND (%.1f KB) → %s | looping to %.1fs vol=%.2f duck=%.2f until=%.1fs",
+                "BGM/ambient track FOUND (%.1f KB) → %s | looping to %.1fs vol=%.2f duck=%.2f until=%.1fs",
                 ambient_audio.stat().st_size / 1024, ambient_audio.name,
                 total_duration, _amb_vol, _duck, _duck_until,
             )
@@ -1797,6 +2068,11 @@ def compile_sequence_reel(
             background_music = _apply_voice_duck(
                 background_music, bed_vol=_amb_vol, duck_ratio=_duck, until_s=_duck_until
             )
+            background_music = _schedule_bgm(background_music)
+            logger.info(
+                "BGM schedule | start=%.1fs fade_in=%.1fs sfx_gain_db=%+.1f vol=%.2f",
+                _bgm_start, _bgm_fade, _db, _amb_vol,
+            )
             audio_clips.append(background_music)
         except Exception as _ae:
             logger.warning("Ambient audio load failed: %s — synthesizing drone", _ae)
@@ -1805,8 +2081,10 @@ def compile_sequence_reel(
             )
             if _synth is not None:
                 audio_clips.append(
-                    _apply_voice_duck(
-                        _synth, bed_vol=1.0, duck_ratio=_duck, until_s=_duck_until
+                    _schedule_bgm(
+                        _apply_voice_duck(
+                            _synth, bed_vol=1.0, duck_ratio=_duck, until_s=_duck_until
+                        )
                     )
                 )
     else:
@@ -1821,8 +2099,10 @@ def compile_sequence_reel(
         )
         if _synth is not None:
             audio_clips.append(
-                _apply_voice_duck(
-                    _synth, bed_vol=1.0, duck_ratio=_duck, until_s=_duck_until
+                _schedule_bgm(
+                    _apply_voice_duck(
+                        _synth, bed_vol=1.0, duck_ratio=_duck, until_s=_duck_until
+                    )
                 )
             )
         else:

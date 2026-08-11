@@ -7,7 +7,7 @@ Transforms existing 3:4 library assets into 1000x1500 (2:3) Pinterest Sales Pins
 Visual layout (top to bottom):
   - Hook zone (top 30%): dark vignette + VISUAL HOOK text in large serif font
   - Photo zone (middle): the library image, center-cropped or blurred-padded
-  - Button zone (bottom 17%): dark bar with "DOWNLOAD THE PROTOCOL" + URL
+  - Button zone (bottom 17%): dark bar with CTA label + optional URL
 
 Usage:
     from pinterest_engine.image_transformer import PinTransformer
@@ -44,9 +44,14 @@ _HOOK_ZONE_TOP_FRAC = 0.04
 _HOOK_ZONE_BOT_FRAC = 0.30
 _BUTTON_ZONE_TOP_FRAC = 0.83
 
-# Sales URL and button label
-_SALES_URL = "http://blueprint.holisticprotocolslab.com/"
-_BUTTON_LABEL = "DOWNLOAD THE PROTOCOL  ->"
+def _sales_url() -> str:
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+    return cfg.TARGET_URL
+
+
+def _button_label() -> str:
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+    return cfg.CTA_BUTTON_LABEL
 
 # Output subdirectory under outputs/
 _PINS_SUBDIR = "pinterest_pins"
@@ -190,26 +195,33 @@ def _draw_button_zone(
     # Top border line
     draw.line([(0, zone_top), (PIN_W, zone_top)], fill=_DIVIDER_COLOUR[:3], width=3)
 
-    # Button label
-    bbox = draw.textbbox((0, 0), _BUTTON_LABEL, font=font_btn)
-    btn_w = bbox[2] - bbox[0]
-    btn_y = zone_top + 28
-    draw.text(
-        ((PIN_W - btn_w) // 2, btn_y),
-        _BUTTON_LABEL,
-        font=font_btn,
-        fill=_BUTTON_TEXT_COLOUR,
-    )
+    label = _button_label()
+    url = _sales_url()
 
-    # URL
-    url_bbox = draw.textbbox((0, 0), _SALES_URL, font=font_url)
-    url_w = url_bbox[2] - url_bbox[0]
-    draw.text(
-        ((PIN_W - url_w) // 2, btn_y + 52),
-        _SALES_URL,
-        font=font_url,
-        fill=_URL_TEXT_COLOUR,
-    )
+    # Skip CTA chrome entirely when the channel defines neither label nor URL.
+    if not label and not url:
+        return
+
+    btn_y = zone_top + 28
+    if label:
+        bbox = draw.textbbox((0, 0), label, font=font_btn)
+        btn_w = bbox[2] - bbox[0]
+        draw.text(
+            ((PIN_W - btn_w) // 2, btn_y),
+            label,
+            font=font_btn,
+            fill=_BUTTON_TEXT_COLOUR,
+        )
+
+    if url:
+        url_bbox = draw.textbbox((0, 0), url, font=font_url)
+        url_w = url_bbox[2] - url_bbox[0]
+        draw.text(
+            ((PIN_W - url_w) // 2, btn_y + (52 if label else 28)),
+            url,
+            font=font_url,
+            fill=_URL_TEXT_COLOUR,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -234,11 +246,7 @@ class PinTransformer:
         method: str = "blurred_padding",
     ) -> None:
         if outputs_dir is None:
-            import sys
-            _root = Path(__file__).resolve().parents[1]
-            if str(_root) not in sys.path:
-                sys.path.insert(0, str(_root))
-            import config as _cfg  # noqa: PLC0415
+            from pinterest_engine import config as _cfg  # noqa: PLC0415
             outputs_dir = _cfg.OUTPUTS_DIR
 
         self.pins_dir: Path = outputs_dir / _PINS_SUBDIR
@@ -255,7 +263,8 @@ class PinTransformer:
         """
         img_path = record.get("local_image_path", "")
         imgbb_url = record.get("imgbb_url", "")
-        topic = record.get("topic", "Holistic Protocol")
+        from pinterest_engine import config as cfg  # noqa: PLC0415
+        topic = record.get("topic") or cfg.DEFAULT_TOPIC
         visual_hook = record.get("visual_hook") or topic
         subject_slug = record.get("subject_slug", "pin")
         variant = record.get("variant_index", 0)
@@ -288,9 +297,15 @@ class PinTransformer:
         Transform a record and return the JPEG bytes in memory (no disk write).
         Used by the publisher to send base64-encoded image to Pinterest API.
         """
+        from pinterest_engine import config as cfg  # noqa: PLC0415
+
         img_path = record.get("local_image_path", "")
         imgbb_url = record.get("imgbb_url", "")
-        visual_hook = record.get("visual_hook") or record.get("topic", "Holistic Protocol")
+        visual_hook = (
+            record.get("visual_hook")
+            or record.get("topic")
+            or cfg.DEFAULT_TOPIC
+        )
 
         source = self._load_source(img_path, imgbb_url)
         if source is None:
@@ -346,7 +361,7 @@ if __name__ == "__main__":
     import sys
     _root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(_root))
-    import config as cfg
+    from pinterest_engine import config as cfg
 
     files = sorted(cfg.LIBRARY_DIR.glob("post_*.json"))
     if not files:

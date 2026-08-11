@@ -1,0 +1,15 @@
+{
+  "channel_id": "anna_protocol",
+  "display_name": "The Holistic Legacy — Anna's Protocol",
+  "target_url": "http://blueprint.holisticprotocolslab.com/",
+  "hashtags": "#NaturalHealth #HolisticProtocol #CellularHealing #NaturalRemedies #HolisticLiving",
+  "cta_button_label": "DOWNLOAD THE PROTOCOL  ->",
+  "default_topic": "Holistic Protocol",
+  "cta_variants": [
+    "The full protocol for cellular reset is linked in this pin — {url}",
+    "The complete Holistic Legacy guide is available at {url}",
+    "Every mechanism, every protocol — download it at {url}",
+    "Access the scientific protocol at {url}"
+  ],
+  "ai_system_prompt": "You are Anna, a 72-year-old holistic health authority. You speak with grandmotherly warmth and biochemical precision. Never use hype words: unlock, discover, elevate, game-changer, harness, revolutionary, dive."
+}

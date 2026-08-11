@@ -6,7 +6,7 @@ Recovered from outputs:
   reel_weakness_isn_t_choice__it_s_an_u_v12.mp4
   reel_your_solitude_is_not_loneliness__v14.mp4
   reel_the_matrix_fog_obscures_your_tru_v15.mp4
-and pages_config/master_mei/golden_prompts.json (run_20260724).
+and channels_config/master_mei/golden_prompts.json (run_20260724).
 
 Aesthetic: ROLE-SEPARATED contrast (Master / Disciples / Digital Slaves).
 Act count target: 8–10 keyframes (not dense 18–20 micro-segmentation).
@@ -372,30 +372,37 @@ def compile_theme_prompt(
     # Act 0 always locks to HOOK when theme is hook / empty first frame
     if act_index == 0 or t in ("hook",):
         mei = dna or (
-            "Master Mei, older East Asian sage, long white hair bun, long flowing white "
-            "beard, traditional dark linen robes — NO cybernetics, NO VR, NO neon wires"
+            "Master Mei, wise East Asian martial arts grandmaster, snow-white topknot with "
+            "two long white chest locks, extra-long ultra-thick snow-white eyebrows past "
+            "temples, mid-chest snow-white beard, white robe + black vest gold embroidery "
+            "— NO cybernetics, NO VR, NO neon wires"
         )
-        env = env_hint or "ancestral samurai temple / misty mountain sacred ground"
+        env = env_hint or (
+            "towering jagged mountain cliff above a sea of clouds "
+            "(or open-air mountain shrine in rain/fog)"
+        )
         return strip_banned_terms(
             f"{style}. "
             f"MEDIUM: Ultra-realistic cinematic 4K photography — NOT illustration, NOT CGI polish. "
             f"HOOK FRAME 1 — FIRST APPEARANCE — STRICT CHARACTER LOCK + REFERENCE LIKENESS. "
-            f"{mei}. POSE MANDATE: Master Mei meditating, standing in fog, OR observing "
-            f"disciples from a temple balcony — spine erect, absolute stillness. "
-            f"ENVIRONMENT: {env}. Traditional organic world ONLY. "
+            f"{mei}. POSE MANDATE: Master Mei meditating in lotus on a high-altitude cliff "
+            f"or misty ridge — spine erect, absolute stillness. "
+            f"ENVIRONMENT: {env}. Templates are references — match script philosophy via "
+            f"weather/lighting. Never generic indoor temples. Traditional organic world ONLY. "
             f"THEME CONTEXT: {subject or chunk}. Spoken beat: {chunk}. "
             f"[Camera Motion]: {cam}. {_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
         )
 
     if t in ("finale", "final", "cta"):
         mei = dna or (
-            "Master Mei, older East Asian sage, long white topknot, long white beard, "
-            "dark linen robes — NO cybernetics"
+            "Master Mei, wise East Asian martial arts grandmaster, snow-white topknot with "
+            "two long white chest locks, extra-long snow-white eyebrows past temples, "
+            "mid-chest snow-white beard, white robe + black vest gold embroidery — NO cybernetics"
         )
         return strip_banned_terms(
             f"{style}. "
-            f"[SUBJECT & ACTION]: {mei}, standing in misty temple courtyard with "
-            f"young disciples after hard training — sovereign stillness, REFERENCE LIKENESS. "
+            f"[SUBJECT & ACTION]: {mei}, standing on a misty high-altitude mountain ridge "
+            f"or open-air shrine after hard training — sovereign stillness, REFERENCE LIKENESS. "
             f"Traditional organic world ONLY. Spoken beat: {chunk}. [Camera Motion]: {cam}. "
             f"{_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
         )

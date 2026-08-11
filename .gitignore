@@ -8,6 +8,13 @@
 *.pem
 *.key
 
+# Google Drive shortcut files (not real blobs; break `git add -A`)
+*.gsheet
+
+# Local credential JSON (service accounts / ad-hoc secrets)
+credentials/*.json
+!credentials/tokens/.gitkeep
+
 # Google OAuth2 — client secrets and per-page YouTube access tokens
 client_secret*.json
 token_*.json

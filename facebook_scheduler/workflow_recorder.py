@@ -2,25 +2,30 @@
 """
 facebook_scheduler/workflow_recorder.py
 =========================================
-Records and replays the manual UI interaction sequence for:
-  A. Click Aa icon  → show quick background strip
-  B. Click 9-dot grid icon → open full background modal
-  C. Click background tile
-  D. Click grid icon again → close background modal
-  E. Scroll composer sidebar → reveal Schedule section
-  F. Click "Set date and time" toggle
+Records and replays the middle of the 8-step Facebook scheduling sequence.
 
-Recording works by injecting a lightweight JavaScript event listener into the
-live page that captures every click and scroll the user makes, then collects
-the results when the user presses ENTER in the terminal.
+**Meta Business Suite UI language must be English** (selectors / labels are
+English-only by design).
 
-Each captured action is described by a stable CSS selector (aria-label → 
-data-testid → role+nth → tag path) so replays survive minor DOM changes.
+Recorded once (steps 1–6), then replayed for every Google Sheets post:
+  1. Open Backgrounds — click Aa / background options
+  2. Select Grid      — open the full background grid
+  3. Choose Background — select the desired tile
+  4. Close Grid       — dismiss the background grid
+  5. Scroll Down      — reveal scheduling options
+  6. Open Scheduler   — click "Set date and time" toggle
+
+Automated after replay (per-post, from Google Sheets):
+  7. Select Date — fill schedule date/time from ``sheet_queue``
+  8. Schedule    — click the final "Schedule" button
+
+Recording injects a lightweight JS listener that captures clicks / scrolls /
+keypresses; results are saved when the user presses ENTER in the terminal.
 
 Workflow file: ``credentials/recorded_workflow.json``
 
-Replay is the PREFERRED path for steps 3–5a.  Automated selector fallback
-remains active when no workflow file exists.
+Replay is the PREFERRED path for steps 1–6.  Hard-coded English selector
+fallback runs when no workflow file exists or replay fails.
 """
 from __future__ import annotations
 
@@ -460,12 +465,12 @@ def _clean_actions(raw: list[dict]) -> list[dict]:
     prev_key_ts    = 0
 
     step_descriptions = [
-        "Aa icon — show quick background strip",
-        "9-dot grid icon — open full background modal",
-        "Background tile — select background",
-        "9-dot grid icon — close background modal",
-        "Scroll — reveal Schedule section",
-        "Set date and time toggle — enable scheduling",
+        "1. Open Backgrounds — Aa / background options",
+        "2. Select Grid — open full background grid",
+        "3. Choose Background — select tile",
+        "4. Close Grid — dismiss background grid",
+        "5. Scroll Down — reveal scheduling options",
+        "6. Open Scheduler — Set date and time toggle",
     ]
 
     for action in raw:
@@ -763,14 +768,57 @@ def _replay_click(
 
 def _replay_scroll(page: "Page", action: dict, dry_run: bool, label: str) -> None:
     """
-    Replay a scroll action using ``window.scrollBy`` (cursor-free).
+    Replay a scroll action inside the composer dialog (preferred) or window.
+
+    Recording stores absolute ``scrollTop`` / ``scrollY`` values as
+    ``delta_y``; for replay we use a sensible relative nudge (500 px default)
+    so the Schedule section becomes reachable regardless of absolute offset.
     """
-    delta = action.get("delta_y", 300)
+    raw_delta = action.get("delta_y", 500)
+    try:
+        raw_delta = int(raw_delta)
+    except (TypeError, ValueError):
+        raw_delta = 500
+    # Absolute scroll positions from recording are typically large; clamp to
+    # a practical relative nudge for the composer sidebar.
+    scroll_amount = raw_delta if 50 <= abs(raw_delta) <= 800 else 500
+
     if dry_run:
-        print(f"  [DRY-RUN] Would scroll '{label}': +{delta}px")
+        print(f"  [DRY-RUN] Would scroll '{label}': +{scroll_amount}px")
         return
-    page.evaluate(f"window.scrollBy(0, {delta})")
-    print(f"  [Replay] Scrolled '{label}': +{delta}px")
+
+    sel = action.get("selector", "window") or "window"
+    try:
+        result = page.evaluate(
+            """
+            ([sel, amount]) => {
+                function tryScroll(el) {
+                    if (el && el.scrollHeight > el.clientHeight + 10) {
+                        el.scrollTop += amount;
+                        return true;
+                    }
+                    return false;
+                }
+                if (sel && sel !== 'window') {
+                    try {
+                        var target = document.querySelector(sel);
+                        if (tryScroll(target)) return 'selector:' + sel;
+                    } catch (e) {}
+                }
+                var dialog = document.querySelector('div[role="dialog"]');
+                if (tryScroll(dialog)) return 'dialog';
+                var form = document.querySelector('form');
+                if (tryScroll(form)) return 'form';
+                window.scrollBy(0, amount);
+                return 'window';
+            }
+            """,
+            [sel, scroll_amount],
+        )
+        print(f"  [Replay] Scrolled '{label}': +{scroll_amount}px via {result}")
+    except Exception as exc:
+        page.evaluate(f"window.scrollBy(0, {scroll_amount})")
+        print(f"  [Replay] Scrolled '{label}' via window fallback ({exc})")
     time.sleep(0.3)
 
 
@@ -827,24 +875,24 @@ def run_recording_session(
     workflow_path: Path = _WORKFLOW_PATH,
 ) -> int:
     """
-    Full recording session:
+    Full recording session for steps 1–6 of the scheduling workflow.
 
     1. If a previous recording exists, ask whether to overwrite it.
-    2. Print step-by-step instructions.
+    2. Print the English 8-step sequence (1–6 manual, 7–8 automated).
     3. Inject JS event listeners.
-    4. Wait for the user to press ENTER (they perform the actions in the
-       browser during this window).
-    5. Collect and save the recorded actions.
-    6. Print a summary of every captured action (selector + coordinates).
+    4. Wait for ENTER while the user performs steps 1–6 in the browser.
+    5. Collect and save actions to ``workflow_path``.
+    6. Print a summary of every captured action.
 
     Returns the number of captured actions (0 if the user aborted).
 
     Note: The post composer must already be open and the sample text must
-    have already been typed before calling this function.
+    have already been typed before calling this function. Meta UI must be
+    English.
     """
     print()
     print("=" * 65)
-    print("  WORKFLOW RECORDING MODE")
+    print("  WORKFLOW RECORDING MODE  (English Meta UI required)")
     print("=" * 65)
     print()
 
@@ -855,6 +903,7 @@ def run_recording_session(
             recorded_at   = existing_data.get("recorded_at", "unknown date")
             action_count  = existing_data.get("action_count", "?")
             print(f"  An existing recording was found:")
+            print(f"    File     : {workflow_path}")
             print(f"    Recorded : {recorded_at}")
             print(f"    Actions  : {action_count}")
             print()
@@ -869,39 +918,52 @@ def run_recording_session(
         except Exception:
             pass  # Corrupted file — proceed with fresh recording
     else:
-        print("  No existing recording found — starting fresh.")
+        print(f"  No existing recording at {workflow_path} — starting fresh.")
         print()
 
     print("  The bot has opened the composer and typed sample text.")
-    print("  Now please manually perform these steps IN THE BROWSER:")
+    print("  Perform steps 1–6 MANUALLY in the ENGLISH Meta Business Suite UI.")
+    print("  Steps 7–8 (date from Google Sheets + Schedule) are automated later.")
     print()
-    print("  Action A  Click the [Aa] icon below the text box")
-    print("            (reveals the quick background colour strip)")
+    print("  Step 1  Open Backgrounds")
+    print("          Click the [Aa] icon below the text box")
+    print("          (reveals the quick background colour strip)")
     print()
-    print("  Action B  Click the [9-dot grid] icon at the right end")
-    print("            of the strip (opens the full background modal)")
+    print("  Step 2  Select Grid")
+    print("          Click the [9-dot grid] icon at the right end of the strip")
     print()
-    print("  Action C  Click the background tile you want (e.g. tile 14)")
+    print("  Step 3  Choose Background")
+    print("          Click the background tile you want to use for all posts")
     print()
-    print("  Action D  Click the [9-dot grid] icon again to close the modal")
+    print("  Step 4  Close Grid")
+    print("          Click the [9-dot grid] icon again (or Escape) to close it")
     print()
-    print("  Action E  Scroll the left panel downward to reveal 'Schedule'")
+    print("  Step 5  Scroll Down")
+    print("          Scroll the composer panel until scheduling options appear")
     print()
-    print("  Action F  Click the [Set date and time] toggle switch")
+    print("  Step 6  Open Scheduler")
+    print('          Click the [Set date and time] toggle switch')
     print()
-    print("  When ALL 6 actions are done, press ENTER here.")
+    print("  --- Automated on every live post (do NOT record these) ---")
+    print("  Step 7  Select Date   ← filled from Google Sheets queue")
+    print('  Step 8  Schedule      ← clicks the final "Schedule" button')
+    print()
+    print("  When steps 1–6 are done, press ENTER here.")
     print()
     print("-" * 65)
 
     recorder = WorkflowRecorder(page=page, workflow_path=workflow_path)
     recorder.start()
 
-    input("  --> Press ENTER when you have finished all 6 actions... ")
+    input("  --> Press ENTER when you have finished steps 1–6... ")
 
     print()
     print("  Collecting recorded actions...")
     actions = recorder.stop_and_save(
-        description="Background selection + schedule toggle (recorded)"
+        description=(
+            "8-step workflow steps 1–6 (Open Backgrounds → Open Scheduler); "
+            "English Meta UI; steps 7–8 filled from Google Sheets at runtime"
+        )
     )
 
     print()
@@ -921,6 +983,7 @@ def run_recording_session(
             print(f"            selector : {str(sel)[:60]}{coord}")
     print()
     print(f"  Workflow saved to: {recorder.workflow_path}")
+    print("  Live runs will replay steps 1–6, then fill date (Sheets) + Schedule.")
     print("=" * 65)
     print()
 

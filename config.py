@@ -157,6 +157,59 @@ IMGBB_API_KEY: str | None = os.getenv("IMGBB_API_KEY")
 IMAGE_PROVIDER: str = (os.getenv("IMAGE_PROVIDER") or "together").strip().lower()
 
 # ---------------------------------------------------------------------------
+# Remote GPU (ComfyUI / RunPod) — opt-in adapter; legacy paths unchanged when false
+# ---------------------------------------------------------------------------
+# When ENABLE_REMOTE_GPU_WORKFLOWS=true, thin routers in get_image_adapter() and
+# generate_voiceover() delegate to core_engine.remote_gpu_manager. When false
+# (default), Together / ElevenLabs / MoviePy continue exactly as before.
+ENABLE_REMOTE_GPU_WORKFLOWS: bool = _bool_env("ENABLE_REMOTE_GPU_WORKFLOWS", False)
+# Default: serverless (always on-demand). Pod (comfyui) is the explicit exception.
+REMOTE_GPU_MODE: str = (os.getenv("REMOTE_GPU_MODE") or "runpod").strip().lower()
+
+
+def _strip_url_fragment(url: str) -> str:
+    """Drop browser ``#workflow-uuid`` fragments from ComfyUI proxy URLs."""
+    raw = (url or "").strip().split("#", 1)[0].strip().rstrip("/")
+    return raw
+
+
+REMOTE_GPU_BASE_URL: str = _strip_url_fragment(
+    os.getenv("REMOTE_GPU_BASE_URL") or os.getenv("COMFYUI_BASE_URL") or ""
+)
+REMOTE_GPU_WORKFLOWS_DIR: str = (
+    os.getenv("REMOTE_GPU_WORKFLOWS_DIR") or "remote_GPU_workflows"
+).strip()
+REMOTE_GPU_POLL_INTERVAL_S: float = float(os.getenv("REMOTE_GPU_POLL_INTERVAL_S") or "2.0")
+REMOTE_GPU_TIMEOUT_S: float = float(os.getenv("REMOTE_GPU_TIMEOUT_S") or "600")
+REMOTE_GPU_DEFAULT_REF_AUDIO: str = (os.getenv("REMOTE_GPU_DEFAULT_REF_AUDIO") or "").strip()
+# Optional exact transcript for the global F5 reference clip (or use sibling .txt)
+REMOTE_GPU_DEFAULT_REF_TEXT: str = (os.getenv("REMOTE_GPU_DEFAULT_REF_TEXT") or "").strip()
+# Empty = auto-select per channel (LoRA graph when REMOTE_GPU_LORA_NAME set)
+REMOTE_GPU_FLUX_WORKFLOW: str = (os.getenv("REMOTE_GPU_FLUX_WORKFLOW") or "").strip()
+RUNPOD_API_KEY: str | None = os.getenv("RUNPOD_API_KEY") or None
+RUNPOD_ENDPOINT_ID: str = (os.getenv("RUNPOD_ENDPOINT_ID") or "").strip()
+RUNPOD_ENDPOINT_URL: str = _strip_url_fragment(os.getenv("RUNPOD_ENDPOINT_URL") or "")
+# Max concurrent remote-GPU jobs (serverless workers / Comfy queue depth).
+# Not hardcoded — set to match endpoint worker count (1, 5, 10, …).
+REMOTE_GPU_MAX_PARALLEL: int = max(
+    1, int(os.getenv("REMOTE_GPU_MAX_PARALLEL") or os.getenv("REMOTE_GPU_WORKERS") or "5")
+)
+# Pricing tier hints for CostTracker GPU line items
+# Pod: community (~$0.34/hr RTX 4090) | secure (~$0.69/hr)
+RUNPOD_CLOUD_TYPE: str = (os.getenv("RUNPOD_CLOUD_TYPE") or "community").strip().lower()
+# Serverless: flex (full rate) | active (−40% always-on workers)
+RUNPOD_SERVERLESS_WORKER_TYPE: str = (
+    os.getenv("RUNPOD_SERVERLESS_WORKER_TYPE") or "flex"
+).strip().lower()
+# Optional overrides (USD); 0 / empty → built-in table in cost_tracker
+RUNPOD_POD_RTX4090_USD_PER_HOUR: float = float(
+    os.getenv("RUNPOD_POD_RTX4090_USD_PER_HOUR") or "0"
+)
+RUNPOD_SERVERLESS_RTX4090_USD_PER_SEC: float = float(
+    os.getenv("RUNPOD_SERVERLESS_RTX4090_USD_PER_SEC") or "0"
+)
+
+# ---------------------------------------------------------------------------
 # DeepSeek — OPTIONAL secondary fallback only (Gemini is the primary text brain)
 # Models (2026): deepseek-v4-flash | deepseek-v4-pro
 # Legacy ``deepseek-chat`` is rejected by the API (HTTP 400) — never use it.
@@ -194,6 +247,38 @@ SEQUENCE_VOICEOVER_MIN_WORDS: int = int(os.getenv("SEQUENCE_VOICEOVER_MIN_WORDS"
 # ElevenLabs — voiceover TTS + ambient SFX for ECONOMIC_REEL
 # ---------------------------------------------------------------------------
 ELEVENLABS_API_KEY: str | None = os.getenv("ELEVENLABS_API_KEY") or None
+
+
+def elevenlabs_api_key_is_secret_format(key: str | None = None) -> bool:
+    """
+    True when *key* looks like an ElevenLabs **secret** API key (``sk_…``).
+
+    ElevenLabs distinguishes Key ID vs secret: sending a Key ID yields HTTP 400
+    ``api_key_id_used_as_api_key``. A 64-char hex blob without ``sk_`` is almost
+    always the ID, not the secret.
+    """
+    raw = (key if key is not None else ELEVENLABS_API_KEY) or ""
+    return str(raw).strip().startswith("sk_")
+
+
+def assert_elevenlabs_api_key_usable(key: str | None = None) -> None:
+    """Raise with a clear fix hint when the env value is a Key ID, not a secret."""
+    raw = (key if key is not None else ELEVENLABS_API_KEY) or ""
+    if not str(raw).strip():
+        raise RuntimeError(
+            "ELEVENLABS_API_KEY is empty. Add the secret key from the ElevenLabs "
+            "dashboard (it must start with 'sk_')."
+        )
+    if not elevenlabs_api_key_is_secret_format(raw):
+        raise RuntimeError(
+            "ELEVENLABS_API_KEY is not a secret key (must start with 'sk_'). "
+            "ElevenLabs error api_key_id_used_as_api_key means this value is a "
+            "Key ID (or other non-secret), not the API secret. Open the ElevenLabs "
+            "dashboard → API Keys → copy the secret shown at creation/rotation "
+            "(sk_…), paste it into .env as ELEVENLABS_API_KEY, and re-run. "
+            "model_api_flows does not remap this variable — the .env value itself "
+            "is what gets sent as xi-api-key."
+        )
 
 # ---------------------------------------------------------------------------
 # YouTube Data API v3 — OAuth2 upload
@@ -297,8 +382,19 @@ POST_TYPE: str = os.getenv("POST_TYPE", "STANDARD_QUOTE").strip().upper()
 # Defaults to 'anna_protocol' for full backward compatibility.
 # ---------------------------------------------------------------------------
 ACTIVE_PAGE: str = os.getenv("ACTIVE_PAGE", "anna_protocol")
-PAGES_CONFIG_ROOT: Path = ENGINE_ROOT / "pages_config"
-ACTIVE_PAGE_DIR: Path = PAGES_CONFIG_ROOT / ACTIVE_PAGE
+CHANNELS_CONFIG_ROOT: Path = ENGINE_ROOT / "channels_config"
+_LEGACY_PAGES_CONFIG_ROOT: Path = ENGINE_ROOT / "pages_config"
+# Prefer channels_config/; fall back to historic pages_config/ if still present.
+PAGES_CONFIG_ROOT: Path = (
+    CHANNELS_CONFIG_ROOT
+    if CHANNELS_CONFIG_ROOT.is_dir()
+    else _LEGACY_PAGES_CONFIG_ROOT
+)
+ACTIVE_PAGE_DIR: Path = (
+    (CHANNELS_CONFIG_ROOT / ACTIVE_PAGE)
+    if (CHANNELS_CONFIG_ROOT / ACTIVE_PAGE).is_dir()
+    else (_LEGACY_PAGES_CONFIG_ROOT / ACTIVE_PAGE)
+)
 
 # ---------------------------------------------------------------------------
 # Page-aware persona paths
@@ -307,7 +403,7 @@ PERSONA_DNA_PATH: Path = ACTIVE_PAGE_DIR / "persona_dna.py"
 MASTER_DNA_PATH: Path = ACTIVE_PAGE_DIR / "master_dna.json"
 
 # Fallback: legacy avatar_engine/master_dna.json for anna_protocol
-# if pages_config hasn't been set up yet.
+# if channels_config hasn't been set up yet.
 if not MASTER_DNA_PATH.is_file() and ACTIVE_PAGE == "anna_protocol":
     MASTER_DNA_PATH = ENGINE_ROOT / "avatar_engine" / "master_dna.json"
 if not PERSONA_DNA_PATH.is_file() and ACTIVE_PAGE == "anna_protocol":
@@ -317,7 +413,7 @@ if not PERSONA_DNA_PATH.is_file() and ACTIVE_PAGE == "anna_protocol":
 # Page-aware asset paths
 # ---------------------------------------------------------------------------
 
-# Reference avatar: prefer pages_config/{page}/avatar_reference/avatar.png,
+# Reference avatar: prefer channels_config/{page}/avatar_reference/avatar.png,
 # then fall back to the legacy hardcoded Drive path for anna_protocol.
 _page_ref_avatar: Path = ACTIVE_PAGE_DIR / "avatar_reference" / "avatar.png"
 _REFERENCE_AVATAR_LEGACY = Path(
@@ -331,7 +427,7 @@ REFERENCE_IMAGE_PATH: Path = _resolve_path(
     os.getenv("REFERENCE_IMAGE_PATH"), _ref_avatar_default
 )
 
-# Digital products (PDF corpus): prefer pages_config/{page}/product_reference/
+# Digital products (PDF corpus): prefer channels_config/{page}/product_reference/
 _page_digital_products: Path = ACTIVE_PAGE_DIR / "product_reference"
 _DEFAULT_DIGITAL_PRODUCTS = ENGINE_ROOT / "product_reference" / "Digital Products"
 DIGITAL_PRODUCTS_PATH: Path = _resolve_path(

@@ -12,10 +12,10 @@ Every entry carries:
   - Original content fields (original_caption, raw_fact_sheet, imgbb_url ...)
   - Pinterest sales fields (pinterest_title, pinterest_caption, visual_hook, target_url)
   - Multi-platform publication_status object
-  - Resolved local_image_path (G: Drive link repair, inline)
+  - Resolved local_image_path (workspace-relative path repair)
+  - channel_id (with legacy page_id read fallback)
 
 This module is imported by scheduler.py, publisher.py, and pinterest_main.py.
-sync_drive_assets.py delegates to it for the actual work.
 """
 from __future__ import annotations
 
@@ -34,7 +34,17 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 MASTER_INVENTORY_FILENAME = "master_inventory.json"
 SCHEMA_VERSION = "2.0"
-TARGET_URL = "http://blueprint.holisticprotocolslab.com/"
+
+
+def _target_url() -> str:
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+    return cfg.TARGET_URL
+
+
+def _default_topic() -> str:
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+    return cfg.DEFAULT_TOPIC
+
 
 _SOCIAL_CTA_RE = re.compile(
     r"(?:"
@@ -46,21 +56,39 @@ _SOCIAL_CTA_RE = re.compile(
     re.MULTILINE,
 )
 
+# Matches system/researcher bracket tags that precede un-humanized drafts.
+# e.g. "[Caption from researcher output - humanizer skipped]"
+#      "[Researcher draft   humanizer unavailable]"
+_RAW_DRAFT_TAG_RE = re.compile(
+    r"^\s*\["
+    r"(?:Caption from researcher|Researcher draft|humanizer|RAW FACT SHEET)[^\]]*"
+    r"\]\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Markdown section headers used inside fact-sheet blocks:
+# "**RAW FACT SHEET**", "**RAW FACT SHEET: Benefits of Celtic Salt**",
+# "**1. Verified Mechanisms:**", etc.
+_FACT_SHEET_HEADER_RE = re.compile(
+    r"^\s*(?:"
+    r"\*\*RAW FACT SHEET[^*]*\*\*:?"     # **RAW FACT SHEET** or **RAW FACT SHEET: Topic**
+    r"|\*\*\d+\.\s+[^*]+\*\*:?"          # **1. Numbered Section Header:**
+    r"|RAW FACT SHEET(?:[:\s].*)?"        # plain RAW FACT SHEET line (no stars)
+    r")\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
 _BANNED_WORDS = ["unlock", "discover", "elevate", "game-changer",
                  "harness", "revolutionary", "dive"]
 
-_SALES_CTA_VARIANTS = [
-    f"The full protocol for cellular reset is linked in this pin   {TARGET_URL}",
-    f"The complete Holistic Legacy guide is available at {TARGET_URL}",
-    f"Every mechanism, every protocol   download it at {TARGET_URL}",
-    f"Access the scientific protocol at {TARGET_URL}",
-]
+def _channel_cta_variants() -> list[str]:
+    """
+    Channel-scoped CTA templates from config pack / env.
 
-_DRIVE_BASE = (
-    r"G:\My Drive\Z sosFiles\Z_act\@ NETWORK\@_Content 2026"
-    r"\The Holistic Legacy - Anna's Protocol"
-    r"\Anna's Automated Image Posts Engine"
-)
+    Empty list means: do not inject engine CTAs — keep inventory metadata as-is.
+    """
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+    return list(cfg.CTA_VARIANTS or [])
 
 # ---------------------------------------------------------------------------
 # Publication status factory
@@ -89,6 +117,51 @@ def has_social_cta(text: str) -> bool:
     return bool(_SOCIAL_CTA_RE.search(text))
 
 
+def is_raw_draft(text: str) -> bool:
+    """
+    Return True if the text is (or starts with) an un-humanized researcher draft.
+    Catches patterns like:
+      [Caption from researcher output - humanizer skipped]
+      [Researcher draft   humanizer unavailable]
+      **RAW FACT SHEET**
+    """
+    if not text:
+        return False
+    head = text.strip()[:300]
+    return bool(_RAW_DRAFT_TAG_RE.search(head) or _FACT_SHEET_HEADER_RE.search(head))
+
+
+def strip_draft_headers(text: str) -> str:
+    """
+    Strip system/researcher bracket tags and markdown fact-sheet wrappers.
+    Preserves the underlying science content (bullet points, sentences).
+
+    Examples of what gets removed:
+      [Caption from researcher output - humanizer skipped]
+      **RAW FACT SHEET**
+      **1. Verified Mechanisms:**
+
+    Returns cleaned text, or empty string if nothing useful remains.
+    """
+    if not text:
+        return ""
+    lines = text.splitlines()
+    clean: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip system bracket tags
+        if _RAW_DRAFT_TAG_RE.match(line):
+            continue
+        # Skip standalone "RAW FACT SHEET" / numbered markdown headers
+        if _FACT_SHEET_HEADER_RE.match(line):
+            continue
+        clean.append(line)
+
+    result = "\n".join(clean)
+    result = re.sub(r"\n{3,}", "\n\n", result).strip()
+    return result
+
+
 def clean_social_ctas(text: str) -> str:
     """Strip all social engagement CTA phrases from the text."""
     cleaned = _SOCIAL_CTA_RE.sub("", text)
@@ -97,15 +170,51 @@ def clean_social_ctas(text: str) -> str:
 
 
 def inject_sales_cta(text: str, variant_idx: int = 0) -> str:
-    """Append a rotating sales CTA to the caption."""
-    cta = _SALES_CTA_VARIANTS[variant_idx % len(_SALES_CTA_VARIANTS)]
+    """
+    Append a rotating channel CTA when the active channel defines variants.
+
+    If the channel pack has no CTA templates, return *text* unchanged so
+    inventory/post metadata remains the sole source of caption content.
+    """
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+
+    variants = _channel_cta_variants()
+    if not variants:
+        return text.rstrip()
+    template = variants[variant_idx % len(variants)]
+    cta = cfg.format_cta_variant(template, _target_url())
+    if not cta.strip():
+        return text.rstrip()
     return f"{text.rstrip()}\n\n{cta}"
 
 
 def build_caption_regex(source: str, variant_idx: int = 0) -> str:
-    """Fast regex-based caption transformation (no API call needed)."""
+    """
+    Fast regex-based caption transformation (no API call needed).
+
+    Automatically strips raw researcher draft headers before processing,
+    so this function is safe to call on any source regardless of whether
+    the humanizer ran. CTAs/URLs come only from the active channel pack.
+    """
+    url = _target_url()
+    variants = _channel_cta_variants()
+    if variants:
+        from pinterest_engine import config as cfg  # noqa: PLC0415
+        fallback = cfg.format_cta_variant(variants[0], url).strip()
+    elif url:
+        fallback = url
+    else:
+        fallback = ""
+
     if not source or source.strip() in ("PENDING_CAPTION", "pending", ""):
-        return f"Natural healing protocol. {TARGET_URL}"
+        return fallback
+
+    # Strip any researcher draft wrapper before cleaning CTAs
+    if is_raw_draft(source):
+        source = strip_draft_headers(source)
+        if not source.strip():
+            return fallback
+
     cleaned = clean_social_ctas(source)
     result = inject_sales_cta(cleaned, variant_idx)
     for word in _BANNED_WORDS:
@@ -117,10 +226,10 @@ def build_title_template(topic: str) -> str:
     """Generate a keyword-rich SEO title (max 100 chars) from the topic."""
     base = topic.strip().title()
     for sfx in [
-        " | Natural Healing Protocol",
-        " | Holistic Science Guide",
-        " Protocol | Cellular Healing",
-        "   Real Food Science",
+        " | Practical Guide",
+        " | Complete Overview",
+        " Tips | Quick Reference",
+        " — Key Insights",
     ]:
         if len(base + sfx) <= 100:
             return base + sfx
@@ -134,13 +243,21 @@ def build_visual_hook(topic: str) -> str:
 
 def validate_caption_safe(caption: str) -> tuple[bool, str]:
     """
-    Check that the caption is Pinterest-safe (no social CTAs, has target URL).
+    Check that the caption is Pinterest-safe for live publishing.
     Returns (is_valid: bool, reason: str).
+
+    Fails on:
+      - Social engagement CTAs ("Comment X", "DM me", etc.)
+      - Missing target / sales URL (when TARGET_URL is configured)
+      - Un-humanized researcher draft content (raw fact-sheet headers)
     """
+    if is_raw_draft(caption):
+        return False, "Contains un-humanized researcher draft header"
     if has_social_cta(caption):
         return False, "Contains social engagement CTA ('Comment', 'DM me', etc.)"
-    if TARGET_URL not in caption:
-        return False, f"Missing target URL: {TARGET_URL}"
+    url = _target_url()
+    if url and url not in caption:
+        return False, f"Missing target URL: {url}"
     return True, "OK"
 
 
@@ -151,34 +268,28 @@ def validate_caption_safe(caption: str) -> tuple[bool, str]:
 def resolve_image_path(record: dict) -> str:
     """
     Try to find the actual image file for this record.
-    Checks: local_image_path -> image_relative (relative to engine root)
-    -> image_path (content_library field) -> G: Drive construction.
-    Returns empty string if nothing is found.
+    Checks: local_image_path -> image_relative / image_path relative to
+    the local workspace root (ENGINE_ROOT). Returns empty string if missing.
     """
-    import sys  # noqa: PLC0415
-    _root = Path(__file__).resolve().parents[1]
-    if str(_root) not in sys.path:
-        sys.path.insert(0, str(_root))
-    import config as cfg  # noqa: PLC0415
+    from pinterest_engine import config as cfg  # noqa: PLC0415
 
     # 1. Already resolved
     existing = record.get("local_image_path", "")
     if existing and Path(existing).is_file():
         return str(Path(existing).resolve())
 
-    # 2. image_relative (library/*.json field)
+    # 2. image_relative / image_path relative to local workspace root
     for rel_field in ("image_relative", "image_path"):
         rel = record.get(rel_field, "")
         if not rel:
             continue
-        # Relative to engine root
         candidate = (cfg.ENGINE_ROOT / rel).resolve()
         if candidate.is_file():
             return str(candidate)
-        # Relative to G: drive base
-        drive_cand = Path(_DRIVE_BASE) / rel
-        if drive_cand.is_file():
-            return str(drive_cand.resolve())
+        # Also try relative to outputs/ (common inventory layout)
+        out_cand = (cfg.OUTPUTS_DIR / rel).resolve()
+        if out_cand.is_file():
+            return str(out_cand)
 
     return ""
 
@@ -186,12 +297,6 @@ def resolve_image_path(record: dict) -> str:
 # ---------------------------------------------------------------------------
 # Claude AI generation (optional, called when use_ai=True)
 # ---------------------------------------------------------------------------
-
-_AI_SYSTEM = (
-    "You are Anna, a 72-year-old holistic health authority. "
-    "You speak with grandmotherly warmth and biochemical precision. "
-    "Never use hype words: unlock, discover, elevate, game-changer, harness, revolutionary, dive."
-)
 
 _AI_USER_TPL = """\
 TASK: Transform this post into Pinterest sales content.
@@ -203,11 +308,8 @@ SOURCE CAPTION:
 
 RULES:
 1. Remove every "Comment [KEYWORD]", "Type [KEYWORD]", "DM me" CTA entirely.
-2. End with a humble, non-pushy line pointing to: {url}
-   Example: "The full protocol for cellular reset is linked in this pin."
+2. End with a humble, non-pushy line{url_rule}.
 3. The pinterest_title must be a keyword-rich search phrase, max 100 chars.
-   Use phrases people actually search: "how to reset gut naturally", \
-"natural remedy for inflammation", etc.
 4. visual_hook is 5-8 words in ALL CAPS for overlay text.
 
 OUTPUT: Valid JSON only, no markdown:
@@ -223,13 +325,25 @@ def _generate_ai(
     model: str,
     variant_idx: int,
 ) -> dict:
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+
+    # No channel persona/prompt configured → skip AI (use inventory/templates).
+    if not cfg.AI_SYSTEM_PROMPT:
+        return {}
+
     source = caption if caption not in ("PENDING_CAPTION", "") else fact_sheet[:500]
-    user_msg = _AI_USER_TPL.format(topic=topic, caption=source, url=TARGET_URL)
+    url = cfg.TARGET_URL
+    url_rule = (
+        f" pointing to: {url}\n   Example: \"Full details are linked in this pin.\""
+        if url else
+        " inviting the reader to learn more from the pin link"
+    )
+    user_msg = _AI_USER_TPL.format(topic=topic, caption=source, url_rule=url_rule)
     try:
         resp = client.messages.create(
             model=model,
             max_tokens=900,
-            system=_AI_SYSTEM,
+            system=cfg.AI_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
         raw = resp.content[0].text.strip()
@@ -263,14 +377,12 @@ class MasterInventory:
     """
 
     def __init__(self, outputs_dir: Path | None = None) -> None:
-        import sys  # noqa: PLC0415
-        _root = Path(__file__).resolve().parents[1]
-        if str(_root) not in sys.path:
-            sys.path.insert(0, str(_root))
-        import config as cfg  # noqa: PLC0415
+        from pinterest_engine import config as cfg  # noqa: PLC0415
 
         self.outputs_dir: Path = outputs_dir or cfg.OUTPUTS_DIR
-        self.library_dir: Path = cfg.LIBRARY_DIR
+        self.library_dir: Path = (
+            self.outputs_dir / "library" if outputs_dir is not None else cfg.LIBRARY_DIR
+        )
         self.inventory_path: Path = self.outputs_dir / MASTER_INVENTORY_FILENAME
         self.content_library_path: Path = self.outputs_dir / "content_library.json"
 
@@ -350,8 +462,10 @@ class MasterInventory:
                 log.warning("Cannot read %s: %s", lib_path.name, exc)
                 continue
 
+            from pinterest_engine import config as cfg  # noqa: PLC0415
+
             post_id = lib_path.stem
-            topic = raw.get("topic", "Holistic Protocol")
+            topic = raw.get("topic") or _default_topic()
             subject_slug = raw.get("subject_slug", "")
             variant_idx = raw.get("variant_index", 0)
             source_caption = raw.get("humanized_caption", "")
@@ -365,6 +479,14 @@ class MasterInventory:
             prev = existing_map.get(post_id, {})
             pub_status = prev.get("publication_status") or _empty_publication_status()
 
+            # channel_id preferred; fall back to legacy page_id on read
+            channel_id = (
+                cfg.get_record_channel_id(prev)
+                or cfg.get_record_channel_id(raw)
+                or cfg.CHANNEL_ID
+                or ""
+            )
+
             # Resolve local image path (always re-check so new paths are found)
             combined = {**raw, **({"image_path": cl_entry.get("image_path", "")} if cl_entry else {})}
             local_img = resolve_image_path(combined)
@@ -377,6 +499,7 @@ class MasterInventory:
 
             entry: dict = {
                 "post_id": post_id,
+                "channel_id": channel_id,
                 "content_library_id": cl_entry.get("id", ""),
                 "topic": topic,
                 "subject_slug": subject_slug,
@@ -387,7 +510,7 @@ class MasterInventory:
                 "image_relative": raw.get("image_relative", ""),
                 "local_image_path": local_img,
                 "created_utc": raw.get("created_utc", ""),
-                "target_url": TARGET_URL,
+                "target_url": _target_url(),
                 "pinterest_title": prev.get("pinterest_title", ""),
                 "pinterest_caption": prev.get("pinterest_caption", ""),
                 "visual_hook": prev.get("visual_hook", ""),
@@ -420,8 +543,11 @@ class MasterInventory:
 
             entries.append(entry)   # always accumulate in memory
 
+        from pinterest_engine import config as cfg  # noqa: PLC0415
+
         data = {
             "schema_version": SCHEMA_VERSION,
+            "channel_id": cfg.CHANNEL_ID or "",
             "generated_utc": datetime.now(timezone.utc).isoformat(),
             "total_entries": len(entries),
             "entries": entries,
@@ -602,16 +728,12 @@ class MasterInventory:
     def _load_ai_client(self) -> tuple:
         try:
             import anthropic  # noqa: PLC0415
-            import sys  # noqa: PLC0415
-            _root = Path(__file__).resolve().parents[1]
-            if str(_root) not in sys.path:
-                sys.path.insert(0, str(_root))
-            import config as cfg  # noqa: PLC0415
+            from pinterest_engine import config as cfg  # noqa: PLC0415
+
             if not cfg.ANTHROPIC_API_KEY:
                 return None, None
             client = anthropic.Anthropic(api_key=cfg.ANTHROPIC_API_KEY)
-            from config import get_best_claude_model  # noqa: PLC0415
-            model = get_best_claude_model(client)
+            model = cfg.get_best_claude_model(client)
             log.info("AI client ready (model: %s)", model)
             return client, model
         except Exception as exc:  # noqa: BLE001
@@ -621,12 +743,26 @@ class MasterInventory:
     def _fill_templates(
         self, entry: dict, source_caption: str, variant_idx: int
     ) -> None:
-        """Fill pinterest fields using fast regex/template mode.
-        Uses truthiness check (not setdefault) to overwrite empty strings."""
+        """
+        Fill pinterest fields using fast regex/template mode.
+        Uses truthiness check (not setdefault) to overwrite empty strings.
+        Falls back to raw_fact_sheet if source_caption is an un-humanized draft.
+        """
         topic = entry["topic"]
+
         if not entry.get("pinterest_title"):
             entry["pinterest_title"] = build_title_template(topic)
+
         if not entry.get("pinterest_caption"):
-            entry["pinterest_caption"] = build_caption_regex(source_caption, variant_idx)
+            # If the humanized caption is a raw draft, try the fact sheet instead
+            source = source_caption
+            if is_raw_draft(source):
+                log.debug(
+                    "  source_caption is raw draft for '%s' -- using raw_fact_sheet.", topic
+                )
+                fact = entry.get("raw_fact_sheet", "")
+                source = strip_draft_headers(fact) if fact else ""
+            entry["pinterest_caption"] = build_caption_regex(source, variant_idx)
+
         if not entry.get("visual_hook"):
             entry["visual_hook"] = build_visual_hook(topic)

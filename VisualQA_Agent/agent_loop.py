@@ -272,6 +272,29 @@ def run_visual_qa_loop(
     )
 
     prompt, concept = build_base_prompt(base_script_beat, rules)
+    # Master Mei: enforce Scene 1/3/penultimate RAG + firearm ban before FLUX
+    if (channel_name or "").lower() == "master_mei":
+        try:
+            from avatar_engine.visual_roles import validate_mei_visual_prompt
+
+            _beat_l = (base_script_beat or "").lower()
+            _act = 0
+            _beat_tag = ""
+            if any(k in _beat_l for k in ("pod", "escape", "penultimate", "break free")):
+                _act, _beat_tag = 7, "break_free"
+            elif any(k in _beat_l for k in ("vault", "biomechan", "assimilat", "scene 3")):
+                _act, _beat_tag = 2, "gears"
+            elif any(k in _beat_l for k in ("meditat", "hook", "nature", "intro")):
+                _act, _beat_tag = 0, "intro"
+            _ok, _viol, prompt = validate_mei_visual_prompt(
+                prompt, act_index=_act, n_acts=9, beat=_beat_tag,
+            )
+            if not _ok:
+                _console.print(
+                    f"[yellow]VISUAL_QA RAG[/yellow] overrides applied: {_viol}"
+                )
+        except Exception as _qa_exc:  # noqa: BLE001
+            _LOG.debug("Master Mei prompt QA skipped: %s", _qa_exc)
     attempt_history: list[AttemptRecord] = []
     total_cost = 0.0
     last_image: Path | None = None

@@ -543,7 +543,7 @@ def _resolve_page_playlist_meta(page_name: str) -> tuple[str, str]:
     # Master Mei page_config is the source of truth when available.
     if slug == "master_mei":
         try:
-            from pages_config.master_mei import page_config as _mm_cfg  # type: ignore
+            from channels_config.master_mei import page_config as _mm_cfg  # type: ignore
 
             title = (
                 getattr(_mm_cfg, "YOUTUBE_PLAYLIST_TITLE", None) or title
@@ -753,7 +753,7 @@ def _default_tags_for_page(page_name: str) -> list[str]:
     slug = _sanitize_page_name(page_name)
     if slug == "master_mei":
         try:
-            from pages_config.master_mei import page_config as _mm_cfg  # type: ignore
+            from channels_config.master_mei import page_config as _mm_cfg  # type: ignore
 
             tags = getattr(_mm_cfg, "YOUTUBE_DEFAULT_TAGS", None)
             if isinstance(tags, list) and tags:

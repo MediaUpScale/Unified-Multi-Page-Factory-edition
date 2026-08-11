@@ -12,6 +12,7 @@ CSV output is retired; all bulk outputs are .xlsx only.
 """
 from __future__ import annotations
 
+import json
 import re
 from copy import copy
 from datetime import datetime, timedelta
@@ -39,6 +40,106 @@ _FALLBACK_HEADERS: list[str] = [
 _EXCEL_ILLEGAL_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _CAPTION_CELL_MAX_LEN = 32_000
 _URL_CELL_MAX_LEN = 2048
+
+# Keys the LLM may use for the human-readable post body.
+_CAPTION_JSON_KEYS: tuple[str, ...] = (
+    "caption_body",
+    "caption",
+    "description",
+    "text",
+    "post_caption",
+)
+_FENCE_BLOCK_RE = re.compile(
+    r"^```(?:json|JSON)?\s*\n?(.*?)\n?```\s*$",
+    re.DOTALL,
+)
+_FENCE_START_RE = re.compile(r"^```(?:json|JSON)?\s*\n?", re.IGNORECASE)
+_FENCE_END_RE = re.compile(r"\n?```\s*$")
+_JSON_KEY_ARTIFACT_RE = re.compile(
+    r'"?\b(caption_body|caption|description|image_text_overlay|visual_subject|'
+    r'quote_text|seo_title|text|post_caption)\b"?\s*:\s*',
+    re.IGNORECASE,
+)
+
+
+# ---------------------------------------------------------------------------
+# Caption sanitation (LLM JSON / markdown → plain text)
+# ---------------------------------------------------------------------------
+
+
+def extract_clean_caption(raw: Any) -> str:
+    """
+    Extract plain post-caption text from LLM output.
+
+    Handles:
+      * dict payloads with ``caption_body`` / ``caption`` / etc.
+      * markdown-fenced JSON (```json ... ```)
+      * serialized JSON objects (valid or with literal newlines inside strings)
+      * already-clean plain text (returned unchanged)
+
+    Always returns a plain ``str`` suitable for PostPlanner CAPTION cells.
+    """
+    if raw is None:
+        return ""
+
+    if isinstance(raw, dict):
+        for key in _CAPTION_JSON_KEYS:
+            val = raw.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        return ""
+
+    if isinstance(raw, (list, tuple)):
+        return " ".join(str(v) for v in raw).strip()
+
+    text = str(raw).strip()
+    if not text:
+        return ""
+
+    fence = _FENCE_BLOCK_RE.match(text)
+    if fence:
+        text = fence.group(1).strip()
+    elif text.startswith("```"):
+        text = _FENCE_START_RE.sub("", text)
+        text = _FENCE_END_RE.sub("", text).strip()
+
+    if text[:1] in "{[":
+        try:
+            parsed = json.loads(text)
+            extracted = extract_clean_caption(parsed)
+            if extracted:
+                return extracted
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+        # Salvage caption_body from invalid JSON (common: unescaped newlines
+        # inside string values → json.loads raises Invalid control character).
+        for key in _CAPTION_JSON_KEYS:
+            for pat in (
+                rf'"{key}"\s*:\s*"(.*?)"\s*,?\s*\n\s*"',
+                rf'"{key}"\s*:\s*"(.*?)"\s*\n?\s*[}}\]]',
+            ):
+                match = re.search(pat, text, re.DOTALL)
+                if match:
+                    val = match.group(1)
+                    val = (
+                        val.replace("\\n", "\n")
+                        .replace("\\t", "\t")
+                        .replace('\\"', '"')
+                        .replace("\\\\", "\\")
+                    )
+                    return val.strip()
+
+        # Last resort: drop braces/brackets so we don't ship raw JSON wrappers.
+        text = text.strip("{}[]").strip()
+        text = _JSON_KEY_ARTIFACT_RE.sub("", text).strip()
+
+    return text
+
+
+def _sanitize_caption_for_export(value: Any) -> str:
+    """Parse LLM JSON/markdown then strip Excel-illegal control characters."""
+    return _sanitize_excel_cell_text(extract_clean_caption(value))
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +329,7 @@ def append_planner_row(
         ws.cell(
             row=next_row,
             column=_COL_CAPTION,
-            value=_sanitize_excel_cell_text(caption),
+            value=_sanitize_caption_for_export(caption),
         )
         ws.cell(
             row=next_row,
@@ -274,7 +375,7 @@ def update_planner_row(
             ws.cell(
                 row=row_index,
                 column=_COL_CAPTION,
-                value=_sanitize_excel_cell_text(caption),
+                value=_sanitize_caption_for_export(caption),
             )
         if media_url is not None:
             ws.cell(
@@ -334,7 +435,7 @@ def append_postplanner_xlsx_row(
         ws.cell(
             row=next_row,
             column=_COL_CAPTION,
-            value=_sanitize_excel_cell_text(caption),
+            value=_sanitize_caption_for_export(caption),
         )
         ws.cell(
             row=next_row,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -153,7 +154,14 @@ def sanitize_prompt_for_flux(
 
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"(?:\s*[,.]){2,}", ", ", text)
-    return _trim_words(text.strip(" ,.\u2014-"), int(config.MAX_PROMPT_WORDS))
+    text = _trim_words(text.strip(" ,.\u2014-"), int(config.MAX_PROMPT_WORDS))
+    # Shared FLUX.1-schnell hard limits (120–180 words, mandatory cyberpunk prefix)
+    try:
+        from avatar_engine.prompt_builder import finalize_flux_prompt
+
+        return finalize_flux_prompt(text, require_prefix=True)
+    except Exception:  # noqa: BLE001
+        return text[:2000].strip()
 
 
 def generate_image(
@@ -168,14 +176,45 @@ def generate_image(
     seed: int | None = None,
     log_full_prompt: bool = True,
 ) -> tuple[Path, bytes, float, str]:
+    clean = sanitize_prompt_for_flux(prompt)
+    if not clean:
+        raise ValueError("Prompt is empty after sanitization")
+
+    # --- Remote GPU adapter (opt-in); legacy Together path unchanged when false ---
+    from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+        generate_image as _remote_generate_image,
+        is_remote_gpu_enabled,
+    )
+
+    if is_remote_gpu_enabled("image"):
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if width is None or height is None:
+            width, height = (
+                config.DRAFT_IMAGE_SIZE if draft else config.PRODUCTION_IMAGE_SIZE
+            )
+        _console.print(
+            f"[magenta]REMOTE GPU FLUX[/magenta] steps={steps} "
+            f"size={width}x{height} → {out}"
+        )
+        page_id = getattr(config, "ACTIVE_PAGE", None) or os.getenv("ACTIVE_PAGE")
+        path = _remote_generate_image(
+            clean,
+            output_path=out,
+            width=width,
+            height=height,
+            steps=steps,
+            seed=seed,
+            page_id=page_id,
+        )
+        path = Path(path)
+        data = path.read_bytes()
+        return path.resolve(), data, 0.0, "remote_gpu/flux_dev"
+
     if not config.TOGETHER_API_KEY:
         raise RuntimeError(
             "TOGETHER_API_KEY missing — set env or factory .env before generation."
         )
-
-    clean = sanitize_prompt_for_flux(prompt)
-    if not clean:
-        raise ValueError("Prompt is empty after sanitization")
 
     model_id = model or config.FLUX_MODEL
     if steps is None:

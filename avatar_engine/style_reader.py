@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Gemini Vision style reader — extracts biomechanical style DNA from
-``pages_config/<page>/style_reference/`` and builds FLUX prompts with
+``channels_config/<page>/style_reference/`` and builds FLUX prompts with
 hardcore 80s practical body horror (H.R. Giger), gaunt scarred industrial
 slaves, full torso coverage, and visceral tech-into-flesh integration.
 """
@@ -122,7 +122,7 @@ def default_master_mei_ref_folder(engine_root: "str | Path | None" = None) -> Pa
             root = Path(__file__).resolve().parents[1]
     else:
         root = Path(engine_root)
-    return (root / "pages_config" / "master_mei" / "style_reference").resolve()
+    return (root / "channels_config" / "master_mei" / "style_reference").resolve()
 
 
 def _mime_for(filename: str) -> str:

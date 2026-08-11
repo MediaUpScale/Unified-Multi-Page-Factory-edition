@@ -2,57 +2,112 @@
 """
 pinterest_main.py
 -----------------
-Pinterest Sales & Recycling Engine -- Master CLI entry point.
+Agnostic multi-channel Pinterest CLI.
 
-WORKFLOW (in order):
-  1. sync              -- Build master_inventory.json, repair G: Drive paths,
-                          inject Pinterest metadata (title/caption/visual_hook).
-  2. schedule          -- Post N pins with human-mimic random intervals between each.
-  3. transform         -- Preview a single 2:3 pin image (no publish).
-  4. status            -- Show queue stats and last published pins.
-  5. check-readiness   -- Pre-flight checklist before first publish.
-  6. validate-token    -- Quick Pinterest token health check.
+Channel context (``--channel <channel_id>``) is the primary driver for:
+  - Config / CTAs from ``channels_config/<channel>`` (``.env`` / ``config.json``)
+  - Inventory / outputs routing (``outputs/<channel_id>/``)
+  - Isolated history (``outputs/<channel_id>/scheduled_history.txt``)
+
+Without ``--channel``, pass explicit ``--env`` / ``--inventory-dir`` for a
+fully generic run against any directory.
 
 QUICK START:
-    # 1. Add credentials to .env:
-    #    PINTEREST_ACCESS_TOKEN=pina_...
-    #    PINTEREST_BOARD_ID=<your-board-numeric-id>
-
-    # 2. Build master inventory (first 20 posts via AI, rest via regex):
-    python pinterest_main.py sync --limit 20
-
-    # 3. Pre-flight check:
-    python pinterest_main.py check-readiness
-
-    # 4. Schedule today's batch (5 pins, 3-6h random gaps):
-    python pinterest_main.py schedule --quantity 5
-
-    # 5. Monitor:
-    python pinterest_main.py status
+    python pinterest_main.py status --channel anna_protocol
+    python pinterest_main.py schedule --channel anna_protocol --quantity 5
+    python pinterest_main.py status --inventory-dir outputs --env .env
 """
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Bootstrap
+# Bootstrap — workspace root is always Path(__file__).resolve().parent
 # ---------------------------------------------------------------------------
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-import config  # noqa: E402  -- loads .env
+from pinterest_engine import config  # noqa: E402
+
+# Unicode-safe logging on Windows consoles
+_safe_stream = io.TextIOWrapper(
+    sys.stdout.buffer,
+    encoding=sys.stdout.encoding or "utf-8",
+    errors="replace",
+    line_buffering=True,
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     datefmt="%H:%M:%S",
+    handlers=[logging.StreamHandler(_safe_stream)],
 )
 log = logging.getLogger("pinterest_main")
+
+
+# ---------------------------------------------------------------------------
+# Shared CLI helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_cli_path(raw: str | None) -> Path | None:
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
+
+
+def _apply_runtime_overrides(args: argparse.Namespace) -> Path:
+    """
+    Apply ``--channel`` / ``--env`` / ``--inventory-dir`` and return outputs dir.
+
+    ``--channel`` is the primary driver. Explicit ``--env`` / ``--inventory-dir``
+    always win when provided.
+    """
+    channel = getattr(args, "channel", None) or None
+    env_path = _resolve_cli_path(getattr(args, "env", None))
+    inventory_dir = _resolve_cli_path(getattr(args, "inventory_dir", None))
+
+    config.configure(
+        channel_id=channel,
+        env_path=env_path,
+        inventory_dir=inventory_dir,
+    )
+    return config.OUTPUTS_DIR
+
+
+def _add_channel_args(parser: argparse.ArgumentParser) -> None:
+    """Shared multi-channel overrides for every subcommand."""
+    parser.add_argument(
+        "--channel",
+        default=None,
+        metavar="CHANNEL_ID",
+        help=(
+            "Channel id (primary context). Loads config from "
+            "channels_config/<channel>/ and routes inventory to "
+            "outputs/<channel>/."
+        ),
+    )
+    parser.add_argument(
+        "--env",
+        default=None,
+        metavar="PATH",
+        help="Explicit .env path (overrides channel env resolution).",
+    )
+    parser.add_argument(
+        "--inventory-dir",
+        default=None,
+        metavar="DIR",
+        help="Explicit inventory/outputs directory (overrides channel outputs).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -60,20 +115,19 @@ log = logging.getLogger("pinterest_main")
 # ---------------------------------------------------------------------------
 
 def cmd_sync(args: argparse.Namespace) -> None:
-    """
-    Phase 1: Build/update master_inventory.json.
-    Merges all library JSONs + content_library, repairs G: Drive image paths,
-    and generates Pinterest-specific metadata for every entry.
-    """
     from pinterest_engine.inventory import MasterInventory  # noqa: PLC0415
 
+    outputs_dir = _apply_runtime_overrides(args)
+
     print("\n[SYNC] Building Master Inventory...")
+    print(f"  Channel   : {config.CHANNEL_ID or '(none — generic)'}")
+    print(f"  Outputs   : {outputs_dir}")
     print(f"  AI mode   : {'Claude' if not args.no_ai else 'Regex/Template'}")
     print(f"  Limit     : {args.limit or 'all'}")
     print(f"  Force     : {args.force}")
     print(f"  Dry run   : {args.dry_run}\n")
 
-    inv = MasterInventory()
+    inv = MasterInventory(outputs_dir=outputs_dir)
     data = inv.build(
         use_ai=not args.no_ai,
         ai_delay_sec=args.ai_delay,
@@ -98,21 +152,24 @@ def cmd_sync(args: argparse.Namespace) -> None:
 
 
 def cmd_schedule(args: argparse.Namespace) -> None:
-    """
-    Phase 2: Human-mimic safe-drip publisher.
-    Posts N pins with randomised intervals between each.
-    """
     from pinterest_engine.publisher import PinterestTokenExpiredError  # noqa: PLC0415
     from pinterest_engine.scheduler import PinterestScheduler  # noqa: PLC0415
 
+    outputs_dir = _apply_runtime_overrides(args)
     qty = args.quantity
+
     print(f"\n[SCHEDULE] Starting safe-drip session: {qty} pins")
-    print(f"  Interval  : {args.min_hours or 3}-{args.max_hours or 6} hours between pins")
+    print(f"  Channel   : {config.CHANNEL_ID or '(none — generic)'}")
+    print(f"  Outputs   : {outputs_dir}")
+    print(f"  Env       : {config.DOTENV_PATH}")
+    print(f"  Interval  : {args.min_hours or config.MIN_INTERVAL_HOURS}-"
+          f"{args.max_hours or config.MAX_INTERVAL_HOURS} hours between pins")
     print(f"  Dry run   : {args.dry_run}")
     print(f"  No wait   : {args.no_wait}")
     print()
 
     scheduler = PinterestScheduler(
+        outputs_dir=outputs_dir,
         pins_per_run=qty,
         dry_run=args.dry_run,
         no_wait=args.no_wait,
@@ -127,8 +184,8 @@ def cmd_schedule(args: argparse.Namespace) -> None:
             f"\nERROR: {exc}\n"
             "\nACTION REQUIRED:\n"
             "  1. Go to https://developers.pinterest.com/ and generate a new token.\n"
-            "  2. Update PINTEREST_ACCESS_TOKEN in your .env file.\n"
-            "  3. Re-run: python pinterest_main.py schedule\n"
+            "  2. Update PINTEREST_ACCESS_TOKEN in the active .env file.\n"
+            "  3. Re-run: python pinterest_main.py schedule --channel <id>\n"
         )
         sys.exit(2)
 
@@ -142,15 +199,15 @@ def cmd_schedule(args: argparse.Namespace) -> None:
 
 
 def cmd_transform(args: argparse.Namespace) -> None:
-    """Preview a single 2:3 pin transformation (no publish)."""
     from pinterest_engine.image_transformer import PinTransformer  # noqa: PLC0415
     from pinterest_engine.inventory import MasterInventory  # noqa: PLC0415
 
-    inv = MasterInventory()
+    outputs_dir = _apply_runtime_overrides(args)
+    inv = MasterInventory(outputs_dir=outputs_dir)
     data = inv.load()
 
     if not data.get("entries"):
-        print("master_inventory.json is empty. Run: python pinterest_main.py sync")
+        print("master_inventory.json is empty. Run: python pinterest_main.py sync --channel <id>")
         sys.exit(1)
 
     if args.post_id:
@@ -159,7 +216,6 @@ def cmd_transform(args: argparse.Namespace) -> None:
             print(f"Post ID '{args.post_id}' not found in master inventory.")
             sys.exit(1)
     else:
-        # Pick the first unposted entry with image data
         candidates = [
             e for e in data["entries"]
             if (e.get("local_image_path") or e.get("imgbb_url"))
@@ -171,12 +227,13 @@ def cmd_transform(args: argparse.Namespace) -> None:
         entry = candidates[0]
 
     print(f"\n[TRANSFORM] Building 2:3 pin for:")
+    print(f"  Channel     : {config.CHANNEL_ID or '(none)'}")
     print(f"  Topic       : {entry.get('topic', '?')}")
     print(f"  Visual hook : {entry.get('visual_hook', '(not set)')}")
     print(f"  Title       : {entry.get('pinterest_title', '(not set)')}")
     print(f"  Method      : {args.method}\n")
 
-    transformer = PinTransformer(method=args.method)
+    transformer = PinTransformer(outputs_dir=outputs_dir, method=args.method)
     result = transformer.transform(entry)
 
     if result:
@@ -189,13 +246,15 @@ def cmd_transform(args: argparse.Namespace) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
-    """Show queue stats and last published pins."""
     from pinterest_engine.scheduler import PinterestScheduler  # noqa: PLC0415
 
-    scheduler = PinterestScheduler()
+    outputs_dir = _apply_runtime_overrides(args)
+    config.print_dotenv_bootstrap()
+
+    scheduler = PinterestScheduler(outputs_dir=outputs_dir)
     scheduler.show_status()
 
-    history_path = config.OUTPUTS_DIR / "pinterest_history.json"
+    history_path = outputs_dir / "pinterest_history.json"
     if history_path.is_file():
         try:
             history = json.loads(history_path.read_text(encoding="utf-8"))
@@ -214,19 +273,21 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 
 def cmd_check_readiness(args: argparse.Namespace) -> None:
-    """Run the pre-flight checklist."""
     from pinterest_engine.inventory import MasterInventory  # noqa: PLC0415
 
-    inv = MasterInventory()
+    outputs_dir = _apply_runtime_overrides(args)
+    inv = MasterInventory(outputs_dir=outputs_dir)
     checks = inv.check_readiness()
     sys.exit(0 if checks.get("ready") else 1)
 
 
 def cmd_validate_token(args: argparse.Namespace) -> None:
-    """Quick Pinterest access token health check."""
     from pinterest_engine.publisher import PinterestPublisher  # noqa: PLC0415
 
+    _apply_runtime_overrides(args)
     print("\n[TOKEN CHECK] Validating Pinterest access token...")
+    print(f"  Channel : {config.CHANNEL_ID or '(none — generic)'}")
+    print(f"  Env     : {config.DOTENV_PATH}")
     try:
         pub = PinterestPublisher()
         valid = pub.validate_token()
@@ -235,13 +296,53 @@ def cmd_validate_token(args: argparse.Namespace) -> None:
         else:
             print(
                 "Token is INVALID or EXPIRED.\n"
-                "Get a new token at https://developers.pinterest.com/\n"
-                "and update PINTEREST_ACCESS_TOKEN in .env\n"
+                "Run: python pinterest_oauth.py  to re-authenticate.\n"
             )
             sys.exit(1)
     except ValueError as exc:
         print(f"Configuration error: {exc}\n")
         sys.exit(1)
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    try:
+        from postplanner_exporter import export_to_csv  # noqa: PLC0415
+    except ImportError:
+        print(
+            "\n[EXPORT] postplanner_exporter.py is not available in this workspace.\n"
+            "This command is optional for the standalone Pinterest engine.\n"
+        )
+        sys.exit(1)
+
+    from datetime import date as _date  # noqa: PLC0415
+
+    _apply_runtime_overrides(args)
+
+    start: _date | None = None
+    if args.start:
+        from datetime import datetime as _dt  # noqa: PLC0415
+        start = _dt.strptime(args.start, "%Y-%m-%d").date()
+
+    print("\n[EXPORT] Generating Post Planner CSV...")
+    print(f"  Channel       : {config.CHANNEL_ID or '(none)'}")
+    print(f"  Posts per day : {args.posts_per_day}")
+    print(f"  Limit         : {args.limit or 'all unscheduled'}")
+    print(f"  Start date    : {args.start or 'tomorrow'}")
+    print(f"  Mark exported : {args.mark_exported}")
+    print(f"  Dry run       : {args.dry_run}\n")
+
+    result = export_to_csv(
+        limit=args.limit,
+        posts_per_day=args.posts_per_day,
+        slots=args.slots or None,
+        start_date=start,
+        mark_exported=args.mark_exported,
+        dry_run=args.dry_run,
+    )
+
+    if result and args.open:
+        import subprocess  # noqa: PLC0415
+        subprocess.run(["explorer", str(result.parent)], check=False)
 
 
 # ---------------------------------------------------------------------------
@@ -251,17 +352,17 @@ def cmd_validate_token(args: argparse.Namespace) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pinterest_main",
-        description="Pinterest Sales & Recycling Engine for Anna's Holistic Legacy.",
+        description="Agnostic multi-channel Pinterest posting & scheduling CLI.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # --- sync ---
     p_sync = sub.add_parser(
         "sync",
         help="Build master_inventory.json: merge library, repair paths, inject metadata.",
     )
+    _add_channel_args(p_sync)
     p_sync.add_argument("--limit", type=int, default=None,
                         help="Max entries to process (default: all).")
     p_sync.add_argument("--force", action="store_true",
@@ -273,24 +374,44 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sync.add_argument("--ai-delay", type=float, default=0.8,
                         help="Seconds between Claude API calls (default: 0.8).")
 
-    # --- schedule ---
     p_sched = sub.add_parser(
         "schedule",
-        help="Post N pins with human-mimic random intervals between each.",
+        help="Publish N pins live to Pinterest with human-mimic intervals.",
     )
+    _add_channel_args(p_sched)
     p_sched.add_argument("--quantity", "-n", type=int, default=None,
                          help="Number of pins to publish (default: random 3-5).")
     p_sched.add_argument("--min-hours", type=float, default=None,
-                         help="Min hours between pins (default: MIN_INTERVAL_HOURS env or 3).")
+                         help="Min hours between pins (default: 3).")
     p_sched.add_argument("--max-hours", type=float, default=None,
-                         help="Max hours between pins (default: MAX_INTERVAL_HOURS env or 6).")
+                         help="Max hours between pins (default: 6).")
     p_sched.add_argument("--dry-run", action="store_true",
-                         help="Go through all steps without calling the Pinterest API.")
+                         help="Full pipeline without calling the Pinterest API.")
     p_sched.add_argument("--no-wait", action="store_true",
-                         help="Skip the random sleep (useful for testing).")
+                         help="Skip sleep intervals (testing only).")
 
-    # --- transform ---
+    p_exp = sub.add_parser(
+        "export",
+        help="Export unscheduled posts to Post Planner bulk-upload CSV.",
+    )
+    _add_channel_args(p_exp)
+    p_exp.add_argument("--limit", type=int, default=None,
+                       help="Max entries to include (default: all unscheduled).")
+    p_exp.add_argument("--posts-per-day", type=int, default=3,
+                       help="Posts per day in the schedule (default: 3).")
+    p_exp.add_argument("--slots", nargs="+", default=None, metavar="HH:MM",
+                       help="Custom posting times e.g. --slots 08:00 13:00 18:00")
+    p_exp.add_argument("--start", default=None, metavar="YYYY-MM-DD",
+                       help="First posting date (default: tomorrow).")
+    p_exp.add_argument("--mark-exported", action="store_true",
+                       help="Set posted_on_instagram=True in master_inventory after export.")
+    p_exp.add_argument("--dry-run", action="store_true",
+                       help="Preview without writing the CSV.")
+    p_exp.add_argument("--open", action="store_true",
+                       help="Open the output folder in Explorer after export.")
+
     p_tf = sub.add_parser("transform", help="Preview a 2:3 pin image (no publish).")
+    _add_channel_args(p_tf)
     p_tf.add_argument("--post-id", default=None,
                       help="Specific post_id from master_inventory.")
     p_tf.add_argument("--method", choices=["blurred_padding", "center_crop"],
@@ -298,21 +419,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_tf.add_argument("--open", action="store_true",
                       help="Open the output file in Windows Explorer.")
 
-    # --- status ---
-    sub.add_parser("status", help="Show queue and publish history summary.")
+    p_status = sub.add_parser("status", help="Show queue and publish history summary.")
+    _add_channel_args(p_status)
 
-    # --- check-readiness ---
-    sub.add_parser("check-readiness", help="Pre-flight checklist before first publish.")
+    p_ready = sub.add_parser("check-readiness", help="Pre-flight checklist before first publish.")
+    _add_channel_args(p_ready)
 
-    # --- validate-token ---
-    sub.add_parser("validate-token", help="Test if the Pinterest token is valid.")
+    p_token = sub.add_parser("validate-token", help="Test token validity (auto-refresh if expired).")
+    _add_channel_args(p_token)
 
     return parser
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = _build_parser()
@@ -321,6 +438,7 @@ def main() -> None:
     dispatch = {
         "sync": cmd_sync,
         "schedule": cmd_schedule,
+        "export": cmd_export,
         "transform": cmd_transform,
         "status": cmd_status,
         "check-readiness": cmd_check_readiness,

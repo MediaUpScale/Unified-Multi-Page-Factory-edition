@@ -46,6 +46,13 @@ LOGS_DIR: Path        = _HERE / "logs"
 POSTING_INTERVAL_HOURS: int = 3          # gap between posts in hours
 SCHEDULE_COLUMN_FILL_START: str = "now"  # "now" = start from current time
 
+# Reels / media scheduler (LocalMediaQueue + UniversalComposerScheduler)
+# next = last_scheduled + REELS_BASE_INTERVAL_HOURS + random(min..max) minutes
+REELS_BASE_INTERVAL_HOURS: int = 2
+REELS_JITTER_MIN_MINUTES: int = 60
+REELS_JITTER_MAX_MINUTES: int = 180
+REELS_MIN_LEAD_MINUTES: int = 15
+
 # ---------------------------------------------------------------------------
 # Playwright / browser connection
 # ---------------------------------------------------------------------------
@@ -56,6 +63,15 @@ CDP_ENDPOINT: str = os.getenv("CDP_ENDPOINT", "http://localhost:9222")
 # Fallback: launch a new browser (useful for record_mode and dry-run)
 HEADLESS: bool = False
 BROWSER_CHANNEL: str = "chrome"   # "chrome" | "msedge" | "chromium"
+
+# AdsPower / Chromium launch_args — pass these when starting a profile via
+# Local API so background/occluded windows are not timer-throttled.
+# Example AdsPower body: {"user_id": "...", "launch_args": CHROME_ANTI_THROTTLE_ARGS}
+CHROME_ANTI_THROTTLE_ARGS: list[str] = [
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+]
 
 # ---------------------------------------------------------------------------
 # Timeouts (milliseconds)

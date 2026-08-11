@@ -5,7 +5,7 @@ Multi-page persona dispatch module — Unified Multi-Page Factory edition.
 This module is the single Python interface layer for all persona data across
 ALL pages. It resolves the active page from the ACTIVE_PAGE environment
 variable (set by main.py before any import) and loads the corresponding
-pages_config/{page}/master_dna.json at runtime.
+channels_config/{page}/master_dna.json at runtime.
 
 Downstream consumers (VisualArchitect, CaptionEngine, subject_brain, etc.)
 import directly from this module:
@@ -16,10 +16,10 @@ The module dynamically delegates to the correct page's master_dna.json.
 
 Page DNA files
 --------------
-    pages_config/anna_protocol/master_dna.json  (active: holistic legacy)
-    pages_config/master_mei/master_dna.json     (active SUPER: Protocol for Liberation)
-    pages_config/wonder_feed/master_dna.json    (blueprint: emotional intelligence)
-    pages_config/down_dirty/master_dna.json     (blueprint: matrix escape)
+    channels_config/anna_protocol/master_dna.json  (active: holistic legacy)
+    channels_config/master_mei/master_dna.json     (active SUPER: Protocol for Liberation)
+    channels_config/wonder_feed/master_dna.json    (blueprint: emotional intelligence)
+    channels_config/down_dirty/master_dna.json     (blueprint: matrix escape)
 
 Zero hard-coding of keywords, themes, or philosophy is permitted in this file;
 every value originates from the active page's master_dna.json.
@@ -41,14 +41,18 @@ from pathlib import Path
 _ENGINE_ROOT = Path(__file__).resolve().parent.parent
 _ACTIVE_PAGE: str = os.environ.get("ACTIVE_PAGE", "anna_protocol")
 
-_candidate_dna = _ENGINE_ROOT / "pages_config" / _ACTIVE_PAGE / "master_dna.json"
+_candidate_dna = _ENGINE_ROOT / "channels_config" / _ACTIVE_PAGE / "master_dna.json"
+_legacy_dna = _ENGINE_ROOT / "pages_config" / _ACTIVE_PAGE / "master_dna.json"
 
 # Fallback hierarchy:
-#   1. pages_config/{page}/master_dna.json   (primary — page-isolated)
-#   2. avatar_engine/master_dna.json         (legacy anna_protocol path)
-#   3. Minimal stub dict (reference-based pages that skip the LLM-image pipeline)
+#   1. channels_config/{page}/master_dna.json   (primary — channel-isolated)
+#   2. pages_config/{page}/master_dna.json      (legacy folder name)
+#   3. avatar_engine/master_dna.json            (legacy anna_protocol path)
+#   4. Minimal stub dict (reference-based pages that skip the LLM-image pipeline)
 if _candidate_dna.is_file():
     _MASTER_DNA_PATH: Path | None = _candidate_dna
+elif _legacy_dna.is_file():
+    _MASTER_DNA_PATH = _legacy_dna
 elif _ACTIVE_PAGE == "anna_protocol":
     _MASTER_DNA_PATH = _ENGINE_ROOT / "avatar_engine" / "master_dna.json"
 else:
@@ -59,7 +63,7 @@ else:
     _logging.getLogger(__name__).warning(
         "persona_dna: master_dna.json not found for page '%s' at %s. "
         "Using minimal stub DNA — reference-based pipeline will still function. "
-        "Create pages_config/%s/master_dna.json to enable full LLM persona features.",
+        "Create channels_config/%s/master_dna.json to enable full LLM persona features.",
         _ACTIVE_PAGE, _candidate_dna, _ACTIVE_PAGE,
     )
     _MASTER_DNA_PATH = None

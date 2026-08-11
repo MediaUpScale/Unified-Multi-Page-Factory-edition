@@ -29,7 +29,7 @@ from avatar_engine.visual_compiler import (
 
 _LOG = logging.getLogger(__name__)
 
-CANONICAL_AVATAR_RELPATH: str = "pages_config/master_mei/avatar_reference/avatar.png"
+CANONICAL_AVATAR_RELPATH: str = "channels_config/master_mei/avatar_reference/avatar.png"
 
 # Re-export for callers that import from mei_visual
 __all__ = (
@@ -239,13 +239,16 @@ FIXED_NEGATIVE_PROMPT: str = (
 )
 
 MEI_DNA_FALLBACK: str = (
-    "Master Mei is an OLDER East Asian sage (approx 72 years old), inspired by Pai Mei "
-    "fused with an ancient Eastern master: implacable, uncompromising, stern, demanding. "
-    "long white hair tied in a traditional topknot/bun, long flowing white beard, "
-    "wise deeply lined face, calm authoritative presence. "
-    "Wearing traditional dark robes with gold accents (deep charcoal / black silk with gold trim). "
+    "Master Mei is an OLDER East Asian martial arts grandmaster (approx 72 years old), "
+    "inspired by Pai Mei fused with an ancient Eastern master: implacable, "
+    "uncompromising, stern, demanding. Pure radiant snow-white hair in a high topknot "
+    "with hairpin plus two long distinct white strands falling down both sides of his "
+    "chest and shoulders, iconic extra-long ultra-thick snow-white eyebrows sweeping "
+    "past his temples, full majestic snow-white beard to mid-chest with matching "
+    "flowing mustache, wise deeply lined face, calm authoritative presence. "
+    "White inner robe, black outer vest with gold lapel embroidery, wooden mala beads. "
     "NEVER a middle-aged short-haired warrior. NEVER modern athletic wear. "
-    "NEVER clean-shaven. NEVER black hair. "
+    "NEVER clean-shaven. NEVER black hair. NEVER generic indoor temples by default. "
     "STRICT SINGLE MASTER RULE: Master Mei is the ONLY master/elder allowed."
 )
 
@@ -254,7 +257,8 @@ _BAN_PLAIN: str = (
     "casual lifestyle rooms, mundane offices, soft wellness photography, "
     "plain modern selfie culture, close-ups of random/generic samurai faces, "
     "close-ups of random men, any elder/master who is not Master Mei. "
-    "Environment for Master Mei: ancestral temple / bamboo / misty mountain ONLY — "
+    "Environment for Master Mei: high-altitude epic nature (~70%) or open-air "
+    "mountain shrine/courtyard (~30%) — never generic indoor temple halls, "
     "never cyberpunk implants, never neon wires on his body."
 )
 
@@ -265,10 +269,10 @@ _PHOTOREAL: str = (
 )
 
 _MEI_FIRST_POSES: tuple[str, ...] = (
-    "POSE: Master Mei demonstrating a sword stance in a rain-soaked ancestral temple courtyard "
-    "while disciples mirror the form — kinetic, never idle, no neon, no cybernetics.",
-    "POSE: Master Mei guiding a disciple's blade mid-kata under cold rain on wet stone.",
-    "POSE: Master Mei channeling energy through an open-palm martial form as mist rises.",
+    "POSE: Master Mei meditating in lotus on a high-altitude cliff above a sea of clouds "
+    "— kinetic stillness, never idle indoor temple, no neon, no cybernetics.",
+    "POSE: Master Mei guiding a disciple's blade mid-kata under cold rain on a misty ridge.",
+    "POSE: Master Mei channeling energy through an open-palm martial form on a storm cliff.",
 )
 
 _MEI_MIDDLE_POSES: tuple[str, ...] = (
@@ -745,7 +749,23 @@ def build_master_mei_script_act_prompts(
             hook_env=hook_env if (i == 0 and role == ROLE_MASTER) else "",
             beat=beat,
             shot_key=shot_plan[i] if i < len(shot_plan) else None,
+            episode_seed=subject,
         )
+        # Visual QA gate — Scene 1 / Scene 3 / penultimate + firearm ban
+        try:
+            from avatar_engine.visual_roles import validate_mei_visual_prompt
+
+            _ok, _violations, _repaired = validate_mei_visual_prompt(
+                pos, act_index=i, n_acts=n_acts, beat=beat,
+            )
+            if not _ok:
+                _LOG.warning(
+                    "VISUAL_QA | act=%d violations=%s — applying RAG override",
+                    i + 1, _violations,
+                )
+                pos = _repaired
+        except Exception as _qa_exc:  # noqa: BLE001
+            _LOG.debug("VISUAL_QA skipped act=%d: %s", i + 1, _qa_exc)
         prompts.append(pos)
         negatives.append(neg)
 

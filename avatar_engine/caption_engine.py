@@ -1483,10 +1483,16 @@ class CaptionEngine:
         )
 
         _mei_voice = ""
-        if (narrative_mode or "").strip().lower() == "warrior_discipline":
+        _warrior = (narrative_mode or "").strip().lower() == "warrior_discipline"
+        _mei_prof: dict = {}
+        if _warrior:
             try:
-                from avatar_engine.mei_narrative import mei_voice_prompt_block
-                _mei_voice = mei_voice_prompt_block()
+                from avatar_engine.mei_narrative import (
+                    apply_mei_word_budget_from_duration,
+                    mei_voice_prompt_block,
+                )
+                _mei_prof = apply_mei_word_budget_from_duration(duration_s)
+                _mei_voice = mei_voice_prompt_block(duration_s=duration_s)
             except Exception:  # noqa: BLE001
                 _mei_voice = (
                     "Insert ellipses (`...`) between heavy truths. Short sentences. "
@@ -1495,58 +1501,100 @@ class CaptionEngine:
         _sys_base = (
             f"{niche_disclaimer}\n\n" if niche_disclaimer else ""
         ) + (
-            "Write ONLY the 4-Act Master Philosophical Lesson narration with [ACT N] markers. "
+            "Write ONLY the Master Philosophical Lesson narration with [ACT N] markers. "
             "SINGLE-TOPIC: one continuous story arc — beginning, middle, end. "
             f"{_mei_voice} "
             "Do NOT write Follow/Subscribe CTA — that is stitched separately after narration. "
             "No preamble, no meta commentary, no bracketed emotion tags."
-            if (narrative_mode or "").strip().lower() == "warrior_discipline"
+            if _warrior
             else
             "Write ONLY the documentary narration script with [ACT N] markers. "
             "No preamble, no meta commentary."
         )
 
         raw = ""
-        # Soft acceptance: Master Mei drafts (~190–230 words / 80–100 s @ 0.92×).
-        # Warrior mode requires the word floor (char OR is too loose for 0.92× timing).
+        # Soft acceptance: duration-profile word band (80/100/120 s) @ 0.86× + breaks.
+        # Do NOT expand when cleaned chars fall in the soft accept window.
         _min_words = int(getattr(app_config, "SEQUENCE_VOICEOVER_MIN_WORDS", 110) or 110)
-        _warrior = (narrative_mode or "").strip().lower() == "warrior_discipline"
-        if _warrior:
-            _min_words = max(_min_words, 190)
-        _min_chars = 900 if _warrior else 150
-        _max_words = 230 if _warrior else 10**9
+        _min_chars = 150
+        if _warrior and _mei_prof:
+            _min_words = int(_mei_prof.get("words_min", 170))
+            _max_words = int(_mei_prof.get("words_max", 185))
+            # Soft char window scales roughly with word band
+            _accept_chars_lo = max(700, _min_words * 5)
+            _accept_chars_hi = max(_accept_chars_lo + 200, _max_words * 8)
+        elif _warrior:
+            _min_words = max(_min_words, 170)
+            _max_words = 185
+            _accept_chars_lo = 1000
+            _accept_chars_hi = 1350
+        else:
+            _max_words = 10**9
+            _accept_chars_lo = 0
+            _accept_chars_hi = 0
         _full_prompt = _sys_base + "\n\n" + prompt + cta_instruction
 
-        def _clean_script(text: str) -> str:
+        def _metrics_script(text: str) -> str:
+            """Strip markers/breaks for word/char metrics only."""
             c = _re.sub(r"\[ACT\s+\d+\]\s*", " ", text or "").strip()
-            # Purge ALL emotion / expression / SSML tags — ElevenLabs gets pure speech only
-            c = _re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", c, flags=_re.IGNORECASE)
+            c = _re.sub(r"<\s*break\s+[^>]*/?\s*>", " ", c, flags=_re.IGNORECASE)
             c = _re.sub(r"<[^>]+>", " ", c)
             c = _re.sub(
                 r"\[(?:cackles?|chuckles?|cold\s*chuckle|arrogant\s*scoff|"
                 r"deep\s*subtle\s*laugh|dry\s*laugh|giggles?|laughs?|sighs?|"
                 r"whispers?|pause|beat|silence)[^\]]*\]",
-                " ... ",
+                " ",
                 c,
                 flags=_re.IGNORECASE,
             )
             c = _re.sub(r"\[[^\]]*\]", " ", c)
             c = _re.sub(r"[ \t]{2,}", " ", c)
             c = _re.sub(r"\n{3,}", "\n\n", c)
-            c = _re.sub(r"\s*\.\.\.\s*", " ... ", c)
             return c.strip()
 
+        def _finalize_script(text: str) -> str:
+            """Keep strategic break pauses; strip emotion/act tags for TTS."""
+            c = text or ""
+            _tok = "<<<MEI_BREAK>>>"
+            c = _re.sub(r"<\s*break\s+[^>]*/?\s*>", f" {_tok} ", c, flags=_re.IGNORECASE)
+            c = _re.sub(r"\[ACT\s+\d+\]\s*", " ", c)
+            c = _re.sub(
+                r"\[(?:cackles?|chuckles?|cold\s*chuckle|arrogant\s*scoff|"
+                r"deep\s*subtle\s*laugh|dry\s*laugh|giggles?|laughs?|sighs?|"
+                r"whispers?|pause|beat|silence)[^\]]*\]",
+                " ",
+                c,
+                flags=_re.IGNORECASE,
+            )
+            c = _re.sub(r"\[[^\]]*\]", " ", c)
+            # Drop non-break XML
+            c = _re.sub(r"<(?!/?break\b)[^>]+>", " ", c, flags=_re.IGNORECASE)
+            c = c.replace(_tok, '<break time="1.5s"/>')
+            c = _re.sub(r"[ \t]{2,}", " ", c)
+            c = _re.sub(r"\n{3,}", "\n\n", c)
+            return c.strip()
+
+        # Backward-compatible alias used by older log paths
+        def _clean_script(text: str) -> str:
+            return _metrics_script(text)
+
         def _word_count(text: str) -> int:
-            return len(_clean_script(text).split()) if text else 0
+            return len(_metrics_script(text).split()) if text else 0
 
         def _passes_length(text: str) -> bool:
-            cleaned = _clean_script(text)
+            cleaned = _metrics_script(text)
             if not cleaned:
                 return False
-            wc = _word_count(cleaned)
+            wc = len(cleaned.split())
+            chars = len(cleaned)
             if _warrior:
-                return _min_words <= wc <= _max_words + 20  # soft upper slack before trim
-            return wc >= _min_words or len(cleaned) >= _min_chars
+                if _min_words <= wc <= _max_words:
+                    return True
+                # User rule: do NOT expand when cleaned chars are 1000–1350
+                if _accept_chars_lo <= chars <= _accept_chars_hi:
+                    return True
+                return False
+            return wc >= _min_words or chars >= _min_chars
 
         def _try_gemini(*, attempt: int = 1, expand: bool = False) -> str:
             try:
@@ -1570,11 +1618,14 @@ class CaptionEngine:
                 if expand or attempt > 1:
                     if _warrior:
                         boost = (
-                            f"\n\nCRITICAL EXPAND/RETRY (MASTER MEI): Previous draft failed the "
-                            f"STRICT {_min_words}–{_max_words} word band (target {total_words_target}). "
-                            f"Rewrite the FULL first-person script to {_min_words}–{_max_words} words "
-                            f"for ~{duration_s:.0f}s at 0.92× TTS. Keep FIRST PERSON. "
-                            f"Do NOT say 'Master Mei' in third person. No Follow/Subscribe CTA."
+                            f"\n\nCRITICAL RETRY (MASTER MEI): Previous draft failed length gates "
+                            f"(need {_min_words}–{_max_words} spoken words OR {_accept_chars_lo}–"
+                            f"{_accept_chars_hi} chars; target {total_words_target} words). "
+                            f"Rewrite a FULLER first-person script with AT LEAST {_min_words} words "
+                            f"and at most {_max_words} words. Expand Act II forge + Act III liberation. "
+                            f"Insert <break time=\"1.5s\"/> after 2–4 key philosophical impacts. "
+                            f"3-step deep philosophy + financial sovereignty (money=energy/freedom). "
+                            f"FIRST PERSON only. No 'Master Mei' third person. No Follow/Subscribe CTA."
                         )
                     else:
                         boost = (
@@ -1599,7 +1650,7 @@ class CaptionEngine:
 
         # ── Gemini ONLY (no Claude / DeepSeek fallbacks) ─────────────────────
         raw = _try_gemini(attempt=1)
-        _chars = len(_clean_script(raw))
+        _chars = len(_metrics_script(raw))
         if _passes_length(raw):
             logger.info(
                 "generate_sequence_voiceover | Gemini PRIMARY OK (%d chars, %d words)",
@@ -1607,14 +1658,17 @@ class CaptionEngine:
             )
         else:
             logger.warning(
-                "generate_sequence_voiceover | Gemini draft short "
-                "(%d chars / %d words; need ≥%d words OR ≥%d chars) — one expand re-prompt.",
-                _chars, _word_count(raw), _min_words, _min_chars,
+                "generate_sequence_voiceover | Gemini draft outside band "
+                "(%d chars / %d words; need %d–%d words OR %d–%d chars) — one retry.",
+                _chars, _word_count(raw), _min_words, _max_words,
+                _accept_chars_lo if _warrior else _min_chars,
+                _accept_chars_hi if _warrior else 10**9,
             )
             expanded = _try_gemini(attempt=2, expand=True)
             if expanded and (
-                len(_clean_script(expanded)) > _chars
-                or _word_count(expanded) > _word_count(raw)
+                _passes_length(expanded)
+                or abs(_word_count(expanded) - int(total_words_target or _min_words))
+                < abs(_word_count(raw) - int(total_words_target or _min_words))
             ):
                 raw = expanded
             elif not raw:
@@ -1625,22 +1679,33 @@ class CaptionEngine:
                 "generate_sequence_voiceover | Gemini-only stack failed or returned stubs "
                 "(%d words / %d chars) — returning empty.",
                 _word_count(raw),
-                len(_clean_script(raw)),
+                len(_metrics_script(raw)),
             )
             return ""
 
-        clean = _clean_script(raw)
-        if (narrative_mode or "").strip().lower() == "warrior_discipline":
+        if _warrior:
             from avatar_engine.mei_narrative import (
+                inject_philosophical_breaks,
                 sanitize_mei_narration_body,
                 strip_inline_follow_cta,
             )
+            clean = _finalize_script(raw)
             clean = strip_inline_follow_cta(clean)
+            # Shield breaks during POV/blacklist scrub
+            _tok = "<<<MEI_BREAK>>>"
+            clean = _re.sub(
+                r"<\s*break\s+[^>]*/?\s*>", f" {_tok} ", clean, flags=_re.IGNORECASE,
+            )
             clean = sanitize_mei_narration_body(clean)
+            clean = clean.replace(_tok, '<break time="1.5s"/>')
+            clean = inject_philosophical_breaks(clean)
+        else:
+            clean = _metrics_script(raw)
         logger.info(
             "generate_sequence_voiceover | final script %d words / %d chars "
             "(target_words=%d min_words=%d) [Gemini-only]",
-            len(clean.split()), len(clean), total_words_target, _min_words,
+            _word_count(clean), len(_metrics_script(clean)),
+            total_words_target, _min_words,
         )
         return clean
 
@@ -1777,6 +1842,7 @@ class CaptionEngine:
             return "", "", "researcher_fallback", ""
 
         import json as _json  # noqa: PLC0415
+        from avatar_engine.post_planner import extract_clean_caption  # noqa: PLC0415
 
         overlay_text = ""
         visual_subject = ""
@@ -1811,26 +1877,33 @@ class CaptionEngine:
                 caption        = overlay_text  # quote_text doubles as the post caption
 
         except (_json.JSONDecodeError, Exception):  # noqa: BLE001
-            # Fallback: legacy label-based parsing for backwards compatibility
-            logger.debug("humanize_smart_bait | JSON parse failed — using label fallback (%s)", post_type)
-            for line in raw_response.splitlines():
-                ls = line.strip()
-                if (ls.upper().startswith("OVERLAY:")
-                        or ls.upper().startswith("IMAGE_TEXT_OVERLAY:")
-                        or ls.upper().startswith("QUOTE_TEXT:")):
-                    for prefix in ("IMAGE_TEXT_OVERLAY:", "QUOTE_TEXT:", "OVERLAY:"):
-                        if ls.upper().startswith(prefix):
-                            overlay_text = ls[len(prefix):].strip()
-                            break
-                elif ls.upper().startswith("VISUAL_SUBJECT:"):
-                    visual_subject = ls[len("VISUAL_SUBJECT:"):].strip()
-                elif ls.upper().startswith("CAPTION:") or ls.upper().startswith("CAPTION_BODY:"):
-                    key_len = len("CAPTION_BODY:") if ls.upper().startswith("CAPTION_BODY:") else len("CAPTION:")
-                    caption = ls[key_len:].strip()
-                elif ls.upper().startswith("SEO_TITLE:"):
-                    self.last_seo_title = ls[len("SEO_TITLE:"):].strip()
-            if not overlay_text and not caption:
-                caption = raw_response.strip()
+            # Fallback: salvage caption_body from invalid/fenced JSON, then labels
+            logger.debug("humanize_smart_bait | JSON parse failed — using salvage/label fallback (%s)", post_type)
+            caption = extract_clean_caption(raw_response)
+            # If salvage returned the whole blob (no caption_body found), try labels
+            _looks_like_json = (
+                caption.lstrip().startswith("{") or '"caption_body"' in caption[:80]
+            )
+            if _looks_like_json or not caption:
+                caption = ""
+                for line in raw_response.splitlines():
+                    ls = line.strip()
+                    if (ls.upper().startswith("OVERLAY:")
+                            or ls.upper().startswith("IMAGE_TEXT_OVERLAY:")
+                            or ls.upper().startswith("QUOTE_TEXT:")):
+                        for prefix in ("IMAGE_TEXT_OVERLAY:", "QUOTE_TEXT:", "OVERLAY:"):
+                            if ls.upper().startswith(prefix):
+                                overlay_text = ls[len(prefix):].strip()
+                                break
+                    elif ls.upper().startswith("VISUAL_SUBJECT:"):
+                        visual_subject = ls[len("VISUAL_SUBJECT:"):].strip()
+                    elif ls.upper().startswith("CAPTION:") or ls.upper().startswith("CAPTION_BODY:"):
+                        key_len = len("CAPTION_BODY:") if ls.upper().startswith("CAPTION_BODY:") else len("CAPTION:")
+                        caption = ls[key_len:].strip()
+                    elif ls.upper().startswith("SEO_TITLE:"):
+                        self.last_seo_title = ls[len("SEO_TITLE:"):].strip()
+                if not overlay_text and not caption:
+                    caption = extract_clean_caption(raw_response)
 
         return overlay_text, caption, mode_tag, visual_subject
 
@@ -1921,8 +1994,9 @@ class CaptionEngine:
         if not raw_response:
             return "", "researcher_fallback"
 
-        # Parse JSON first; fall back to plain text if the LLM skips the format
+        # Parse JSON first; salvage caption_body from invalid/fenced JSON; else plain text
         import json as _json  # noqa: PLC0415
+        from avatar_engine.post_planner import extract_clean_caption  # noqa: PLC0415
 
         _copyright = _sig
         caption = ""
@@ -1936,8 +2010,10 @@ class CaptionEngine:
             caption = str(_data.get("caption_body", "")).strip()
             # image_text_overlay is always empty for this format — ignored
         except (_json.JSONDecodeError, Exception):  # noqa: BLE001
-            logger.debug("humanize_long_caption | JSON parse failed — using raw text fallback")
-            caption = raw_response.strip()
+            logger.debug(
+                "humanize_long_caption | JSON parse failed — salvaging caption_body"
+            )
+            caption = extract_clean_caption(raw_response)
 
         if not caption:
             return "", "researcher_fallback"

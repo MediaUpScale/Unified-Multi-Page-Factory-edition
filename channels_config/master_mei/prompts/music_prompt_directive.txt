@@ -1,0 +1,11 @@
+Generate a unique ElevenLabs music prompt for industrial cyberpunk percussion.
+
+STYLE: Driving cinematic drums from the first beat — industrial cyberpunk percussion, dark metallic hits, tense rhythmic pulse, dystopian urgency with a challenging epic build.
+
+CONSTRAINT: Keep each section line/prompt concise, descriptive, and strictly under 150 characters. Do not write long paragraphs or excessive descriptors.
+
+PARAMETERS (every video — unique wording required):
+- Mood: Intense, challenging, dystopian, urgent, inspiring resolve.
+- Tempo: Medium driving pulse (approx 90–110 BPM).
+- Instrumentation: Industrial drums, metallic percussion, dark synth bass, atmospheric cyber textures, cinematic hits.
+- Avoid: cheerful pop, bright EDM drops, soft ambient-only beds, vocals, lyrics, long silent intros.

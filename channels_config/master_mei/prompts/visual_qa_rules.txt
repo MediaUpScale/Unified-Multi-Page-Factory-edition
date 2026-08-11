@@ -1,0 +1,54 @@
+MASTER MEI — VISUAL QA / RAG VALIDATION RULES (STRICT OVERRIDES)
+
+TIMING & STRUCTURE:
+- Total video duration target: 90 to 120 seconds.
+- Scene 1 (Hook): MAXIMUM 8 seconds — Master Mei snow-white DNA + meditation.
+- Scenes 2 through Final: 10 to 12 seconds each.
+- Scene count: dynamically 8–10 frames to match 90–120s runtime.
+
+MASTER MEI CHARACTER DNA (Scene 1 + Final Hook — HARDCODE):
+- Hair: pure radiant snow-white (zero gray/ash/silver), high topknot + hairpin, plus two long distinct white strands falling down both sides of chest/shoulders.
+- Eyebrows: iconic extra-long ultra-thick snow-white, sweeping dramatically outward past temples (avatar_2.png).
+- Beard: full majestic snow-white beard to mid-chest + matching flowing snow-white mustache.
+- Face: wise East Asian martial arts grandmaster, weathered skin, deep-set eyes, serene meditation.
+- Attire: white inner robe + black outer vest with gold lapel embroidery + wooden mala prayer beads.
+
+DYNAMIC ENVIRONMENT (Scene 1 + Master Mei frames):
+- PRIMARY (~70%): high-altitude epic nature — Himalayan/Alps precipices, cliff ledges, misty ridge summits, mountain springs above seas of clouds.
+- SECONDARY (~30%): open-air ancient stone shrines or outdoor mountain courtyard temples in rain/fog.
+- LLM / prompt generator: act templates are REFERENCES only — dynamically modify backdrops, weather, and lighting to mirror the episode's philosophical concept.
+- NEVER default to generic indoor temple halls.
+
+FLUX.1-SCHNELL PROMPT RULES:
+- Length: strictly 120–180 words for dystopian / RAG prompts.
+- Forbidden: 8k, photorealistic, hyper-detailed, masterpiece (and similar tag spam).
+- Mandatory prefix (Scenes 3 / 7 / Penultimate and other dystopia frames):
+  "Cyberpunk dystopian Earth, attention monopoly era:"
+- Environment: every dystopian scene must include sensory/attention overload architecture
+  (neon billboards, hanging cable bundles, industrial haze, cybernetic conduits).
+- Scene 1 / Final Hook: Master Mei DNA only — NO cyberpunk prefix.
+
+AUDIO MIX (MoviePy):
+- ambient_volume (SFX) 0.35 from t=0, ambient_fade_in 0.2
+- music_start_offset 0.5, music_volume 0.24, voice_volume 1.0
+- track_style: industrial_cyberpunk_percussion
+
+GLOBAL NEGATIVE CONSTRAINTS (ALL SCENES):
+- STRICTLY PROHIBIT: firearms, handguns, revolvers, rifles, guns, pistols, modern action-movie tropes, tactical weapons unless explicitly requested.
+- STRICTLY PROHIBIT: text, watermark, typography, UI, subtitles, video-game HUD.
+
+SCENE LOCKS (FLUX RAG TEMPLATES):
+- Scene 1: Master Mei snow-white DNA + dynamic outdoor meditation — load/compose scene_01
+- Scene 3: Post-apocalyptic Matrix slaves — load scene_03_biomechanical_slaves.txt
+- Scene 7: Computing apparatus captive — load scene_07_human_cyborg_closeup.txt
+- Scene 8: Samurai slicing matrix illusion — load scene_08_unplug_escape.txt
+- Penultimate (N-1): Pod Escape / Infinite Matrix A/B — load penultimate_frame.txt
+- Final Hook: Master Mei snow-white DNA + dynamic outdoor authority — load/compose scene_final
+
+OUTPUT LAYOUT:
+- Episode images: outputs/<page>/assets/<episode_id>/scene_01.png …
+- Clips: outputs/<page>/clips/ (always — never loose root)
+
+ROLE SEPARATION:
+- Never fuse cybernetics onto Master Mei.
+- Never place Master Mei inside Scene 3 / Scene 7 as a slave subject.

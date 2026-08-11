@@ -1,0 +1,50 @@
+[
+  {
+    "id": "q_kafka_001",
+    "author": "Franz Kafka",
+    "source": "Letter to Oskar Pollak (commonly attributed; curated for LOFI bank)",
+    "verified_date": "2026-08-10",
+    "quote_text": "Don't bend; don't water it down; don't try to make it logical; don't edit your own soul according to the fashion.",
+    "tags": [
+      "relationship",
+      "self_respect",
+      "authenticity"
+    ]
+  },
+  {
+    "id": "q_rumi_001",
+    "author": "Rumi",
+    "source": "Attributed — LOFI verified bank",
+    "verified_date": "2026-08-10",
+    "quote_text": "The wound is the place where the Light enters you.",
+    "tags": [
+      "relationship",
+      "healing",
+      "vulnerability"
+    ]
+  },
+  {
+    "id": "q_angelou_001",
+    "author": "Maya Angelou",
+    "source": "Attributed — LOFI verified bank",
+    "verified_date": "2026-08-10",
+    "quote_text": "I've learned that people will forget what you said, people will forget what you did, but people will never forget how you made them feel.",
+    "tags": [
+      "relationship",
+      "parenting",
+      "empathy"
+    ]
+  },
+  {
+    "id": "q_parent_001",
+    "author": "Fred Rogers",
+    "source": "Attributed — LOFI verified bank",
+    "verified_date": "2026-08-10",
+    "quote_text": "There is no normal life that is free of pain. It's the very wrestling with our problems that can be the impetus for our growth.",
+    "tags": [
+      "parenting",
+      "growth",
+      "patience"
+    ]
+  }
+]

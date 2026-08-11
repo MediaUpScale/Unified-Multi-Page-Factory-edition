@@ -232,10 +232,15 @@ def write_postplanner_xlsx(
         ws.append(headers)
         start_row = 2
 
+    try:
+        from avatar_engine.post_planner import extract_clean_caption
+    except Exception:  # noqa: BLE001
+        extract_clean_caption = lambda v: str(v or "")  # noqa: E731
+
     for i, rec in enumerate(records):
         row = start_row + i
         ws.cell(row=row, column=1, value=rec.get("posting_time", ""))
-        ws.cell(row=row, column=2, value=rec.get("caption", ""))
+        ws.cell(row=row, column=2, value=extract_clean_caption(rec.get("caption", "")))
         ws.cell(row=row, column=3, value=rec.get("media_url", ""))
 
     wb.save(str(output_path))

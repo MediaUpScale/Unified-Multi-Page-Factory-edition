@@ -472,65 +472,52 @@ class FacebookScheduler:
     # Low-level step methods (each maps to one recorded Playwright action)
     # ------------------------------------------------------------------
 
-    def open_composer(self) -> None:
+    def _is_composer_already_open(self) -> bool:
         """
-        Click the 'Create post' button in Meta Business Suite to open the
-        post composer.
+        Return True if an active post-composer modal is already visible.
 
-        Strategy
-        --------
-        1. Wait for the page DOM to stabilise.
-        2. Perform a brief idle scroll (looks like a human scanning the feed).
-        3. Try each selector in ``_COMPOSER_TRIGGER_CANDIDATES`` in order,
-           using a short per-candidate timeout.  The first visible element
-           wins.
-        4. Drift mouse to the element → hover → click.
-        5. Wait for the textarea to appear (confirming the composer opened).
+        Used when a previous iteration left the composer open (or a partial
+        failure stuck it on screen) so Step 1 can skip the trigger click.
         """
-        _log.info("Step 1: Opening post composer...")
-        if self.dry_run:
-            _log.info("[DRY-RUN] Would open composer.")
-            return
-
-        # Let the page settle
-        try:
-            self.page.wait_for_load_state("domcontentloaded", timeout=config.LONG_TIMEOUT_MS)
-        except Exception:
-            pass   # may already be loaded
-
-        self.hb.jitter_mouse(count=random.randint(2, 4))
-        self.hb.idle_scroll()
-        self.hb.pause(0.8, 1.8)
-
-        # Attempt to find the "Create post" trigger; reload once on timeout.
-        try:
-            trigger = _try_first_visible(
-                self.page,
-                _COMPOSER_TRIGGER_CANDIDATES,
-                timeout_each_ms=config.COMPOSER_CANDIDATE_TIMEOUT_MS,
-                label="composer trigger",
-            )
-        except RuntimeError:
-            _log.warning(
-                "Composer not found/visible, waiting 1s and refreshing page (F5)..."
-            )
-            self.page.wait_for_timeout(1_000)
-            self.page.reload()
+        # Fast structural signals — dialog / pagelet / background controls.
+        quick_sels = (
+            '[data-pagelet="bizweb_create_post"]',
+            'div[aria-label*="Create post" i][role="dialog"]',
+            'div[aria-label*="Criar publicação" i][role="dialog"]',
+            'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
+            'div[role="dialog"] div[contenteditable="true"]',
+            'div[role="dialog"] [aria-label*="background" i]',
+            'div[role="dialog"] [aria-label="Aa"]',
+        )
+        for sel in quick_sels:
             try:
-                self.page.wait_for_load_state(
-                    "domcontentloaded", timeout=config.LONG_TIMEOUT_MS
-                )
+                loc = self.page.locator(sel).first
+                if loc.is_visible(timeout=400):
+                    _log.debug("Composer already-open signal: %s", sel)
+                    return True
             except Exception:
-                pass
-            self.hb.pause(1.5, 2.5)
-            # One retry after reload — propagates if it fails again
-            trigger = _try_first_visible(
-                self.page,
-                _COMPOSER_TRIGGER_CANDIDATES,
-                timeout_each_ms=config.COMPOSER_CANDIDATE_TIMEOUT_MS,
-                label="composer trigger (post-reload)",
-            )
+                continue
 
+        # Textarea candidates with a short per-candidate timeout.
+        try:
+            _try_first_visible(
+                self.page,
+                _COMPOSER_TEXTAREA_CANDIDATES[:5],
+                timeout_each_ms=400,
+                label="composer already-open textarea",
+            )
+            return True
+        except RuntimeError:
+            return False
+
+    def _click_composer_trigger(self, *, label: str = "composer trigger") -> None:
+        """Locate the 'Create post' trigger, click it, and confirm textarea."""
+        trigger = _try_first_visible(
+            self.page,
+            _COMPOSER_TRIGGER_CANDIDATES,
+            timeout_each_ms=config.COMPOSER_CANDIDATE_TIMEOUT_MS,
+            label=label,
+        )
         self.hb.click_with_hover(trigger)
 
         # Confirm the composer opened by waiting for the textarea
@@ -546,6 +533,71 @@ class FacebookScheduler:
                 "Composer textarea not immediately visible after clicking trigger. "
                 "Continuing — the textarea may appear after a short animation."
             )
+
+    def open_composer(self) -> None:
+        """
+        Click the 'Create post' button in Meta Business Suite to open the
+        post composer.
+
+        Strategy
+        --------
+        1. Wait for the page DOM to stabilise.
+        2. If the composer is already open (stale modal), skip the trigger.
+        3. Perform a brief idle scroll (looks like a human scanning the feed).
+        4. Try each selector in ``_COMPOSER_TRIGGER_CANDIDATES`` in order,
+           using a short per-candidate timeout.  The first visible element
+           wins.
+        5. Drift mouse to the element → hover → click.
+        6. Wait for the textarea to appear (confirming the composer opened).
+        7. On total trigger failure: hard-navigate to Business Suite home and
+           retry the trigger click once.
+        """
+        _log.info("Step 1: Opening post composer...")
+        if self.dry_run:
+            _log.info("[DRY-RUN] Would open composer.")
+            return
+
+        # Let the page settle
+        try:
+            self.page.wait_for_load_state("domcontentloaded", timeout=config.LONG_TIMEOUT_MS)
+        except Exception:
+            pass   # may already be loaded
+
+        # Stale/stuck composer from a prior iteration — proceed without click.
+        if self._is_composer_already_open():
+            _log.info("[Step 1] Composer is already open. Proceeding directly...")
+            self.hb.pause(0.5, 1.0)
+            return
+
+        self.hb.jitter_mouse(count=random.randint(2, 4))
+        self.hb.idle_scroll()
+        self.hb.pause(0.8, 1.8)
+
+        # Attempt to find/click the "Create post" trigger; recover via home nav.
+        try:
+            self._click_composer_trigger(label="composer trigger")
+        except RuntimeError:
+            _log.info(
+                "[Step 1] Could not find composer trigger. "
+                "Composer may be stuck or broken. Navigating to home..."
+            )
+            self.page.wait_for_timeout(3000)
+            self.page.goto(
+                "https://business.facebook.com/latest/",
+                wait_until="domcontentloaded",
+            )
+            self.page.wait_for_timeout(3000)
+
+            # After recovery, composer might already be open — or retry trigger.
+            if self._is_composer_already_open():
+                _log.info("[Step 1] Composer is already open. Proceeding directly...")
+                self.hb.pause(0.5, 1.0)
+                return
+
+            self.hb.jitter_mouse(count=random.randint(1, 3))
+            self.hb.pause(0.5, 1.2)
+            # One retry after home navigation — propagates if it fails again
+            self._click_composer_trigger(label="composer trigger (post-home-nav)")
 
         self.hb.pause(1.0, 2.2)
 
@@ -799,8 +851,8 @@ class FacebookScheduler:
 
     def enable_schedule_toggle(self) -> None:
         """
-        Step 5a: Scroll the composer panel down, then ensure the
-        "Set date and time" toggle is switched ON.
+        Step 6 (fallback): Scroll the composer panel down, then ensure the
+        English "Set date and time" toggle is switched ON.
 
         Primary strategy
         ----------------
@@ -815,7 +867,7 @@ class FacebookScheduler:
         Fall through to ``_SCHEDULE_TOGGLE_CANDIDATES`` (role/aria selectors)
         when the text-anchored approach does not find a checkable element.
         """
-        _log.info("Step 5a: Ensuring 'Set date and time' toggle is ON...")
+        _log.info("Step 6: Ensuring 'Set date and time' toggle is ON...")
         if self.dry_run:
             _log.info("[DRY-RUN] Would enable schedule toggle.")
             return
@@ -958,7 +1010,7 @@ class FacebookScheduler:
 
     def fill_schedule_datetime(self, dt: datetime) -> None:
         """
-        Step 5b: Fill the date and time fields in the schedule panel.
+        Step 7: Fill the date and time fields from the Google Sheets queue.
 
         Date field
         ----------
@@ -977,7 +1029,7 @@ class FacebookScheduler:
         click → Ctrl+A → Backspace → type(value, delay=100) → Tab
         """
         date_str = dt.strftime(_DATE_FORMAT)
-        _log.info("Step 5b: Filling schedule datetime %s", dt.strftime("%Y-%m-%d %H:%M"))
+        _log.info("Step 7: Filling schedule datetime %s", dt.strftime("%Y-%m-%d %H:%M"))
 
         # ---- Date input ----
         _DATE_INPUT_SEL = ", ".join([
@@ -1089,12 +1141,12 @@ class FacebookScheduler:
 
     def confirm_schedule(self) -> None:
         """
-        Step 6: Click the final "Schedule" confirmation button.
+        Step 8: Click the final English "Schedule" confirmation button.
 
         Waits for the button label to update from "Publish" to "Schedule"
         (which happens after the toggle + datetime are set), then clicks it.
         """
-        _log.info("Step 6: Confirming schedule...")
+        _log.info("Step 8: Confirming schedule...")
         confirm = _try_first_visible(
             self.page,
             _SCHEDULE_CONFIRM_CANDIDATES,
@@ -1151,24 +1203,69 @@ class FacebookScheduler:
             "Composer detach check inconclusive — continuing after %d ms.", timeout_ms
         )
 
+    def _run_recorded_workflow_or_fallback(self) -> None:
+        """
+        Execute the recorded middle workflow (steps 1–6 of the 8-step
+        sequence), or fall back to hard-coded English selectors.
+
+        Recorded steps (credentials/recorded_workflow.json)
+        ----------------------------------------------------
+        1. Open Backgrounds — Aa / background strip
+        2. Select Grid      — full background grid
+        3. Choose Background
+        4. Close Grid
+        5. Scroll Down      — reveal scheduling controls
+        6. Open Scheduler   — "Set date and time" toggle
+
+        Steps 7–8 (date from Google Sheets + final Schedule click) are
+        handled by the caller after this returns.
+        """
+        recorder = WorkflowRecorder.load(self.workflow_path)
+        if recorder is not None and recorder.action_count > 0:
+            _log.info(
+                "Replaying recorded workflow (%d action(s)) from %s",
+                recorder.action_count,
+                self.workflow_path,
+            )
+            try:
+                recorder.replay(self.page, dry_run=self.dry_run)
+                return
+            except Exception as exc:
+                _log.warning(
+                    "Recorded workflow replay failed (%s). "
+                    "Falling back to hard-coded English selectors.",
+                    exc,
+                )
+
+        _log.info(
+            "No usable recorded workflow at %s — using selector fallback "
+            "(English Meta Business Suite UI).",
+            self.workflow_path,
+        )
+        # Fallback mirrors the same 6-step order (English UI).
+        self.apply_background_direct()       # 1–4: open bgs → grid → choose → close
+        self._scroll_composer_panel()        # 5: scroll to scheduling options
+        self.enable_schedule_toggle()        # 6: open scheduler toggle
+
     def schedule_post(self, text: str, scheduled_dt: "datetime | None") -> None:
         """
-        Schedule a single post end-to-end using direct structural selectors.
+        Schedule a single post end-to-end.
 
-        Workflow
-        --------
-        1. open_composer()              — click "Create post"
-        2. type_post_text(text)         — fill the Lexical editor
-        3. apply_background_direct()    — Aa → grid icon → nth tile → Escape
-        4. click_schedule_button()      — open the scheduling panel
-        5a. enable_schedule_toggle()    — text-anchored "Set date and time" ON
-        5b. fill_schedule_datetime()    — fill date + time fields
-        6. confirm_schedule()           — click "Schedule"
-        7. wait_for_success()           — confirm success banner
-        8. close_composer()             — dismiss dialog
+        Prerequisites (always automated)
+        --------------------------------
+        - open_composer()       — English "Create post"
+        - type_post_text(text)  — fill Lexical editor
 
-        No ``recorded_workflow.json`` is required.  ``--record`` mode remains
-        available only for debugging/selector discovery purposes.
+        8-step scheduling sequence
+        --------------------------
+        1–6. Recorded workflow replay (preferred) or English selector fallback:
+             Open Backgrounds → Select Grid → Choose Background → Close Grid
+             → Scroll Down → Open Scheduler
+        7. fill_schedule_datetime(scheduled_dt) — date/time from Google Sheets
+        8. confirm_schedule()                   — click "Schedule"
+
+        Record a workflow once with ``python facebook_scheduler/main.py --record``.
+        Meta Business Suite UI language must be English.
         """
         if not text:
             _log.warning("Empty text — skipping post.")
@@ -1185,16 +1282,14 @@ class FacebookScheduler:
         )
 
         try:
-            self.open_composer()                        # Step 1
-            self.type_post_text(text)                   # Step 2
-            self.apply_background_direct()              # Step 3
-            self.click_schedule_button()                # Step 4
-            self.enable_schedule_toggle()               # Step 5a
-            self.fill_schedule_datetime(scheduled_dt)   # Step 5b
-            self.confirm_schedule()                     # Step 6
+            self.open_composer()                          # prerequisite
+            self.type_post_text(text)                     # prerequisite
+            self._run_recorded_workflow_or_fallback()     # Steps 1–6
+            self.fill_schedule_datetime(scheduled_dt)     # Step 7 (sheet_queue date)
+            self.confirm_schedule()                       # Step 8
 
-            # Step 7: Optimistic delay — assume post is submitted, give Meta
-            # time to process in the background instead of polling a banner.
+            # Optimistic delay — assume post is submitted; give Meta time to
+            # process instead of polling a success banner.
             if not self.dry_run:
                 wait_s = round(random.uniform(3.0, 12.0), 2)
                 _log.info(
@@ -1203,8 +1298,7 @@ class FacebookScheduler:
                 )
                 self.page.wait_for_timeout(int(wait_s * 1_000))
 
-            # Step 8: Safety modal cleanup — ensure the composer is gone so
-            # the next iteration starts from a clean page state.
+            # Safety modal cleanup — next iteration starts from a clean state.
             if not self.dry_run:
                 try:
                     modal = self.page.locator('div[role="dialog"]')
@@ -1425,6 +1519,7 @@ def attach_to_dolphin_profile(
     if target:
         _log.info("Attached to Meta Business Suite tab: %s", target.url[:80])
         print(f"[CDP] Attached to Meta Business Suite: {target.url[:80]}")
+        _ensure_page_active_safe(target)
         return context, target
 
     # Priority 2: Any facebook.com tab
@@ -1436,6 +1531,7 @@ def attach_to_dolphin_profile(
             "business.facebook.com not found — falling back to: %s", target.url[:80]
         )
         print(f"[CDP] WARNING: Using facebook.com fallback tab: {target.url[:80]}")
+        _ensure_page_active_safe(target)
         return context, target
 
     # Priority 3: First available page (log a warning)
@@ -1448,7 +1544,23 @@ def attach_to_dolphin_profile(
         f"[CDP] WARNING: No Facebook tab found. Using first page: {target.url[:80]}\n"
         "      Navigate to business.facebook.com in the Dolphin profile, then re-run."
     )
+    _ensure_page_active_safe(target)
     return context, target
+
+
+def _ensure_page_active_safe(page: "Page") -> None:
+    """
+    Soft wake after CDP attach — no OS focus steal.
+
+    Does not call ``bring_to_front`` / ``window.focus``.
+    """
+    try:
+        from facebook_scheduler.media_scheduler_base import ensure_page_active
+
+        ensure_page_active(page)
+    except Exception:
+        pass
+    _ = page
 
 
 # Keep old name as alias for backward compatibility with main.py
@@ -1471,6 +1583,7 @@ def attach_to_running_browser(playwright: "Playwright") -> "tuple[BrowserContext
         or pages[0]
     )
     _log.info("Attached to: %s", target.url[:80])
+    _ensure_page_active_safe(target)
     return context, target
 
 

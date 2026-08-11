@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import os
@@ -6,6 +6,27 @@ import shutil
 import sys
 import re as _re
 from pathlib import Path
+
+# Force UTF-8 for the whole process BEFORE any print / path / import side effects.
+# Windows defaults to cp1252 for console I/O, which corrupts accented filenames
+# (e.g. göbekli → g�bekli) and crashes on arrows/em dashes in logs.
+os.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+if sys.platform == "win32":
+    try:
+        import ctypes as _ctypes
+
+        _ctypes.windll.kernel32.SetConsoleCP(65001)
+        _ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except Exception:
+        pass
 
 
 def _repair_drive_text_file(file_path: Path) -> bool:
@@ -151,8 +172,15 @@ from core_engine.cost_tracker import CostTracker
 from core_engine.reel_sequence_engine import (
     compile_sequence_reel as _core_compile_sequence_reel,
     build_sequence_script_prompt as _build_sequence_script_prompt,
+    build_hook_body_act_durations as _build_hook_body_act_durations,
     compute_dense_act_count as _compute_dense_act_count,
+    compute_hook_body_act_count as _compute_hook_body_act_count,
     segment_script_into_act_snippets as _segment_script_into_act_snippets,
+)
+from core_engine.scene_pacing import (
+    describe_scene_plan as _describe_scene_plan,
+    plan_scenes as _plan_scenes,
+    scale_scene_durations as _scale_scene_durations,
 )
 from avatar_engine.brand_composer import (
     apply_text_overlay as _brand_apply_text,
@@ -180,7 +208,7 @@ from avatar_engine.post_planner import (
 )
 from avatar_engine.providers.gemini_utils import build_model_chain, get_latest_model
 from avatar_engine.persona_dna import contextual_cta_keyword
-from avatar_engine.providers.image_provider import GeminiImageAdapter
+from avatar_engine.providers.image_provider import GeminiImageAdapter, get_image_adapter
 from avatar_engine.subject_brain import imagine_subject, imagine_subject_instruction_preview, generate_bulk_topics
 from avatar_engine.batch_planner import (
     BatchAngle,
@@ -228,7 +256,7 @@ def _load_engagement_bait_examples(page_ctx: "Any | None" = None) -> str:
         return ""
 
     _XLSX_REL = (
-        "pages_config/wonder_feed/Quotes_reference/@REDES REF SOURCE FONTE.xlsx"
+        "channels_config/wonder_feed/Quotes_reference/@REDES REF SOURCE FONTE.xlsx"
     )
     try:
         from pathlib import Path as _P  # noqa: PLC0415
@@ -304,6 +332,42 @@ def _looks_like_upstream_api_failure(exc: BaseException) -> bool:
     if "google.genai" in mod:
         return True
     return mod.startswith("httpx.") or exc.__class__.__name__.endswith("HTTPError")
+
+
+def _export_scene_assets_sequential(
+    image_paths: "list[Path | str]",
+    assets_dir: "Path | str",
+) -> list[Path]:
+    """
+    Copy scene images into ``outputs/<page>/assets/<episode_id>/`` as
+    ``scene_01.png``, ``scene_02.png``, … Creating the directory when missing.
+    """
+    out_dir = Path(assets_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exported: list[Path] = []
+    for i, src in enumerate(image_paths, start=1):
+        src_p = Path(src)
+        if not src_p.is_file():
+            _LOG.warning(
+                "Scene export skipped | missing source for scene_%02d: %s",
+                i, src_p,
+            )
+            continue
+        suffix = src_p.suffix.lower() if src_p.suffix else ".png"
+        if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+            suffix = ".png"
+        dest = out_dir / f"scene_{i:02d}{suffix}"
+        try:
+            if dest.resolve() != src_p.resolve():
+                shutil.copy2(src_p, dest)
+            else:
+                # Already the canonical scene path
+                pass
+            if dest.is_file():
+                exported.append(dest.resolve())
+        except OSError as exc:
+            _LOG.warning("Scene export failed for scene_%02d (%s): %s", i, src_p, exc)
+    return exported
 
 
 def _ensure_sequence_image(
@@ -1028,52 +1092,100 @@ def _track_adapter_image(
 ) -> int:
     """
     Record image API cost using the adapter's real call count (incl. retries).
+    Remote GPU → ``track_gpu_seconds`` (RunPod rates); Together → per-image table.
     Returns the number of API hits charged. Quiet during batch loops.
     """
     n = max(1, int(getattr(adapter, "last_api_call_count", 1) or 1))
-    if cost_tracker is not None:
-        _cost_key = getattr(adapter, "last_cost_key", None) or "image_flux_schnell"
-        cost_tracker.track_image(model_key=_cost_key, count=n)
-        _LOG.debug(
-            "CostTracker | image hit key=%s n=%d",
-            _cost_key, n,
-        )
+    if cost_tracker is None:
+        return n
+    _cost_key = getattr(adapter, "last_cost_key", None) or "image_flux_schnell"
+    _gpu_s = float(getattr(adapter, "last_gpu_seconds", 0) or 0)
+    if _gpu_s > 0 or str(_cost_key).startswith("image_remote"):
+        try:
+            from core_engine.remote_gpu_manager import get_manager  # noqa: PLC0415
+
+            mode = str(getattr(get_manager().client, "mode", None) or "comfyui")
+        except Exception:
+            mode = "comfyui"
+        if _gpu_s <= 0:
+            try:
+                _gpu_s = float(get_manager().client.last_job_seconds or 0)
+            except Exception:
+                _gpu_s = 0.0
+        if _gpu_s > 0:
+            cost_tracker.track_gpu_seconds(_gpu_s, mode=mode, jobs=n)
+            return n
+    cost_tracker.track_image(model_key=_cost_key, count=n)
+    _LOG.debug("CostTracker | image hit key=%s n=%d", _cost_key, n)
     return n
+
+
+def _track_remote_gpu_batch(
+    cost_tracker: "CostTracker | None",
+    *,
+    seconds_before: float,
+    jobs: int,
+) -> float:
+    """Bill GPU-seconds accumulated on the shared remote client since *seconds_before*."""
+    if cost_tracker is None:
+        return 0.0
+    try:
+        from core_engine.remote_gpu_manager import get_manager  # noqa: PLC0415
+
+        client = get_manager().client
+        after = float(getattr(client, "total_gpu_seconds", 0) or 0)
+        delta = max(0.0, after - float(seconds_before or 0))
+        if delta <= 0:
+            return 0.0
+        cost_tracker.track_gpu_seconds(
+            delta, mode=str(getattr(client, "mode", "comfyui")), jobs=max(1, jobs),
+        )
+        return delta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.debug("GPU batch cost skipped: %s", exc)
+        return 0.0
+
+
+def _image_act_max_workers(default_legacy: int = 3) -> int:
+    """
+    Concurrency for sequence-reel act image generation.
+
+    - remote_gpu: ``remote_gpu_max_parallel()`` (shared with audio/video batches).
+    - Together legacy: small pool; adapter semaphore still serializes HTTP.
+    """
+    try:
+        from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+            is_remote_gpu_enabled,
+            remote_gpu_max_parallel,
+        )
+
+        if is_remote_gpu_enabled("image"):
+            n = remote_gpu_max_parallel()
+            _LOG.info(
+                "Act image concurrency | remote_gpu max_workers=%d "
+                "(REMOTE_GPU_MAX_PARALLEL)",
+                n,
+            )
+            return n
+    except Exception:
+        pass
+    return max(1, int(default_legacy))
 
 
 def _run_acts_parallel(
     jobs: "dict[int, Any]",
     *,
-    max_workers: int = 5,
+    max_workers: int | None = None,
 ) -> "dict[int, Any]":
     """
-    Fire one zero-arg callable per act (``jobs[i]``) concurrently via
-    ``ThreadPoolExecutor(max_workers=5)``.
-
-    This only parallelizes Python-side orchestration / network-IO wait time
-    between act image requests. The Together AI adapter's own global
-    ``threading.Semaphore(1)`` rate limiter (see ``together_image.py``) still
-    forces the underlying HTTP calls to Together AI to execute strictly
-    sequentially with a micro-delay — so this ThreadPool improves throughput
-    without reopening the 429 rate-limit storm the semaphore was built to
-    prevent.
-
-    Returns ``{act_index: result_or_exception}`` — never raises; failures are
-    captured per-act so the caller can apply its own blinded-fallback logic.
+    Concurrent act jobs — delegates to ``remote_gpu_manager.run_parallel_jobs``
+    (generic submission-layer fan-out for image / future WAN video / audio).
     """
-    results: dict[int, Any] = {}
-    if not jobs:
-        return results
-    workers = max(1, min(max_workers, len(jobs)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(fn): idx for idx, fn in jobs.items()}
-        for fut in as_completed(futures):
-            idx = futures[fut]
-            try:
-                results[idx] = fut.result()
-            except Exception as exc:  # noqa: BLE001
-                results[idx] = exc
-    return results
+    from core_engine.remote_gpu_manager import run_parallel_jobs  # noqa: PLC0415
+
+    if max_workers is None:
+        max_workers = _image_act_max_workers()
+    return run_parallel_jobs(jobs, max_workers=max_workers)
 
 
 def _print_video_cost_summary(
@@ -1081,8 +1193,13 @@ def _print_video_cost_summary(
     *,
     image_count: int,
     image_model_label: str = "FLUX Schnell",
+    variant_index: int = 1,
+    total_variants: int = 1,
+    batch_images_so_far: int | None = None,
+    reel_cost_usd: float | None = None,
 ) -> None:
-    """One clean console line after a video finishes rendering."""
+    """Print reel-vs-batch cost summary after a video finishes rendering."""
+    from core_engine.cost_tracker import print_cost_summary
     from avatar_engine.providers.model_router import format_video_cost_summary
 
     if cost_tracker is None:
@@ -1097,6 +1214,23 @@ def _print_video_cost_summary(
                 img_cost += float(entry.get("cost_usd") or 0.0)
         if img_cost <= 0 and image_count > 0:
             img_cost = 0.003 * image_count
+    _reel_cost = (
+        float(reel_cost_usd)
+        if reel_cost_usd is not None
+        else (0.003 * max(0, image_count))
+    )
+    _batch_imgs = (
+        int(batch_images_so_far)
+        if batch_images_so_far is not None
+        else int(image_count)
+    )
+    print_cost_summary(
+        variant_index=int(variant_index),
+        total_variants=int(total_variants),
+        images_this_reel=int(image_count),
+        total_batch_images=_batch_imgs,
+        total_reel_cost=float(_reel_cost),
+    )
     line = format_video_cost_summary(
         image_count=image_count,
         image_model_label=image_model_label,
@@ -1280,6 +1414,9 @@ def _produce_variant_worker(
     batch_angles: "list[BatchAngle] | None" = None,
     uniqueness_guard: "BatchUniquenessGuard | None" = None,
     global_topic_dna: str = "",
+    batch_image_counter: "list[int] | None" = None,
+    batch_image_lock: "threading.Lock | None" = None,
+    render_approval_required: bool = False,
 ) -> "dict[str, Any]":
     """
     Produce one complete post variant inside a worker thread.
@@ -1487,8 +1624,13 @@ def _produce_variant_worker(
     # graphite illustration pipeline via page_ctx.base_graphite_prompt.
     # The --draw-style CLI flag is SILENTLY IGNORED for these three post types.
     # ====================================================================
+    _is_master_mei_page = bool(
+        page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
+    )
+    # Master Mei NEVER uses wonder_feed graphite / pencil-drawing pipelines.
     _graphite_locked = (
-        post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL")
+        (not _is_master_mei_page)
+        and post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL")
         and (
             bool(page_ctx and (page_ctx.base_graphite_prompt or page_ctx.sketch_style_prompt))
             or image_style == "SKETCH"   # --draw-style SKETCH always forces graphite pipeline
@@ -1502,7 +1644,15 @@ def _produce_variant_worker(
         )
 
     effective_atmosphere = atmosphere_style
-    if post_type in ("SMART_BAIT", "ECONOMIC_REEL") and overlay_text and caption_engine is not None:
+    # Default before conditional mutation so later debug/logs never hit UnboundLocalError
+    # when LONG_CAPTION_IMAGE skips the _base_prompt branch or another post type runs.
+    _mutated_subject = resolved_subject or ""
+    if (
+        (not _is_master_mei_page)
+        and post_type in ("SMART_BAIT", "ECONOMIC_REEL")
+        and overlay_text
+        and caption_engine is not None
+    ):
         # visual_subject from LLM takes priority; fall back to keyword extraction
         scene = visual_subject or caption_engine.extract_smart_bait_image_theme(
             overlay_text, economic=economic
@@ -1545,6 +1695,10 @@ def _produce_variant_worker(
             effective_atmosphere = build_smart_bait_image_prompt(
                 _mutated_subject, _base_prompt
             )
+            _LOG.debug(
+                "LONG_CAPTION_IMAGE | scene (post-mutation): %s",
+                (_mutated_subject or "")[:120],
+            )
 
     # Batch uniqueness: force angle-specific visual DNA into every image prompt
     if _visual_angle_focus:
@@ -1558,7 +1712,6 @@ def _produce_variant_worker(
                 "Variant %d | visual angle injected → %r",
                 variant + 1, _vf[:80],
             )
-            _LOG.debug("LONG_CAPTION_IMAGE | scene (post-mutation): %s", _mutated_subject[:120])
 
     # ====================================================================
     # PHASE A: Image generation
@@ -1568,7 +1721,7 @@ def _produce_variant_worker(
     # ====================================================================
     # SMART_BAIT / LONG_CAPTION_IMAGE / CAROUSEL → atmospheric (avatar OFF).
     # ECONOMIC_REEL → OFF by default, EXCEPT master_mei which MUST likeness-lock
-    # Act 1 to pages_config/master_mei/avatar_reference/avatar.png.
+    # Act 1 to channels_config/master_mei/avatar_reference/avatar.png.
     if post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "CAROUSEL"):
         image_avatar_mode = "OFF"
     elif (
@@ -1736,16 +1889,34 @@ def _produce_variant_worker(
         and (page_ctx.page_id or "").lower() == "master_mei"
     ):
         import re as _re_mm
-        import random as _rnd_hook_env
         # Act-1 / Hook STRICT MANDATE: ROLE A Master Mei (traditional only).
-        # Environment rotates across episodes from HOOK_ENVIRONMENTS pool.
-        _hook_envs = page_ctx.hook_environments or [
-            "mist-covered ancient mountain temple courtyard at dawn",
-            "snowy Alps peak with wind-blown snow",
-            "high-altitude stone training ground above the clouds",
-            "dramatic mountain cliff at sunset under storm light",
-        ]
-        _hook_env = _rnd_hook_env.choice(_hook_envs)
+        # Dynamic environment: ~70% high-altitude nature / ~30% open-air shrines.
+        try:
+            from avatar_engine.visual_roles import (
+                compose_scene_01_prompt as _mei_s1,
+                pick_mei_meditation_environment as _mei_pick_env,
+            )
+            _hook_env = _mei_pick_env(
+                episode_seed=resolved_subject or "",
+                spoken_beat=caption if caption and caption != "(skipped)" else "",
+            )
+            _mm_image_prompt_override = _mei_s1(
+                hook_env=_hook_env,
+                spoken_beat=caption if caption and caption != "(skipped)" else "",
+                subject=resolved_subject or "",
+                episode_seed=resolved_subject or "",
+            )
+        except Exception:
+            _hook_env = "towering jagged mountain cliff above a sea of clouds"
+            _mm_image_prompt_override = (
+                "Master Mei — wise East Asian martial arts grandmaster with pure "
+                "snow-white hair in a topknot, two long white locks framing his chest, "
+                "extra-long bushy white eyebrows extending past temples, and a long "
+                "white beard reaching his mid-chest. White robe and black vest with "
+                "gold embroidery. Meditating in lotus posture atop a towering jagged "
+                "mountain cliff above a sea of clouds. Serene sunrise light, vast "
+                "alpine vista, dramatic cinematic framing."
+            )
         # ROLE A only — traditional Master Mei; never fuse neon city / cybernetics onto him
         _mm_dna_clean = (page_ctx.master_mei_visual_dna or _MEI_DNA_FALLBACK)
         _mm_dna_clean = _re_mm.sub(
@@ -1755,31 +1926,10 @@ def _produce_variant_worker(
             flags=_re_mm.IGNORECASE,
         )
         _mm_dna_clean = _re_mm.sub(r"\s{2,}", " ", _mm_dna_clean).strip(" ,.")
-        _mm_image_prompt_override = (
-            "Cinematic 8k photorealistic raw photography, detailed skin textures, "
-            "octane render, volumetric natural mist and dawn light — traditional "
-            "ancestral temple aesthetic ONLY. Absolutely no neon, no cyberpunk city, "
-            "no technology on Master Mei's body. "
-            "MEDIUM: Ultra-realistic cinematic 4K photography — NOT illustration, NOT CGI polish. "
-            "HOOK FRAME 1 — FIRST APPEARANCE — STRICT CHARACTER LOCK. "
-            "ZERO HALLUCINATION: NEVER invent a generic old master — MUST match avatar.png. "
-            f"{_mm_dna_clean} "
-            "POSE MANDATE: Master Mei meditating, standing in fog, OR observing disciples "
-            "from a temple balcony — spine erect, absolute stillness, intense inner focus. "
-            "FRAMING: Close-up OR medium shot of Master Mei ONLY — STRICT SINGLE MASTER RULE. "
-            "Close-ups reserved ONLY for Master Mei matching reference. "
-            "STRICT BAN: close-ups of random/generic samurai faces or random men; "
-            "bionic implants, VR headsets, glowing wires, cybernetic limbs. "
-            f"ENVIRONMENT (rotate per episode): {_hook_env}. "
-            f"THEME CONTEXT: {resolved_subject}. "
-            "LIGHTING: Dark atmospheric — cold moonlight, storm lightning, dawn rim light, or warm torchfire. "
-            "Volumetric mist/rain shafts, strong rim lighting on wet stone and the seated elder sage. "
-            "Deep chiaroscuro. Colour grade: charcoal black, muted jade, ember gold. "
-            "FORBIDDEN: middle-aged short-haired warrior, standing idle pose, black hair, "
-            "clean-shaven face, modern athletic wear, pastel wellness, gym neon, sketch styles. "
-            f"{_MEI_BAN_PLAIN_MODERN} "
-            "REFERENCE LIKENESS REQUIRED — match pages_config/master_mei/avatar_reference/avatar.png exactly. "
-            f"{_MEI_PHOTOREAL}"
+        effective_atmosphere = _mm_image_prompt_override
+        _LOG.info(
+            "master_mei | purged graphite path | Scene1 FLUX lock: %s",
+            _mm_image_prompt_override[:120],
         )
 
     adapter: GeminiImageAdapter | None = None
@@ -1909,9 +2059,21 @@ def _produce_variant_worker(
         img_model_id = None
         _page_cost = page_ctx.cost_tier if page_ctx is not None else None
         # Page-level explicit override has highest priority — still logged via router.
+        # model_api_flows Together model (when active) wins over page IMAGE_MODEL_OVERRIDE.
         _override = None
         if page_ctx is not None and page_ctx.image_model_override:
             _override = page_ctx.image_model_override
+        try:
+            from model_api_flows import (  # noqa: PLC0415
+                is_flow_explicitly_set as _flow_set,
+                resolved_together_image_model as _flow_img_model,
+            )
+
+            _flow_model = _flow_img_model()
+            if _flow_set() and _flow_model:
+                _override = _flow_model
+        except Exception:
+            pass
         from avatar_engine.providers.model_router import image_model as _route_image
         _img_route = _route_image(
             task="image",
@@ -1942,7 +2104,7 @@ def _produce_variant_worker(
         _WF_STYLE_REF_STR = (
             r"G:\My Drive\Z sosFiles\Z_act\@ NETWORK"
             r"\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\Unified Multi-Page Factory"
-            r"\pages_config\wonder_feed\style_reference\Screenshot 2026-06-01 183244.png"
+            r"\channels_config\wonder_feed\style_reference\Screenshot 2026-06-01 183244.png"
         )
         _WF_STYLE_REF = Path(_WF_STYLE_REF_STR)
         _style_ref_path: Path | None = None
@@ -1961,7 +2123,7 @@ def _produce_variant_worker(
                     "wonder_feed style reference not found at expected path: %s", _WF_STYLE_REF
                 )
         elif page_ctx:
-            # MODULE 3 — dynamic per-page resolution: pages_config/<page>/style_reference/
+            # MODULE 3 — dynamic per-page resolution: channels_config/<page>/style_reference/
             # (or explicit STYLE_REFERENCE_DIR override), 2-3 images, IP-Adapter-style weight.
             _style_ref_paths = page_ctx.resolve_style_reference_images()
             _style_ref_weight = page_ctx.style_reference_weight
@@ -1981,7 +2143,8 @@ def _produce_variant_worker(
                 print(f"[DEBUG] Style Ref Path   : {_style_ref_path or '(none — text-only prompt)'}")
             print(f"[DEBUG] Compiled prompt  : {effective_atmosphere[:200]}")
             print("=" * 60 + "\n")
-            adapter = GeminiImageAdapter(
+            # Routes to RemoteGPUImageAdapter when ENABLE_REMOTE_GPU_WORKFLOWS=true
+            adapter = get_image_adapter(
                 model_id=img_model_id,
                 page_cost_tier=_page_cost,
                 tier=_img_route.tier,
@@ -2123,6 +2286,15 @@ def _produce_variant_worker(
     # image per snippet → Phase D TTS + compile (act_dur = audio / N).
     _sequence_image_paths: list = []
     _early_seq_script: str = ""
+    # Episode assets: outputs/<page>/assets/<episode_id>/
+    # Clips always:   outputs/<page>/clips/
+    _episode_id = f"ep_{datetime.now().strftime('%Y%m%d_%H%M')}"
+    _episode_assets_dir: Path | None = None
+    if post_type == "ECONOMIC_REEL":
+        _episode_assets_dir = Path(app_config.ASSETS_DIR) / _episode_id
+        _episode_assets_dir.mkdir(parents=True, exist_ok=True)
+        Path(app_config.PAGE_OUTPUTS_DIR, "clips").mkdir(parents=True, exist_ok=True)
+        _LOG.info("Episode assets directory → %s", _episode_assets_dir.resolve())
     if (
         page_ctx
         and page_ctx.enable_sequence_reel
@@ -2139,25 +2311,83 @@ def _produce_variant_worker(
         _seq_words = page_ctx.reel_narration_words if page_ctx else 140
         _seq_min = page_ctx.reel_narration_min_words if page_ctx else 110
 
-        # Hardcoded math enforcement: Total Images = round(audio_s / seconds_per_act),
-        # clamped to [REEL_IMAGE_MIN_COUNT, REEL_IMAGE_COUNT] (master_mei: 8–10 @ ~9s).
-        _seq_n = _compute_dense_act_count(
-            page_ctx.reel_duration,
-            seconds_per_act=page_ctx.reel_seconds_per_act,
-            min_acts=page_ctx.reel_image_min_count,
-            max_acts=page_ctx.reel_image_count,
-        )
+        # Master Mei: duration profile locks words + frame count (7/9/10).
+        # Other pages: shared plan_scenes() engine (or legacy dense/hook).
+        _planned_scene_durs: "list[float] | None" = None
+        if _is_mm:
+            from avatar_engine.mei_narrative import resolve_mei_duration_profile
 
-        # ── Isolated timestamped subdirectory for this run's act images ──
-        for _stale_dir in subject_assets.glob("seq_run_*"):
-            if _stale_dir.is_dir():
-                shutil.rmtree(_stale_dir, ignore_errors=True)
-        _reel_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        _reel_img_dir = subject_assets / f"seq_run_{_reel_ts}"
+            _mei_prof = resolve_mei_duration_profile(page_ctx.reel_duration)
+            _seq_n = int(_mei_prof["frames"])
+            _seq_words = int(_mei_prof["words_target"])
+            _seq_min = int(_mei_prof["words_min"])
+            _LOG.info(
+                "Master Mei duration profile | target=%ss words=%d–%d (tgt %d) frames=%d "
+                "max_consec_training=%d",
+                _mei_prof["target_s"],
+                _mei_prof["words_min"],
+                _mei_prof["words_max"],
+                _mei_prof["words_target"],
+                _mei_prof["frames"],
+                _mei_prof["max_consec_training"],
+            )
+        else:
+            if page_ctx.uses_plan_scenes_pacing:
+                _planned_scene_durs = _plan_scenes(
+                    page_ctx.reel_duration,
+                    page_ctx.scene_duration,
+                    progressive_start_s=page_ctx.scene_progressive_start_s,
+                    progressive_step_every=page_ctx.scene_progressive_step_every,
+                    progressive_step_s=page_ctx.scene_progressive_step_s,
+                    progressive_cap_s=page_ctx.scene_progressive_cap_s,
+                    min_scenes=page_ctx.reel_image_min_count,
+                    max_scenes=page_ctx.reel_image_count,
+                )
+                _seq_n = len(_planned_scene_durs)
+            elif page_ctx.reel_use_hook_body_pacing:
+                _seq_n = _compute_hook_body_act_count(
+                    page_ctx.reel_duration,
+                    hook_hold_s=page_ctx.reel_hook_hold_s,
+                    body_hold_s=page_ctx.reel_body_hold_s,
+                    min_acts=page_ctx.reel_image_min_count,
+                    max_acts=page_ctx.reel_image_count,
+                )
+            else:
+                _seq_n = _compute_dense_act_count(
+                    page_ctx.reel_duration,
+                    seconds_per_act=page_ctx.reel_seconds_per_act,
+                    min_acts=page_ctx.reel_image_min_count,
+                    max_acts=page_ctx.reel_image_count,
+                )
+
+        # ── Work dir under episode assets (final scene_XX.png copies land here) ──
+        assert _episode_assets_dir is not None
+        _reel_img_dir = _episode_assets_dir / "work"
         _reel_img_dir.mkdir(parents=True, exist_ok=True)
+        if _is_mm:
+            _pace_label = "mei_profile"
+        elif locals().get("_planned_scene_durs"):
+            _pace_label = (
+                f"plan_scenes:{page_ctx.scene_duration} | "
+                f"{_describe_scene_plan(_planned_scene_durs)}"
+            )
+        elif page_ctx.reel_use_hook_body_pacing:
+            _pace_label = (
+                f"hook={page_ctx.reel_hook_hold_s:.1f}s "
+                f"body={page_ctx.reel_body_hold_s:.1f}s"
+            )
+        else:
+            _pace_label = f"dense={page_ctx.reel_seconds_per_act:.1f}s/act"
         _LOG.info(
-            "Sequence reel | dense acts=%d (%.1fs/act target) | dir=%s",
-            _seq_n, page_ctx.reel_seconds_per_act, _reel_img_dir.name,
+            "Sequence reel | acts=%d | video_length=%.0fs (window %.0f–%.0fs) | "
+            "pacing=%s | episode=%s | work=%s",
+            _seq_n,
+            page_ctx.reel_duration,
+            page_ctx.reel_duration_target_min,
+            page_ctx.reel_duration_target_max,
+            _pace_label,
+            _episode_id,
+            _reel_img_dir,
         )
 
         # Early script for ALL sequence pages → exact spoken-beat image prompts
@@ -2263,19 +2493,27 @@ def _produce_variant_worker(
             _seq_n,
         )
 
-        # Act 1 = main graphite base; acts 2–N match spoken snippets
-        _sequence_image_paths.append(
-            _ensure_sequence_image(raw_bg_path, fallback=raw_bg_path)
-        )
-        _act1_base = _sequence_image_paths[0]
+        # Act 1 base: Master Mei regenerates Scene 1 via FLUX (never graphite raw_bg).
+        # Other pages keep the primary background as Act 1.
+        if not _is_mm:
+            _sequence_image_paths.append(
+                _ensure_sequence_image(raw_bg_path, fallback=raw_bg_path)
+            )
+        _act1_base = raw_bg_path
 
         if _is_mm:
-            import random as _rnd_mm_env
-            _hook_envs = page_ctx.hook_environments or [
-                "inside a stark ancient dark monolithic stone shrine, sparse torchlight",
-                "looking out over a vast ash wasteland from a high stone ledge",
-            ]
-            _hook_env = _rnd_mm_env.choice(_hook_envs)
+            try:
+                from avatar_engine.visual_roles import (
+                    pick_mei_meditation_environment as _mei_pick_env_prod,
+                )
+                _hook_env = _mei_pick_env_prod(
+                    episode_seed=resolved_subject or "",
+                    spoken_beat=_early_seq_script or (
+                        caption if caption and caption != "(skipped)" else ""
+                    ),
+                )
+            except Exception:
+                _hook_env = "towering jagged mountain cliff above a sea of clouds"
             from avatar_engine.mei_visual import (
                 MASTER_STYLE_ANCHOR_DEFAULT as _MM_STYLE_DEFAULT_PROD,
             )
@@ -2304,7 +2542,7 @@ def _produce_variant_worker(
                 "MASTER_MEI 3-ROLE distribution | roles=%s | avatar_slots=%s",
                 _mm_roles, sorted(_mm_slots),
             )
-            # MODULE 3 — dynamic per-page style reference (pages_config/<page>/style_reference/)
+            # MODULE 3 — dynamic per-page style reference (channels_config/<page>/style_reference/)
             _mm_style_refs = page_ctx.resolve_style_reference_images()
             _mm_style_weight = page_ctx.style_reference_weight
             if _mm_style_refs:
@@ -2342,16 +2580,30 @@ def _produce_variant_worker(
             # HTTP calls, so this only removes orchestration/IO wait time.
             _mm_act_meta: dict[int, dict[str, Any]] = {}
             _mm_act_jobs: dict[int, Any] = {}
-            for _act_i in range(1, _seq_n):
+            # Include Act 1 (index 0) — FLUX Scene1 meditation lock; never graphite base
+            for _act_i in range(0, _seq_n):
                 _snippet = (
                     _spoken_snippets[_act_i]
                     if _act_i < len(_spoken_snippets)
                     else resolved_subject
                 )
                 _act_prompt = _mm_prompts[_act_i] if _act_i < len(_mm_prompts) else (
-                    "Cinematic 4K full-bleed dystopian visual scene, no text, "
-                    "no subtitles, no typography."
+                    "Cinematic photorealistic dystopian visual scene, no text."
                 )
+                # Hard strip any legacy graphite / drawing pollution before FLUX
+                import re as _re_flux_purge
+                _act_prompt = _re_flux_purge.sub(
+                    r"(?i)\b(?:a\s+precise\s+)?graphite\s+(?:drawing|scene|sketch|illustration)"
+                    r"(?:\s+of\s+a\s+man)?\b[^.]*\.?",
+                    " ",
+                    _act_prompt,
+                )
+                _act_prompt = _re_flux_purge.sub(
+                    r"(?i)\bOriginal\s+scene\s+concept\s*:\s*",
+                    "",
+                    _act_prompt,
+                )
+                _act_prompt = _re_flux_purge.sub(r"\s{2,}", " ", _act_prompt).strip(" ,.")
                 _act_role = (
                     _mm_roles[_act_i] if _act_i < len(_mm_roles) else "slave"
                 )
@@ -2383,17 +2635,39 @@ def _produce_variant_worker(
                     reference_image_path=_mm_avatar_ref if _use_avatar else None,
                     avatar_mode="ON" if _use_avatar else "OFF",
                     reference_image_weight=_mm_avatar_w if _use_avatar else None,
+                    # Style refs OFF for Scene 3 / penultimate — avoid graphite ref bleed
                     style_reference_paths=(
-                        _mm_style_refs if _use_avatar else None
+                        _mm_style_refs
+                        if _use_avatar and _act_i not in (2, _seq_n - 2)
+                        else None
                     ) or None,
-                    style_reference_weight=_mm_style_weight if _use_avatar else None,
+                    style_reference_weight=(
+                        _mm_style_weight
+                        if _use_avatar and _act_i not in (2, _seq_n - 2)
+                        else None
+                    ),
                     visual_role=_act_role,
                     negative_prompt=_act_neg or None,
                 )
 
-            _mm_act_results = _run_acts_parallel(_mm_act_jobs, max_workers=5)
+            _mm_gpu_baseline = 0.0
+            try:
+                from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+                    get_manager as _get_rgpu_mm,
+                    is_remote_gpu_enabled as _rgpu_on_mm,
+                )
 
-            for _act_i in range(1, _seq_n):
+                if _rgpu_on_mm("image"):
+                    _mm_gpu_baseline = float(
+                        getattr(_get_rgpu_mm().client, "total_gpu_seconds", 0) or 0
+                    )
+            except Exception:
+                _mm_gpu_baseline = 0.0
+
+            _mm_act_results = _run_acts_parallel(_mm_act_jobs)
+
+            _mm_ok = 0
+            for _act_i in range(0, _seq_n):
                 _meta = _mm_act_meta[_act_i]
                 _snippet = _meta["snippet"]
                 _act_theme = _meta["theme"]
@@ -2402,27 +2676,43 @@ def _produce_variant_worker(
                 _result = _mm_act_results.get(_act_i)
                 if isinstance(_result, Exception):
                     _LOG.warning(
-                        "MASTER_MEI act %d failed (%s) — blinded fallback to Act 1.",
+                        "MASTER_MEI act %d failed (%s) — blinded fallback.",
                         _act_i + 1, _result,
                     )
+                    _fb = _act1_base if _act_i > 0 and _sequence_image_paths else raw_bg_path
                     _sequence_image_paths.append(
                         _ensure_sequence_image(
-                            _fallback_dest, fallback=_act1_base, target_path=_fallback_dest,
+                            _fallback_dest, fallback=_fb, target_path=_fallback_dest,
                         )
                     )
                     continue
+                _fb = (
+                    _sequence_image_paths[0]
+                    if _sequence_image_paths
+                    else raw_bg_path
+                )
                 _act_img = _ensure_sequence_image(
-                    _result, fallback=_act1_base, target_path=_fallback_dest,
+                    _result, fallback=_fb, target_path=_fallback_dest,
                 )
                 _sequence_image_paths.append(_act_img)
-                _images_generated_this_variant += _track_adapter_image(
-                    cost_tracker, adapter
-                )
+                _mm_ok += 1
+                if _act_i == 0:
+                    _act1_base = _act_img
                 _LOG.info(
                     "MASTER_MEI sequence | act %d/%d | avatar=%s theme=%s | beat=%.40s…",
                     _act_i + 1, _seq_n,
                     "ON" if _use_avatar else "OFF", _act_theme, _snippet,
                 )
+            _mm_gpu_delta = _track_remote_gpu_batch(
+                cost_tracker, seconds_before=_mm_gpu_baseline, jobs=_mm_ok,
+            )
+            if _mm_gpu_delta <= 0 and _mm_ok:
+                for _ in range(_mm_ok):
+                    _images_generated_this_variant += _track_adapter_image(
+                        cost_tracker, adapter
+                    )
+            else:
+                _images_generated_this_variant += _mm_ok
         else:
             # ancient_knowledge (+ other sequence pages): spoken-snippet → visual
             _act_descriptors = _build_reel_act_descriptors(
@@ -2494,8 +2784,23 @@ def _produce_variant_worker(
                     avatar_mode="OFF",
                 )
 
-            _sr_act_results = _run_acts_parallel(_sr_act_jobs, max_workers=5)
+            _gpu_baseline = 0.0
+            try:
+                from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+                    get_manager as _get_rgpu,
+                    is_remote_gpu_enabled as _rgpu_on,
+                )
 
+                if _rgpu_on("image"):
+                    _gpu_baseline = float(
+                        getattr(_get_rgpu().client, "total_gpu_seconds", 0) or 0
+                    )
+            except Exception:
+                _gpu_baseline = 0.0
+
+            _sr_act_results = _run_acts_parallel(_sr_act_jobs)
+
+            _ok_acts = 0
             for _act_i in range(1, _seq_n):
                 _meta = _sr_act_meta[_act_i]
                 _snippet = _meta["snippet"]
@@ -2516,13 +2821,23 @@ def _produce_variant_worker(
                     _result, fallback=_act1_base, target_path=_fallback_dest,
                 )
                 _sequence_image_paths.append(_act_img)
-                _images_generated_this_variant += _track_adapter_image(
-                    cost_tracker, adapter
-                )
+                _ok_acts += 1
                 _LOG.info(
                     "Sequence reel | act %d/%d generated | beat=%.48s…",
                     _act_i + 1, _seq_n, _snippet,
                 )
+            # One GPU bill for the parallel batch (sum of per-job seconds).
+            _gpu_delta = _track_remote_gpu_batch(
+                cost_tracker, seconds_before=_gpu_baseline, jobs=_ok_acts,
+            )
+            if _gpu_delta <= 0 and _ok_acts:
+                # Together / non-timed path — charge per successful act
+                for _ in range(_ok_acts):
+                    _images_generated_this_variant += _track_adapter_image(
+                        cost_tracker, adapter
+                    )
+            else:
+                _images_generated_this_variant += _ok_acts
 
         if _sequence_image_paths:
             _images_generated_this_variant = max(
@@ -2816,13 +3131,60 @@ def _produce_variant_worker(
     reel_path: Path | None = None
     _b2_video_url: str = ""  # populated after successful B2 upload of the reel
 
+    # ── Sequential scene export + optional human approval gate ─────────────
+    # Persist scene_01.png…scene_N.png under:
+    #   outputs/<page>/assets/<episode_id>/
+    # Clips always render to outputs/<page>/clips/
+    if _is_economic_reel:
+        if _episode_assets_dir is None:
+            _episode_assets_dir = Path(app_config.ASSETS_DIR) / _episode_id
+            _episode_assets_dir.mkdir(parents=True, exist_ok=True)
+        _export_sources: list = (
+            list(_sequence_image_paths)
+            if _sequence_image_paths
+            else (
+                [Path(img_path_display)]
+                if img_path_display and Path(img_path_display).is_file()
+                else []
+            )
+        )
+        if _export_sources:
+            _exported_scenes = _export_scene_assets_sequential(
+                _export_sources, _episode_assets_dir,
+            )
+            if _exported_scenes:
+                _assets_dir_disp = str(_episode_assets_dir.resolve())
+                print(f"\n[ASSETS] Episode images saved -> {_assets_dir_disp}")
+                _LOG.info(
+                    "Scene assets exported → %s (%d files) | episode=%s",
+                    _assets_dir_disp, len(_exported_scenes), _episode_id,
+                )
+                if _sequence_image_paths:
+                    # Resume render from the approved canonical scene assets
+                    _sequence_image_paths = list(_exported_scenes)
+                elif img_path_display:
+                    img_path_display = str(_exported_scenes[0])
+                if render_approval_required:
+                    # Serialize pause across concurrent workers (stdin is shared)
+                    with write_lock:
+                        input(
+                            f"\n [PAUSED] Images saved to episode assets folder:\n"
+                            f" {_assets_dir_disp}\n"
+                            " Press [ENTER] to approve and continue video rendering, "
+                            "or [Ctrl+C] to abort...\n"
+                        )
+                    _LOG.info(
+                        "Render approval granted — continuing video compilation "
+                        "(variant %s | episode=%s).",
+                        variant + 1, _episode_id,
+                    )
+
     if _is_economic_reel and img_path_display and Path(img_path_display).is_file():
         _LOG.info("ECONOMIC_REEL | Launching video compilation pipeline (variant %s)…", variant + 1)
         _voice_path: Path | None = None
         _ambient_path: Path | None = None
 
-        # Reels go to a dedicated clips/ folder alongside assets/
-        # (e.g. outputs/{page}/clips/) so MP4s are easy to find.
+        # Always target the page clips/ folder (never loose root / episode clips)
         _reel_dir = Path(app_config.PAGE_OUTPUTS_DIR) / "clips"
         os.makedirs(_reel_dir, exist_ok=True)
 
@@ -2917,7 +3279,7 @@ def _produce_variant_worker(
             _is_mei_page = (page_ctx.page_id if page_ctx else "").lower() == "master_mei"
             _tts_ssml = bool(page_ctx.tts_enable_ssml) if page_ctx else False
             if _is_mei_page:
-                # Purge ALL emotion/SSML tags → pure spoken text + ellipsis pacing
+                # Purge emotion tags; keep strategic <break time="1.5s"/> for 100–120 s pacing
                 from avatar_engine.mei_narrative import (
                     prepare_mei_tts_text,
                     strip_inline_follow_cta,
@@ -2927,10 +3289,13 @@ def _produce_variant_worker(
                 _voiceover_script = strip_inline_follow_cta(_voiceover_script)
                 if _pre != _voiceover_script:
                     _LOG.info(
-                        "MASTER_MEI TTS prep | purged tags → pure speech (%d → %d chars)",
-                        len(_pre), len(_voiceover_script),
+                        "MASTER_MEI TTS prep | POV/blacklist + break pauses (%d → %d chars, breaks=%d)",
+                        len(_pre),
+                        len(_voiceover_script),
+                        _voiceover_script.lower().count("<break"),
                     )
-                _tts_ssml = False  # punctuation-only pacing; never send SSML
+                # Honor page_config TTS_ENABLE_SSML (True → send break pauses to ElevenLabs)
+                _tts_ssml = bool(page_ctx.tts_enable_ssml) if page_ctx else True
             elif page_ctx is None or page_ctx.strip_audio_tags_before_tts:
                 # Other pages: strip bracketed emotional tags so ElevenLabs never reads them aloud
                 _pre_strip = _voiceover_script
@@ -2984,17 +3349,64 @@ def _produce_variant_worker(
             if _cta_text and _voice_path is not None:
                 _cta_out = _reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
                 try:
-                    _cta_path, _cta_word_timings = generate_voiceover_with_timestamps(
-                        _cta_text,
-                        _cta_out,
-                        voice_id=_voice_id or None,
-                        model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_v3",
-                        speed=_tts_speed,
-                        voice_settings=_tts_vs or None,
-                        expressive_mode=_tts_expressive,
+                    _is_mei_cta = (
+                        (page_ctx.page_id if page_ctx else "").lower() == "master_mei"
                     )
-                    _cta_word_timings = _filter_audio_tag_timings(_cta_word_timings)
-                    _LOG.info("CTA voiceover generated | %s (%d chars)", _cta_path.name, len(_cta_text))
+                    if _is_mei_cta:
+                        # Credit optimization: synthesize CTA once, reuse cache.
+                        from avatar_engine.audio_engine import (
+                            default_cta_cache_path,
+                            ensure_cached_cta_voiceover,
+                        )
+                        import shutil as _shutil_cta
+
+                        _cache = ensure_cached_cta_voiceover(
+                            _cta_text,
+                            default_cta_cache_path(),
+                            voice_id=_voice_id or None,
+                            model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_v3",
+                            speed=_tts_speed,
+                            voice_settings=_tts_vs or None,
+                            expressive_mode=_tts_expressive,
+                        )
+                        if _cache is not None and Path(_cache).is_file():
+                            _shutil_cta.copy2(str(_cache), str(_cta_out))
+                            _cta_path = _cta_out
+                            # Approximate CTA subtitle window from clip duration
+                            try:
+                                from moviepy import AudioFileClip as _AFC_CTA
+                                with _AFC_CTA(str(_cta_path)) as _cta_afc:
+                                    _cta_dur_est = float(_cta_afc.duration or 3.0)
+                            except Exception:
+                                _cta_dur_est = 3.0
+                            _cta_words = _cta_text.split()
+                            if _cta_words:
+                                _slot = _cta_dur_est / max(1, len(_cta_words))
+                                _cta_word_timings = [
+                                    (w, i * _slot, (i + 1) * _slot)
+                                    for i, w in enumerate(_cta_words)
+                                ]
+                            _LOG.info(
+                                "CTA cache used | %s (%d chars) — ElevenLabs skip on hit",
+                                _cta_path.name, len(_cta_text),
+                            )
+                        else:
+                            raise RuntimeError("CTA cache unavailable")
+                    else:
+                        _cta_path, _cta_word_timings = generate_voiceover_with_timestamps(
+                            _cta_text,
+                            _cta_out,
+                            voice_id=_voice_id or None,
+                            model_id=page_ctx.elevenlabs_model if page_ctx else "eleven_v3",
+                            speed=_tts_speed,
+                            voice_settings=_tts_vs or None,
+                            expressive_mode=_tts_expressive,
+                        )
+                        _cta_word_timings = _filter_audio_tag_timings(_cta_word_timings)
+                        _LOG.info(
+                            "CTA voiceover generated | %s (%d chars)",
+                            _cta_path.name, len(_cta_text),
+                        )
                 except Exception as _cta_exc:  # noqa: BLE001
                     _LOG.warning("CTA voiceover failed (%s) — CTA will be omitted.", _cta_exc)
 
@@ -3002,15 +3414,25 @@ def _produce_variant_worker(
             #    After stitching, offset CTA word timings by (narration_dur + 1.0 s)
             #    and append to _word_timings so subtitles cover the whole track.
             if _voice_path is not None and _cta_path is not None:
-                # Capture narration duration before overwriting _voice_path.
+                # Capture narration duration from the REAL returned path
+                # (remote F5 may write .flac while _narration_out still says .mp3).
                 _narr_dur: float = 0.0
                 try:
-                    from moviepy import AudioFileClip as _AFC  # type: ignore[import]
-                    with _AFC(str(_narration_out)) as _afc:
-                        _narr_dur = float(_afc.duration)
+                    from avatar_engine.audio_engine import (  # noqa: PLC0415
+                        _audio_file_duration_s as _audio_dur_s,
+                    )
+                    _narr_dur = float(_audio_dur_s(Path(_voice_path)))
                 except Exception:
-                    # Fallback: last word-timing end timestamp
-                    _narr_dur = _word_timings[-1][2] if _word_timings else 0.0
+                    _narr_dur = 0.0
+                if _narr_dur <= 0.05 and _word_timings:
+                    _narr_dur = float(_word_timings[-1][2])
+                if _narr_dur <= 0.05:
+                    try:
+                        from moviepy import AudioFileClip as _AFC  # type: ignore[import]
+                        with _AFC(str(_narration_out)) as _afc:
+                            _narr_dur = float(_afc.duration or 0.0)
+                    except Exception:
+                        _narr_dur = 0.0
 
                 _stitched_out = _reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"
                 _voice_path = _stitch_audio_sequential(
@@ -3019,15 +3441,27 @@ def _produce_variant_worker(
 
                 # Append offset CTA timings → full transcription coverage.
                 _cta_offset = _narr_dur + 1.0   # 1.0 s silence gap
+                if not _cta_word_timings:
+                    try:
+                        from avatar_engine.audio_engine import (  # noqa: PLC0415
+                            _audio_file_duration_s as _audio_dur_s2,
+                            approximate_word_timings as _approx_wt,
+                        )
+                        _cta_dur_fill = float(_audio_dur_s2(Path(_cta_path)))
+                        _cta_word_timings = _approx_wt(_cta_text, _cta_dur_fill)
+                    except Exception:
+                        _cta_word_timings = []
                 _word_timings = _word_timings + [
                     (w, s + _cta_offset, e + _cta_offset)
                     for w, s, e in _cta_word_timings
                 ]
                 _LOG.info(
-                    "Subtitle coverage extended | narr=%.1fs + 1.0s + cta=%.1fs words (%d total tokens)",
+                    "Subtitle coverage extended | narr=%.1fs + 1.0s + cta=%.1fs words "
+                    "(%d total tokens) | cta_overlay_start=%.1fs",
                     _narr_dur,
                     _cta_word_timings[-1][2] if _cta_word_timings else 0.0,
                     len(_word_timings),
+                    _cta_offset,
                 )
             elif _voice_path is None:
                 _voice_path = None   # silence path stays None; reel renders without audio
@@ -3057,54 +3491,89 @@ def _produce_variant_worker(
                 sfx=bool(app_config.ELEVENLABS_API_KEY),
             )
 
-        # -- Dual-layer soundscape (Master Mei: Music v2 + Impact SFX) ----------
+        # -- Three-channel mix: VO + atmosphere SFX loop + music_v2 BGM --------
+        # Topology ported from master_mei; enabled via page USE_MUSIC_V2_BED.
+        # NO transient impact SFX — atmosphere drone + BGM bed only.
         _impact_sfx_path: "Path | None" = None
-        _target_dur = page_ctx.reel_duration if page_ctx else 80.0
+        _sfx_loop_path: "Path | None" = None
+        _target_dur = page_ctx.reel_duration if page_ctx else 105.0
         _is_mei = bool(page_ctx and (page_ctx.page_id or "").lower() == "master_mei")
-        if app_config.ELEVENLABS_API_KEY and _is_mei and getattr(page_ctx, "use_music_v2_bed", True):
+        _use_music_bed = bool(
+            app_config.ELEVENLABS_API_KEY
+            and page_ctx
+            and getattr(page_ctx, "use_music_v2_bed", False)
+        )
+        if _use_music_bed:
+            _music_min = 40.0
+            try:
+                _cfg = getattr(page_ctx, "page_cfg", None) or {}
+                _music_min = float(_cfg.get("MUSIC_V2_MIN_SECONDS", 40.0) or 40.0)
+            except Exception:
+                _music_min = 40.0
+            _music_style = (
+                page_ctx.ambient_music_style if page_ctx else ("warrior" if _is_mei else "mystery")
+            )
+            _music_dir = (
+                page_ctx.music_prompt_directive_path if page_ctx else None
+            )
             _music_bed, _impact_sfx_path = generate_master_mei_soundscape(
                 _reel_dir,
                 stem=f"{stem}_v{variant + 1:02d}",
-                duration_seconds=_target_dur,
+                duration_seconds=max(_music_min, float(_target_dur)),
+                include_impact_sfx=False,  # kill dual/secondary impact overlap
+                topic=str(resolved_subject or ""),
+                directive_path=_music_dir,
+                style_profile=_music_style,
             )
+            _impact_sfx_path = None  # hard disable regardless of return
             if _music_bed is not None:
                 _ambient_path = _music_bed
                 _LOG.info(
-                    "MASTER_MEI | Music v2 bed ready → %s | impact=%s",
+                    "%s | BGM music_v2 ready (≥%.0fs) → %s | style=%s",
+                    (page_ctx.page_id or "PAGE").upper(),
+                    _music_min,
                     Path(_music_bed).name,
-                    Path(_impact_sfx_path).name if _impact_sfx_path else "none",
+                    _music_style,
+                )
+            # Continuous 10s atmosphere tile → looped 100% of video
+            _sfx_out = _reel_dir / f"{stem}_v{variant + 1:02d}_atmosphere_sfx.mp3"
+            _sfx_prompt = page_ctx.ambient_sfx_prompt if page_ctx else ""
+            _sfx_loop_path = generate_ambient_track(
+                _sfx_out,
+                duration_seconds=10.0,
+                prompt=_sfx_prompt or None,
+            )
+            if _sfx_loop_path is not None:
+                _LOG.info(
+                    "%s | Atmosphere SFX 10s → %s (loop 100%%)",
+                    (page_ctx.page_id or "PAGE").upper(),
+                    Path(_sfx_loop_path).name,
                 )
         elif app_config.ELEVENLABS_API_KEY:
             _ambient_out = _reel_dir / f"{stem}_v{variant + 1:02d}_ambient.mp3"
             _sfx_prompt = page_ctx.ambient_sfx_prompt if page_ctx else ""
             _ambient_path = generate_ambient_track(
                 _ambient_out,
-                duration_seconds=_target_dur,
+                duration_seconds=min(12.0, float(_target_dur)),
                 prompt=_sfx_prompt or None,
             )
+            # Single-tile path: also feed as loopable SFX so mix hears it
+            if _ambient_path is not None and Path(_ambient_path).is_file():
+                _sfx_loop_path = Path(_ambient_path)
 
-        # -- Prefer page-local ambient loop when present on disk ──────────────
-        # ancient_knowledge → assets/audio/ambient_mystery_loop.mp3
-        # master_mei        → local pad ONLY if Music v2 bed missing
+        # -- Local ambient pad = FALLBACK only (never replace a generated bed) ─
         # NEVER prefer legacy rain/martial rain loops (hiss/clipping).
-        if page_ctx:
+        if page_ctx and (_ambient_path is None or not Path(_ambient_path).is_file()):
             _local_ambient = page_ctx.ambient_audio_path
             _ban_rain = ("rain", "martial_loop", "storm", "thunder", "hiss")
-            _mei_has_music = (
-                _is_mei
-                and _ambient_path is not None
-                and Path(_ambient_path).is_file()
-                and "music_v2" in Path(_ambient_path).name.lower()
-            )
             if (
-                not _mei_has_music
-                and _local_ambient is not None
+                _local_ambient is not None
                 and _local_ambient.is_file()
                 and not any(b in _local_ambient.name.lower() for b in _ban_rain)
             ):
                 _ambient_path = _local_ambient
                 _LOG.info(
-                    "%s | Using local ambient loop: %s",
+                    "%s | Using local ambient fallback: %s",
                     (page_ctx.page_id or "").upper(),
                     _local_ambient.name,
                 )
@@ -3122,7 +3591,10 @@ def _produce_variant_worker(
                 _legacy_mystery = app_config.ENGINE_ROOT / "assets" / "audio" / "ambient_mystery_loop.mp3"
                 if _legacy_mystery.is_file():
                     _ambient_path = _legacy_mystery
-                    _LOG.info("ANCIENT_KNOWLEDGE | Using local ambient mystery loop: %s", _legacy_mystery.name)
+                    _LOG.info(
+                        "ANCIENT_KNOWLEDGE | Local ambient mystery fallback: %s",
+                        _legacy_mystery.name,
+                    )
 
         # Force ambient to 48 kHz (light loudnorm) before MoviePy mix
         if _ambient_path is not None and Path(_ambient_path).is_file():
@@ -3176,7 +3648,7 @@ def _produce_variant_worker(
                 _styled_subs = False
                 if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
                     try:
-                        from pages_config.master_mei.system_config import (
+                        from channels_config.master_mei.system_config import (
                             is_cinematic_yellow_subtitles_enabled as _yel_on,
                             is_cyber_samurai_subtitles_enabled as _cyber_on,
                         )
@@ -3204,6 +3676,65 @@ def _produce_variant_worker(
                     if page_ctx and page_ctx.ambient_sfx_gain_mul is not None
                     else 1.0
                 )
+                _paced_act_durs = None
+                if page_ctx and not _is_mei and _sequence_image_paths:
+                    _timeline_s = float(_reel_dur or page_ctx.reel_duration or 80.0)
+                    if _voice_path is not None:
+                        try:
+                            from avatar_engine.audio_engine import (  # noqa: PLC0415
+                                _audio_file_duration_s as _voice_dur_s,
+                            )
+                            _vd = float(_voice_dur_s(Path(_voice_path)))
+                            if _vd > 1.0:
+                                _timeline_s = _vd + 1.0  # match audio-driven + tail pad
+                        except Exception:
+                            pass
+                    _n_imgs = len(_sequence_image_paths)
+                    _plan_ref = locals().get("_planned_scene_durs")
+                    if _plan_ref and len(_plan_ref) == _n_imgs:
+                        _paced_act_durs = _scale_scene_durations(_plan_ref, _timeline_s)
+                        _LOG.info(
+                            "ECONOMIC_REEL plan_scenes act_durs | %s → scaled %s",
+                            _describe_scene_plan(_plan_ref),
+                            _describe_scene_plan(_paced_act_durs),
+                        )
+                    elif page_ctx.uses_plan_scenes_pacing:
+                        # Image count drifted — keep curve shape, pad/trim, then scale.
+                        if _plan_ref:
+                            _base = list(_plan_ref)
+                            if len(_base) > _n_imgs:
+                                _base = _base[:_n_imgs]
+                            else:
+                                _pad = _base[-1] if _base else 5.0
+                                _base = _base + [_pad] * (_n_imgs - len(_base))
+                            _paced_act_durs = _scale_scene_durations(_base, _timeline_s)
+                        else:
+                            _paced_act_durs = _plan_scenes(
+                                _timeline_s,
+                                page_ctx.scene_duration,
+                                progressive_start_s=page_ctx.scene_progressive_start_s,
+                                progressive_step_every=page_ctx.scene_progressive_step_every,
+                                progressive_step_s=page_ctx.scene_progressive_step_s,
+                                progressive_cap_s=page_ctx.scene_progressive_cap_s,
+                                min_scenes=_n_imgs,
+                                max_scenes=_n_imgs,
+                            )
+                        _LOG.info(
+                            "ECONOMIC_REEL plan_scenes (aligned n=%d) | %s",
+                            _n_imgs,
+                            _describe_scene_plan(_paced_act_durs),
+                        )
+                    elif page_ctx.reel_use_hook_body_pacing:
+                        _paced_act_durs = _build_hook_body_act_durations(
+                            _n_imgs,
+                            _timeline_s,
+                            hook_hold_s=page_ctx.reel_hook_hold_s,
+                            body_hold_s=page_ctx.reel_body_hold_s,
+                        )
+                        _LOG.info(
+                            "ECONOMIC_REEL legacy hook/body act_durs | %s",
+                            _describe_scene_plan(_paced_act_durs),
+                        )
                 reel_path = _core_compile_sequence_reel(
                     _sequence_image_paths,
                     overlay_text,
@@ -3212,6 +3743,7 @@ def _produce_variant_worker(
                     output_path=_reel_target,
                     target_duration=_reel_dur,
                     act_duration_s=page_ctx.reel_act_duration if page_ctx else None,
+                    act_durations=_paced_act_durs,
                     word_timings=_word_timings or None,
                     font_path=_font_path_abs or None,
                     overlay_opacity=page_ctx.reel_overlay_opacity if page_ctx else 0.35,
@@ -3243,32 +3775,51 @@ def _produce_variant_worker(
                         locals().get("_cta_text", "") or "",
                         flags=_re.IGNORECASE,
                     ).strip(),
-                    cta_start_s=locals().get("_narr_dur", -1.0) + 1.0
-                    if locals().get("_narr_dur", -1.0) >= 0 else -1.0,
-                    ambient_volume=page_ctx.ambient_volume if page_ctx else None,
-                    impact_sfx_audio=_impact_sfx_path,
-                    impact_sfx_volume=(
-                        page_ctx.impact_sfx_volume
-                        if page_ctx and _is_mei
-                        else None
+                    # Outro-only: CTA text starts after narration + 1.0s silence.
+                    # Require a real narr duration (>0.5s) — a 0.0 fallback made
+                    # the overlay paint from t=1s for the entire reel.
+                    cta_start_s=(
+                        float(locals().get("_narr_dur", -1.0)) + 1.0
+                        if float(locals().get("_narr_dur", -1.0) or -1.0) > 0.5
+                        else -1.0
                     ),
-                    voice_volume_gain=_voice_gain,
+                    ambient_volume=(page_ctx.ambient_volume if page_ctx else None),
+                    sfx_loop_audio=_sfx_loop_path,
+                    sfx_loop_volume=(
+                        page_ctx.atmosphere_sfx_volume if page_ctx else 0.35
+                    ),
+                    sfx_fade_in_s=(
+                        page_ctx.atmosphere_sfx_fade_in if page_ctx else 0.2
+                    ),
+                    impact_sfx_audio=None if _use_music_bed else _impact_sfx_path,
+                    impact_sfx_volume=(0.0 if _use_music_bed else None),
+                    hook_max_s=(
+                        float((getattr(page_ctx, "page_cfg", None) or {}).get(
+                            "REEL_HOOK_MAX_S", 8.0
+                        ))
+                        if page_ctx and _is_mei
+                        else 0.0
+                    ),
+                    voice_volume_gain=(1.0 if _is_mei else _voice_gain),
                     ambient_gain_mul=_amb_mul,
                     ambient_duck_ratio=(
-                        page_ctx.ambient_duck_ratio
-                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
-                        else None
+                        page_ctx.ambient_duck_ratio if page_ctx else None
                     ),
                     ambient_duck_until_s=locals().get("_narr_dur", None),
                     master_audio_gain=(
                         page_ctx.master_audio_gain
-                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
+                        if page_ctx and _use_music_bed
                         else None
                     ),
                     ambient_profile=(
-                        "warrior"
-                        if page_ctx and (page_ctx.page_id or "").lower() == "master_mei"
-                        else "mystery"
+                        page_ctx.ambient_music_style
+                        if page_ctx
+                        else ("warrior" if _is_mei else "mystery")
+                    ),
+                    bgm_start_s=(page_ctx.bgm_start_time if page_ctx else 0.0),
+                    bgm_fade_in_s=(page_ctx.bgm_fade_in_duration if page_ctx else 0.0),
+                    sfx_volume_gain_db=(
+                        page_ctx.sfx_volume_gain_db if page_ctx else 0.0
                     ),
                     tail_pad_s=page_ctx.reel_tail_pad_s if page_ctx else 1.0,
                     force_exact_duration=(
@@ -3304,16 +3855,33 @@ def _produce_variant_worker(
                 )
             _LOG.info("ECONOMIC_REEL compiled → %s", reel_path.name)
             video_path_str = str(reel_path)
-            print(f"[reel] Video compiled → {reel_path}")
+            print(f"[reel] Video compiled -> {reel_path}")
             _img_n = (
                 len(_sequence_image_paths)
                 if _sequence_image_paths
                 else max(1, int(_images_generated_this_variant or 1))
             )
+            _batch_so_far = int(_img_n)
+            _lock = batch_image_lock or write_lock
+            if batch_image_counter is not None:
+                with _lock:
+                    batch_image_counter[0] = int(batch_image_counter[0]) + int(_img_n)
+                    _batch_so_far = int(batch_image_counter[0])
+            _reel_cost = 0.003 * max(0, int(_img_n))
+            if cost_tracker is not None:
+                try:
+                    # Prefer image-generation slice attributed to this reel's count
+                    _reel_cost = max(_reel_cost, 0.003 * max(0, int(_img_n)))
+                except Exception:  # noqa: BLE001
+                    pass
             _print_video_cost_summary(
                 cost_tracker,
                 image_count=_img_n,
                 image_model_label="FLUX Schnell",
+                variant_index=variant + 1,
+                total_variants=qty,
+                batch_images_so_far=_batch_so_far,
+                reel_cost_usd=_reel_cost,
             )
 
             # ── PHASE E1: Backblaze B2 upload ────────────────────────────────
@@ -3658,6 +4226,7 @@ def produce(
     cta_enabled: bool = True,
     post_type: str = "STANDARD_QUOTE",
     image_style: str = "NATURAL",
+    render_approval_required: bool = False,
 ) -> dict[str, Any]:
     qty = max(1, quantity)
     economic = economic_brain_mode if economic_brain_mode is not None else app_config.ECONOMIC_BRAIN_MODE
@@ -4037,6 +4606,8 @@ def produce(
         _LOG.warning("Could not load hooks cache (%s) — starting fresh.", _hce)
         generated_hooks_cache = []
     hooks_cache_lock = threading.Lock()
+    batch_image_counter: list[int] = [0]
+    batch_image_lock = threading.Lock()
 
     _wkw: dict[str, Any] = dict(
         qty=qty,
@@ -4071,6 +4642,9 @@ def produce(
         generated_hooks_cache=generated_hooks_cache,
         hooks_cache_lock=hooks_cache_lock,
         hooks_cache_path=_hooks_cache_path,
+        batch_image_counter=batch_image_counter,
+        batch_image_lock=batch_image_lock,
+        render_approval_required=bool(render_approval_required),
     )
 
     # ── Instantiate CostTracker — one per run, shared across workers ──────────
@@ -4237,12 +4811,34 @@ def run_test_images_debug_mode(
         else page_ctx.atmosphere_style.rstrip(" .")
     )
 
-    seq_n = _compute_dense_act_count(
-        page_ctx.reel_duration,
-        seconds_per_act=page_ctx.reel_seconds_per_act,
-        min_acts=page_ctx.reel_image_min_count,
-        max_acts=page_ctx.reel_image_count,
-    )
+    if page_ctx.uses_plan_scenes_pacing:
+        seq_n = len(
+            _plan_scenes(
+                page_ctx.reel_duration,
+                page_ctx.scene_duration,
+                progressive_start_s=page_ctx.scene_progressive_start_s,
+                progressive_step_every=page_ctx.scene_progressive_step_every,
+                progressive_step_s=page_ctx.scene_progressive_step_s,
+                progressive_cap_s=page_ctx.scene_progressive_cap_s,
+                min_scenes=page_ctx.reel_image_min_count,
+                max_scenes=page_ctx.reel_image_count,
+            )
+        )
+    elif page_ctx.reel_use_hook_body_pacing:
+        seq_n = _compute_hook_body_act_count(
+            page_ctx.reel_duration,
+            hook_hold_s=page_ctx.reel_hook_hold_s,
+            body_hold_s=page_ctx.reel_body_hold_s,
+            min_acts=page_ctx.reel_image_min_count,
+            max_acts=page_ctx.reel_image_count,
+        )
+    else:
+        seq_n = _compute_dense_act_count(
+            page_ctx.reel_duration,
+            seconds_per_act=page_ctx.reel_seconds_per_act,
+            min_acts=page_ctx.reel_image_min_count,
+            max_acts=page_ctx.reel_image_count,
+        )
     n = min(n, seq_n)
 
     print("\n" + "=" * 60)
@@ -4384,7 +4980,8 @@ def run_test_images_debug_mode(
         log=True,
     )
     img_model_id = app_config.normalize_image_model_id(_img_route.model_id)
-    adapter = GeminiImageAdapter(
+    # Routes to RemoteGPUImageAdapter when ENABLE_REMOTE_GPU_WORKFLOWS=true
+    adapter = get_image_adapter(
         model_id=img_model_id, page_cost_tier=_page_cost, tier=_img_route.tier,
     )
 
@@ -4396,7 +4993,7 @@ def run_test_images_debug_mode(
         f"{[p.name for p in style_refs]} | weight={style_weight}"
     )
     if is_mm:
-        print(f"[DEBUG] Draft output dir → {out_dir}")
+        print(f"[DEBUG] Draft output dir -> {out_dir}")
 
     jobs: "dict[int, Any]" = {}
     for idx, p in enumerate(test_prompts):
@@ -4434,7 +5031,7 @@ def run_test_images_debug_mode(
         if isinstance(res, Exception):
             print(f"[DEBUG] Image {idx + 1}/{n} FAILED: {res}")
         else:
-            print(f"[DEBUG] Image {idx + 1}/{n} OK → {res}")
+            print(f"[DEBUG] Image {idx + 1}/{n} OK -> {res}")
             ok += 1
 
     print(
@@ -4534,6 +5131,8 @@ def cli() -> None:
             "SMART_BAIT",
             "LONG_CAPTION_IMAGE",
             "ECONOMIC_REEL",
+            "ECONOMIC_REEL_LOFI",
+            "WAN_REEL",
             "CAROUSEL",
             "REFERENCE_BASED_REELS",
         ],
@@ -4547,10 +5146,61 @@ def cli() -> None:
             "ECONOMIC_REEL: graphite image base (same pipeline as SMART_BAIT) compiled into a "
             "vertical 9:16 MP4 reel with ElevenLabs TTS voiceover, dark ambient soundscape, "
             "and cinematic Ken Burns zoom-in. Outputs .mp4 + durable JSON. "
+            "ECONOMIC_REEL_LOFI: separate LOFI pipeline (Flux Schnell, no LoRA) — multi-scene "
+            "ink/graphic-novel stills, duotone grade, Ken Burns, channel watermark. "
+            "Uses --duration (30–38) and --module (relationship|parenting). "
+            "Does NOT share state with ECONOMIC_REEL. "
+            "WAN_REEL: Flux LoRA stills → Wan2.2 img2vid at fixed scene_duration "
+            "(default fixed:7) → concat → F5 narration. Use scripts/run_wan_reel_test.py "
+            "for the first cost/quality test render (no publish). "
             "CAROUSEL: generates 3 visually cohesive images (slide_01..03) with distinct "
             "scene viewpoints for a 3-part visual narrative post. "
             "REFERENCE_BASED_REELS: extract a raw-footage clip, overlay an LLM hook text, "
             "blend lullaby ambient audio — no image generation. Designed for momma_circle."
+        ),
+    )
+    parser.add_argument(
+        "--duration",
+        dest="duration",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "ECONOMIC_REEL_LOFI only: target reel length in seconds (30–38, default 34). "
+            "Scene count = round(duration / 4)."
+        ),
+    )
+    parser.add_argument(
+        "--module",
+        dest="module",
+        default=None,
+        choices=["relationship", "parenting"],
+        metavar="MODULE",
+        help=(
+            "ECONOMIC_REEL_LOFI only: RAG theme namespace. "
+            "relationship (default) for wonder_feed + momma_circle; "
+            "parenting only for momma_circle."
+        ),
+    )
+    parser.add_argument(
+        "--test-preview",
+        dest="test_preview",
+        action="store_true",
+        default=False,
+        help=(
+            "ECONOMIC_REEL_LOFI only: single-image aesthetic review (Flux Schnell + "
+            "production grading + LOFI caption typography + watermark). "
+            "Does NOT run script/validator/video/publish and does NOT write RAG history."
+        ),
+    )
+    parser.add_argument(
+        "--prompt",
+        dest="prompt",
+        default=None,
+        metavar="TEXT",
+        help=(
+            "ECONOMIC_REEL_LOFI --test-preview: optional custom scene description. "
+            "If omitted, a fixed seed-aligned baseline prompt is used."
         ),
     )
     parser.add_argument(
@@ -4650,6 +5300,19 @@ def cli() -> None:
         ),
     )
     parser.add_argument(
+        "--render-approval-required",
+        dest="render_approval_required",
+        action="store_true",
+        default=False,
+        help=(
+            "After scene images are saved to "
+            "outputs/<page>/assets/<episode_id>/ as scene_01.png, … "
+            "pause the pipeline, print that episode assets path, and wait "
+            "for [ENTER] before audio/video compilation. Use Ctrl+C to abort. "
+            "Default: off (continue automatically)."
+        ),
+    )
+    parser.add_argument(
         "--test-images",
         dest="test_images",
         type=int,
@@ -4677,7 +5340,115 @@ def cli() -> None:
             "Exits after resuming — does not generate new content."
         ),
     )
+    from model_api_flows import list_preset_names as _list_flow_presets
+
+    parser.add_argument(
+        "--model-api-flow",
+        dest="model_api_flow",
+        type=str,
+        default=None,
+        metavar="PRESET",
+        help=(
+            "Select a model_api_flows preset (provider/infra per media type). "
+            "Always overrides .env ENABLE_REMOTE_GPU_WORKFLOWS in either direction. "
+            f"Presets: {', '.join(_list_flow_presets())}."
+        ),
+    )
+    parser.add_argument(
+        "--img-production",
+        dest="img_production",
+        type=str,
+        default=None,
+        metavar="PROVIDER[/MODEL]",
+        help=(
+            "Per-media image override (wins over --model-api-flow for image only). "
+            "Examples: together/black-forest-labs/FLUX.1-schnell | remote_gpu | "
+            "remote_gpu/flux_dev_lora_txt_to_img.json"
+        ),
+    )
+    parser.add_argument(
+        "--audio-production",
+        dest="audio_production",
+        type=str,
+        default=None,
+        metavar="PROVIDER",
+        help=(
+            "Per-media audio override (wins over --model-api-flow for audio only). "
+            "Examples: elevenlabs | remote_gpu | remote_gpu/F5TTS_txt_to_audio.json"
+        ),
+    )
+    parser.add_argument(
+        "--video-production",
+        dest="video_production",
+        type=str,
+        default=None,
+        metavar="PROVIDER",
+        help=(
+            "Per-media video override (wins over --model-api-flow for video only). "
+            "Examples: moviepy | remote_gpu | remote_gpu/wan2_2_img_to_video.json"
+        ),
+    )
+    parser.add_argument(
+        "--video-length",
+        dest="video_length",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Target reel duration in seconds for the shared scene pacing engine "
+            "(plan_scenes). Wins over channels_config REEL_DURATION. "
+            "Each channel/post_type supplies its own default when omitted "
+            "(e.g. ancient_knowledge ~80)."
+        ),
+    )
+    parser.add_argument(
+        "--scene-duration",
+        dest="scene_duration",
+        type=str,
+        default=None,
+        metavar="SPEC",
+        help=(
+            "Scene pacing spec for plan_scenes (CLI > channel > factory equal). "
+            "Forms: fixed:4 | progressive | "
+            "progressive:start=4,step_every=3,step=1,cap=7.5 | equal"
+        ),
+    )
     args = parser.parse_args()
+
+    # ── model_api_flows: resolve + apply before any generation ──────────────
+    # Precedence: per-media flags > --model-api-flow > .env default.
+    from model_api_flows import (
+        apply_production_flow as _apply_flow,
+        bootstrap_validate_all_presets as _validate_flow_presets,
+        resolve_production_flow as _resolve_flow,
+    )
+
+    try:
+        _validate_flow_presets()
+        _flow_explicit = any(
+            [
+                getattr(args, "model_api_flow", None),
+                getattr(args, "img_production", None),
+                getattr(args, "audio_production", None),
+                getattr(args, "video_production", None),
+            ]
+        )
+        _resolved_flow = _resolve_flow(
+            preset_name=getattr(args, "model_api_flow", None),
+            img_production=getattr(args, "img_production", None),
+            audio_production=getattr(args, "audio_production", None),
+            video_production=getattr(args, "video_production", None),
+        )
+        _apply_flow(_resolved_flow, explicit=_flow_explicit)
+        args.resolved_model_api_flow = _resolved_flow
+        # Fail fast: ElevenLabs Key ID masquerading as secret (api_key_id_used_as_api_key)
+        if getattr(_resolved_flow.audio, "provider", "") == "elevenlabs":
+            try:
+                app_config.assert_elevenlabs_api_key_usable()
+            except RuntimeError as _el_exc:
+                raise SystemExit(f"[elevenlabs] {_el_exc}") from _el_exc
+    except (ValueError, FileNotFoundError) as _flow_exc:
+        raise SystemExit(f"[model_api_flows] {_flow_exc}") from _flow_exc
 
     if args.resume_youtube_queue:
         _explicit_page = any(a == "--page" or a.startswith("--page=") for a in sys.argv[1:])
@@ -4699,6 +5470,9 @@ def cli() -> None:
         if _wf_pt == "ECONOMIC_REEL":
             # Force post_format so resolve_default_format() cannot assign IMAGE_AVATAR
             args.post_format = "DYNAMIC_REEL"
+        if _wf_pt == "ECONOMIC_REEL_LOFI":
+            args.post_format = "DYNAMIC_REEL"
+            args.draw_style = "SKETCH"
 
     # ── ANCIENT_KNOWLEDGE STYLE & FORMAT LOCK ──────────────────────────────
     # photorealistic images only — sketch pipeline is OFF.
@@ -4722,11 +5496,16 @@ def cli() -> None:
             args.avatar = "ON"
 
     # ── MOMMA_CIRCLE FORMAT LOCK ────────────────────────────────────────────
-    # Reference-based pipeline: always REFERENCE_BASED_REELS; no Gemini image generation.
+    # Reference-based pipeline by default; ECONOMIC_REEL_LOFI is an explicit escape hatch.
     if getattr(args, "page", "").lower() == "momma_circle":
-        args.post_type   = "REFERENCE_BASED_REELS"
-        args.post_format = "REFERENCE_BASED_REELS"
-        args.draw_style  = "NATURAL"
+        _mc_pt = getattr(args, "post_type", "").upper()
+        if _mc_pt == "ECONOMIC_REEL_LOFI":
+            args.post_format = "DYNAMIC_REEL"
+            args.draw_style = "SKETCH"
+        else:
+            args.post_type = "REFERENCE_BASED_REELS"
+            args.post_format = "REFERENCE_BASED_REELS"
+            args.draw_style = "NATURAL"
 
     if args.economic and args.premium:
         raise SystemExit("Choose either --economic or --premium-relay, not both.")
@@ -4740,8 +5519,17 @@ def cli() -> None:
     # Load page config to read per-page defaults.
     _tmp_page_cfg: dict = {}
     try:
-        from page_loader import _load_page_config, _PAGES_CONFIG_ROOT
-        _tmp_page_cfg = _load_page_config(_PAGES_CONFIG_ROOT / page_id, page_id)
+        from page_loader import (  # noqa: PLC0415
+            _CHANNELS_CONFIG_ROOT,
+            _LEGACY_PAGES_CONFIG_ROOT,
+            _load_page_config,
+        )
+        _cfg_dir = _CHANNELS_CONFIG_ROOT / page_id
+        if not _cfg_dir.is_dir():
+            _legacy = _LEGACY_PAGES_CONFIG_ROOT / page_id
+            if _legacy.is_dir():
+                _cfg_dir = _legacy
+        _tmp_page_cfg = _load_page_config(_cfg_dir, page_id)
     except Exception:  # noqa: BLE001
         pass
 
@@ -4760,6 +5548,10 @@ def cli() -> None:
     # display and any format-sensitive guards all see the correct type.
     if getattr(args, "post_type", "").upper() == "ECONOMIC_REEL":
         post_format = "DYNAMIC_REEL"
+    if getattr(args, "post_type", "").upper() == "ECONOMIC_REEL_LOFI":
+        post_format = "DYNAMIC_REEL"
+    if getattr(args, "post_type", "").upper() == "WAN_REEL":
+        post_format = "DYNAMIC_REEL"
     # REFERENCE_BASED_REELS uses its own engine path — keep the format as-is.
     if getattr(args, "post_type", "").upper() == "REFERENCE_BASED_REELS":
         post_format = "REFERENCE_BASED_REELS"
@@ -4768,6 +5560,21 @@ def cli() -> None:
         page_ctx = load_page_context(page_id, avatar_mode=avatar_mode, post_format=post_format)
     except ValueError as ve:
         raise SystemExit(str(ve)) from ve
+
+    # Scene pacing overrides — CLI > channels_config > factory default.
+    if getattr(args, "video_length", None) is not None:
+        page_ctx.page_cfg["VIDEO_LENGTH_OVERRIDE"] = float(args.video_length)
+        page_ctx.page_cfg["REEL_DURATION"] = float(args.video_length)
+        print(
+            f"[bootstrap] video_length={float(args.video_length):.0f}s "
+            "(CLI override → plan_scenes)"
+        )
+    if getattr(args, "scene_duration", None):
+        page_ctx.page_cfg["SCENE_DURATION"] = str(args.scene_duration).strip()
+        print(
+            f"[bootstrap] scene_duration={page_ctx.page_cfg['SCENE_DURATION']!r} "
+            "(CLI override → plan_scenes)"
+        )
 
     economic_choice: bool | None
     if args.premium:
@@ -4822,6 +5629,12 @@ def cli() -> None:
         "=== ENGINE RUN BEGIN | page=%s | avatar=%s | format=%s | log=%s | ts=%s ===",
         page_id, avatar_mode, post_format, log_path, ts_token,
     )
+    _flow_for_log = getattr(args, "resolved_model_api_flow", None)
+    if _flow_for_log is not None:
+        logging.getLogger(__name__).info(
+            "MODEL_API_FLOW | %s", _flow_for_log.summary_line(),
+        )
+        print(f"[bootstrap] MODEL_API_FLOW | {_flow_for_log.summary_line()}")
 
     print(f"[bootstrap] Detailed run log: {log_path}")
 
@@ -4840,6 +5653,115 @@ def cli() -> None:
         args.draw_style = "SKETCH"
 
     envelope: dict[str, Any] | None = None
+
+    # ── ECONOMIC_REEL_LOFI early dispatch (isolated from ECONOMIC_REEL) ───
+    if _active_post_type == "ECONOMIC_REEL_LOFI":
+        # Aesthetic still review — never enters production / publish path.
+        if getattr(args, "test_preview", False):
+            try:
+                from core_engine.economic_reel_lofi.test_preview import (
+                    run_lofi_test_preview,
+                )
+
+                _preview = run_lofi_test_preview(
+                    page_id=page_id,
+                    prompt=getattr(args, "prompt", None),
+                )
+                print(f"\n[ECONOMIC_REEL_LOFI test-preview] {_preview.get('output_png')}")
+            except Exception as prev_exc:  # noqa: BLE001
+                if isinstance(prev_exc, KeyboardInterrupt):
+                    raise
+                _LOG.error("LOFI test-preview failed: %s", prev_exc, exc_info=True)
+                print(
+                    f"[ECONOMIC_REEL_LOFI test-preview] ERROR: "
+                    f"{type(prev_exc).__name__}: {prev_exc}"
+                )
+                sys.exit(1)
+            return
+
+        try:
+            import core_engine.economic_reel_lofi  # noqa: F401 — registers runner
+            from core_engine.post_type_registry import get_post_type_runner
+
+            _lofi_runner = get_post_type_runner("ECONOMIC_REEL_LOFI")
+            if _lofi_runner is None:
+                raise SystemExit(
+                    "ECONOMIC_REEL_LOFI runner missing from POST_TYPE_REGISTRY"
+                )
+            _lofi_module = getattr(args, "module", None) or "relationship"
+            _lofi_duration = getattr(args, "duration", None)
+            envelope = _lofi_runner(
+                page_id=page_id,
+                quantity=args.quantity,
+                duration=_lofi_duration,
+                module=_lofi_module,
+                # Reuse existing per-page tree: outputs/<page>/{clips,assets}/
+                outputs_dir=page_ctx.outputs_dir,
+            )
+        except Exception as lofi_exc:  # noqa: BLE001
+            if isinstance(lofi_exc, KeyboardInterrupt):
+                raise
+            _LOG.error("ECONOMIC_REEL_LOFI failed: %s", lofi_exc, exc_info=True)
+            print(f"[ECONOMIC_REEL_LOFI] ERROR: {type(lofi_exc).__name__}: {lofi_exc}")
+            sys.exit(1)
+
+        if envelope:
+            print(
+                f"\n[ECONOMIC_REEL_LOFI] Completed "
+                f"{envelope.get('successful', 0)}/{args.quantity} reel(s)."
+            )
+            for _it in envelope.get("items") or []:
+                if _it.get("video_path"):
+                    print(f"  Video : {_it['video_path']}")
+                if _it.get("meta_path"):
+                    print(f"  Meta  : {_it['meta_path']}")
+        return
+
+    # ── WAN_REEL early dispatch (test render — no publish) ────────────────
+    # Flux LoRA stills → Wan2.2 @ fixed scene_duration → concat → F5 VO.
+    if _active_post_type == "WAN_REEL":
+        try:
+            from core_engine.wan_reel_engine import run_wan_reel_test
+
+            _wan_len = float(
+                getattr(args, "video_length", None)
+                or page_ctx.page_cfg.get("WAN_REEL_DURATION", 70)
+                or 70
+            )
+            _wan_scene = str(
+                getattr(args, "scene_duration", None)
+                or page_ctx.page_cfg.get("WAN_SCENE_DURATION", "fixed:7")
+                or "fixed:7"
+            ).strip()
+            if not _wan_scene.lower().startswith("fixed:"):
+                raise SystemExit(
+                    "WAN_REEL requires --scene-duration fixed:N "
+                    f"(got {_wan_scene!r}). Progressive is ECONOMIC_REEL-only."
+                )
+            _wan_topic = (topic_raw or "").strip() or (
+                "Göbekli Tepe — the 12,000-year-old temple that rewrote human history"
+            )
+            _wan_report = run_wan_reel_test(
+                _wan_topic,
+                page_id=page_id,
+                video_length_s=_wan_len,
+                scene_duration=_wan_scene,
+                max_scenes=None,
+            )
+            print(f"\n[WAN_REEL] Output : {_wan_report.output_mp4}")
+            print(
+                f"[WAN_REEL] GPU    : {_wan_report.total_gpu_seconds:.1f}s "
+                f"(≈ ${_wan_report.total_gpu_usd:.4f}) | "
+                f"Together Wan2.7 ref @ $0.10/s × {_wan_report.video_length_s:.0f}s "
+                f"= ${_wan_report.together_wan27_usd_at_0_10_per_s:.2f}"
+            )
+        except Exception as wan_exc:  # noqa: BLE001
+            if isinstance(wan_exc, KeyboardInterrupt):
+                raise
+            _LOG.error("WAN_REEL failed: %s", wan_exc, exc_info=True)
+            print(f"[WAN_REEL] ERROR: {type(wan_exc).__name__}: {wan_exc}")
+            sys.exit(1)
+        return
 
     # ── REFERENCE_BASED_REELS early dispatch ──────────────────────────────
     # Bypasses the full Gemini-image produce() pipeline — uses raw footage clips.
@@ -4893,6 +5815,9 @@ def cli() -> None:
             cta_enabled=(args.cta.upper() != "OFF"),
             post_type=args.post_type.upper(),
             image_style=args.draw_style.upper(),
+            render_approval_required=bool(
+                getattr(args, "render_approval_required", False)
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         if isinstance(exc, KeyboardInterrupt):
