@@ -32,6 +32,9 @@ def generate_scene_image(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     prompt = build_scene_prompt(visual_prompt)
+    print(f"[LOFI image_gen] STYLE_PREFIX={lofi_cfg.LOFI_STYLE_PREFIX!r}")
+    print(f"[LOFI image_gen] full_prompt_len={len(prompt)}")
+    _LOG.info("LOFI STYLE_PREFIX | %s", lofi_cfg.LOFI_STYLE_PREFIX)
     gen = TogetherImageGenerator(model=FLUX_SCHNELL_MODEL)
     # No LoRA kwargs — economic LOFI tier is base Schnell only.
     gen.generate_image(

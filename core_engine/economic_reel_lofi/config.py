@@ -29,16 +29,21 @@ VALID_PAGES: frozenset[str] = frozenset({"momma_circle", "wonder_feed"})
 
 # Fixed Flux style prefix — ink / graphic-novel LOFI look (no LoRA).
 LOFI_STYLE_PREFIX: str = (
-    "ink and graphic-novel illustration, consistent line weight, "
-    "halftone shading, limited duotone palette charcoal and muted teal, "
-    "clean silhouette shapes, emotional storytelling frame, "
-    "vertical 9:16 composition, no photorealism, no text, no watermark, no logo"
+    "hand-inked graphic novel illustration, visible dark ink linework and contour lines, "
+    "halftone dot shading in shadow areas, visible textured paper grain, "
+    "warm amber highlight light source against cool teal shadow tones, "
+    "detailed character rendering (hair strands, clothing fabric folds, posture), "
+    "detailed environment texture (grass blades, clouds, distant birds or structures), "
+    "illustrated comic-panel style, vertical 9:16 composition — "
+    "explicitly NOT photographic, NOT smooth vector, NOT flat gradient background, "
+    "NOT monochromatic, no text, no watermark, no logo"
 )
 
 LOFI_NEGATIVE_PROMPT: str = (
-    "photorealistic, photograph, 3d render, cgi, text, watermark, logo, "
-    "typography, subtitles, ui, deformed hands, extra fingers, garbled text, "
-    "nsfw, nude, explicit"
+    "photorealistic, photograph, 3d render, cgi, smooth vector art, flat color fill, "
+    "flat gradient sky, monochromatic, grayscale, silhouette only, no linework, "
+    "text, watermark, logo, typography, subtitles, ui, deformed hands, extra fingers, "
+    "garbled text, nsfw, nude, explicit"
 )
 
 # ── Video canvas ────────────────────────────────────────────────────────────
@@ -47,10 +52,13 @@ REEL_HEIGHT: int = 1920
 REEL_FPS: int = 30
 KEN_BURNS_ZOOM_START: float = 1.00
 KEN_BURNS_ZOOM_END: float = 1.12
-DUOTONE_SHADOW: tuple[int, int, int] = (18, 28, 42)       # deep charcoal-blue
-DUOTONE_HIGHLIGHT: tuple[int, int, int] = (196, 214, 214)  # muted teal-cream
+DUOTONE_SHADOW: tuple[int, int, int] = (20, 45, 55)       # cool teal-dark
+DUOTONE_HIGHLIGHT: tuple[int, int, int] = (245, 175, 100)  # warm amber
 GRAIN_INTENSITY: float = 0.035
 VIGNETTE_STRENGTH: float = 0.42
+
+# Text-handle watermark height as fraction of frame (was 0.028 → ~33% smaller).
+WATERMARK_SIZE_FRAC: float = 0.018
 
 # ── Per-channel watermark / brand ───────────────────────────────────────────
 CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
@@ -63,7 +71,7 @@ CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
         "watermark_handle": "@Momma Circle",
         "logo_position": "bottom_center",
         "logo_opacity": 0.55,
-        "logo_scale": 0.06,
+        "logo_scale": 0.04,  # was 0.06 (~33% smaller)
         "caption_color": (255, 255, 255),
         "use_text_watermark": True,
     },
@@ -75,7 +83,7 @@ CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
         "watermark_handle": "@Wonder Feed",
         "logo_position": "bottom_center",
         "logo_opacity": 0.55,
-        "logo_scale": 0.06,
+        "logo_scale": 0.04,  # was 0.06 (~33% smaller)
         "caption_color": (255, 255, 255),
         "use_text_watermark": True,
     },

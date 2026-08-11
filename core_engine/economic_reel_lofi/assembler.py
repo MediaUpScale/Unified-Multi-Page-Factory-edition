@@ -90,6 +90,18 @@ def grade_still_frame(
 
     Shared by ``test_preview`` and the video assembler so approved stills match ship.
     """
+    print(
+        "[LOFI grade] apply_duotone ACTIVE | "
+        f"shadow={tuple(lofi_cfg.DUOTONE_SHADOW)} "
+        f"highlight={tuple(lofi_cfg.DUOTONE_HIGHLIGHT)} "
+        f"source={image_path}"
+    )
+    _LOG.info(
+        "LOFI grade_still_frame | duotone shadow=%s highlight=%s | %s",
+        lofi_cfg.DUOTONE_SHADOW,
+        lofi_cfg.DUOTONE_HIGHLIGHT,
+        image_path,
+    )
     return apply_film_grain(prep_base_frame(image_path), seed=grain_seed, t=0.5)
 
 
