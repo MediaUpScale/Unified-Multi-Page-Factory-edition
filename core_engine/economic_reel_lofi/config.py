@@ -2,6 +2,7 @@
 """ECONOMIC_REEL_LOFI — duration, style, and per-channel assembly config."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -27,17 +28,52 @@ MODULE_PAGE_GATES: dict[str, frozenset[str]] = {
 }
 VALID_PAGES: frozenset[str] = frozenset({"momma_circle", "wonder_feed"})
 
-# Fixed Flux style prefix — ink / graphic-novel LOFI look (no LoRA).
-LOFI_STYLE_PREFIX: str = (
-    "hand-inked graphic novel illustration, visible dark ink linework and contour lines, "
-    "halftone dot shading in shadow areas, visible textured paper grain, "
-    "warm amber highlight light source against cool teal shadow tones, "
-    "detailed character rendering (hair strands, clothing fabric folds, posture), "
-    "detailed environment texture (grass blades, clouds, distant birds or structures), "
-    "illustrated comic-panel style, vertical 9:16 composition — "
-    "explicitly NOT photographic, NOT smooth vector, NOT flat gradient background, "
-    "NOT monochromatic, no text, no watermark, no logo"
+# Fixed Flux style base — short, positive, CLIP-front-loaded (BFL ~30-80 word band).
+# Lighting is swapped per scene via LIGHTING_MOODS (not hard-coded warm amber).
+# Negations live in LOFI_NEGATIVE_PROMPT only (separate Together field).
+LOFI_STYLE_BASE: str = (
+    "ink illustration, halftone shading, hand-drawn linework, "
+    "textured paper grain, graphic novel style"
 )
+
+# Per-scene lighting / mood rotation + matching grading duotone pairs.
+# Keep each lighting phrase short so base+lighting+scene stays under ~300 chars.
+LIGHTING_MOODS: tuple[dict[str, Any], ...] = (
+    {
+        "id": "amber_dusk",
+        "lighting": "warm amber dusk light",
+        # Teal shadows, amber highlights
+        "shadow": (28, 72, 88),
+        "highlight": (250, 185, 105),
+    },
+    {
+        "id": "moonlit",
+        "lighting": "cool blue moonlit night",
+        "shadow": (18, 32, 78),
+        "highlight": (190, 210, 235),
+    },
+    {
+        "id": "overcast",
+        "lighting": "overcast grey morning light",
+        "shadow": (42, 48, 58),
+        "highlight": (220, 218, 210),
+    },
+    {
+        "id": "golden_hour",
+        "lighting": "golden hour warm backlight",
+        "shadow": (55, 42, 62),
+        "highlight": (255, 205, 95),
+    },
+    {
+        "id": "indigo_night",
+        "lighting": "deep indigo night sky",
+        "shadow": (16, 18, 58),
+        "highlight": (165, 175, 225),
+    },
+)
+
+# Backward-compat alias: base + first mood lighting (not used for generation).
+LOFI_STYLE_PREFIX: str = f"{LOFI_STYLE_BASE}, {LIGHTING_MOODS[0]['lighting']}"
 
 LOFI_NEGATIVE_PROMPT: str = (
     "photorealistic, photograph, 3d render, cgi, smooth vector art, flat color fill, "
@@ -52,13 +88,18 @@ REEL_HEIGHT: int = 1920
 REEL_FPS: int = 30
 KEN_BURNS_ZOOM_START: float = 1.00
 KEN_BURNS_ZOOM_END: float = 1.12
-DUOTONE_SHADOW: tuple[int, int, int] = (20, 45, 55)       # cool teal-dark
-DUOTONE_HIGHLIGHT: tuple[int, int, int] = (245, 175, 100)  # warm amber
+# Defaults = amber_dusk pair (overridden per-scene via mood)
+DUOTONE_SHADOW: tuple[int, int, int] = (28, 72, 88)
+DUOTONE_HIGHLIGHT: tuple[int, int, int] = (250, 185, 105)
 GRAIN_INTENSITY: float = 0.035
 VIGNETTE_STRENGTH: float = 0.42
 
 # Text-handle watermark height as fraction of frame (was 0.028 → ~33% smaller).
 WATERMARK_SIZE_FRAC: float = 0.018
+
+# Caption typography style keys (see caption_style_lofi.py)
+DEFAULT_CAPTION_STYLE: str = "rounded_hand"  # Comic Sans MS Bold
+CAPTION_STYLES: frozenset[str] = frozenset({"rounded_hand", "lora_italic"})
 
 # ── Per-channel watermark / brand ───────────────────────────────────────────
 CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
@@ -67,7 +108,7 @@ CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
             "assets/logos/momma_circle_watermark.png",
             "channels_config/momma_circle/logo/logo.png",
         ],
-        # Text watermark (Lora Italic) — preferred for LOFI cohesion vs PNG logo
+        # Text watermark — preferred for LOFI cohesion vs PNG logo
         "watermark_handle": "@Momma Circle",
         "logo_position": "bottom_center",
         "logo_opacity": 0.55,
@@ -77,21 +118,62 @@ CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
     },
     "wonder_feed": {
         "logo_candidates": [
-            "assets/logos/wonder_feed_watermark.png",
             "channels_config/wonder_feed/logo/logo.png",
+            "assets/logos/wonder_feed_watermark.png",
         ],
         "watermark_handle": "@Wonder Feed",
         "logo_position": "bottom_center",
         "logo_opacity": 0.55,
         "logo_scale": 0.04,  # was 0.06 (~33% smaller)
         "caption_color": (255, 255, 255),
-        "use_text_watermark": True,
+        # Use channel PNG logo on LOFI stills/reels (not text handle).
+        "use_text_watermark": False,
     },
 }
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 DATA_DIR = _PACKAGE_DIR / "data"
 STORE_DIR = _PACKAGE_DIR / "store"  # JSON-backed RAG store (Chroma optional)
+
+
+def lighting_mood_by_id(mood_id: str | None) -> dict[str, Any]:
+    """Resolve a mood dict by id; default to amber_dusk."""
+    want = (mood_id or "").strip().lower()
+    for row in LIGHTING_MOODS:
+        if str(row["id"]) == want:
+            return dict(row)
+    return dict(LIGHTING_MOODS[0])
+
+
+def select_lighting_mood(
+    key: str | int | None = None,
+    *,
+    mood_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Pick a lighting/mood variant.
+
+    - Explicit ``mood_id`` wins when provided.
+    - Else stable hash of ``key`` (theme/scene/index) rotates through the bank.
+    - Else first mood (amber_dusk).
+    """
+    if mood_id:
+        return lighting_mood_by_id(mood_id)
+    if key is None or key == "":
+        return dict(LIGHTING_MOODS[0])
+    raw = str(key).encode("utf-8")
+    digest = hashlib.md5(raw).hexdigest()
+    idx = int(digest[:8], 16) % len(LIGHTING_MOODS)
+    return dict(LIGHTING_MOODS[idx])
+
+
+def build_style_prefix(mood: dict[str, Any] | None = None) -> str:
+    """Short positive style prefix with per-scene lighting descriptor swapped in."""
+    m = mood or LIGHTING_MOODS[0]
+    lighting = str(m.get("lighting") or "").strip()
+    if lighting:
+        return f"{LOFI_STYLE_BASE}, {lighting}"
+    return LOFI_STYLE_BASE
 
 
 def scene_count_for_duration(duration_s: int | float) -> int:

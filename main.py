@@ -169,6 +169,7 @@ from avatar_engine.audio_engine import (
 )
 from avatar_engine.video_engine import compile_dynamic_reel
 from core_engine.cost_tracker import CostTracker
+from core_engine.interfaces.factory import ChannelFactory
 from core_engine.reel_sequence_engine import (
     compile_sequence_reel as _core_compile_sequence_reel,
     build_sequence_script_prompt as _build_sequence_script_prompt,
@@ -471,115 +472,136 @@ def _format_cost_block(
 
     Returns a multi-line string ready for ``print()``.
     """
-    entries: list[dict] = breakdown.get("breakdown") or []
-    tier: str = breakdown.get("cost_tier", "—")
+    fallback = "\n| COST ANALYSIS SUMMARY | (unavailable — using $0.00 fallback)\n"
+    try:
+        if not isinstance(breakdown, dict):
+            return fallback
+        entries: list[dict] = breakdown.get("breakdown") or []
+        if not isinstance(entries, list):
+            entries = []
+        tier: str = str(breakdown.get("cost_tier") or "—")
 
-    # Aggregate by operation family
-    research_cost = 0.0
-    research_chars = 0
-    research_model = "Gemini 2.5 Flash"
+        research_cost = 0.0
+        research_chars = 0
+        research_model = "Gemini 2.5 Flash"
 
-    image_cost = 0.0
-    image_count = 0
-    image_model = "Nano Banana Pro"
+        image_cost = 0.0
+        image_count = 0
+        image_model = "FLUX Schnell"
 
-    voice_cost = 0.0
-    voice_chars = 0
+        voice_cost = 0.0
+        voice_chars = 0
 
-    for e in entries:
-        op = e.get("operation", "")
-        cost = float(e.get("cost_usd", 0.0))
-        units = float(e.get("units", 0.0))
-        mk = e.get("model_key", "")
+        def _sf(value: Any, default: float = 0.0) -> float:
+            if value is None:
+                return default
+            try:
+                out = float(value)
+                return default if out != out else out
+            except (TypeError, ValueError):
+                return default
 
-        if op == "text_generation":
-            research_cost += cost
-            research_chars += int(units)
-            if "deepseek" in mk:
-                research_model = "DeepSeek V4"
-            elif "flash" in mk:
-                research_model = "Gemini 2.5 Flash"
-            elif "pro" in mk:
-                research_model = "Gemini Pro"
-        elif op == "image_generation":
-            image_cost += cost
-            image_count += int(units)
-            if "nano" in mk or "banana" in mk:
-                image_model = "Nano Banana Pro"
-            elif "economic" in mk:
-                image_model = "Gemini Flash Lite"
-            elif "premium" in mk:
-                image_model = "Gemini Pro Image"
-        elif op == "audio_generation":
-            voice_cost += cost
-            voice_chars += int(units)
+        def _si(value: Any, default: int = 0) -> int:
+            try:
+                return int(_sf(value, float(default)))
+            except (TypeError, ValueError):
+                return default
 
-    # Use the envelope's authoritative image count when available.
-    # Prefer the larger of tracker units vs envelope so sequence B-roll is never under-counted.
-    display_img_count = max(int(total_images or 0), int(image_count or 0))
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            op = str(e.get("operation") or "")
+            cost = max(0.0, _sf(e.get("cost_usd"), 0.0))
+            units = max(0.0, _sf(e.get("units"), 0.0))
+            mk = str(e.get("model_key") or "").lower()
 
-    # ── Visual Assets description ───────────────────────────────────────────
-    _fmt = (post_format or "").upper()
-    _is_reel = _fmt in ("SEQUENCE_REEL", "DYNAMIC_REEL", "HYBRID_VIDEO")
-    # DYNAMIC_REEL + multi-image = sequence reel (master_mei / ancient_knowledge)
-    _is_sequence = _fmt == "SEQUENCE_REEL" or (_is_reel and display_img_count >= 2)
+            if op == "text_generation":
+                research_cost += cost
+                research_chars += _si(units, 0)
+                if "deepseek" in mk:
+                    research_model = "DeepSeek V4"
+                elif "flash" in mk:
+                    research_model = "Gemini 2.5 Flash"
+                elif "pro" in mk:
+                    research_model = "Gemini Pro"
+            elif op == "image_generation":
+                image_cost += cost
+                image_count += _si(units, 0)
+                if "nano" in mk or "banana" in mk:
+                    image_model = "Nano Banana Pro"
+                elif "flux" in mk or "schnell" in mk:
+                    image_model = "FLUX Schnell"
+                elif "economic" in mk:
+                    image_model = "Gemini Flash Lite"
+                elif "premium" in mk:
+                    image_model = "Gemini Pro Image"
+            elif op == "audio_generation":
+                voice_cost += cost
+                voice_chars += _si(units, 0)
 
-    if _is_sequence:
-        _asset_desc = (
-            f"{display_img_count} AI Base Image{'s' if display_img_count != 1 else ''}"
-            " \u2192 Compiled to 1 MP4 Sequence Reel"
-        )
-    elif _fmt in ("DYNAMIC_REEL", "HYBRID_VIDEO"):
-        _asset_desc = "1 AI Base Image \u2192 Animated to 1 MP4 Video"
-    elif _fmt == "CAROUSEL":
-        _asset_desc = (
-            f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Carousel Slides)"
-        )
-    else:
-        _asset_desc = (
-            f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Static Post)"
-        )
+        display_img_count = max(_si(total_images, 0), _si(image_count, 0))
 
-    total = research_cost + image_cost + voice_cost
-    sep  = "+" + "=" * 62 + "+"
-    thin = "  " + "-" * 60
+        _fmt = (post_format or "").upper()
+        _is_reel = _fmt in ("SEQUENCE_REEL", "DYNAMIC_REEL", "HYBRID_VIDEO")
+        _is_sequence = _fmt == "SEQUENCE_REEL" or (_is_reel and display_img_count >= 2)
 
-    lines = [
-        "",
-        sep,
-        f"| {'COST ANALYSIS SUMMARY':<60} |",
-        f"| {'Tier: ' + tier:<60} |",
-        sep,
-        f"  {'Visual Assets:'.ljust(36)} {_asset_desc}",
-        "",
-        f"  - Research ({research_model}):".ljust(38) +
-            f"${research_cost:.4f}  ({research_chars:,} chars)",
-        f"  - Image Gen ({image_model}):".ljust(38) +
-            f"${image_cost:.4f}  ({display_img_count} generation{'s' if display_img_count != 1 else ''})",
-        f"  - Voice Gen (ElevenLabs):".ljust(38) +
-            f"${voice_cost:.4f}  ({voice_chars:,} characters)",
-    ]
+        if _is_sequence:
+            _asset_desc = (
+                f"{display_img_count} AI Base Image{'s' if display_img_count != 1 else ''}"
+                " \u2192 Compiled to 1 MP4 Sequence Reel"
+            )
+        elif _fmt in ("DYNAMIC_REEL", "HYBRID_VIDEO"):
+            _asset_desc = "1 AI Base Image \u2192 Animated to 1 MP4 Video"
+        elif _fmt == "CAROUSEL":
+            _asset_desc = (
+                f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Carousel Slides)"
+            )
+        else:
+            _asset_desc = (
+                f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Static Post)"
+            )
 
-    # Local render operations carry no API cost — list explicitly so the user
-    # understands why video compilation doesn't appear in the API bill.
-    if _is_reel:
-        lines.append(
-            f"  - Video Render (MoviePy/FFmpeg):".ljust(38) +
-            "$0.0000  (local, no API charge)"
-        )
+        total = research_cost + image_cost + voice_cost
+        sep  = "+" + "=" * 62 + "+"
+        thin = "  " + "-" * 60
 
-    if scheduled_publish:
-        lines.append(
-            f"  - Scheduled Publish (YouTube):".ljust(38) +
-            f"{scheduled_publish} (Shorts)"
-        )
+        lines = [
+            "",
+            sep,
+            f"| {'COST ANALYSIS SUMMARY':<60} |",
+            f"| {'Tier: ' + tier:<60} |",
+            sep,
+            f"  {'Visual Assets:'.ljust(36)} {_asset_desc}",
+            "",
+            f"  - Research ({research_model}):".ljust(38) +
+                f"${research_cost:.4f}  ({research_chars:,} chars)",
+            f"  - Image Gen ({image_model}):".ljust(38) +
+                f"${image_cost:.4f}  ({display_img_count} generation{'s' if display_img_count != 1 else ''})",
+            f"  - Voice Gen (ElevenLabs):".ljust(38) +
+                f"${voice_cost:.4f}  ({voice_chars:,} characters)",
+        ]
 
-    lines += [
-        thin,
-        f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}",
-        sep,
-    ]
-    return "\n".join(lines)
+        if _is_reel:
+            lines.append(
+                f"  - Video Render (MoviePy/FFmpeg):".ljust(38) +
+                "$0.0000  (local, no API charge)"
+            )
+
+        if scheduled_publish:
+            lines.append(
+                f"  - Scheduled Publish (YouTube):".ljust(38) +
+                f"{scheduled_publish} (Shorts)"
+            )
+
+        lines += [
+            thin,
+            f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}",
+            sep,
+        ]
+        return "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("Cost analysis block failed (%s) — using $0.00 fallback", exc)
+        return fallback
 
 
 def _print_production_summary(
@@ -1839,54 +1861,17 @@ def _produce_variant_worker(
             effective_atmosphere[:160],
         )
 
-    # ── ANCIENT_KNOWLEDGE / MASTER_MEI STYLE LOCK — applied after architect.build_prompt() ─
-    # See the elif block after line "elif not skip_image:" below.
-    _ak_image_prompt_override: str = ""
+    # Isolated channels (ancient_knowledge): adapter owns the image prompt.
+    # VisualArchitect.build_prompt() returns compose_image_prompt(); the old
+    # hardcoded ancient_knowledge lock is not applied. master_mei keeps its lock.
     _mm_image_prompt_override: str = ""
+    _isolated_channel = ChannelFactory.is_isolated(
+        (page_ctx.page_id or "").lower() if page_ctx else ""
+    )
     if (
         page_ctx
-        and (page_ctx.page_id or "").lower() == "ancient_knowledge"
-    ):
-        import re as _re_ak
-        _ak_style = (
-            page_ctx.illustration_style.rstrip(" .")
-            if page_ctx.illustration_style
-            else page_ctx.atmosphere_style.rstrip(" .")
-        )
-        _ak_clean = effective_atmosphere
-        for _neg in page_ctx.prompt_negative_terms:
-            _ak_clean = _re_ak.sub(
-                _re_ak.escape(_neg), "", _ak_clean, flags=_re_ak.IGNORECASE
-            )
-        _ak_clean = _re_ak.sub(r"[ \t]{2,}", " ", _ak_clean).strip(" ,.")
-        _ak_image_prompt_override = (
-            f"{_ak_style}. "
-            "MEDIUM: Ultra-realistic photography — NOT digital art, NOT illustration, NOT CGI render. "
-            "SHOT TYPE: Full-screen first-person immersive cinematic photograph. "
-            "The camera IS inside the location — the viewer stands directly inside the scene. "
-            f"SUBJECT: {resolved_subject}. "
-            "LIGHTING: Dramatic single-source cinematic light — warm amber torchlight, ancient fire, "
-            "or cold ethereal blue-white moonlight cutting through stone arches. "
-            "Volumetric light shafts visible in atmospheric haze or dust particles. "
-            "Strong directional RIM LIGHTING tracing the edges of stone blocks, carved columns, "
-            "or megalithic surfaces. High-contrast chiaroscuro — rich deep shadows balanced by "
-            "intense focal highlights. NO flat, evenly-lit, or muddy scenes. "
-            "TEXTURE: Cinematic 35mm film grain over the entire frame for an archival documentary aesthetic. "
-            "VISUAL FOCUS: Recognisable real-world iconic monument (Great Pyramid, Baalbek megaliths, "
-            "Puma Punku, Easter Island, Göbekli Tepe, Sacsayhuamán) with an impossible or anomalous "
-            "element integrated naturally — precision machining visible in the stone, "
-            "impossible construction scale, ancient glyphs encoding advanced knowledge, "
-            "or artefacts suggesting extraterrestrial influence. "
-            "No clean digital renders, no smooth CGI surfaces, no modern elements. "
-            "CRITICAL — DO NOT generate: a framed painting, a picture hanging on a wall, "
-            "a gallery, a mockup, a physical canvas, picture borders, image-within-image, "
-            "a postcard, a mural, a plaque, or any rectangular frame element. "
-            "The entire frame is filled edge-to-edge with the immersive environment itself. "
-            "No white space, no margins, no border. Epic cinematic shot, full-bleed."
-        )
-    elif (
-        page_ctx
         and (page_ctx.page_id or "").lower() == "master_mei"
+        and not _isolated_channel
     ):
         import re as _re_mm
         # Act-1 / Hook STRICT MANDATE: ROLE A Master Mei (traditional only).
@@ -1970,7 +1955,7 @@ def _produce_variant_worker(
             raise
 
     elif not skip_image:
-        architect = VisualArchitect()
+        architect = VisualArchitect(channel=ChannelFactory.from_env())
         image_prompt = architect.build_prompt(
             resolved_subject,
             variation_index=variation_index,
@@ -2041,13 +2026,11 @@ def _produce_variant_worker(
                 _scene_desc[:80],
             )
 
-        # ── ANCIENT_KNOWLEDGE / MASTER_MEI STYLE LOCK (post-architect) ─────────
-        # Applied here — after architect.build_prompt() — so this override is
-        # the final word on the image_prompt and can never be clobbered.
-        if _ak_image_prompt_override:
-            image_prompt = _ak_image_prompt_override
+        # Isolated adapter already composed the prompt inside VisualArchitect.
+        if _isolated_channel:
             _LOG.info(
-                "ancient_knowledge IMAGE PROMPT LOCK | hard-override applied: %s",
+                "%s IMAGE PROMPT | adapter compose_image_prompt: %s",
+                (page_ctx.page_id if page_ctx else "isolated"),
                 image_prompt[:180],
             )
         elif _mm_image_prompt_override:
@@ -4186,6 +4169,12 @@ def _produce_variant_worker(
         "model_research_head": bm.research_primary_id,
         "humanizer": humanizer_notes,
         "caption_mode": caption_mode_tag if caption_mode_tag is not None else "skipped",
+        "pinterest_title": (
+            getattr(caption_engine, "last_pinterest_title", "") if caption_engine else ""
+        ),
+        "pinterest_description": (
+            getattr(caption_engine, "last_pinterest_description", "") if caption_engine else ""
+        ),
         # Carousel and image-count metadata
         "carousel_image_paths": _carousel_image_paths,
         "images_generated": _images_generated_this_variant,
@@ -4210,6 +4199,237 @@ def _produce_variant_worker(
 
 
 # ---------------------------------------------------------------------------
+# 4-tier agentic pipeline (Ancient Knowledge static posts)
+# ThemeCurator → Copywriter → VisualDirector ⇄ VisualQA
+# ---------------------------------------------------------------------------
+
+def _produce_agentic(
+    *,
+    resolved_subject: str,
+    qty: int,
+    skip_image: bool,
+    skip_caption: bool,
+    page_ctx: PageContext | None,
+    post_type: str,
+    post_format: str,
+    caption_engine: "CaptionEngine | None",
+    per_variant_topics: "list[str] | None",
+    envelope_base: dict[str, Any],
+) -> dict[str, Any]:
+    """Run PipelineOrchestrator and map results into a produce() envelope."""
+    from core_engine.agentic_pipeline import PipelineOrchestrator
+    from core_engine.agentic_pipeline.criteria import MAX_RETRIES as _AK_MAX_RETRIES
+
+    page_id = page_ctx.page_id if page_ctx else app_config.ACTIVE_PAGE
+    out_dir = app_config.ASSETS_DIR / "agentic"
+
+    # ── CostTracker — build FIRST and share into the orchestrator so every node
+    # self-reports token/image costs accurately (no post-hoc heuristic guessing).
+    _cost_tracker: CostTracker | None = None
+    _track_on = bool(page_ctx is None or page_ctx.enable_cost_tracking)
+    if _track_on:
+        try:
+            _cost_tracker = CostTracker(
+                page_id=page_id or "ancient_knowledge",
+                cost_tier=(page_ctx.cost_tier if page_ctx else "nano"),
+            )
+        except Exception as cost_init_exc:  # noqa: BLE001
+            _LOG.warning("CostTracker init failed on agentic path (%s)", cost_init_exc)
+            _cost_tracker = None
+
+    orch = PipelineOrchestrator(
+        channel_id=page_id or "ancient_knowledge",
+        output_dir=out_dir,
+        max_retries=_AK_MAX_RETRIES,
+        max_workers=min(3, max(1, qty)),
+        caption_engine=caption_engine,
+        skip_image=skip_image,
+        skip_caption=skip_caption,
+        post_type=post_type,
+        cost_tracker=_cost_tracker,
+    )
+    envelope = orch.produce_envelope(
+        quantity=qty,
+        seed_topic=resolved_subject,
+        per_slot_topics=per_variant_topics,
+        page_id=page_id,
+        post_type=post_type,
+        post_format=post_format,
+    )
+    envelope.update({k: v for k, v in envelope_base.items() if k not in envelope})
+    envelope["resolved_subject"] = resolved_subject
+
+    items = envelope.get("items") or []
+    if not isinstance(items, list):
+        items = []
+
+    if _cost_tracker is not None:
+        try:
+            # Trust the node-reported ledger; just snapshot it into the envelope.
+            envelope["final_cost_breakdown"] = _cost_tracker.to_dict()
+            envelope["estimated_cost_usd"] = round(_cost_tracker.total_usd(), 6)
+            if _track_on:
+                _cost_tracker.write_telemetry(
+                    app_config.LIBRARY_DIR, variant_index=max(1, len(items)),
+                )
+            _LOG.info(
+                "Agentic CostTracker | ops=%s total=$%.6f tier=%s",
+                len(_cost_tracker.to_dict().get("breakdown") or []),
+                _cost_tracker.total_usd(),
+                _cost_tracker.cost_tier,
+            )
+        except Exception as cost_exc:  # noqa: BLE001
+            _LOG.warning("Agentic cost snapshot failed (%s) — continuing with $0 fallback", cost_exc)
+            envelope.setdefault("final_cost_breakdown", {
+                "page_id": page_id,
+                "cost_tier": page_ctx.cost_tier if page_ctx else "nano",
+                "total_estimated_usd": 0.0,
+                "breakdown": [],
+            })
+
+    key_ib = app_config.IMGBB_API_KEY
+    for row in items:
+        img = row.get("local_image_path") or ""
+        img_path = Path(img) if img else None
+        if key_ib and img_path is not None and img_path.is_file():
+            try:
+                row["imgbb_url"] = upload_image_file_to_imgbb(key_ib, img_path) or ""
+            except Exception as up_exc:  # noqa: BLE001
+                _LOG.warning("ImgBB upload failed for agentic still (%s)", up_exc)
+                row["imgbb_url"] = ""
+        else:
+            row.setdefault("imgbb_url", "")
+        if _cost_tracker is not None:
+            row.setdefault("cost_breakdown", _cost_tracker.to_dict())
+            row.setdefault("estimated_cost_usd", round(_cost_tracker.total_usd(), 6))
+        try:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+            app_config.LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+            durable_abs = app_config.LIBRARY_DIR / f"agentic_{stamp}_v{row.get('variant_index', 0):02d}.json"
+            payload = {
+                "page_id": page_id,
+                "pipeline": "agentic_4tier",
+                "post_type": post_type,
+                "topic": row.get("theme") or resolved_subject,
+                "caption": row.get("caption") or "",
+                "overlay_text": row.get("overlay_text") or "",
+                "image_prompt": row.get("image_prompt") or "",
+                "local_image_path": row.get("local_image_path") or "",
+                "imgbb_url": row.get("imgbb_url") or "",
+                "qa_status": row.get("qa_status") or "",
+                "qa_feedback": row.get("qa_feedback") or "",
+                "qa_score": row.get("qa_score") or 0.0,
+                "retry_count": row.get("retry_count") or 0,
+                "pinterest_title": row.get("pinterest_title") or "",
+                "pinterest_description": row.get("pinterest_description") or "",
+                "created_utc": datetime.now(timezone.utc).isoformat(),
+            }
+            if _cost_tracker is not None:
+                _cost_tracker.annotate_payload(payload)
+            write_atomic_json(durable_abs, payload)
+            row["library_json_relative"] = path_under_engine(
+                app_config.ENGINE_ROOT, durable_abs,
+            )
+        except Exception as dur_exc:  # noqa: BLE001
+            _LOG.warning("Agentic durable JSON skipped (%s)", dur_exc)
+
+    _persist_agentic_postplanner(
+        items=items,
+        page_ctx=page_ctx,
+        post_type=post_type,
+    )
+
+    snippet_lines = []
+    for idx, row in enumerate(items):
+        cap = row.get("caption")
+        if isinstance(cap, str) and cap.strip():
+            snippet_lines.append(f"{idx + 1}. {cap}")
+    snippet_path = app_config.PAGE_OUTPUTS_DIR / "last_captions_bundle.txt"
+    if snippet_lines:
+        try:
+            snippet_path.parent.mkdir(parents=True, exist_ok=True)
+            snippet_path.write_text("\n".join(snippet_lines) + "\n", encoding="utf-8")
+        except OSError as snip_exc:
+            _LOG.warning("last_captions_bundle.txt write failed (%s)", snip_exc)
+
+    approved = envelope.get("successful") or 0
+    print(
+        f"\n[agentic] Done | approved={approved}/{qty} | "
+        f"images={envelope.get('total_images_generated', 0)} | "
+        f"out={out_dir}"
+    )
+    _LOG.info(
+        "AGENTIC PIPELINE DONE | page=%s | approved=%s/%s | dir=%s",
+        page_id, approved, qty, out_dir,
+    )
+    return envelope
+
+
+def _persist_agentic_postplanner(
+    *,
+    items: list[dict[str, Any]],
+    page_ctx: PageContext | None,
+    post_type: str,
+) -> None:
+    """Write bulk + timestamped PostPlanner xlsx rows for agentic stills."""
+    if not items:
+        _LOG.info("PostPlanner | agentic persist skipped (no items)")
+        return
+    run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    bulk_path = Path(app_config.POST_PLANNER_XLSX).expanduser().resolve()
+    postplanner_dir = Path(app_config.PAGE_OUTPUTS_DIR).expanduser().resolve() / "postplanner"
+    template = getattr(app_config, "BULK_POSTS_TEMPLATE_XLSX", None)
+    planner_type = "VIDEO" if str(post_type).upper().endswith("REEL") else "IMAGE"
+    written = 0
+    for row in items:
+        caption = row.get("caption") or ""
+        if not str(caption).strip():
+            continue
+        media = (
+            row.get("imgbb_url")
+            or row.get("local_image_path")
+            or row.get("image_path")
+            or ""
+        )
+        variant_ix = max(0, int(row.get("variant_index") or 1) - 1)
+        posting_time = scheduled_bulk_post_display(variant_index=variant_ix)
+        try:
+            planner_row_ix = append_planner_row(
+                bulk_path,
+                posting_time=posting_time,
+                caption=str(caption),
+                media_url=str(media),
+                post_type_value=planner_type,
+                template_path=template,
+            )
+            row["excel_row"] = planner_row_ix
+        except Exception as bulk_exc:  # noqa: BLE001
+            _LOG.error(
+                "PostPlanner bulk workbook write failed (variant %s) | path=%s | %s",
+                row.get("variant_index"), bulk_path, bulk_exc,
+            )
+        try:
+            xlsx_path = append_postplanner_xlsx_row(
+                postplanner_dir,
+                run_stamp=run_stamp,
+                posting_time=posting_time,
+                caption=str(caption),
+                media_url=str(media),
+            )
+            row["postplanner_xlsx"] = str(xlsx_path)
+            written += 1
+        except Exception as xlsx_exc:  # noqa: BLE001
+            _LOG.error(
+                "PostPlanner timestamped xlsx write failed (variant %s) | dir=%s | %s",
+                row.get("variant_index"), postplanner_dir, xlsx_exc,
+            )
+    _LOG.info(
+        "PostPlanner agentic persist | rows=%s | bulk=%s | dir=%s",
+        written, bulk_path, postplanner_dir,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Core production loop
 # ---------------------------------------------------------------------------
 
@@ -4227,6 +4447,7 @@ def produce(
     post_type: str = "STANDARD_QUOTE",
     image_style: str = "NATURAL",
     render_approval_required: bool = False,
+    agentic_pipeline: bool | None = None,
 ) -> dict[str, Any]:
     qty = max(1, quantity)
     economic = economic_brain_mode if economic_brain_mode is not None else app_config.ECONOMIC_BRAIN_MODE
@@ -4293,7 +4514,7 @@ def produce(
             )
 
         imagine_prompt = imagine_subject_instruction_preview()
-        architect = VisualArchitect()
+        architect = VisualArchitect(channel=ChannelFactory.from_env())
         prompt = architect.build_prompt(
             topic_seed,
             variation_index=0,
@@ -4345,17 +4566,36 @@ def produce(
     )
 
     _silence_noisy_http_loggers()
-    resolved_subject = (subject or "").strip()
-    if not resolved_subject:
-        resolved_subject = imagine_subject(corpus)
-
-    # WONDER_FEED + ECONOMIC_REEL: ALWAYS pick a fresh topic from the TOPIC_POOL,
-    # regardless of what imagine_subject() returned.  This guarantees a unique
-    # script every single run — no cached subject, no static placeholder loop.
     import random as _rnd
     _page_id_lower = (page_ctx.page_id if page_ctx else "").lower()
+    _channel = ChannelFactory.from_env()
+    _isolated = ChannelFactory.is_isolated(_page_id_lower or _channel.channel_id)
+
+    resolved_subject = (subject or "").strip()
+    _cli_topic = resolved_subject
+    if _isolated:
+        if resolved_subject and _channel.topic_is_off_niche(resolved_subject):
+            _LOG.warning(
+                "AK TOPIC HARD-OVERRIDE | discarding leaked/stale topic %r",
+                resolved_subject,
+            )
+            resolved_subject = ""
+            _cli_topic = ""
+        if not resolved_subject:
+            resolved_subject = _channel.pick_niche_topic()
+            _LOG.info(
+                "AK TOPIC HARD-OVERRIDE | selected niche topic → %r (bank=%d)",
+                resolved_subject,
+                len(_channel.get_niche_topics()),
+            )
+    elif not resolved_subject:
+        resolved_subject = imagine_subject(corpus)
+
+    # WONDER_FEED + MASTER_MEI reels: ALWAYS pick a fresh topic from the TOPIC_POOL.
+    # ancient_knowledge is handled above and never reads the PDF/wellness corpus.
     if (
-        _page_id_lower in ("wonder_feed", "ancient_knowledge", "master_mei")
+        (not _isolated)
+        and _page_id_lower in ("wonder_feed", "master_mei")
         and post_type in ("ECONOMIC_REEL", "SMART_BAIT")
         and page_ctx is not None
         and page_ctx.topic_pool
@@ -4403,7 +4643,7 @@ def produce(
     # the generation loop. Each worker receives Global Topic DNA + Specific Angle.
     batch_angles: list[BatchAngle] | None = None
     uniqueness_guard: BatchUniquenessGuard | None = None
-    global_topic_dna = (subject or resolved_subject or "").strip()
+    global_topic_dna = (_cli_topic or resolved_subject or "").strip()
 
     # ── PER-VARIANT TOPIC LIST (legacy pool / LLM topics) ────────────────────
     # When qty > 1 and the user did not specify a topic, every variant must
@@ -4415,7 +4655,7 @@ def produce(
     #   3. Pool absent entirely → call generate_bulk_topics() for all qty slots.
     per_variant_topics: list[str] | None = None
     _seed_for_angles: list[str] | None = None
-    if not subject and qty > 1:
+    if not _cli_topic and qty > 1:
         _pool = page_ctx.topic_pool if page_ctx else []
         if _pool and len(_pool) >= qty:
             _pool_copy = list(_pool)
@@ -4463,7 +4703,7 @@ def produce(
     if qty > 1:
         uniqueness_guard = BatchUniquenessGuard()
         # Prefer explicit CLI topic as Global DNA; else resolved subject / niche
-        _core = (subject or "").strip() or global_topic_dna or (
+        _core = (_cli_topic or "").strip() or global_topic_dna or (
             page_ctx.content_niche if page_ctx else ""
         ) or "Content series"
         global_topic_dna = _core
@@ -4508,7 +4748,7 @@ def produce(
     caption_engine: CaptionEngine | None = None
     if not skip_caption:
         try:
-            caption_engine = CaptionEngine()
+            caption_engine = CaptionEngine(channel=ChannelFactory.from_env())
             _LOG.info("CaptionEngine online | Gemini text head=`%s`", caption_engine.research_primary_id)
         except Exception as exc:  # noqa: BLE001
             _LOG.error("CaptionEngine init failed: %s", exc, exc_info=True)
@@ -4519,7 +4759,52 @@ def produce(
             )
             raise
 
+    if _isolated:
+        if _channel.topic_is_off_niche(resolved_subject):
+            resolved_subject = _channel.pick_niche_topic()
+        if per_variant_topics:
+            per_variant_topics = [
+                (t if not _channel.topic_is_off_niche(t) else _channel.pick_niche_topic())
+                for t in per_variant_topics
+            ]
+        global_topic_dna = resolved_subject
+        _LOG.info(
+            "AK TOPIC LOCK FINAL | resolved_subject=%r | variants=%s",
+            resolved_subject,
+            len(per_variant_topics or [resolved_subject]),
+        )
+
     envelope["resolved_subject"] = resolved_subject
+
+    from core_engine.agentic_pipeline import should_use_agentic_pipeline as _should_agentic
+
+    if _should_agentic(
+        page_ctx.page_id if page_ctx else None,
+        post_type,
+        agentic_pipeline,
+    ):
+        _LOG.info(
+            "AGENTIC PIPELINE | page=%s | qty=%s | ThemeCurator→Copywriter→VisualDirector⇄VisualQA",
+            page_ctx.page_id if page_ctx else app_config.ACTIVE_PAGE,
+            qty,
+        )
+        print(
+            "\n[agentic] 4-tier pipeline | "
+            "ThemeCurator → Copywriter → VisualDirector ⇄ VisualQA "
+            f"(MAX_RETRIES=3) | qty={qty}"
+        )
+        return _produce_agentic(
+            resolved_subject=resolved_subject,
+            qty=qty,
+            skip_image=skip_image,
+            skip_caption=skip_caption,
+            page_ctx=page_ctx,
+            post_type=post_type,
+            post_format=post_format,
+            caption_engine=caption_engine,
+            per_variant_topics=per_variant_topics,
+            envelope_base=envelope,
+        )
 
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     postplanner_dir = app_config.PAGE_OUTPUTS_DIR / "postplanner"
@@ -4847,7 +5132,7 @@ def run_test_images_debug_mode(
     print("=" * 60)
 
     print("[DEBUG] Generating voiceover script…")
-    ce = CaptionEngine()
+    ce = CaptionEngine(channel=ChannelFactory.from_env())
     script = ce.generate_sequence_voiceover(
         resolved_subject,
         page_niche=page_ctx.content_niche,
@@ -5105,6 +5390,23 @@ def cli() -> None:
         "--skip-caption",
         action="store_true",
         help="Image synthesis only.",
+    )
+    parser.add_argument(
+        "--agentic-pipeline",
+        dest="agentic_pipeline",
+        action="store_true",
+        default=None,
+        help=(
+            "Force the 4-tier agentic pipeline "
+            "(ThemeCurator → Copywriter → VisualDirector ⇄ VisualQA). "
+            "Auto-on for ancient_knowledge static image posts."
+        ),
+    )
+    parser.add_argument(
+        "--no-agentic-pipeline",
+        dest="agentic_pipeline",
+        action="store_false",
+        help="Disable the agentic pipeline and use the legacy per-variant worker path.",
     )
     parser.add_argument(
         "--test",
@@ -5474,15 +5776,16 @@ def cli() -> None:
             args.post_format = "DYNAMIC_REEL"
             args.draw_style = "SKETCH"
 
-    # ── ANCIENT_KNOWLEDGE STYLE & FORMAT LOCK ──────────────────────────────
-    # photorealistic images only — sketch pipeline is OFF.
-    # ECONOMIC_REEL → DYNAMIC_REEL format (sequence reel handled at runtime).
-    if getattr(args, "page", "").lower() == "ancient_knowledge":
+    # Isolated channel (ancient_knowledge): visual rules + format come from
+    # the adapter — never the hardcoded page_id sketch/photoreal branch.
+    _boot_channel = ChannelFactory.from_env()
+    if ChannelFactory.is_isolated(_boot_channel.channel_id):
         _ak_pt = getattr(args, "post_type", "").upper()
         if _ak_pt == "ECONOMIC_REEL":
             args.post_format = "DYNAMIC_REEL"
-        # Override draw_style to NATURAL (photorealistic) — never sketch for this page
-        args.draw_style = "NATURAL"
+        args.draw_style = str(
+            (_boot_channel.get_visual_rules() or {}).get("draw_style") or "NATURAL"
+        )
 
     # ── MASTER_MEI (SUPER) STYLE & FORMAT LOCK ─────────────────────────────
     # Cinematic martial photorealism + avatar ON; sequence reel for ECONOMIC_REEL.
@@ -5630,11 +5933,24 @@ def cli() -> None:
         page_id, avatar_mode, post_format, log_path, ts_token,
     )
     _flow_for_log = getattr(args, "resolved_model_api_flow", None)
+    _active_post_type_early = args.post_type.upper() if hasattr(args, "post_type") else ""
     if _flow_for_log is not None:
         logging.getLogger(__name__).info(
             "MODEL_API_FLOW | %s", _flow_for_log.summary_line(),
         )
-        print(f"[bootstrap] MODEL_API_FLOW | {_flow_for_log.summary_line()}")
+        if _active_post_type_early == "ECONOMIC_REEL_LOFI":
+            # Clarify: LOFI image gen hard-bypasses this preset (Together Schnell, no LoRA).
+            print(
+                f"[bootstrap] MODEL_API_FLOW (global env preset, NOT used for "
+                f"ECONOMIC_REEL_LOFI images) | {_flow_for_log.summary_line()}"
+            )
+            print(
+                "[bootstrap] ECONOMIC_REEL_LOFI image provider FORCED | "
+                "together.ai / black-forest-labs/FLUX.1-schnell / lora=OFF "
+                "(ignores ENABLE_REMOTE_GPU_WORKFLOWS / MODEL_API_FLOW)"
+            )
+        else:
+            print(f"[bootstrap] MODEL_API_FLOW | {_flow_for_log.summary_line()}")
 
     print(f"[bootstrap] Detailed run log: {log_path}")
 
@@ -5818,6 +6134,7 @@ def cli() -> None:
             render_approval_required=bool(
                 getattr(args, "render_approval_required", False)
             ),
+            agentic_pipeline=getattr(args, "agentic_pipeline", None),
         )
     except Exception as exc:  # noqa: BLE001
         if isinstance(exc, KeyboardInterrupt):

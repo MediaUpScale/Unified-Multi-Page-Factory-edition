@@ -703,6 +703,7 @@ class TogetherImageGenerator:
         width: int | None = None,
         height: int | None = None,
         negative_prompt: str | None = None,
+        allow_lora: bool = True,
     ) -> str:
         """
         Generate one Together image and write bytes to *output_path*.
@@ -714,8 +715,9 @@ class TogetherImageGenerator:
             Falls back to instance default / ``TOGETHER_IMAGE_MODEL`` / Schnell.
         steps:
             Diffusion steps. Defaults based on model (Schnell=4, Dev=28, SDXL=20).
-
-        Returns the local filesystem path (str) for pipeline contract compatibility.
+        allow_lora:
+            When False, never resolve/inject Together ``image_loras`` (LOFI economic
+            tier). Default True preserves existing Dev/LoRA callers.
         """
         active_model = normalize_together_model_id(model_name or self.model)
         if width is None or height is None:
@@ -773,32 +775,34 @@ class TogetherImageGenerator:
                         "response_format": "base64",
                     }
                     # Optional Together LoRA (Dev-tier URL path — never Schnell).
-                    try:
-                        from model_api_flows import (  # noqa: PLC0415
-                            resolve_effective_lora,
-                            together_image_loras_payload,
-                        )
+                    # LOFI / economic callers pass allow_lora=False to hard-bypass.
+                    if allow_lora:
+                        try:
+                            from model_api_flows import (  # noqa: PLC0415
+                                resolve_effective_lora,
+                                together_image_loras_payload,
+                            )
 
-                        _lora_cfg = resolve_effective_lora()
-                        _loras = together_image_loras_payload(
-                            _lora_cfg, model_id=active_model,
-                        )
-                        if _loras:
-                            gen_kwargs["image_loras"] = _loras
-                            _trig = (_lora_cfg or {}).get("trigger") or ""
-                            if _trig and _trig.lower() not in (prompt or "").lower():
-                                prompt = f"{_trig}, {prompt}"
-                                gen_kwargs["prompt"] = prompt
-                            # Prefer dedicated LoRA model id when still on plain Dev.
-                            if (
-                                "dev-lora" not in active_model.lower()
-                                and "schnell" not in active_model.lower()
-                                and "flux.1-dev" in active_model.lower()
-                            ):
-                                active_model = "black-forest-labs/FLUX.1-dev-lora"
-                                gen_kwargs["model"] = active_model
-                    except Exception as _lora_exc:  # noqa: BLE001
-                        logger.debug("Together LoRA inject skipped: %s", _lora_exc)
+                            _lora_cfg = resolve_effective_lora()
+                            _loras = together_image_loras_payload(
+                                _lora_cfg, model_id=active_model,
+                            )
+                            if _loras:
+                                gen_kwargs["image_loras"] = _loras
+                                _trig = (_lora_cfg or {}).get("trigger") or ""
+                                if _trig and _trig.lower() not in (prompt or "").lower():
+                                    prompt = f"{_trig}, {prompt}"
+                                    gen_kwargs["prompt"] = prompt
+                                # Prefer dedicated LoRA model id when still on plain Dev.
+                                if (
+                                    "dev-lora" not in active_model.lower()
+                                    and "schnell" not in active_model.lower()
+                                    and "flux.1-dev" in active_model.lower()
+                                ):
+                                    active_model = "black-forest-labs/FLUX.1-dev-lora"
+                                    gen_kwargs["model"] = active_model
+                        except Exception as _lora_exc:  # noqa: BLE001
+                            logger.debug("Together LoRA inject skipped: %s", _lora_exc)
                     # FLUX.1-schnell supports negative_prompt on Together
                     if "schnell" in active_model.lower() or "flux.1" in active_model.lower():
                         gen_kwargs["negative_prompt"] = merge_negative_prompt(

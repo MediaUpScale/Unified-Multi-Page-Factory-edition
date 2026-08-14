@@ -184,18 +184,31 @@ def _produce_one(
     lines = list(script.get("lines") or [])
     scene_paths: list[Path] = []
     captions: list[str] = []
+    scene_moods: list[dict] = []
     qa_flags: list[str] = []
+    theme_str = str(script.get("theme") or "")
 
     for row in lines:
         scene_i = int(row.get("scene") or len(scene_paths) + 1)
         out_img = run_dir / f"scene_{scene_i:02d}.png"
         visual = str(row.get("visual_prompt") or "")
         caption = str(row.get("text") or "")
+        mood_id = row.get("lighting_mood") or row.get("mood")
+        mood_key = f"{theme_str}|scene{scene_i}"
+        resolved_mood = lofi_cfg.select_lighting_mood(
+            key=mood_key,
+            mood_id=str(mood_id) if mood_id else None,
+        )
         ok_img = False
         last_flaws: list[str] = []
         for attempt in range(1, lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE + 2):
             try:
-                generate_scene_image(visual, out_img)
+                _, resolved_mood = generate_scene_image(
+                    visual,
+                    out_img,
+                    mood_id=str(mood_id) if mood_id else None,
+                    mood_key=mood_key,
+                )
             except Exception as exc:  # noqa: BLE001
                 last_flaws = [f"image gen failed: {exc}"]
                 _LOG.warning("scene %s gen attempt %s failed: %s", scene_i, attempt, exc)
@@ -220,8 +233,10 @@ def _produce_one(
                 from PIL import Image as PILImage
 
                 PILImage.new("RGB", (768, 1344), (30, 40, 55)).save(out_img)
+        row["lighting_mood"] = resolved_mood.get("id")
         scene_paths.append(out_img)
         captions.append(caption)
+        scene_moods.append(resolved_mood)
 
     theme_slug = "".join(
         c if c.isalnum() else "_"
@@ -236,6 +251,8 @@ def _produce_one(
             engine_root=_engine_root(),
             page_id=page_id,
             scene_duration_s=lofi_cfg.SCENE_DURATION_S,
+            moods=scene_moods,
+            caption_style=lofi_cfg.DEFAULT_CAPTION_STYLE,
         )
     except Exception as exc:  # noqa: BLE001
         _LOG.error("assemble failed: %s", exc, exc_info=True)

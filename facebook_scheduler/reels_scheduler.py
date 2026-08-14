@@ -15,7 +15,7 @@ Built on ``media_scheduler_base.UniversalComposerScheduler``:
   (never the Universal photo Create-post flow)
 * Photo schedulers (future) → Universal ``/latest/`` Create post
 * CDP ``DOM.setFileInputFiles`` for large uploads (no OS focus steal)
-* Dynamic interval — ``last_scheduled + 2h + random(60–180) minutes``
+* Dynamic interval — first: ``now + random(25–60) min``; later: ``last + 4h + random(0–60) min``
 
 Usage
 -----
@@ -96,10 +96,10 @@ class ReelsScheduler(UniversalComposerScheduler):
 
     def prepare_composer_for_item(self, item: MediaItem) -> None:
         """
-        Always open the dedicated Reel composer for this scheduler.
+        Always force a fresh Reel composer load for every queue item.
 
-        ReelsScheduler only queues video files; still dismisses error modals
-        and navigates when not already on ``reels_composer``.
+        Meta leaves a success / post-schedule UI that hides "Add video";
+        skipping navigation when already on ``reels_composer`` breaks batches.
         """
         if self.dry_run:
             return
@@ -113,19 +113,16 @@ class ReelsScheduler(UniversalComposerScheduler):
             return
 
         self._dismiss_composer_error_modals()
-        _log.info("Opening dedicated Reel Composer endpoint...")
-        current = self.page.url or ""
-        if "reels_composer" not in current:
-            self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
-            try:
-                self.page.wait_for_load_state(
-                    "networkidle", timeout=config.LONG_TIMEOUT_MS
-                )
-            except Exception:
-                pass
-            self.page.wait_for_timeout(3_000)
-        else:
-            _log.info("Already on reels_composer — skipping navigation.")
+        _log.info("Forcing navigation to fresh Reel Composer endpoint...")
+        self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
+        try:
+            self.page.wait_for_load_state(
+                "networkidle", timeout=config.LONG_TIMEOUT_MS
+            )
+        except Exception:
+            pass
+        # Give Meta's heavy React UI time to fully render the buttons
+        self.page.wait_for_timeout(4_000)
         self._dismiss_composer_error_modals()
 
     def on_media_uploaded(self, item: MediaItem, *, is_video: bool) -> None:

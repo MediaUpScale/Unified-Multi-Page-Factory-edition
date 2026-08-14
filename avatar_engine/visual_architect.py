@@ -38,6 +38,7 @@ from .persona_dna import (
     visual_style_block,
 )
 
+
 _QUALITY_SUFFIX = (
     "Ultra-realistic. Shot on 35mm film or high-end smartphone candid aesthetic. "
     "No AI skin blur, no 'plastic' smoothing. Visible pores, natural fine lines, healthy inner glow. "
@@ -72,6 +73,11 @@ _CARTOON_QUALITY_SUFFIX = (
 class VisualArchitect:
     """Translate topic briefs into high-variance, photoreal image prompts."""
 
+    def __init__(self, *, channel=None) -> None:
+        from core_engine.interfaces.factory import ChannelFactory
+
+        self._channel = channel or ChannelFactory.from_env()
+
     def build_prompt(
         self,
         topic_brief: str,
@@ -87,32 +93,15 @@ class VisualArchitect:
         """
         Build a cinematography-ready image prompt.
 
-        Parameters
-        ----------
-        topic_brief:
-            The topic / subject (e.g. 'Celtic Salt hydration', 'Cold plunge protocol').
-        avatar_mode:
-            'ON'  — full persona portrait prompt with physical description + actions.
-            'OFF' — purely atmospheric/environmental prompt; no human subject.
-        atmosphere_style:
-            Overrides the default atmospheric style when avatar_mode='OFF'.
-            Typically sourced from the active page's ATMOSPHERE_STYLE string.
-            For SMART_BAIT: contains the hyper-literal scene derived from the
-            engagement hook (e.g. 'dramatic fire silhouette' for an ex-on-fire hook).
-        aspect_ratio:
-            Override the config default (e.g. '3:4', '9:16').
-        variation_index:
-            Used to seed deterministic variation spread across a batch.
-        total_variants:
-            Total size of the batch (for variant labelling).
-        force_kid:
-            True/False override; None = probabilistic (per Legacy Rule probability).
-            Ignored when avatar_mode='OFF'.
-        style:
-            'NATURAL' (default) — photorealistic cinematic output.
-            'CARTOON' — Modern 2.5D flat illustration / stylized vector art.
-                        Appends cartoon visual language directives.
+        Isolated channels (ancient_knowledge) skip Wild Fields / brightness
+        mandate and return the adapter's native compose_image_prompt().
         """
+        from core_engine.interfaces.factory import ChannelFactory
+
+        ch = self._channel
+        if ChannelFactory.is_isolated(getattr(ch, "channel_id", "")):
+            return ch.compose_image_prompt(topic_brief)
+
         rng = random.Random()  # fresh RNG each call — full randomness
 
         env = rng.choice(ENVIRONMENTS) if ENVIRONMENTS else {

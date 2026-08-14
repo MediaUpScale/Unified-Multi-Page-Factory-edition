@@ -38,6 +38,39 @@ logger = logging.getLogger(__name__)
 
 _MAX_PROMPT_CHARS = 120_000
 
+
+def _active_channel(channel=None):
+    """Resolve the injected channel, or the hybrid factory for ACTIVE_PAGE."""
+    if channel is not None:
+        return channel
+    from core_engine.interfaces.factory import ChannelFactory
+
+    return ChannelFactory.from_env()
+
+
+def _is_isolated_channel(channel=None) -> bool:
+    from core_engine.interfaces.factory import ChannelFactory
+
+    ch = _active_channel(channel)
+    return ChannelFactory.is_isolated(ch.channel_id)
+
+
+def _persona_block(channel=None) -> str:
+    ch = _active_channel(channel)
+    if _is_isolated_channel(ch):
+        rag = ch.get_rag_context("")
+        prompt = ch.get_system_prompt()
+        return f"{prompt}\n\n{rag}" if rag else prompt
+    return persona_context_block()
+
+
+def _cta_for(topic: str, channel=None) -> str:
+    ch = _active_channel(channel)
+    if _is_isolated_channel(ch):
+        options = ch.get_ctas()
+        return random.choice(options) if options else ""
+    return contextual_cta_keyword(topic)
+
 # ---------------------------------------------------------------------------
 # Caption format: 60 % short (300-500 ch), 40 % long (500-800 ch)
 # ---------------------------------------------------------------------------
@@ -180,11 +213,35 @@ def _keyword_image_theme(text: str) -> str:
 # Researcher prompt (kept intact -- produces structured fact sheet)
 # ---------------------------------------------------------------------------
 
-def build_gemini_researcher_instruction(topic: str, *, variation_notes: str = "") -> str:
-    persona = persona_context_block()
+def build_gemini_researcher_instruction(topic: str, *, variation_notes: str = "", channel=None) -> str:
+    persona = _persona_block(channel)
+    desk = _active_channel(channel).display_name
+    if _is_isolated_channel(channel):
+        return dedent(
+            f"""
+            You are the Research Desk for `{topic}` at {desk}.
+
+            {persona}
+            {variation_notes}
+
+            Constraints:
+            - Use ONLY the CHANNEL RAG block supplied with this prompt. Never the PDF wellness corpus.
+            - Hedge every theory. Never present a conspiracy as established fact.
+            - Do not use biochemical protocol language, Payhip offers, or another channel's persona.
+
+            Produce a RAW FACT SHEET with these sections exactly:
+            1. Recognised world anchor (the real monument, artefact, or site).
+            2. The impossible / unexplained element researchers debate.
+            3. Competing theories, each labelled as theory — not fact.
+            4. Visual cues the image engine must show.
+            5. Confidence Statement (High/Medium/Low) plus gaps.
+
+            Keep tone investigative and documentary.
+            """
+        ).strip()
     return dedent(
         f"""
-        You are the Research Desk for `{topic}` at The Holistic Legacy.
+        You are the Research Desk for `{topic}` at {desk}.
 
         {persona}
         {variation_notes}
@@ -207,35 +264,42 @@ def build_gemini_researcher_instruction(topic: str, *, variation_notes: str = ""
     ).strip()
 
 
-def build_batch_researcher_instruction(topic: str, num_variants: int) -> str:
+def build_batch_researcher_instruction(topic: str, num_variants: int, *, channel=None) -> str:
     """
     Build a single-call prompt that asks Gemini to produce `num_variants`
     distinct research narratives in one response (the 'One-Call Rule').
-
-    Each narrative is separated by the delimiter ===NARRATIVE_N=== so the
-    response can be parsed into individual fact-sheets without extra API calls.
     """
-    persona = persona_context_block()
-
-    angle_lines = "\n".join(
-        f"  - {a.get('code', '')}: {a.get('description', '')}"
-        for a in NARRATIVE_ANGLES
-    ) if NARRATIVE_ANGLES else (
-        "  - SCIENTIFIC: Biochemical mechanism\n"
-        "  - LEGACY: Ancestral wisdom story\n"
-        "  - EXPOSE: Why this is suppressed"
-    )
+    ch = _active_channel(channel)
+    persona = _persona_block(ch)
+    isolated_angles = ch.get_narrative_angles("default") if _is_isolated_channel(ch) else None
+    if isolated_angles:
+        angle_lines = "\n".join(f"  - {a}" for a in isolated_angles)
+    else:
+        angle_lines = "\n".join(
+            f"  - {a.get('code', '')}: {a.get('description', '')}"
+            for a in NARRATIVE_ANGLES
+        ) if NARRATIVE_ANGLES else (
+            "  - SCIENTIFIC: Biochemical mechanism\n"
+            "  - LEGACY: Ancestral wisdom story\n"
+            "  - EXPOSE: Why this is suppressed"
+        )
 
     rotation_note = BATCH_ROTATION_PATTERN or (
         "Rotate through SCIENTIFIC, LEGACY, EXPOSE angles in order. "
         "No two consecutive narratives may share the same angle."
     )
+    if isolated_angles:
+        rotation_note = (
+            "Rotate through this channel's investigative narrative angles. "
+            "No two consecutive narratives may share the same opening."
+        )
 
     example_delimiter = f"{BATCH_DELIMITER_OPEN}1==="
+    desk = ch.display_name
 
     return dedent(
         f"""
-        You are the Research Desk for The Holistic Legacy. Your task is to generate
+        You are the Research Desk for {desk}. Your task is to generate
         {num_variants} DISTINCT research narratives about the topic: `{topic}`.
 
         {persona}
@@ -253,12 +317,12 @@ def build_batch_researcher_instruction(topic: str, num_variants: int) -> str:
         ROTATION RULE: {rotation_note}
 
         CONTENT RULES:
-        - Pull facts ONLY from the PDF corpus below. Do not hallucinate.
-        - Include precise biochemical language when quoted in sources.
+        - Pull facts ONLY from the {"CHANNEL RAG block" if isolated_angles else "PDF corpus"} below. Do not hallucinate.
+        - {"Hedge every theory; never present conspiracy as fact." if isolated_angles else "Include precise biochemical language when quoted in sources."}
         - Each narrative must have a unique opening sentence -- no repeated hooks.
-        - Identify any Payhip link / offer present in excerpts; embed in narrative 1 only.
+        - {"Do not embed Payhip offers or wellness protocols." if isolated_angles else "Identify any Payhip link / offer present in excerpts; embed in narrative 1 only."}
         - Never reference author names that are on the banned list from the persona block above.
-        - Contrast natural mechanisms against expensive synthetic alternatives where relevant.
+        - {"Open from a real world anchor, then the impossible element." if isolated_angles else "Contrast natural mechanisms against expensive synthetic alternatives where relevant."}
 
         OUTPUT FORMAT (start immediately with ===NARRATIVE_1===, nothing before it):
         ===NARRATIVE_1===
@@ -292,8 +356,8 @@ def _parse_batch_narratives(raw_response: str, num_variants: int) -> list[str]:
 # Humanizer prompts (Dica de Dona de Casa voice + variable length)
 # ---------------------------------------------------------------------------
 
-def build_claude_humanizer_system_prompt(topic_brand: str = "Anna") -> str:
-    return f"You are {topic_brand}. {persona_context_block()}"
+def build_claude_humanizer_system_prompt(topic_brand: str = "Anna", *, channel=None) -> str:
+    return f"You are {topic_brand}. {_persona_block(channel)}"
 
 
 def build_claude_humanizer_user_prompt(
@@ -304,14 +368,21 @@ def build_claude_humanizer_user_prompt(
     total_variants: int = 1,
     cta_keyword: str | None = None,
     cta_enabled: bool = True,
+    channel=None,
 ) -> str:
     format_rules = _pick_format_rules(cta_enabled)
+    if _is_isolated_channel(channel):
+        format_rules = _active_channel(channel).get_system_prompt()
     suffix = _variant_suffix(variation_index, total_variants)
     tail = f"\n\nTopic focus: `{topic}`\n\nFACT SHEET:\n```\n{raw_fact_sheet}\n```"
     if cta_enabled:
-        kw = cta_keyword or contextual_cta_keyword(topic)
-        cta_instruction = CTA_VOICE_INSTRUCTION or (
-            f"Weave 'Comment {kw}' naturally into the caption as a personal DM invitation."
+        kw = cta_keyword or _cta_for(topic, channel)
+        cta_instruction = (
+            _active_channel(channel).get_system_prompt()
+            if _is_isolated_channel(channel)
+            else (CTA_VOICE_INSTRUCTION or (
+                f"Weave 'Comment {kw}' naturally into the caption as a personal DM invitation."
+            ))
         )
         body = (
             f"{format_rules}\n"
@@ -335,14 +406,23 @@ def build_gemini_humanizer_instruction(
     total_variants: int = 1,
     cta_keyword: str | None = None,
     cta_enabled: bool = True,
+    channel=None,
 ) -> str:
-    persona = persona_context_block()
-    format_rules = _pick_format_rules(cta_enabled)
+    persona = _persona_block(channel)
+    format_rules = (
+        _active_channel(channel).get_system_prompt()
+        if _is_isolated_channel(channel)
+        else _pick_format_rules(cta_enabled)
+    )
     suffix = _variant_suffix(variation_index, total_variants)
     if cta_enabled:
-        kw = cta_keyword or contextual_cta_keyword(topic)
-        cta_instruction = CTA_VOICE_INSTRUCTION or (
-            f"Weave 'Comment {kw}' naturally into the caption as a personal DM invitation."
+        kw = cta_keyword or _cta_for(topic, channel)
+        cta_instruction = (
+            "End with one of this channel's CTA lines; do not use another page's keyword."
+            if _is_isolated_channel(channel)
+            else (CTA_VOICE_INSTRUCTION or (
+                f"Weave 'Comment {kw}' naturally into the caption as a personal DM invitation."
+            ))
         )
         cta_block = f"CTA keyword for this caption: {kw}\nCTA instruction: {cta_instruction}"
     else:
@@ -394,6 +474,7 @@ def build_smart_bait_prompt(
     persona_block: str,
     *,
     cta_enabled: bool = True,
+    channel=None,
 ) -> str:
     """
     Build a single LLM prompt that returns both:
@@ -403,6 +484,42 @@ def build_smart_bait_prompt(
     The overlay is designed for immediate comment engagement (not educational).
     The caption complements it with personality, not exposition.
     """
+    if _is_isolated_channel(channel):
+        ch = _active_channel(channel)
+        cta_note = (
+            "CAPTION CLOSE: End with one of this channel's CTA lines."
+            if cta_enabled
+            else "CAPTION CLOSE: End cleanly. Do NOT include any comment links or call-to-actions."
+        )
+        return dedent(
+            f"""
+            You are creating a curiosity-bait social post for: {page_display_name}
+            Content niche: {page_niche or topic}
+
+            {persona_block}
+
+            TASK — produce exactly two parts as JSON.
+
+            ─── PART 1: OVERLAY TEXT (displayed ON the image) ───
+            - SINGLE sentence or question. ABSOLUTE MAXIMUM: 12 words.
+            - Investigative curiosity, not relationship psychology.
+            - Topic context: {topic}
+
+            ─── PART 2: CAPTION ───
+            - EXACTLY 1 SENTENCE.
+            - Dark, investigative, unexplained-history tone. Never Anna/Mei voice.
+            {cta_note}
+
+            ─── OUTPUT FORMAT — respond with ONLY valid JSON ───
+            {{
+              "quote_text": "A unique investigative overlay hook about the topic. Never repeat previous formats.",
+              "visual_subject": "A photoreal documentary scene of the named monument, artifact, or landscape. No couples, no face-masks, no relationship psychology. Wide aerial or environmental camera. Central subject. Foreground dust or stone arch; background temple, starfield, or horizon."
+            }}
+
+            Return ONLY the JSON object. No extra text, no markdown fences, no explanation.
+            """
+        ).strip()
+
     cta_note = (
         "CAPTION CLOSE: End with a subtle, natural engagement hook or DM invite (one short line)."
         if cta_enabled
@@ -515,6 +632,7 @@ def build_reel_narration_prompt(
     narrative_mode: str = "",
     batch_angle_block: str = "",
     uniqueness_rejection: str = "",
+    channel=None,
 ) -> str:
     """
     Build the user-side LLM prompt for ECONOMIC_REEL narration generation.
@@ -533,7 +651,15 @@ def build_reel_narration_prompt(
     if not _mode:
         _mode = "investigative" if niche_disclaimer else "psychology"
 
-    if _mode == "investigative":
+    if _is_isolated_channel(channel):
+        _mode = "investigative"
+        _ch_angles = _active_channel(channel).get_narrative_angles("investigative")
+        _angle = (
+            _rnd_angle.choice(_ch_angles)
+            if _ch_angles
+            else _rnd_angle.choice(_REEL_INVESTIGATION_ANGLES)
+        )
+    elif _mode == "investigative":
         _angle = _rnd_angle.choice(_REEL_INVESTIGATION_ANGLES)
     elif _mode == "warrior_discipline":
         _angle = _rnd_angle.choice(_REEL_WARRIOR_ANGLES)
@@ -894,16 +1020,51 @@ def build_long_caption_prompt(
     *,
     cta_enabled: bool = True,
     signature: str = "",
+    channel=None,
 ) -> str:
     """
-    Build a long-form LLM prompt that produces a profound, storytelling-style
-    caption about relationship dynamics, modern marriage, and emotional character.
+    Build a long-form LLM prompt for LONG_CAPTION_IMAGE.
 
-    The output must NOT contain headers, bullet points, or structured lists.
-    It must read as a seamless, gripping narrative in short impactful paragraphs,
-    modelled on the two structural archetypes below.
+    Isolated channels (ancient_knowledge) get investigative 3-paragraph copy
+    with Pinterest metadata — never relationship-psychology archetypes.
     """
     _sig = signature or f"© {page_display_name} | by MediaUpScale"
+    if _is_isolated_channel(channel):
+        cta_close = (
+            f"\nParagraph 3 (CTA) must end with a curiosity invitation, then the exact line: {_sig}"
+            if cta_enabled
+            else f"\nDo not add a follow CTA. End with: {_sig}"
+        )
+        return dedent(
+            f"""
+            You are writing a LONG_CAPTION_IMAGE post for: {page_display_name}
+            Niche: {page_niche or topic}
+
+            {persona_block}
+
+            TOPIC: {topic}
+
+            Write a comprehensive 3-paragraph post:
+            1. HOOK — one punchy opening that names a real world monument or artefact.
+            2. BODY — evidence, competing theories, hedges ('some researchers believe').
+            3. CALL TO ACTION — invite a theory in the comments, then 5 hashtags.
+
+            Rules:
+            - Minimum 180 words. Never a single-sentence title.
+            - No relationship psychology, no wellness, no microbiome language.
+            - No markdown bold, no bullet lists in the caption body.
+            {cta_close}
+
+            Respond with ONLY valid JSON:
+            {{
+              "image_text_overlay": "",
+              "caption_body": "paragraph 1\\n\\nparagraph 2\\n\\nparagraph 3 plus 5 hashtags",
+              "pinterest_title": "keyword-rich pin title, max 100 characters",
+              "pinterest_description": "two-sentence pin description, no social CTAs"
+            }}
+            """
+        ).strip()
+
     cta_close = (
         f"\n\nEnd the caption with the exact line: {_sig}"
         if cta_enabled
@@ -977,8 +1138,14 @@ class CaptionEngine:
         anthropic_key: str | None = None,
         research_model: str | None = None,
         writer_model: str | None = None,
+        channel=None,
     ) -> None:
+        from core_engine.interfaces.factory import ChannelFactory
+
+        self._channel = channel or ChannelFactory.from_env()
         self.last_seo_title = ""
+        self.last_pinterest_title = ""
+        self.last_pinterest_description = ""
         g_key = gemini_key or app_config.GEMINI_API_KEY
         a_key = anthropic_key or app_config.ANTHROPIC_API_KEY
         if not g_key:
@@ -1221,18 +1388,25 @@ class CaptionEngine:
                 f"Additional angle: emphasize nuance #{variation_index + 1} of {total_variants} "
                 "while staying excerpt-faithful."
             )
-        instruction = build_gemini_researcher_instruction(topic, variation_notes=vnote)
+        instruction = build_gemini_researcher_instruction(
+            topic, variation_notes=vnote, channel=self._channel
+        )
 
-        context = corpus_to_prompt_context(pdf_bundle)
+        if _is_isolated_channel(self._channel):
+            context = self._channel.get_rag_context(topic)
+            corpus_open, corpus_close = "CHANNEL RAG BEGIN", "CHANNEL RAG END"
+        else:
+            context = corpus_to_prompt_context(pdf_bundle)
+            corpus_open, corpus_close = "PDF CORPUS BEGIN", "PDF CORPUS END"
         if len(context) > _MAX_PROMPT_CHARS:
             context = context[:_MAX_PROMPT_CHARS]
 
         # --- Gemini PRIMARY only (no DeepSeek / Claude text fallbacks) ---
         full_prompt = (
             instruction
-            + "\n\nPDF CORPUS BEGIN\n"
+            + f"\n\n{corpus_open}\n"
             + context
-            + "\nPDF CORPUS END"
+            + f"\n{corpus_close}"
         )
         model = research_model_override or self._research_model
         try:
@@ -1240,7 +1414,7 @@ class CaptionEngine:
             response = generate_content_with_model_fallback(
                 self._gemini,
                 chain,
-                contents=[instruction, "\n\nPDF CORPUS BEGIN\n", context, "\nPDF CORPUS END"],
+                contents=[instruction, f"\n\n{corpus_open}\n", context, f"\n{corpus_close}"],
             )
             text_attr = getattr(response, "text", None)
             raw_text = text_attr() if callable(text_attr) else text_attr
@@ -1267,9 +1441,9 @@ class CaptionEngine:
                         contents=[
                             instruction
                             + "\n\nCRITICAL: Expand the fact sheet substantially (≥150 characters).\n\n"
-                            + "PDF CORPUS BEGIN\n"
+                            + f"{corpus_open}\n"
                             + context
-                            + "\nPDF CORPUS END",
+                            + f"\n{corpus_close}",
                         ],
                     )
                     exp_attr = getattr(expand, "text", None)
@@ -1301,9 +1475,14 @@ class CaptionEngine:
         per-variant ``synthesize_facts()`` calls.
         """
         count = num_variants or BATCH_DEFAULT_SIZE
-        instruction = build_batch_researcher_instruction(topic, count)
+        instruction = build_batch_researcher_instruction(topic, count, channel=self._channel)
 
-        context = corpus_to_prompt_context(pdf_bundle)
+        if _is_isolated_channel(self._channel):
+            context = self._channel.get_rag_context(topic)
+            corpus_open, corpus_close = "CHANNEL RAG BEGIN", "CHANNEL RAG END"
+        else:
+            context = corpus_to_prompt_context(pdf_bundle)
+            corpus_open, corpus_close = "PDF CORPUS BEGIN", "PDF CORPUS END"
         if len(context) > _MAX_PROMPT_CHARS:
             context = context[:_MAX_PROMPT_CHARS]
 
@@ -1312,7 +1491,7 @@ class CaptionEngine:
             response = generate_content_with_model_fallback(
                 self._gemini,
                 chain,
-                contents=[instruction, "\n\nPDF CORPUS BEGIN\n", context, "\nPDF CORPUS END"],
+                contents=[instruction, f"\n\n{corpus_open}\n", context, f"\n{corpus_close}"],
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Batch research API call failed: %s", exc)
@@ -1359,7 +1538,12 @@ class CaptionEngine:
             raise ValueError(
                 "Anthropic client unavailable. Add ANTHROPIC_API_KEY or enable economic_brain_mode."
             )
-        system_prompt = build_claude_humanizer_system_prompt("Anna")
+        brand = (
+            self._channel.display_name
+            if _is_isolated_channel(self._channel)
+            else "Anna"
+        )
+        system_prompt = build_claude_humanizer_system_prompt(brand, channel=self._channel)
         user_prompt = build_claude_humanizer_user_prompt(
             topic,
             raw_fact_sheet,
@@ -1367,6 +1551,7 @@ class CaptionEngine:
             total_variants=total_variants,
             cta_keyword=cta_keyword,
             cta_enabled=cta_enabled,
+            channel=self._channel,
         )
 
         message = self._anthropic.messages.create(
@@ -1402,6 +1587,7 @@ class CaptionEngine:
             total_variants=total_variants,
             cta_keyword=cta_keyword,
             cta_enabled=cta_enabled,
+            channel=self._channel,
         )
         econ = model_id or app_config.GEMINI_ECONOMIC_BRAIN_MODEL
         chain = chain_with_preferred_first(self._econ_gemini_chain, econ)
@@ -1483,7 +1669,10 @@ class CaptionEngine:
         )
 
         _mei_voice = ""
-        _warrior = (narrative_mode or "").strip().lower() == "warrior_discipline"
+        _warrior = (
+            (narrative_mode or "").strip().lower() == "warrior_discipline"
+            and not _is_isolated_channel(self._channel)
+        )
         _mei_prof: dict = {}
         if _warrior:
             try:
@@ -1738,7 +1927,7 @@ class CaptionEngine:
           mode_tag      — "humanized" | "gemini_fallback" | "researcher_fallback"
           visual_subject— scene description for graphite image generation
         """
-        persona = persona_context_block()
+        persona = _persona_block(self._channel)
         _is_reel = (post_type.upper() == "ECONOMIC_REEL")
 
         if _is_reel:
@@ -1756,6 +1945,7 @@ class CaptionEngine:
                 narrative_mode=narrative_mode,
                 batch_angle_block=batch_angle_block,
                 uniqueness_rejection=uniqueness_rejection,
+                channel=self._channel,
             )
         else:
             prompt = build_smart_bait_prompt(
@@ -1764,6 +1954,7 @@ class CaptionEngine:
                 page_niche,
                 persona,
                 cta_enabled=cta_enabled,
+                channel=self._channel,
             )
 
         if _is_reel:
@@ -1781,26 +1972,47 @@ class CaptionEngine:
                     "Use the spreadsheet examples purely for engagement-bait logic structure, "
                     "never for content copying."
                 )
-            _smart_bait_system = (
-                f"You are an elite psychological author and voice scriptwriter for the social media "
-                f"video reel pipeline of the page: {page_display_name or 'this page'}.\n\n"
-                "OUTPUT FORMAT — respond ONLY with valid JSON, no markdown fences:\n"
-                "{\n"
-                '  "image_text_overlay": "A single short psychological hook question or statement '
-                '(max 12 words). This text is burned onto the video frame as the visual headline.",\n'
-                '  "caption_body": "A full 4-sentence narration script for ElevenLabs voiceover. '
-                "Structure: (1) Open with the psychological hook question from image_text_overlay. "
-                "(2) Deliver a deep truth about why people tolerate or repeat this pattern. "
-                "(3) Offer one piece of actionable emotional-intelligence wisdom. "
-                "(4) Close with a warm CTA inviting viewers to share their experience in comments. "
-                "Total length: 60-80 words — enough to fill a 30-second spoken narration at "
-                'natural pace. This same text also serves as the social media post caption.",\n'
-                '  "visual_subject": "A precise graphite scene: exactly one man and one woman in a '
-                'psychologically tense interaction. Only ONE may exhibit a surreal transformation. '
-                'Minimal dark background."\n'
-                "}"
-                + _hooks_block
-            )
+            if _is_isolated_channel(self._channel):
+                _starter_ext = ""
+                if batch_angle_block:
+                    _starter_ext = "\n\n" + batch_angle_block.strip()
+                _smart_bait_system = (
+                    f"You are an investigative documentary writer for: {page_display_name or 'this page'}.\n\n"
+                    "OUTPUT FORMAT — respond ONLY with valid JSON, no markdown fences:\n"
+                    "{\n"
+                    '  "image_text_overlay": "A single short investigative hook question or statement '
+                    '(max 12 words). Burned onto the video frame as the visual headline.",\n'
+                    '  "caption_body": "A full 4-sentence documentary narration for ElevenLabs. '
+                    "Open from a real world anchor, then the impossible element. Hedge every theory. "
+                    'Never relationship psychology, attachment theory, or another channel\'s voice.",\n'
+                    '  "visual_subject": "A photoreal documentary scene of the named monument, artefact, '
+                    'or landscape. No couples, no face-masks, no graphite sketch, no relationship psychology. '
+                    'Wide aerial or immersive first-person. Foreground dust or stone arch; background temple or starfield."\n'
+                    "}"
+                    + _hooks_block
+                    + _starter_ext
+                )
+            else:
+                _smart_bait_system = (
+                    f"You are an elite psychological author and voice scriptwriter for the social media "
+                    f"video reel pipeline of the page: {page_display_name or 'this page'}.\n\n"
+                    "OUTPUT FORMAT — respond ONLY with valid JSON, no markdown fences:\n"
+                    "{\n"
+                    '  "image_text_overlay": "A single short psychological hook question or statement '
+                    '(max 12 words). This text is burned onto the video frame as the visual headline.",\n'
+                    '  "caption_body": "A full 4-sentence narration script for ElevenLabs voiceover. '
+                    "Structure: (1) Open with the psychological hook question from image_text_overlay. "
+                    "(2) Deliver a deep truth about why people tolerate or repeat this pattern. "
+                    "(3) Offer one piece of actionable emotional-intelligence wisdom. "
+                    "(4) Close with a warm CTA inviting viewers to share their experience in comments. "
+                    "Total length: 60-80 words — enough to fill a 30-second spoken narration at "
+                    'natural pace. This same text also serves as the social media post caption.",\n'
+                    '  "visual_subject": "A precise graphite scene: exactly one man and one woman in a '
+                    'psychologically tense interaction. Only ONE may exhibit a surreal transformation. '
+                    'Minimal dark background."\n'
+                    "}"
+                    + _hooks_block
+                )
         else:
             _smart_bait_system = (
                 f"You are an elite viral content engineer for the social media page: {page_display_name or 'this page'}. "
@@ -1917,6 +2129,7 @@ class CaptionEngine:
         economic: bool = False,
         model_id: str | None = None,
         signature: str = "",
+        opening_style_block: str = "",
     ) -> tuple[str, str]:
         """
         Generate a LONG_CAPTION_IMAGE caption: profound, long-form storytelling
@@ -1934,7 +2147,7 @@ class CaptionEngine:
         _sig = signature or (
             f"© {page_display_name} | by MediaUpScale" if page_display_name else "© MediaUpScale"
         )
-        persona = persona_context_block()
+        persona = _persona_block(self._channel)
         prompt = build_long_caption_prompt(
             topic,
             page_display_name or topic,
@@ -1942,27 +2155,48 @@ class CaptionEngine:
             persona,
             cta_enabled=cta_enabled,
             signature=_sig,
+            channel=self._channel,
         )
 
-        _long_caption_system = (
-            "You are an elite psychological author writing for the 'LONG_CAPTION_IMAGE' format.\n\n"
-            "OUTPUT FORMAT (respond with ONLY valid JSON, nothing else):\n"
-            "{\n"
-            '  "image_text_overlay": "",\n'
-            '  "caption_body": "Full long-format essay text goes here..."\n'
-            "}\n\n"
-            "RULES FOR image_text_overlay: LEAVE THIS COMPLETELY EMPTY. "
-            "No text goes on the image — the illustration must stay 100% clean.\n\n"
-            "ESSAY REQUIREMENTS for caption_body:\n"
-            "- Write a deep, highly impactful psychological essay.\n"
-            "- Use a hyper-spaced, single-sentence rhythm: every standalone statement "
-            "must be separated by a double line break (blank line between each sentence).\n"
-            "- Strictly avoid markdown bolding (**), bullet points, or hashtags.\n"
-            "- Analyze destructive female and male relationship behaviors.\n"
-            "- Cover exactly 2 specific traitor/betrayal scenarios with concrete detail.\n"
-            "- Conclude with guidance on managing the domestic home space for inner peace.\n"
-            "- End with the exact line: " + _sig
-        )
+        self.last_pinterest_title = ""
+        self.last_pinterest_description = ""
+
+        if _is_isolated_channel(self._channel):
+            _long_caption_system = (
+                "You are an investigative documentary writer for LONG_CAPTION_IMAGE.\n\n"
+                "Write a comprehensive 3-paragraph post including a Hook, a narrative Body, "
+                "a Call to Action, and 5 hashtags. Minimum 180 words. Never a one-sentence title.\n\n"
+                "OUTPUT FORMAT (respond with ONLY valid JSON):\n"
+                "{\n"
+                '  "image_text_overlay": "",\n'
+                '  "caption_body": "Hook paragraph, then body, then CTA + 5 hashtags...",\n'
+                '  "pinterest_title": "keyword-rich pin title, max 100 characters",\n'
+                '  "pinterest_description": "two-sentence pin description without social CTAs"\n'
+                "}\n\n"
+                "image_text_overlay MUST be empty. Never use relationship or wellness language. "
+                "End caption_body with: " + _sig
+                + ("\n\n" + opening_style_block.strip() if opening_style_block else "")
+            )
+        else:
+            _long_caption_system = (
+                "You are an elite psychological author writing for the 'LONG_CAPTION_IMAGE' format.\n\n"
+                "OUTPUT FORMAT (respond with ONLY valid JSON, nothing else):\n"
+                "{\n"
+                '  "image_text_overlay": "",\n'
+                '  "caption_body": "Full long-format essay text goes here..."\n'
+                "}\n\n"
+                "RULES FOR image_text_overlay: LEAVE THIS COMPLETELY EMPTY. "
+                "No text goes on the image — the illustration must stay 100% clean.\n\n"
+                "ESSAY REQUIREMENTS for caption_body:\n"
+                "- Write a deep, highly impactful psychological essay.\n"
+                "- Use a hyper-spaced, single-sentence rhythm: every standalone statement "
+                "must be separated by a double line break (blank line between each sentence).\n"
+                "- Strictly avoid markdown bolding (**), bullet points, or hashtags.\n"
+                "- Analyze destructive female and male relationship behaviors.\n"
+                "- Cover exactly 2 specific traitor/betrayal scenarios with concrete detail.\n"
+                "- Conclude with guidance on managing the domestic home space for inner peace.\n"
+                "- End with the exact line: " + _sig
+            )
 
         raw_response = ""
         mode_tag = "humanized"
@@ -2008,6 +2242,12 @@ class CaptionEngine:
             )
             _data = _json.loads(_clean)
             caption = str(_data.get("caption_body", "")).strip()
+            self.last_pinterest_title = str(
+                _data.get("pinterest_title") or ""
+            ).strip()[:100]
+            self.last_pinterest_description = str(
+                _data.get("pinterest_description") or ""
+            ).strip()
             # image_text_overlay is always empty for this format — ignored
         except (_json.JSONDecodeError, Exception):  # noqa: BLE001
             logger.debug(
@@ -2020,6 +2260,12 @@ class CaptionEngine:
 
         if _copyright not in caption:
             caption = f"{caption}\n\n{_copyright}"
+
+        if _is_isolated_channel(self._channel):
+            if not self.last_pinterest_title:
+                self.last_pinterest_title = (topic or page_display_name or "Ancient Mystery")[:100]
+            if not self.last_pinterest_description:
+                self.last_pinterest_description = (caption.split("\n\n")[0] if caption else topic)[:500]
 
         return caption, mode_tag
 
@@ -2107,7 +2353,7 @@ class CaptionEngine:
           "gemini_fallback"     -- Claude failed, Gemini succeeded
           "researcher_fallback" -- all LLMs failed (returns empty string)
         """
-        kw = (cta_keyword or contextual_cta_keyword(topic)) if cta_enabled else None
+        kw = (cta_keyword or _cta_for(topic, self._channel)) if cta_enabled else None
 
         if economic:
             # Gemini PRIMARY ONLY for economic captions (all pages)

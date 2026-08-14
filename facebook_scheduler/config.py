@@ -47,11 +47,14 @@ POSTING_INTERVAL_HOURS: int = 3          # gap between posts in hours
 SCHEDULE_COLUMN_FILL_START: str = "now"  # "now" = start from current time
 
 # Reels / media scheduler (LocalMediaQueue + UniversalComposerScheduler)
-# next = last_scheduled + REELS_BASE_INTERVAL_HOURS + random(min..max) minutes
-REELS_BASE_INTERVAL_HOURS: int = 2
-REELS_JITTER_MIN_MINUTES: int = 60
-REELS_JITTER_MAX_MINUTES: int = 180
-REELS_MIN_LEAD_MINUTES: int = 15
+# First post: now + random(FIRST_OFFSET_MIN..FIRST_OFFSET_MAX) minutes
+# Subsequent: last + BASE_INTERVAL_HOURS + random(JITTER_MIN..JITTER_MAX) minutes
+REELS_FIRST_OFFSET_MIN_MINUTES: int = 25  # Meta requires ≥20 min lead
+REELS_FIRST_OFFSET_MAX_MINUTES: int = 60
+REELS_BASE_INTERVAL_HOURS: int = 4
+REELS_JITTER_MIN_MINUTES: int = 0
+REELS_JITTER_MAX_MINUTES: int = 60
+REELS_MIN_LEAD_MINUTES: int = 25
 
 # ---------------------------------------------------------------------------
 # Playwright / browser connection

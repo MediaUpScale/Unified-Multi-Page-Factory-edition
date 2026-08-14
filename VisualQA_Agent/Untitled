@@ -1,0 +1,1 @@
+grep -rnwl '/home/blacfcrc/' --include="*.php" -e 'eval(base64_decode' -e 'gzinflate(base64_decode' -e 'str_rot13' 2>/dev/null

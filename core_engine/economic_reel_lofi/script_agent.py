@@ -198,6 +198,8 @@ RULES:
 - Each "text" max {lofi_cfg.MAX_CAPTION_CHARS} characters, punchy, spoken-caption tone.
 - Formula: hook → parallel emotional build → clear payoff.
 - visual_prompt must describe character/setting/mood/camera for THAT scene's caption — never reuse caption text as visual_prompt.
+- Keep visual_prompt concise (~40-70 chars). Do NOT hard-code a lighting palette (dusk/amber/teal); lighting is injected separately.
+- Optional per-scene key "lighting_mood" from: amber_dusk, moonlit, overcast, golden_hour, indigo_night.
 - No NSFW, no real private individuals named, brand-safe tone for {module}.
 - Never invent an authority quote. Only use the provided verified quote when hook_type is authority_quote.
 """

@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-LOFI caption typography — thin italic serif (Lora), white, soft shadow.
+LOFI caption typography — selectable styles.
 
-FINAL style (supersedes earlier Inter/Montserrat Medium sans spec).
-Matched to "@Whispers" reference videos: delicate + soft + legible.
+DEFAULT: ``rounded_hand`` — Comic Sans MS Bold (bold rounded handwritten).
+Identified from the double-caption comparison plate where this face sat above
+Lora Italic; confirmed installed as ``Fonts/ComicSans/ComicSansMS-Bold.ttf``
+(and Windows ``comicbd.ttf``).
+
+Secondary: ``lora_italic`` — thin italic serif (Lora), kept selectable.
 """
 from __future__ import annotations
 
@@ -15,7 +19,7 @@ from PIL import ImageDraw, ImageFilter, ImageFont
 
 from core_engine.economic_reel_lofi import config as lofi_cfg
 
-# ── LOFI caption style constants (do not share with ECONOMIC_REEL yellow) ───
+# ── Shared layout (do not share ECONOMIC_REEL yellow outline style) ──────────
 CAPTION_COLOR: tuple[int, int, int, int] = (255, 255, 255, 255)
 SHADOW_COLOR: tuple[int, int, int, int] = (0, 0, 0, 102)  # ≈ rgba(0,0,0,0.40)
 SHADOW_OFFSET_PX: tuple[int, int] = (2, 2)
@@ -24,42 +28,74 @@ MAX_WIDTH_FRAC: float = 0.80
 # Upper-middle third (~35–45% from top); avoid top 15% safe zone
 CAPTION_CENTER_Y_FRAC: float = 0.40
 LINE_HEIGHT_FRAC: float = 0.052  # ~5.2% of frame height per line
-LINE_GAP_FRAC: float = 0.028     # generous for italic ascenders/descenders
-# Native Lora Italic tracking — do not add extra letter-spacing
+LINE_GAP_FRAC: float = 0.028
 LETTER_SPACING_PX: float = 0.0
 
-# Italic-only chain. Never fall back to upright serif or any sans.
-FONT_RELATIVE_CANDIDATES: tuple[str, ...] = (
+# DEFAULT — bold rounded handwritten (Comic Sans MS Bold)
+ROUNDED_HAND_FONT_CANDIDATES: tuple[str, ...] = (
+    "Fonts/ComicSans/ComicSansMS-Bold.ttf",
+    "Fonts/ComicSans/comicbd.ttf",
+    r"C:\Windows\Fonts\comicbd.ttf",
+    # Soft fallbacks if Comic Sans unavailable
+    "Fonts/Poppins/Poppins-Bold.ttf",
+    "Fonts/Montserrat/static/Montserrat-Bold.ttf",
+)
+
+# Secondary — thin italic serif
+LORA_ITALIC_FONT_CANDIDATES: tuple[str, ...] = (
     "Fonts/Lora/Lora-Italic.ttf",
     "Fonts/Lora/EBGaramond-Italic.ttf",
     "Fonts/Lora/CormorantGaramond-Italic.ttf",
 )
 
-# Watermark handle (same family, smaller, low opacity)
+STYLE_FONT_MAP: dict[str, tuple[str, ...]] = {
+    "rounded_hand": ROUNDED_HAND_FONT_CANDIDATES,
+    "lora_italic": LORA_ITALIC_FONT_CANDIDATES,
+}
+
+STYLE_DISPLAY_NAME: dict[str, str] = {
+    "rounded_hand": "Comic Sans MS Bold",
+    "lora_italic": "Lora Italic",
+}
+
+# Watermark handle (same family as caption style, smaller, low opacity)
 WATERMARK_COLOR: tuple[int, int, int, int] = (255, 255, 255, 140)  # ~0.55 opacity
 WATERMARK_SHADOW_COLOR: tuple[int, int, int, int] = (0, 0, 0, 70)
 WATERMARK_SIZE_FRAC: float = 0.028  # of frame height
 WATERMARK_BOTTOM_MARGIN_FRAC: float = 0.045
 
 
+def normalize_caption_style(style: str | None) -> str:
+    key = (style or lofi_cfg.DEFAULT_CAPTION_STYLE).strip().lower()
+    if key not in STYLE_FONT_MAP:
+        raise ValueError(
+            f"caption style must be one of {sorted(STYLE_FONT_MAP)} (got {style!r})"
+        )
+    return key
+
+
 def resolve_lofi_caption_font(
     engine_root: Path,
     *,
     size: int | None = None,
+    style: str | None = None,
 ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Lora Italic (Regular/Light) — italic slant is mandatory."""
+    """Resolve caption font for the requested style (default: rounded_hand)."""
+    style_key = normalize_caption_style(style)
     if size is None:
         size = max(28, int(lofi_cfg.REEL_HEIGHT * LINE_HEIGHT_FRAC))
-    for rel in FONT_RELATIVE_CANDIDATES:
-        path = engine_root / rel
+    candidates = STYLE_FONT_MAP[style_key]
+    for rel in candidates:
+        path = Path(rel)
+        if not path.is_absolute():
+            path = engine_root / rel
         if path.is_file():
             try:
                 return ImageFont.truetype(str(path), size=size)
             except Exception:  # noqa: BLE001
                 continue
     raise FileNotFoundError(
-        "LOFI caption requires an italic serif font. Install one of: "
-        + ", ".join(FONT_RELATIVE_CANDIDATES)
+        f"LOFI caption style {style_key!r} requires one of: " + ", ".join(candidates)
     )
 
 
@@ -132,17 +168,20 @@ def render_lofi_caption_layer(
     engine_root: Path,
     width: int = lofi_cfg.REEL_WIDTH,
     height: int = lofi_cfg.REEL_HEIGHT,
+    style: str | None = None,
 ) -> PILImage.Image:
     """
-    White Lora Italic caption, soft blurred drop shadow,
-    center-aligned in the upper-middle third (~40% from top).
+    White caption + soft blurred drop shadow, center-aligned upper-middle (~40%).
+
+    Default style is ``rounded_hand`` (Comic Sans MS Bold).
+    Pass ``style='lora_italic'`` for the secondary thin italic serif.
     """
+    style_key = normalize_caption_style(style)
     canvas = PILImage.new("RGBA", (width, height), (0, 0, 0, 0))
     probe = ImageDraw.Draw(canvas)
     max_w = int(width * MAX_WIDTH_FRAC)
-    # Shrink italic caption until every wrapped line fits within max width.
     size = max(28, int(height * LINE_HEIGHT_FRAC))
-    font = resolve_lofi_caption_font(engine_root, size=size)
+    font = resolve_lofi_caption_font(engine_root, size=size, style=style_key)
     lines = wrap_lofi_caption(text, font, max_w, probe)
     for _ in range(8):
         if not lines:
@@ -156,7 +195,7 @@ def render_lofi_caption_layer(
         if not overflow:
             break
         size = max(22, int(size * 0.92))
-        font = resolve_lofi_caption_font(engine_root, size=size)
+        font = resolve_lofi_caption_font(engine_root, size=size, style=style_key)
         lines = wrap_lofi_caption(text, font, max_w, probe)
     if not lines:
         return canvas
@@ -164,14 +203,12 @@ def render_lofi_caption_layer(
     line_gap = int(height * LINE_GAP_FRAC)
     metrics: list[tuple[str, int, int]] = []
     for ln in lines:
-        # Use full line bbox so italic overhang is included
         bbox = probe.textbbox((0, 0), ln, font=font)
         lw = bbox[2] - bbox[0]
         lh = bbox[3] - bbox[1]
         metrics.append((ln, lw, lh))
 
     total_h = sum(m[2] for m in metrics) + line_gap * (len(metrics) - 1)
-    # Keep caption center in 35–45% band; clamp away from top 15% safe zone
     y_center = int(height * CAPTION_CENTER_Y_FRAC)
     y = max(int(height * 0.16), y_center - total_h // 2)
 
@@ -194,18 +231,17 @@ def render_lofi_watermark_layer(
     width: int = lofi_cfg.REEL_WIDTH,
     height: int = lofi_cfg.REEL_HEIGHT,
     opacity: float = 0.55,
+    style: str | None = None,
 ) -> PILImage.Image:
-    """
-    Channel handle in the same Lora Italic family — smaller, low-opacity white.
-    Bottom-center, matching the "@Whispers" cohesive watermark treatment.
-    """
+    """Channel handle in the active caption family — smaller, low-opacity white."""
+    style_key = normalize_caption_style(style)
     canvas = PILImage.new("RGBA", (width, height), (0, 0, 0, 0))
     text = (handle or "").strip()
     if not text:
         return canvas
 
     size = max(18, int(height * WATERMARK_SIZE_FRAC))
-    font = resolve_lofi_caption_font(engine_root, size=size)
+    font = resolve_lofi_caption_font(engine_root, size=size, style=style_key)
     draw = ImageDraw.Draw(canvas)
     bbox = draw.textbbox((0, 0), text, font=font)
     lw, lh = bbox[2] - bbox[0], bbox[3] - bbox[1]

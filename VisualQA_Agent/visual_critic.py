@@ -155,6 +155,61 @@ Return JSON fields exactly:
 """.strip()
 
 
+def _build_ancient_mystery_critic_instruction(
+    channel_name: str,
+    rules: dict[str, Any],
+    quality_threshold: float,
+    n_refs: int,
+) -> str:
+    forbidden = ", ".join(rules.get("forbidden_tokens") or [])
+    mandatory = ", ".join(rules.get("mandatory_elements") or [])
+    lighting = rules.get("lighting_style") or ""
+    audience = rules.get("target_audience_rules") or ""
+    return f"""
+You are an Art Director for the Ancient Knowledge documentary channel ("{channel_name}").
+
+You are given:
+- IMAGE 1 = NEW CANDIDATE (judge the PIXELS, not the prompt text)
+- OPTIONAL REFERENCE STYLE IMAGES 1–{n_refs}
+
+MASTER CRITERIA (ALL must hold to pass):
+1) DYNAMIC LIGHTING — single dramatic source (warm amber torchlight or cold ethereal
+   moonlight), volumetric shafts through dust/haze, rim light on megalithic edges,
+   high-contrast chiaroscuro. FAIL flat, even, or muddy lighting.
+2) NOT A GENERIC FRONT-FACING 3D RENDER — no clean CGI, no plastic surfaces,
+   no studio-lit video-game screenshot, no symmetrical dead-on monument postcard.
+   Prefer oblique, aerial, low-angle, or first-person immersive camera.
+3) ANCIENT MYSTERY AESTHETIC — ultra-realistic cinematic historical photography of a
+   recognisable real-world monument with an anomalous/impossible detail woven in.
+   35mm documentary film grain, desaturated ochre and shadow-black grade.
+   No illustration, sketch, cartoon, or modern elements.
+
+CHANNEL RULES:
+- FORBIDDEN: {forbidden}
+- MANDATORY: {mandatory}
+- LIGHTING: {lighting}
+- AUDIENCE: {audience}
+
+HARD FAIL (score must be < 4.0) if the still looks like CGI / Unreal / toy-3D /
+front-facing tourist postcard / illustration.
+
+Do NOT apply Master Mei dystopian / body-horror / fitness-model criteria.
+
+SCORING GUIDE:
+- 9.0–10.0: production-ready cinematic mystery still
+- {quality_threshold}–8.9: minor issues, still approvable
+- Below {quality_threshold}: FAIL
+
+Set passed=true ONLY if score >= {quality_threshold} AND all three master criteria hold.
+
+Return JSON fields exactly:
+  score (float 0–10),
+  passed (boolean),
+  flaws (list of strings),
+  fix_instructions (string — actionable camera/lighting FLUX rewrite; empty if passed).
+""".strip()
+
+
 def _build_critic_instruction(
     channel_name: str,
     rules: dict[str, Any],
@@ -165,6 +220,10 @@ def _build_critic_instruction(
     profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
     if profile == "lofi_economic" or channel_name == "lofi_economic":
         return _build_lofi_critic_instruction(
+            channel_name, rules, quality_threshold, n_refs,
+        )
+    if profile in ("ancient_mystery", "ancient_knowledge") or channel_name == "ancient_knowledge":
+        return _build_ancient_mystery_critic_instruction(
             channel_name, rules, quality_threshold, n_refs,
         )
 
@@ -340,11 +399,16 @@ def evaluate_image(
 
     profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
     is_lofi = profile == "lofi_economic" or channel_name == "lofi_economic"
+    is_ancient = (
+        profile in ("ancient_mystery", "ancient_knowledge")
+        or channel_name == "ancient_knowledge"
+    )
 
     _console.print(
         f"[cyan]CRITIC[/cyan] Gemini Vision | candidate={candidate_label} | "
         f"refs={len(refs)} (ALL loaded) | channel={channel_name} | model={model_id}"
         + (" | profile=lofi_economic" if is_lofi else "")
+        + (" | profile=ancient_mystery" if is_ancient else "")
     )
 
     response = client.models.generate_content(
@@ -376,7 +440,7 @@ def evaluate_image(
         except Exception:
             verdict = CriticVerdict.model_validate(json.loads(text))
 
-    if not is_lofi:
+    if not is_lofi and not is_ancient:
         verdict = _apply_hard_cap(verdict, hard_cap)
 
     if verdict.score < threshold:

@@ -13,7 +13,10 @@ CSV output is retired; all bulk outputs are .xlsx only.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
+import time
 from copy import copy
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,6 +24,8 @@ from typing import Any
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
+
+_LOG = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Column definitions (3-column layout)
@@ -225,7 +230,7 @@ def _create_fallback_workbook(destination_path: Path) -> None:
     ws = wb.active
     for col_idx, title in enumerate(_FALLBACK_HEADERS, start=1):
         ws.cell(row=1, column=col_idx, value=title)
-    wb.save(destination_path)
+    _save_workbook(wb, destination_path)
 
 
 def _clone_header_sheet_from_template(template_path: Path, destination_path: Path) -> None:
@@ -268,11 +273,65 @@ def _clone_header_sheet_from_template(template_path: Path, destination_path: Pat
     if freeze:
         dst_ws.freeze_panes = freeze
 
-    dst_wb.save(destination_path)
+    _save_workbook(dst_wb, destination_path)
+
+
+def _save_workbook(wb: Workbook, destination_path: Path) -> None:
+    """
+    Persist ``wb`` to an absolute path with mkdir + retry.
+
+    Google Drive / Excel file locks are common; we write a sibling ``.tmp``
+    then atomically replace, retrying once on PermissionError/OSError.
+    """
+    path = Path(destination_path).expanduser().resolve()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _LOG.error("PostPlanner mkdir failed | dir=%s | %s", path.parent, exc)
+        raise
+
+    tmp = path.with_name(path.name + ".tmp")
+    last_exc: BaseException | None = None
+    for attempt in range(1, 3):
+        try:
+            wb.save(tmp)
+            os.replace(str(tmp), str(path))
+            _LOG.info("PostPlanner saved | %s", path)
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            _LOG.warning(
+                "PostPlanner save failed (attempt %s/2) | path=%s | %s",
+                attempt, path, exc,
+            )
+            try:
+                if tmp.is_file():
+                    tmp.unlink()
+            except OSError:
+                pass
+            # Direct save as fallback (Drive sometimes rejects os.replace).
+            try:
+                wb.save(path)
+                _LOG.info("PostPlanner saved via direct write | %s", path)
+                return
+            except Exception as direct_exc:  # noqa: BLE001
+                last_exc = direct_exc
+                _LOG.warning(
+                    "PostPlanner direct save also failed (attempt %s/2) | %s",
+                    attempt, direct_exc,
+                )
+            time.sleep(0.6 * attempt)
+    _LOG.error("PostPlanner write FAILED | path=%s | %s", path, last_exc)
+    raise OSError(f"PostPlanner could not write {path}: {last_exc}") from last_exc
 
 
 def _ensure_automated_workbook(automation_path: Path, *, template_path: Path | None) -> None:
     path = Path(automation_path).expanduser().resolve()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _LOG.error("PostPlanner parent mkdir failed | dir=%s | %s", path.parent, exc)
+        raise
     if path.is_file():
         return
     tmpl = Path(template_path).expanduser().resolve() if template_path else None
@@ -280,8 +339,11 @@ def _ensure_automated_workbook(automation_path: Path, *, template_path: Path | N
         try:
             _clone_header_sheet_from_template(tmpl, path)
             return
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning(
+                "PostPlanner template clone failed (%s) — using fallback headers. tmpl=%s dest=%s",
+                exc, tmpl, path,
+            )
     _create_fallback_workbook(path)
 
 
@@ -313,35 +375,40 @@ def append_planner_row(
     Returns the 1-based Excel row index of the new row.
     """
     path = Path(path).expanduser().resolve()
-    _ensure_automated_workbook(path, template_path=template_path)
-
-    wb = load_workbook(path)
     try:
-        ws = wb.active
-        next_row = max(2, (ws.max_row or 1) + 1)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_automated_workbook(path, template_path=template_path)
 
-        # DATE / TIME -- blank when posting_time is ""
-        ws.cell(
-            row=next_row,
-            column=_COL_DATETIME,
-            value=_sanitize_excel_cell_text(posting_time, max_len=64) or None,
-        )
-        ws.cell(
-            row=next_row,
-            column=_COL_CAPTION,
-            value=_sanitize_caption_for_export(caption),
-        )
-        ws.cell(
-            row=next_row,
-            column=_COL_MEDIA,
-            value=_sanitize_excel_cell_text(media_url, max_len=_URL_CELL_MAX_LEN) or None,
-        )
+        wb = load_workbook(path)
+        try:
+            ws = wb.active
+            next_row = max(2, (ws.max_row or 1) + 1)
 
-        wb.save(path)
-    finally:
-        if callable(getattr(wb, "close", None)):
-            wb.close()
-    return next_row
+            # DATE / TIME -- blank when posting_time is ""
+            ws.cell(
+                row=next_row,
+                column=_COL_DATETIME,
+                value=_sanitize_excel_cell_text(posting_time, max_len=64) or None,
+            )
+            ws.cell(
+                row=next_row,
+                column=_COL_CAPTION,
+                value=_sanitize_caption_for_export(caption),
+            )
+            ws.cell(
+                row=next_row,
+                column=_COL_MEDIA,
+                value=_sanitize_excel_cell_text(media_url, max_len=_URL_CELL_MAX_LEN) or None,
+            )
+
+            _save_workbook(wb, path)
+        finally:
+            if callable(getattr(wb, "close", None)):
+                wb.close()
+        return next_row
+    except Exception as exc:  # noqa: BLE001
+        _LOG.error("append_planner_row failed | path=%s | %s", path, exc)
+        raise
 
 
 def update_planner_row(
@@ -361,33 +428,38 @@ def update_planner_row(
     if row_index < 2:
         raise ValueError("Excel data rows begin at row_index >= 2 (row 1 is headers).")
 
-    wb = load_workbook(path)
     try:
-        ws = wb.active
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wb = load_workbook(path)
+        try:
+            ws = wb.active
 
-        if posting_time is not None:
-            ws.cell(
-                row=row_index,
-                column=_COL_DATETIME,
-                value=_sanitize_excel_cell_text(posting_time, max_len=64) or None,
-            )
-        if caption is not None:
-            ws.cell(
-                row=row_index,
-                column=_COL_CAPTION,
-                value=_sanitize_caption_for_export(caption),
-            )
-        if media_url is not None:
-            ws.cell(
-                row=row_index,
-                column=_COL_MEDIA,
-                value=_sanitize_excel_cell_text(media_url, max_len=_URL_CELL_MAX_LEN) or None,
-            )
+            if posting_time is not None:
+                ws.cell(
+                    row=row_index,
+                    column=_COL_DATETIME,
+                    value=_sanitize_excel_cell_text(posting_time, max_len=64) or None,
+                )
+            if caption is not None:
+                ws.cell(
+                    row=row_index,
+                    column=_COL_CAPTION,
+                    value=_sanitize_caption_for_export(caption),
+                )
+            if media_url is not None:
+                ws.cell(
+                    row=row_index,
+                    column=_COL_MEDIA,
+                    value=_sanitize_excel_cell_text(media_url, max_len=_URL_CELL_MAX_LEN) or None,
+                )
 
-        wb.save(path)
-    finally:
-        if callable(getattr(wb, "close", None)):
-            wb.close()
+            _save_workbook(wb, path)
+        finally:
+            if callable(getattr(wb, "close", None)):
+                wb.close()
+    except Exception as exc:  # noqa: BLE001
+        _LOG.error("update_planner_row failed | path=%s row=%s | %s", path, row_index, exc)
+        raise
 
 
 def update_planner_row_caption(path: Path, row_index: int, *, caption: str) -> None:
@@ -417,36 +489,44 @@ def append_postplanner_xlsx_row(
     Column layout: DATE / TIME | CAPTION | MEDIA URL
     """
     postplanner_dir = Path(postplanner_dir).expanduser().resolve()
-    postplanner_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        postplanner_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _LOG.error("PostPlanner dir mkdir failed | dir=%s | %s", postplanner_dir, exc)
+        raise
 
     xlsx_path = postplanner_dir / f"postplan_{run_stamp}.xlsx"
-    _ensure_automated_workbook(xlsx_path, template_path=None)
-
-    wb = load_workbook(xlsx_path)
     try:
-        ws = wb.active
-        next_row = max(2, (ws.max_row or 1) + 1)
+        _ensure_automated_workbook(xlsx_path, template_path=None)
 
-        ws.cell(
-            row=next_row,
-            column=_COL_DATETIME,
-            value=_sanitize_excel_cell_text(posting_time, max_len=64) or None,
-        )
-        ws.cell(
-            row=next_row,
-            column=_COL_CAPTION,
-            value=_sanitize_caption_for_export(caption),
-        )
-        ws.cell(
-            row=next_row,
-            column=_COL_MEDIA,
-            value=_sanitize_excel_cell_text(media_url, max_len=_URL_CELL_MAX_LEN) or None,
-        )
+        wb = load_workbook(xlsx_path)
+        try:
+            ws = wb.active
+            next_row = max(2, (ws.max_row or 1) + 1)
 
-        wb.save(xlsx_path)
-    finally:
-        if callable(getattr(wb, "close", None)):
-            wb.close()
+            ws.cell(
+                row=next_row,
+                column=_COL_DATETIME,
+                value=_sanitize_excel_cell_text(posting_time, max_len=64) or None,
+            )
+            ws.cell(
+                row=next_row,
+                column=_COL_CAPTION,
+                value=_sanitize_caption_for_export(caption),
+            )
+            ws.cell(
+                row=next_row,
+                column=_COL_MEDIA,
+                value=_sanitize_excel_cell_text(media_url, max_len=_URL_CELL_MAX_LEN) or None,
+            )
+
+            _save_workbook(wb, xlsx_path)
+        finally:
+            if callable(getattr(wb, "close", None)):
+                wb.close()
+    except Exception as exc:  # noqa: BLE001
+        _LOG.error("append_postplanner_xlsx_row failed | path=%s | %s", xlsx_path, exc)
+        raise
 
     return xlsx_path
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 from PIL import Image as PILImage
@@ -24,17 +24,35 @@ from core_engine.economic_reel_lofi.caption_style_lofi import (
 _LOG = logging.getLogger(__name__)
 
 
-def apply_duotone(rgb: np.ndarray) -> np.ndarray:
-    """Map luminance through a two-stop duotone curve."""
+def apply_duotone(
+    rgb: np.ndarray,
+    *,
+    shadow: tuple[int, int, int] | None = None,
+    highlight: tuple[int, int, int] | None = None,
+) -> np.ndarray:
+    """
+    True luminance-based duotone remap (not a color overlay).
+
+    1. Convert to grayscale via Rec.601 luminance (discards source hue entirely).
+    2. Mild contrast curve on luminance only.
+    3. Per-pixel lerp: black → shadow_color, white → highlight_color.
+
+    Previous midtone muddiness came from a very dark shadow RGB + amber/teal
+    linear mix reading brown — callers should pass mood-matched, chromatic pairs.
+    """
     img = rgb.astype(np.float32)
-    # Luminance
+    # Step 1 — desaturate to luminance (replace original hue completely)
     lum = 0.299 * img[..., 0] + 0.587 * img[..., 1] + 0.114 * img[..., 2]
     t = np.clip(lum / 255.0, 0.0, 1.0)
-    # Slight contrast curve
-    t = np.power(t, 0.92)
-    shadow = np.array(lofi_cfg.DUOTONE_SHADOW, dtype=np.float32)
-    highlight = np.array(lofi_cfg.DUOTONE_HIGHLIGHT, dtype=np.float32)
-    out = shadow + (highlight - shadow) * t[..., None]
+    # Step 2 — contrast on the grayscale axis only (keeps shadow color readable)
+    t = np.power(t, 0.88)
+    sh = np.array(shadow if shadow is not None else lofi_cfg.DUOTONE_SHADOW, dtype=np.float32)
+    hi = np.array(
+        highlight if highlight is not None else lofi_cfg.DUOTONE_HIGHLIGHT,
+        dtype=np.float32,
+    )
+    # Step 3 — full tonal remap onto the two target colors
+    out = sh + (hi - sh) * t[..., None]
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
@@ -65,7 +83,12 @@ def apply_film_grain(
     ).astype(np.uint8)
 
 
-def prep_base_frame(image_path: Path) -> np.ndarray:
+def prep_base_frame(
+    image_path: Path,
+    *,
+    shadow: tuple[int, int, int] | None = None,
+    highlight: tuple[int, int, int] | None = None,
+) -> np.ndarray:
     """Load, cover-fit to reel canvas, duotone + light contrast + vignette."""
     im = PILImage.open(image_path).convert("RGB")
     im = ImageOps.fit(
@@ -74,9 +97,10 @@ def prep_base_frame(image_path: Path) -> np.ndarray:
         method=PILImage.LANCZOS,
         centering=(0.5, 0.5),
     )
-    arr = apply_duotone(np.array(im))
+    arr = apply_duotone(np.array(im), shadow=shadow, highlight=highlight)
+    # Mild contrast after remap — keep low so shadow hue stays visible
     pil = PILImage.fromarray(arr)
-    pil = ImageEnhance.Contrast(pil).enhance(1.08)
+    pil = ImageEnhance.Contrast(pil).enhance(1.05)
     return apply_vignette(np.array(pil))
 
 
@@ -84,25 +108,41 @@ def grade_still_frame(
     image_path: Path,
     *,
     grain_seed: int = 42,
+    shadow: tuple[int, int, int] | None = None,
+    highlight: tuple[int, int, int] | None = None,
+    mood_id: str | None = None,
 ) -> np.ndarray:
     """
     Production grading for a single still: duotone + contrast + vignette + grain.
 
     Shared by ``test_preview`` and the video assembler so approved stills match ship.
+    Pass mood-matched ``shadow``/``highlight`` (or ``mood_id``) for color variety.
     """
+    if mood_id and (shadow is None or highlight is None):
+        mood = lofi_cfg.lighting_mood_by_id(mood_id)
+        if shadow is None:
+            shadow = tuple(mood["shadow"])
+        if highlight is None:
+            highlight = tuple(mood["highlight"])
+    sh = tuple(shadow) if shadow is not None else tuple(lofi_cfg.DUOTONE_SHADOW)
+    hi = tuple(highlight) if highlight is not None else tuple(lofi_cfg.DUOTONE_HIGHLIGHT)
     print(
-        "[LOFI grade] apply_duotone ACTIVE | "
-        f"shadow={tuple(lofi_cfg.DUOTONE_SHADOW)} "
-        f"highlight={tuple(lofi_cfg.DUOTONE_HIGHLIGHT)} "
-        f"source={image_path}"
+        "[LOFI grade] apply_duotone ACTIVE (true luminance remap) | "
+        f"mood={mood_id or 'custom'} | "
+        f"shadow={sh} highlight={hi} | source={image_path}"
     )
     _LOG.info(
-        "LOFI grade_still_frame | duotone shadow=%s highlight=%s | %s",
-        lofi_cfg.DUOTONE_SHADOW,
-        lofi_cfg.DUOTONE_HIGHLIGHT,
+        "LOFI grade_still_frame | mood=%s | duotone shadow=%s highlight=%s | %s",
+        mood_id,
+        sh,
+        hi,
         image_path,
     )
-    return apply_film_grain(prep_base_frame(image_path), seed=grain_seed, t=0.5)
+    return apply_film_grain(
+        prep_base_frame(image_path, shadow=sh, highlight=hi),
+        seed=grain_seed,
+        t=0.5,
+    )
 
 
 def render_logo_layer(
@@ -140,6 +180,8 @@ def assemble_lofi_reel(
     engine_root: Path,
     page_id: str,
     scene_duration_s: float = lofi_cfg.SCENE_DURATION_S,
+    moods: Sequence[dict[str, Any] | str | None] | None = None,
+    caption_style: str | None = None,
 ) -> Path:
     """Compile scene stills into a vertical MP4 with Ken Burns + LOFI grade."""
     # MoviePy 2.x top-level imports (matches avatar_engine/video_engine.py)
@@ -157,12 +199,14 @@ def assemble_lofi_reel(
         raise ValueError("no scenes to assemble")
 
     cfg = lofi_cfg.channel_assembly_cfg(page_id)
+    style = caption_style or lofi_cfg.DEFAULT_CAPTION_STYLE
     if cfg.get("use_text_watermark", True):
         logo_layer = np.array(
             render_lofi_watermark_layer(
                 str(cfg.get("watermark_handle") or ""),
                 engine_root=engine_root,
                 opacity=float(cfg.get("logo_opacity", 0.55)),
+                style=style,
             )
         )
     else:
@@ -178,9 +222,22 @@ def assemble_lofi_reel(
     z1 = lofi_cfg.KEN_BURNS_ZOOM_END
 
     for idx, (img_path, caption) in enumerate(zip(scene_images, captions)):
-        base = prep_base_frame(Path(img_path))
+        mood_raw: Any = None
+        if moods is not None and idx < len(moods):
+            mood_raw = moods[idx]
+        if isinstance(mood_raw, dict):
+            mood = mood_raw
+        elif isinstance(mood_raw, str) and mood_raw.strip():
+            mood = lofi_cfg.lighting_mood_by_id(mood_raw)
+        else:
+            mood = lofi_cfg.select_lighting_mood(key=idx)
+        sh = tuple(mood.get("shadow") or lofi_cfg.DUOTONE_SHADOW)
+        hi = tuple(mood.get("highlight") or lofi_cfg.DUOTONE_HIGHLIGHT)
+        base = prep_base_frame(Path(img_path), shadow=sh, highlight=hi)
         cap_layer = np.array(
-            render_lofi_caption_layer(str(caption), engine_root=engine_root)
+            render_lofi_caption_layer(
+                str(caption), engine_root=engine_root, style=style,
+            )
         )
         h, w = base.shape[:2]
 

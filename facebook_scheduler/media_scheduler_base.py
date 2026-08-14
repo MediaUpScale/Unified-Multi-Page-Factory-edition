@@ -64,13 +64,16 @@ def is_video_file(path: str | Path) -> bool:
     """True when the path extension is a Meta Reel / video type."""
     return Path(path).suffix.lower() in _VIDEO_EXTENSIONS
 
-# last_scheduled + BASE_INTERVAL_HOURS + random(JITTER_MIN..JITTER_MAX) minutes
-BASE_INTERVAL_HOURS = getattr(config, "REELS_BASE_INTERVAL_HOURS", 2)
-JITTER_MIN_MINUTES = getattr(config, "REELS_JITTER_MIN_MINUTES", 60)
-JITTER_MAX_MINUTES = getattr(config, "REELS_JITTER_MAX_MINUTES", 180)
+# First: now + random(FIRST_OFFSET_MIN..FIRST_OFFSET_MAX) minutes
+# Subsequent: last + BASE_INTERVAL_HOURS + random(JITTER_MIN..JITTER_MAX) minutes
+FIRST_OFFSET_MIN_MINUTES = getattr(config, "REELS_FIRST_OFFSET_MIN_MINUTES", 25)
+FIRST_OFFSET_MAX_MINUTES = getattr(config, "REELS_FIRST_OFFSET_MAX_MINUTES", 60)
+BASE_INTERVAL_HOURS = getattr(config, "REELS_BASE_INTERVAL_HOURS", 4)
+JITTER_MIN_MINUTES = getattr(config, "REELS_JITTER_MIN_MINUTES", 0)
+JITTER_MAX_MINUTES = getattr(config, "REELS_JITTER_MAX_MINUTES", 60)
 
-# Never schedule closer than this to "now"
-MIN_LEAD_MINUTES = getattr(config, "REELS_MIN_LEAD_MINUTES", 15)
+# Never schedule closer than this to "now" (Meta requires ≥20 min)
+MIN_LEAD_MINUTES = getattr(config, "REELS_MIN_LEAD_MINUTES", 25)
 
 _DATE_FORMAT = "%m/%d/%Y"
 _HISTORY_DT_FMT = "%Y-%m-%d %H:%M:%S"
@@ -283,21 +286,43 @@ class LocalMediaQueue:
 
     def next_schedule_datetime(self, *, now: datetime | None = None) -> datetime:
         """
-        ``last_scheduled + 2 hours + random(60..180) minutes``,
-        never earlier than ``now + MIN_LEAD_MINUTES``.
+        First post (or last in the past): ``now + random(25..60) minutes``.
+        Subsequent: ``last_scheduled + 4 hours + random(0..60) minutes``.
         """
         now = now or datetime.now()
-        jitter = random.randint(JITTER_MIN_MINUTES, JITTER_MAX_MINUTES)
-        offset = timedelta(hours=BASE_INTERVAL_HOURS, minutes=jitter)
-
         last = self.last_scheduled_at()
-        base = last if last is not None else now
-        candidate = base + offset
+
+        if not last or last < now:
+            offset_minutes = random.randint(
+                FIRST_OFFSET_MIN_MINUTES, FIRST_OFFSET_MAX_MINUTES
+            )
+            next_time = now + timedelta(minutes=offset_minutes)
+            _log.info(
+                "First post in queue (or last schedule in the past). "
+                "Scheduling %d minutes from now.",
+                offset_minutes,
+            )
+        else:
+            random_minutes = random.randint(JITTER_MIN_MINUTES, JITTER_MAX_MINUTES)
+            next_time = last + timedelta(
+                hours=BASE_INTERVAL_HOURS, minutes=random_minutes
+            )
+            _log.info(
+                "Subsequent post. Scheduling %dh and %dm after the previous post.",
+                BASE_INTERVAL_HOURS,
+                random_minutes,
+            )
+
+        # Safety floor: Meta requires ≥20 minutes lead
         floor = now + timedelta(minutes=MIN_LEAD_MINUTES)
-        if candidate < floor:
-            candidate = floor + timedelta(minutes=random.randint(0, 30))
-        # Snap to whole minutes
-        return candidate.replace(second=0, microsecond=0)
+        if next_time < floor:
+            next_time = floor
+            _log.info(
+                "Clamped schedule to Meta min-lead floor (%d min from now).",
+                MIN_LEAD_MINUTES,
+            )
+
+        return next_time.replace(second=0, microsecond=0)
 
     def mark_scheduled(
         self,
@@ -534,6 +559,143 @@ class LocalMediaQueue:
     # Scan
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _mp4_basename_from_cell(val: Any) -> str | None:
+        """Extract an ``.mp4`` basename from a path, URL, or bare filename cell."""
+        from urllib.parse import unquote
+
+        s = str(val).strip()
+        if ".mp4" not in s.lower():
+            return None
+        s = unquote(s.split("?")[0].split("#")[0]).replace("\\", "/")
+        base = Path(s).name
+        if base.lower().endswith(".mp4"):
+            return base
+        return None
+
+    def _load_postplanner_posted_mp4s(self) -> set[str]:
+        """
+        Collect posted ``.mp4`` basenames from ancient_knowledge Postplanner sheets.
+
+        Always reads ``postplan_20260802_212650.xlsx`` (canonical batch marker),
+        then unions every other ``postplanner/postplan_*.xlsx`` (and the bulk
+        import sheet when present) so URL-based MEDIA rows are not missed.
+        """
+        import pandas as pd
+
+        postplanner_dir = self.channel_dir / "postplanner"
+        primary = postplanner_dir / "postplan_20260802_212650.xlsx"
+        sheets: list[Path] = []
+        if primary.is_file():
+            sheets.append(primary)
+        if postplanner_dir.is_dir():
+            for p in sorted(postplanner_dir.glob("postplan_*.xlsx")):
+                if p.resolve() != primary.resolve():
+                    sheets.append(p)
+        bulk = self.channel_dir / "automated_bulk_posts_import.xlsx"
+        if bulk.is_file():
+            sheets.append(bulk)
+
+        posted_files: set[str] = set()
+        if not sheets:
+            _log.error(
+                "No Postplanner Excel found under %s — ancient_knowledge "
+                "queue filter aborted.",
+                postplanner_dir,
+            )
+            return posted_files
+
+        for excel_path in sheets:
+            try:
+                df = pd.read_excel(excel_path)
+                before = len(posted_files)
+                for col in df.columns:
+                    for val in df[col].dropna():
+                        name = self._mp4_basename_from_cell(val)
+                        if name:
+                            posted_files.add(name)
+                added = len(posted_files) - before
+                if added:
+                    _log.info(
+                        "Postplanner %s: +%d .mp4 name(s) (running total %d).",
+                        excel_path.name,
+                        added,
+                        len(posted_files),
+                    )
+            except Exception as exc:
+                _log.error(
+                    "Failed to read Postplanner Excel %s: %s", excel_path, exc
+                )
+
+        _log.info(
+            "Loaded %d previously posted files from Postplanner Excel set.",
+            len(posted_files),
+        )
+        return posted_files
+
+    def _get_ancient_knowledge_queue(
+        self, clips_dir: str | Path, max_clips: int = 6
+    ) -> list[Path]:
+        """
+        Postplanner Excel + mtime filter for ``ancient_knowledge``.
+
+        1. Load posted ``.mp4`` basenames from Postplanner Excel sheets.
+        2. Cutoff = mtime of the newest posted clip still on disk.
+        3. Keep unposted clips newer than that cutoff.
+        4. Take the newest ``max_clips``, then order oldest→newest for schedule.
+        """
+        clips_path = Path(clips_dir)
+        posted_files = self._load_postplanner_posted_mp4s()
+        if not posted_files and not (self.channel_dir / "postplanner").is_dir():
+            return []
+
+        all_clips: list[dict[str, Any]] = []
+        if not clips_path.is_dir():
+            return []
+        for path in clips_path.iterdir():
+            if not path.is_file():
+                continue
+            if path.suffix.lower() != ".mp4":
+                continue
+            if path.name.endswith(".bak") or ".bak_" in path.name:
+                continue
+            all_clips.append(
+                {
+                    "name": path.name,
+                    "path": path,
+                    "mtime": path.stat().st_mtime,
+                }
+            )
+
+        if not all_clips:
+            return []
+
+        posted_mtimes = [
+            c["mtime"] for c in all_clips if c["name"] in posted_files
+        ]
+        cutoff_mtime = max(posted_mtimes) if posted_mtimes else 0.0
+
+        unposted_clips = [
+            c
+            for c in all_clips
+            if c["name"] not in posted_files and c["mtime"] > cutoff_mtime
+        ]
+
+        unposted_clips.sort(key=lambda x: x["mtime"], reverse=True)
+        target_clips = unposted_clips[:max_clips]
+        # Schedule oldest of the selected 6 first
+        target_clips.sort(key=lambda x: x["mtime"])
+
+        _log.info(
+            "Filtered ancient_knowledge queue down to %d clips "
+            "(cutoff_mtime=%.0f, excel_posted=%d, candidates=%d).",
+            len(target_clips),
+            cutoff_mtime,
+            len(posted_files),
+            len(unposted_clips),
+        )
+        return [c["path"] for c in target_clips]
+
     def scan_pending(self, *, format_type: str = "reel") -> list[MediaItem]:
         """Return pending media files not yet recorded as posted."""
         if not self.media_dir.is_dir():
@@ -545,16 +707,30 @@ class LocalMediaQueue:
         posted = self.posted_filenames()
         items: list[MediaItem] = []
         meta_hits = 0
-        for path in sorted(self.media_dir.iterdir(), key=lambda p: p.name.lower()):
-            if not path.is_file():
-                continue
-            if path.suffix.lower() not in self.extensions:
-                continue
-            if path.name in posted:
-                continue
-            # Skip backup / intermediate files
-            if path.name.endswith(".bak") or ".bak_" in path.name:
-                continue
+
+        if self.channel_name == "ancient_knowledge":
+            pending_paths = self._get_ancient_knowledge_queue(
+                self.media_dir, max_clips=6
+            )
+            # Still honor local facebook_history / posted_facebook moves
+            pending_paths = [p for p in pending_paths if p.name not in posted]
+        else:
+            pending_paths = []
+            for path in sorted(
+                self.media_dir.iterdir(), key=lambda p: p.name.lower()
+            ):
+                if not path.is_file():
+                    continue
+                if path.suffix.lower() not in self.extensions:
+                    continue
+                if path.name in posted:
+                    continue
+                # Skip backup / intermediate files
+                if path.name.endswith(".bak") or ".bak_" in path.name:
+                    continue
+                pending_paths.append(path)
+
+        for path in pending_paths:
             meta = self.metadata_for(path)
             caption, source = self.resolve_caption(path, meta)
             if source != "fallback":
@@ -657,7 +833,8 @@ class UniversalComposerScheduler(ABC):
         """
         Open the correct Meta Business Suite composer for this file type.
 
-        * Video → ``https://business.facebook.com/latest/reels_composer``
+        * Video → always ``goto`` ``reels_composer`` (fresh UI every item;
+          Meta leaves a success state that hides "Add video" after schedule)
         * Photo → ``https://business.facebook.com/latest/`` (Universal Post)
 
         Always dismisses leftover error modals first. Does not steal OS focus.
@@ -672,18 +849,16 @@ class UniversalComposerScheduler(ABC):
 
         current = self.page.url or ""
         if video:
-            _log.info("Opening dedicated Reel Composer endpoint...")
-            if "reels_composer" not in current:
-                self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
-                try:
-                    self.page.wait_for_load_state(
-                        "networkidle", timeout=config.LONG_TIMEOUT_MS
-                    )
-                except Exception:
-                    pass
-                self.page.wait_for_timeout(3_000)
-            else:
-                _log.info("Already on reels_composer — skipping navigation.")
+            _log.info("Forcing navigation to fresh Reel Composer endpoint...")
+            self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
+            try:
+                self.page.wait_for_load_state(
+                    "networkidle", timeout=config.LONG_TIMEOUT_MS
+                )
+            except Exception:
+                pass
+            # Give Meta's heavy React UI time to render Add video / controls
+            self.page.wait_for_timeout(4_000)
         else:
             _log.info("Opening Universal Post Composer endpoint...")
             if "reels_composer" in current or "/latest/" not in current:
@@ -775,28 +950,80 @@ class UniversalComposerScheduler(ABC):
                 except Exception:
                     pass
 
+    def _cdp_set_files_on_backend_node(
+        self, *, file_path: str, backend_node_id: int
+    ) -> None:
+        """Assign local path via CDP ``DOM.setFileInputFiles`` + change events."""
+        cdp = None
+        try:
+            cdp = self.page.context.new_cdp_session(self.page)
+            cdp.send("DOM.enable")
+            cdp.send(
+                "DOM.setFileInputFiles",
+                {"files": [file_path], "backendNodeId": backend_node_id},
+            )
+            self.page.evaluate(
+                """() => {
+                    const inputs = document.querySelectorAll('input[type="file"]');
+                    inputs.forEach((i) => {
+                        i.dispatchEvent(new Event('input', { bubbles: true }));
+                        i.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+                }"""
+            )
+        finally:
+            if cdp is not None:
+                try:
+                    cdp.detach()
+                except Exception:
+                    pass
+
+    def _backend_node_id_from_element(self, element_handle: Any) -> int | None:
+        """Resolve Playwright ElementHandle → CDP backendNodeId (best-effort)."""
+        cdp = None
+        try:
+            cdp = self.page.context.new_cdp_session(self.page)
+            cdp.send("DOM.enable")
+            object_id = getattr(
+                getattr(element_handle, "_impl_obj", None), "_object_id", None
+            )
+            if not object_id:
+                return None
+            node_info = cdp.send("DOM.describeNode", {"objectId": object_id})
+            return int(node_info["node"]["backendNodeId"])
+        except Exception as exc:
+            _log.debug("ElementHandle → backendNodeId failed: %s", exc)
+            return None
+        finally:
+            if cdp is not None:
+                try:
+                    cdp.detach()
+                except Exception:
+                    pass
+
     def upload_media(self, item: MediaItem) -> None:
         """
-        Attach media via CDP into the composer prepared for this file type.
+        Attach media via ``expect_file_chooser`` + ``window.__uploadTarget`` CDP.
 
-        * ``reels_composer``: already in video mode — **never** click
-          ``Add video`` (that opens the native OS file picker and freezes
-          the DOM event loop so Playwright cannot find ``input[type=file]``).
-          Inject directly into the hidden file input via CDP.
-        * Universal ``/latest/``: click ``Add photo`` / ``Add video`` only
-          when needed to mount the file input, then CDP inject.
+        Strict rules:
+        * Click Add video / Add photo inside ``expect_file_chooser`` (suppresses
+          the native OS dialog).
+        * Bind ``file_chooser.element`` to ``window.__uploadTarget``, then
+          resolve ``objectId`` / ``backendNodeId`` via CDP ``Runtime.evaluate``
+          (works across nested React containers; no DOM.querySelector).
+        * Never ``locator.wait_for(input[type=file])``.
+        * Never ``file_chooser.set_files()`` (50 MB WebSocket crash on CDP).
         """
         file_path = str(item.path.resolve())
-        video = is_video_file(file_path)
-        is_reels_endpoint = "reels_composer" in (self.page.url or "")
-        kind = "Video/Reel" if video else "Photo"
+        is_video = is_video_file(file_path)
+        target_text = "Add video" if is_video else "Add photo"
+        kind = "Video/Reel" if is_video else "Photo"
         size_mb = (
             item.path.stat().st_size / (1024 * 1024) if item.path.is_file() else -1
         )
         _log.info(
-            "Uploading media (%s) via %s: %s (%.1f MB)",
+            "Uploading media (%s) via expect_file_chooser: %s (%.1f MB)",
             kind,
-            self.page.url or ("reels_composer" if video else "universal"),
             file_path,
             size_mb,
         )
@@ -805,72 +1032,95 @@ class UniversalComposerScheduler(ABC):
         if not item.path.is_file():
             raise FileNotFoundError(f"Media file missing: {file_path}")
 
-        self._dismiss_composer_error_modals()
-
-        # Let the composer DOM settle (especially after reels_composer navigation).
-        self.page.wait_for_timeout(2_000)
-
-        # CRITICAL: Only click media buttons in the Universal Composer.
-        # On reels_composer, "Add video" opens the Windows file picker and
-        # blocks the DOM — skip the click and inject into the hidden input.
-        if not is_reels_endpoint:
-            target_text = "Add video" if video else "Add photo"
-            add_btn = self.page.locator(
-                f'div[role="button"]:has-text("{target_text}"), '
-                f'button:has-text("{target_text}")'
-            ).first
+        # Step 1: Dismiss leftover error modals
+        close_modal_btn = self.page.locator(
+            'button:has-text("Close"), div[role="button"]:has-text("Close")'
+        ).first
+        if close_modal_btn.is_visible():
             try:
-                if add_btn.is_visible(timeout=3_000):
-                    add_btn.click(force=True)
-                    self.page.wait_for_timeout(1_000)
-                    _log.info("Clicked Universal Composer '%s'.", target_text)
-            except Exception as exc:
-                _log.warning("Media button click warning: %s", exc)
+                close_modal_btn.click(force=True)
+                self.page.wait_for_timeout(500)
+            except Exception:
+                pass
 
-            if self.page.locator('input[type="file"]').count() == 0:
-                combined = self.page.locator(
-                    'div[role="button"]:has-text("Add photo/video"), '
-                    'button:has-text("Add photo/video")'
-                ).first
+        # Step 2: Locate target media button
+        add_btn = self.page.locator(
+            f'div[role="button"]:has-text("{target_text}"), '
+            f'button:has-text("{target_text}")'
+        ).first
+
+        if not add_btn.is_visible():
+            add_btn = self.page.locator(
+                'div[role="button"][aria-label*="Add"], button:has-text("Add")'
+            ).first
+
+        add_btn.wait_for(state="visible", timeout=15_000)
+
+        # Step 3: Intercept FileChooser (suppresses OS dialog)
+        _log.info("Triggering %r with FileChooser interception...", target_text)
+        with self.page.expect_file_chooser(timeout=10_000) as fc_info:
+            add_btn.click(force=True)
+
+        file_chooser = fc_info.value
+        element_handle = file_chooser.element
+
+        if not element_handle:
+            raise RuntimeError(
+                "FileChooser intercepted, but no element handle was returned."
+            )
+
+        _log.info(
+            "FileChooser intercepted — resolving CDP node via global reference..."
+        )
+
+        # Step 4: Store handle in window scope to resolve objectId cleanly
+        self.page.evaluate("el => { window.__uploadTarget = el; }", element_handle)
+
+        cdp = None
+        try:
+            cdp = self.page.context.new_cdp_session(self.page)
+            eval_res = cdp.send(
+                "Runtime.evaluate", {"expression": "window.__uploadTarget"}
+            )
+            object_id = (eval_res.get("result") or {}).get("objectId")
+            if not object_id:
+                raise RuntimeError(
+                    "CDP Runtime.evaluate did not return objectId for "
+                    "window.__uploadTarget"
+                )
+
+            node_info = cdp.send("DOM.describeNode", {"objectId": object_id})
+            backend_node_id = node_info["node"]["backendNodeId"]
+
+            # Step 5: Inject local file path via backendNodeId (bypasses 50MB limit)
+            cdp.send(
+                "DOM.setFileInputFiles",
+                {"files": [file_path], "backendNodeId": backend_node_id},
+            )
+        finally:
+            if cdp is not None:
                 try:
-                    if combined.is_visible(timeout=2_000):
-                        combined.click(force=True)
-                        self.page.wait_for_timeout(1_000)
+                    cdp.detach()
                 except Exception:
                     pass
-        else:
-            _log.info(
-                "In Reels Composer: skipping 'Add video' click to prevent "
-                "native OS file picker block."
-            )
 
-        # Prefer video accept= filter when present; fall back to any file input.
-        file_input = self.page.locator(
-            'input[type="file"][accept*="video"], input[type="file"]'
-        ).first
-        try:
-            file_input.wait_for(state="attached", timeout=15_000)
-        except Exception as exc:
-            endpoint = REELS_COMPOSER_URL if video else BUSINESS_SUITE_HOME
-            raise RuntimeError(
-                f"input[type=file] not attached in composer. "
-                f"Expected endpoint: {endpoint}. "
-                f"Do not click Add video on reels_composer."
-            ) from exc
+        # Step 6: Trigger React change event and cleanup reference
+        self.page.evaluate(
+            """() => {
+                if (window.__uploadTarget) {
+                    window.__uploadTarget.dispatchEvent(
+                        new Event('change', { bubbles: true })
+                    );
+                    delete window.__uploadTarget;
+                }
+            }"""
+        )
 
-        try:
-            self._inject_file_via_cdp(file_path)
-        except Exception as exc:
-            _log.warning(
-                "Direct CDP injection failed (%s) — falling back to set_input_files "
-                "(may fail above 50 MB on remote CDP).",
-                exc,
-            )
-            file_input.set_input_files(file_path)
-
-        _log.info("File attached via CDP successfully. Waiting for upload processing...")
-        self.page.wait_for_timeout(8_000)
-        self.on_media_uploaded(item, is_video=video)
+        _log.info(
+            "File path successfully injected via CDP. Waiting for upload preview..."
+        )
+        self.page.wait_for_timeout(8000)
+        self.on_media_uploaded(item, is_video=is_video)
 
     def prepare_caption(self, item: MediaItem) -> str:
         """
@@ -1585,8 +1835,8 @@ class UniversalComposerScheduler(ABC):
             if date_input.is_visible(timeout=5_000):
                 date_input.click(force=True)
                 self._set_input_value(date_input, formatted_date)
-                page.wait_for_timeout(500)
                 _log.info("Date input filled: %s", formatted_date)
+                page.wait_for_timeout(random.randint(800, 1500))
             else:
                 _log.warning("Date input (mm/dd/yyyy) not visible — skipping.")
         except Exception as exc:
@@ -1620,6 +1870,7 @@ class UniversalComposerScheduler(ABC):
                 hours_input.click(force=True)
                 self._set_input_value(hours_input, hours_val)
                 _log.info("Hours spinbutton filled: %s", hours_val)
+                page.wait_for_timeout(random.randint(600, 1200))
             else:
                 _log.warning("Hours spinbutton not visible — skipping.")
         except Exception as exc:
@@ -1631,6 +1882,7 @@ class UniversalComposerScheduler(ABC):
                 mins_input.click(force=True)
                 self._set_input_value(mins_input, mins_val)
                 _log.info("Minutes spinbutton filled: %s", mins_val)
+                page.wait_for_timeout(random.randint(500, 1100))
             else:
                 _log.warning("Minutes spinbutton not visible — skipping.")
         except Exception as exc:
@@ -1642,12 +1894,11 @@ class UniversalComposerScheduler(ABC):
                 ampm_input.click(force=True)
                 self._set_input_value(ampm_input, ampm_val)
                 _log.info("Meridiem spinbutton filled: %s", ampm_val)
+                page.wait_for_timeout(random.randint(1000, 2000))
             else:
                 _log.warning("Meridiem spinbutton not visible — skipping.")
         except Exception as exc:
             _log.warning("Meridiem spinbutton fill failed: %s", exc)
-
-        page.wait_for_timeout(500)
 
     # ---- end-to-end item + run loop -------------------------------------
 

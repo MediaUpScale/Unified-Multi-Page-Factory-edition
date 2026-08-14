@@ -1,0 +1,72 @@
+{
+  "generated_at": "2026-08-13 19:13:11 UTC",
+  "channel": "ancient_knowledge",
+  "active_source": "json_fallback",
+  "chroma": {
+    "source": "chroma",
+    "persist_dir": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\VisualQA_Agent\\chroma_db",
+    "dir_exists": true,
+    "collection_name": "channel_aesthetics_v2",
+    "ok": false,
+    "reason": "Chroma client opened but no collections exist (empty DB)",
+    "collections": [],
+    "records": [],
+    "embedding_structure": {
+      "present": false
+    },
+    "count_all": 0,
+    "count_ancient_knowledge": 0
+  },
+  "json_fallback": {
+    "source": "json_fallback",
+    "path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\VisualQA_Agent\\channel_dna_store.json",
+    "exists": true,
+    "ok": true,
+    "reason": "",
+    "ancient_knowledge": {
+      "forbidden_tokens": [
+        "CGI",
+        "3D render",
+        "Unreal Engine",
+        "illustration",
+        "sketch",
+        "cartoon",
+        "graphite",
+        "front-facing postcard",
+        "flat lighting",
+        "studio softbox",
+        "modern clothing",
+        "smartphone",
+        "lifestyle photography"
+      ],
+      "mandatory_elements": [
+        "Must have dynamic lighting — volumetric shafts, rim light, chiaroscuro",
+        "Must not look like a generic front-facing 3D render",
+        "Must match the ancient mystery aesthetic — ultra-realistic cinematic historical photography of a recognisable monument with an anomalous detail",
+        "35mm documentary film grain, ochre and shadow-black grade",
+        "Wide aerial / immersive first-person camera; subject centrally framed"
+      ],
+      "lighting_style": "dramatic single-source cinematic light — warm amber torchlight or cold ethereal moonlight, volumetric dust-haze beams, strong rim lighting on megalithic stone, high-contrast chiaroscuro — never flat or muddy",
+      "target_audience_rules": "Investigative documentary stills for Ancient Knowledge. Reject CGI, illustration, and tourist postcards. Require recognisable geo-anchors (Pyramid, Baalbek, Göbekli Tepe, Puma Punku, Easter Island, Stonehenge) plus an impossible detail.",
+      "visual_concepts": {
+        "megalith": "impossible-scale stone blocks, precision joints, torchlit quarry",
+        "pyramid": "Great Pyramid / Sphinx enclosure, hidden chambers, anomalous tooling",
+        "pre_flood": "Göbekli Tepe, Younger Dryas, buried temple, starfield horizon",
+        "oopart": "Antikythera, crystal skulls, vimana — artefact as visual hero",
+        "lost_city": "Yonaguni, Dwarka, El Dorado — submerged or jungle-swallowed ruins"
+      },
+      "critic_profile": "ancient_mystery"
+    },
+    "all_channel_keys": [
+      "ancient_knowledge",
+      "lofi_economic",
+      "master_mei"
+    ],
+    "chroma_status": {
+      "ok": false,
+      "reason": "Chroma client opened but no collections exist (empty DB)",
+      "dir_exists": true,
+      "count_all": 0
+    }
+  }
+}
