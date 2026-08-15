@@ -205,24 +205,38 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
             "modern clothing",
             "smartphone",
             "lifestyle photography",
+            # ── Composition cap: doorway / rectangle-framed compositions were
+            # dominating every AK reel. Kept in the RAG forbidden list so the
+            # planner's forbidden-subject filter (avatar_engine.prompt_alignment
+            # ._load_forbidden_subject_words) picks them up automatically.
             "archway",
             "doorway",
             "portal",
             "window frame",
             "silhouette frame",
+            "stone chamber interior",
+            "framed by stone",
+            "framed through",
+            "gateway",
+            "ceremonial gate",
+            "temple corridor",
         ],
         "mandatory_elements": [
-            "Must have dynamic lighting — volumetric shafts, rim light, chiaroscuro",
-            "Must not look like a generic front-facing 3D render",
-            "Must match the ancient mystery aesthetic — ultra-realistic cinematic "
-            "historical photography of a recognisable monument with an anomalous detail",
+            # No per-act framing / lighting rule here — the per-act shot-pool
+            # and lighting-pool in avatar_engine.prompt_alignment own those two
+            # axes. Keep only content / medium / grading rules that must apply
+            # to every image regardless of the pool assignment.
+            "Ultra-realistic cinematic historical photography, not CGI or 3D render",
             "35mm documentary film grain, ochre and shadow-black grade",
-            "Wide aerial / immersive first-person camera; subject centrally framed",
+            "Recognisable geo-anchor (place, material, era) plus one anomalous "
+            "detail tied to the spoken beat",
         ],
         "lighting_style": (
-            "dramatic single-source cinematic light — warm amber torchlight or "
-            "cold ethereal moonlight, volumetric dust-haze beams, strong rim lighting "
-            "on megalithic stone, high-contrast chiaroscuro — never flat or muddy"
+            "Cinematic photographic lighting — the per-act LIGHTING directive "
+            "picks colour temperature and direction from a 7-entry pool "
+            "(warm amber / cold moonlit sidelight / harsh sun / diffuse overcast / "
+            "firelight from below / silhouette against bright / single hard rim). "
+            "Never flat, never muddy, never studio-softbox."
         ),
         "target_audience_rules": (
             "Investigative documentary stills for Ancient Knowledge. "

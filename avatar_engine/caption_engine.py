@@ -1651,6 +1651,15 @@ class CaptionEngine:
         if total_words_target is None:
             total_words_target = words_for_duration(duration_s)
 
+        # Resolve channel_name so build_sequence_script_prompt can pull
+        # per-channel script guidance from the RAG bridge. Empty string is
+        # a safe no-op (bridge returns "" and prompt falls back to the
+        # existing niche_disclaimer / persona_voice path).
+        _rag_channel_name = ""
+        try:
+            _rag_channel_name = str(getattr(self._channel, "channel_id", "") or "")
+        except Exception:  # noqa: BLE001
+            _rag_channel_name = ""
         prompt = build_sequence_script_prompt(
             topic=topic,
             niche=page_niche or topic,
@@ -1663,6 +1672,7 @@ class CaptionEngine:
             previously_generated_hooks=previously_generated_hooks,
             batch_angle_block=batch_angle_block,
             uniqueness_rejection=uniqueness_rejection,
+            channel_name=_rag_channel_name,
         )
 
         # Append CTA instruction so the single voice script ends with the follow call.

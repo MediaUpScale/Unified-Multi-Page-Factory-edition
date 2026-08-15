@@ -1023,6 +1023,7 @@ def build_sequence_script_prompt(
     niche_disclaimer: str = "",
     batch_angle_block: str = "",
     uniqueness_rejection: str = "",
+    channel_name: str = "",
 ) -> str:
     """
     Build an LLM prompt that produces an N-act spoken script.
@@ -1115,6 +1116,19 @@ def build_sequence_script_prompt(
         f"\nUNIQUENESS REJECTION (REGENERATE):\n{uniqueness_rejection}\n"
         if uniqueness_rejection else ""
     )
+    # RAG-driven per-channel script/voice guidance (see docstring in
+    # core_engine/channel_rag_bridge.py). Falls back to empty string when
+    # the channel has no script_rules section in the RAG yet -- the
+    # existing niche_disclaimer / persona_voice path keeps working.
+    _rag_script_block = ""
+    try:
+        from core_engine.channel_rag_bridge import get_script_guidance  # noqa: PLC0415
+
+        _rag_block = get_script_guidance(channel_name)
+        if _rag_block:
+            _rag_script_block = f"\n{_rag_block}\n"
+    except Exception:  # noqa: BLE001
+        _rag_script_block = ""
 
     if _mode == "warrior_discipline":
         from avatar_engine.mei_narrative import (
@@ -1143,6 +1157,7 @@ EPISODE THEME (LOCKED — ONE FOCAL IDEA ONLY): {_ep['label']}
 TONE: Deep humility, respect, ancestral tranquility — reflective, contemplative, never aggressive.
 AUDIENCE: Western / US men seeking self-mastery — address them as fellow human seekers.
 {_directive_block}
+{_rag_script_block}
 {_batch_block}
 {_reject_block}
 STRICT RULES:
@@ -1168,6 +1183,7 @@ TOPIC: {topic}
 CHANNEL NICHE: {niche}
 NARRATOR VOICE: {persona_voice}
 {_directive_block}
+{_rag_script_block}
 {_batch_block}
 {_reject_block}
 STRICT RULES:
@@ -2030,6 +2046,25 @@ def compile_sequence_reel(
     n_acts = len(image_paths)
     _page = (page_id or "").lower()
     _strict_durs = bool(strict_act_durations and act_durations)
+    # RAG-driven per-channel motion/video guidance. Currently the RAG has no
+    # motion_rules section for any channel (see channel_rag_bridge.py docstring
+    # gap note), so this call logs a WARNING and returns "". When a channel
+    # adds motion_rules the block is logged so operators can verify it was
+    # picked up. The actual _MOTION_PROFILES cycle is not overridden here --
+    # motion_rules is guidance for future adjustment (per-channel pan/zoom
+    # multipliers, custom cycles, etc.), and this call site is where a future
+    # editor should parse it. Non-fatal on any error.
+    try:
+        from core_engine.channel_rag_bridge import get_motion_guidance  # noqa: PLC0415
+
+        _rag_motion_block = get_motion_guidance(page_id or "")
+        if _rag_motion_block:
+            logger.info(
+                "COMPILE | RAG motion guidance for page=%s:\n%s",
+                page_id or "-", _rag_motion_block,
+            )
+    except Exception:  # noqa: BLE001
+        pass
     _use_progressive = (
         not _strict_durs and (
             pacing_sequence is not None

@@ -1168,6 +1168,7 @@ def generate_dynamic_music_prompt(
     subject: str = "",
     directive_path: "Path | None" = None,
     style_profile: str = "warrior",
+    channel_name: str = "",
 ) -> str:
     """
     LLM ``music_prompt`` task — unique ElevenLabs prompt per video.
@@ -1197,9 +1198,22 @@ def generate_dynamic_music_prompt(
         logger.info("music_prompt | no GEMINI_API_KEY — using deterministic fallback")
         return fallback
 
+    # RAG-driven per-channel music guidance. If the channel has a
+    # music_rules section it is prepended to the user block; if not, the
+    # bridge returns "" and a WARNING is logged once per channel/section
+    # (see core_engine/channel_rag_bridge.py gap docstring).
+    _rag_music_block = ""
+    try:
+        from core_engine.channel_rag_bridge import get_music_guidance  # noqa: PLC0415
+
+        _rag_music_block = get_music_guidance(channel_name)
+    except Exception:  # noqa: BLE001
+        _rag_music_block = ""
+
     user_block = (
         f"{directive}\n\n"
-        f"Video topic: {theme}\n\n"
+        + (f"{_rag_music_block}\n\n" if _rag_music_block else "")
+        + f"Video topic: {theme}\n\n"
         + (
             "Progression: opening hook = subtle suspense drones; "
             "mid/end = slower heavier darker mysterious rhythm with frame drums "
@@ -1493,6 +1507,7 @@ def generate_music_v2_bed(
     topic: str = "",
     directive_path: "Path | None" = None,
     style_profile: str = "warrior",
+    channel_name: str = "",
 ) -> "Path | None":
     """
     Compose a background music bed via ElevenLabs Music ``music.compose``.
@@ -1539,6 +1554,7 @@ def generate_music_v2_bed(
             topic=topic,
             directive_path=directive_path,
             style_profile=_style,
+            channel_name=channel_name,
         )
     dyn_prompt = _truncate_music_line(dyn_prompt, _MUSIC_PROMPT_TARGET_CHARS)
     logger.info(
@@ -1742,6 +1758,7 @@ def generate_master_mei_soundscape(
     music_prompt: str = "",
     directive_path: "Path | None" = None,
     style_profile: str = "warrior",
+    channel_name: str = "",
 ) -> tuple["Path | None", "Path | None"]:
     """
     Generate music_v2 BGM bed (≥40s) + optional impact.
@@ -1760,6 +1777,7 @@ def generate_master_mei_soundscape(
         topic=topic,
         directive_path=directive_path,
         style_profile=style_profile,
+        channel_name=channel_name,
     )
     impact: "Path | None" = None
     if include_impact_sfx:

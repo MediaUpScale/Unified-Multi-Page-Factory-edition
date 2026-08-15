@@ -31,12 +31,30 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
+
+# Per-process log-once tracker for LoRA payload advisories. Without this the
+# per-image call fires the same "Together LoRA skipped — Schnell doesn't
+# support image_loras" warning ~160 times in a 10-reel batch. The warning is
+# useful information (someone enabled LoRA on a Schnell-tier model) but only
+# needs to be surfaced ONCE per (model_id, reason) combination per process.
+_LORA_ADVISORY_LOCK = threading.Lock()
+_LORA_ADVISORY_SEEN: set[tuple[str, str]] = set()
+
+
+def _lora_advisory_once(reason: str, model_id: str | None, *args: Any) -> None:
+    key = (reason, (model_id or "").lower())
+    with _LORA_ADVISORY_LOCK:
+        if key in _LORA_ADVISORY_SEEN:
+            return
+        _LORA_ADVISORY_SEEN.add(key)
+    logger.warning(reason, *args)
 
 # Sentinel: key omitted vs explicit off must remain distinguishable.
 _LORA_OMITTED: object = object()
@@ -709,22 +727,30 @@ def together_image_loras_payload(
         return None
     model = (model_id or "").lower()
     if "schnell" in model:
-        logger.warning(
+        _lora_advisory_once(
             "Together LoRA skipped — model %s does not support image_loras "
-            "(Dev-tier / FLUX.1-dev-lora only).",
+            "(Dev-tier / FLUX.1-dev-lora only). This message is logged once "
+            "per process; disable LoRA in page_config.py to silence it.",
+            model_id,
             model_id,
         )
         return None
     url = (lora_cfg.get("url") or "").strip()
     if not url:
-        logger.warning(
+        _lora_advisory_once(
             "Together LoRA enabled but no hosted URL (set REMOTE_GPU_LORA_URL / "
-            "image.lora.url). Comfy local name=%r cannot be used as Together path.",
+            "image.lora.url). Comfy local name=%r cannot be used as Together "
+            "path. Logged once per process.",
+            model_id,
             lora_cfg.get("lora_name"),
         )
         return None
     if not re.match(r"^https?://", url, flags=re.I):
-        logger.warning("Together LoRA url must be http(s):// — got %r", url)
+        _lora_advisory_once(
+            "Together LoRA url must be http(s):// — got %r. Logged once per process.",
+            model_id,
+            url,
+        )
         return None
     scale = float(lora_cfg.get("strength") or 0.8)
     return [{"path": url, "scale": scale}]

@@ -1124,80 +1124,108 @@ def _synthesize_sequence_voice_track(
 
 
 # Known geographic/visual anchors mapped to camera-perspective image directives.
+# _GEO_ANCHORS returns IDENTITY-ONLY entity strings (place, material, era, era-
+# specific culture keywords). Camera framing, angle, and lighting were removed
+# 2026-08-15 — the per-act shot-pool + lighting-pool + subject-pool now own
+# framing/mood. Templates that used to say "wide aerial panoramic view, …" or
+# "wide interior shot, … dramatic divine light beams" were overriding the per-
+# act shot assignment and re-anchoring FLUX to a centered-doorway/monument
+# default regardless of what the planner asked for.
 _GEO_ANCHORS: list[tuple[tuple[str, ...], str]] = [
     (("nazca", "geoglyph", "nazca lines"),
-     "aerial top-down view, Nazca desert Peru, geoglyph sand line drawings of {subject}, "
-     "perfectly visible from high altitude, pale sand surface, minimal colour contrast"),
+     "Nazca Lines geoglyphs, Nazca desert Peru, pale sand plateau"),
     (("pyramid", "giza", "great pyramid", "khufu"),
-     "wide aerial panoramic view, Great Pyramid complex Giza Plateau Egypt, "
-     "dramatic golden sunset sky, vast desert landscape"),
+     "Great Pyramid of Giza, Giza Plateau Egypt, limestone masonry, "
+     "old-kingdom pharaonic era"),
     (("sphinx",),
-     "wide-angle frontal view, Great Sphinx of Giza, Giza Plateau Egypt, "
-     "golden hour light, desert panorama"),
+     "Great Sphinx of Giza, Giza Plateau Egypt, weathered limestone, "
+     "pharaonic era"),
     (("baalbek", "trilithon"),
-     "wide-angle view, Baalbek temple complex Lebanon, "
-     "massive stone megaliths, dramatic sky"),
+     "Baalbek temple complex Lebanon, thousand-tonne megalithic "
+     "trilithon blocks, roman-era platform on pre-roman substructure"),
     (("easter island", "moai", "rapa nui"),
-     "wide overhead view, Easter Island moai stone statues, "
-     "Pacific Ocean coastline visible, dramatic sky"),
+     "Easter Island moai statues, Rapa Nui volcanic tuff, Pacific "
+     "coastline Polynesia"),
     (("stonehenge",),
-     "wide aerial view, Stonehenge stone circle, Salisbury Plain England, "
-     "golden light, panoramic landscape"),
+     "Stonehenge stone circle, Salisbury Plain England, sarsen and "
+     "bluestone megaliths, neolithic era"),
     (("gobekli", "göbekli", "gobeklitepe"),
-     "wide aerial view, Göbekli Tepe excavation site, southeastern Turkey, "
-     "ancient stone circles visible from above"),
+     "Göbekli Tepe T-shaped stone pillars, southeastern Turkey, "
+     "carved limestone, ~11 000 BCE hunter-gatherer era"),
     (("puma punku", "pumapunku", "tiahuanaco", "tiwanaku"),
-     "wide panoramic view, Puma Punku megalithic site, Bolivian Altiplano, "
-     "precisely cut stone blocks, mountain backdrop"),
+     "Puma Punku megalithic site, Bolivian Altiplano, precision-cut "
+     "andesite and diorite blocks with H-cut joints"),
     (("atlantis",),
-     "wide cinematic view, submerged ancient city ruins underwater, "
-     "ethereal blue-green light, vast underwater cityscape"),
+     "Atlantis mythology, submerged ancient civilisation setting"),
     (("tartaria", "tartarian"),
-     "wide aerial view, grand baroque stone architecture, "
-     "vast ancient cityscape, dramatic sky"),
+     "Tartaria mythology, grand pre-industrial stone architecture, "
+     "eurasian steppe context"),
     (("sumerian", "sumer", "mesopotamia", "ur"),
-     "wide-angle panoramic view, ancient Mesopotamian city, "
-     "ziggurat visible, vast plain landscape"),
+     "Ancient Sumer / Mesopotamia, mud-brick ziggurats, Tigris-"
+     "Euphrates plain, Bronze-Age era"),
     (("angkor", "angkor wat"),
-     "wide aerial view, Angkor Wat temple complex Cambodia, "
-     "jungle canopy surrounding, golden sunrise reflection in moat"),
+     "Angkor Wat temple complex Cambodia, sandstone Khmer masonry, "
+     "surrounding jungle canopy"),
     (("machu picchu",),
-     "wide aerial view, Machu Picchu Inca citadel, Peruvian Andes, "
-     "mountain mist, terraced stone architecture"),
+     "Machu Picchu Inca citadel, Peruvian Andes, andesite ashlar "
+     "masonry, mountain terraces"),
     (("teotihuacan", "teotihuacán"),
-     "wide aerial view, Teotihuacan Pyramid of the Sun Mexico, "
-     "Avenue of the Dead alignment, vast site scale"),
-    # ── Artifact / thematic anchors ──────────────────────────────────────────
+     "Teotihuacan Pyramid of the Sun, Avenue of the Dead alignment, "
+     "central Mexican highlands, pre-Aztec era"),
+    (("dendera", "denderah", "hathor"),
+     "Dendera temple complex Egypt, Hathor sanctuary, ptolemaic-era "
+     "sandstone reliefs, celestial zodiac ceiling motif"),
+    (("dwarka",),
+     "Dwarka submerged city ruins, Gulf of Cambay India, sunken "
+     "stone masonry"),
+    (("yonaguni",),
+     "Yonaguni Monument, Ryukyu Islands Japan, submerged terraced "
+     "rock formation"),
+    (("caral",),
+     "Caral pyramid complex, Supe Valley Peru, sunken plazas, "
+     "pre-Ceramic Andean era"),
+    (("pompeii", "vesuvius"),
+     "Pompeii Roman city, Mount Vesuvius volcanic ash, preserved "
+     "roman streets and frescoes"),
+    (("santorini", "thera", "akrotiri"),
+     "Akrotiri Minoan site, Thera / Santorini caldera, volcanic "
+     "pumice preservation, Bronze-Age Aegean"),
+    # ── Artifact / thematic anchors (identity only, no framing/lighting) ────
     (("crystal skull", "crystal skulls"),
-     "dramatic wide studio or cave environment, illuminated crystal skull artefact, "
-     "volumetric light refraction through quartz crystal, centrally framed, dark background"),
+     "carved quartz-crystal skull artefact"),
     (("ark of the covenant", "ark of covenant", "holy ark"),
-     "wide interior shot, golden Ark of the Covenant in ancient stone chamber, "
-     "dramatic divine light beams from above, awe-inspiring scale"),
+     "gold-plated Ark of the Covenant artefact, biblical era"),
     (("shroud of turin", "shroud"),
-     "wide flat-lay view, ancient linen shroud with faint human image, "
-     "soft warm light, archaeological context"),
+     "Shroud of Turin linen relic with faint human image"),
     (("antikythera", "antikythera mechanism"),
-     "wide flat-lay view, Antikythera Mechanism corroded bronze gears on stone surface, "
-     "macro-wide shot showing full device, dramatic side lighting"),
+     "Antikythera Mechanism, corroded bronze differential gear "
+     "device, hellenistic-era artefact"),
     (("lost technology", "precision finish", "machined", "laser cut"),
-     "wide archaeological shot, precisely machined ancient stone block or artefact, "
-     "impossible geometric tolerances, dramatic raking side light revealing precision"),
+     "precision-machined ancient stone or metal artefact with "
+     "impossible geometric tolerances for its era"),
     (("oopart", "out of place artefact", "out-of-place artifact", "oopartz"),
-     "wide display or archaeological context, mysterious out-of-place ancient object, "
-     "dramatic directional light, academic museum-style composition"),
+     "mysterious out-of-place ancient object, museum-provenance "
+     "artefact"),
     (("ancient astronaut", "ancient aliens", "extraterrestrial", "alien contact"),
-     "wide cinematic illustration, ancient stone carvings depicting humanoid figures "
-     "in space suits or flying craft, full-panel view, amber torchlight"),
+     "ancient stone reliefs and glyphs depicting humanoid figures "
+     "in helmet-like headgear or craft-like vessels"),
     (("lost city", "sunken city", "underwater ruins"),
-     "wide underwater cinematic view, submerged ancient city ruins, "
-     "blue-green volumetric light shafts from surface above, vast architectural scale"),
+     "submerged ancient stone city ruins on the ocean floor"),
     (("book of enoch", "enoch", "watchers", "nephilim"),
-     "wide dramatic illustration, ancient stone manuscripts and giant humanoid figures, "
-     "atmospheric biblical lighting, full-scene composition"),
+     "Book of Enoch imagery, ancient manuscript pages and giant "
+     "humanoid figures"),
     (("free energy", "tesla", "ancient electricity", "baghdad battery", "vimana"),
-     "wide contextual museum shot, ancient device or artefact suggesting advanced technology, "
-     "illuminated display, dramatic dramatic directional lighting"),
+     "ancient device suggesting pre-industrial electrical or "
+     "advanced technology, museum artefact context"),
+    (("dogon", "sirius mystery"),
+     "Dogon people of Mali, Bandiagara escarpment, cliff-face "
+     "villages, Sirius / Po Tolo cosmological tradition"),
+    (("younger dryas", "cataclysm", "comet impact", "black mat"),
+     "Younger Dryas impact hypothesis context, permafrost mammoth "
+     "fossils, nanodiamond black-mat sediment layer"),
+    (("cave painting", "lascaux", "chauvet", "altamira", "prehistoric art"),
+     "prehistoric cave-wall pigment paintings, deep limestone "
+     "cavern interior, palaeolithic era"),
 ]
 
 
@@ -2958,21 +2986,59 @@ def _produce_variant_worker(
                 resolved_subject, _seq_n, page_id=page_ctx.page_id or ""
             )
             _topic_entity_ctx = _extract_topic_visual_entities(resolved_subject)
+            # TOPIC ANCHOR grounds identity (place, material, era) only — it must
+            # never dictate camera framing or lighting, because those are owned
+            # per-act by the shot / lighting pool. Historic "VISUAL SUBJECT:"
+            # label was replaced 2026-08-15 because FLUX weighted it above the
+            # per-act SUBJECT-pool directive.
             _topic_entity_prefix = (
-                f"VISUAL SUBJECT: {_topic_entity_ctx}. " if _topic_entity_ctx else ""
+                f"TOPIC ANCHOR: {_topic_entity_ctx}. " if _topic_entity_ctx else ""
             )
-            from avatar_engine.prompt_alignment import build_aligned_visual_block
+            from avatar_engine.prompt_alignment import (
+                build_aligned_visual_block,
+                plan_episode_visual_sequence,
+            )
+            # Per-episode 3-dimensional visual plan — one (subject-type,
+            # shot-type, lighting) tuple per act, shuffled by the episode stem
+            # with no two consecutive acts repeating on ANY of the three
+            # dimensions, and doorway/portal/corridor subjects capped to at
+            # most 1 per episode (channel RAG's forbidden_tokens list is
+            # merged into the cap). The subject-pool item drives the scene
+            # concept itself — shot + lighting are then layered on top so
+            # every FLUX call gets an unambiguous per-act "SUBJECT + SHOT +
+            # LIGHTING" directive instead of the old centred-doorway default.
+            _ak_visual_plan = plan_episode_visual_sequence(
+                _seq_n,
+                topic=resolved_subject,
+                seed=str(stem or resolved_subject or ""),
+                channel_name=(page_ctx.page_id or "") if page_ctx else "",
+            )
+            # Per-episode channel-RAG image-guidance block (mandatory
+            # elements, lighting_style, forbidden_tokens, visual_concepts).
+            # Injected into every act's prompt so FLUX also sees the RAG's
+            # rules, not just the pool-driven subject/shot/lighting.
+            try:
+                from core_engine.channel_rag_bridge import get_image_guidance  # noqa: PLC0415
+
+                _ak_rag_image_block = get_image_guidance(
+                    (page_ctx.page_id or "") if page_ctx else ""
+                )
+            except Exception:  # noqa: BLE001
+                _ak_rag_image_block = ""
             _parallax_directive = (
-                "DEPTH LAYERS: Foreground — visible elements such as dust particles, "
-                "a stone arch, ancient doorframe, or human observer silhouette. "
-                "Background — distant temple façade, starfield, horizon, or vast landscape. "
-                "Force multi-plane depth separation so camera motion creates true parallax. "
+                "DEPTH LAYERS: Compose the frame with distinct foreground, "
+                "mid-ground and background planes so camera motion creates true "
+                "parallax separation. Do NOT default to a centered symmetric "
+                "monument-frame composition unless the spoken beat explicitly "
+                "requires it — vary spatial arrangement per act. "
             )
+            # Lighting bias stripped — the per-act LIGHTING directive from the
+            # shot+lighting plan now owns colour temperature / direction. Keep
+            # only technical/format bits here so consecutive images don't all
+            # collapse to "volumetric shafts + warm amber rim light".
             _lighting_tail = (
-                "LIGHTING: Dramatic directional light — volumetric shafts, strong rim lighting "
-                "on stone edges, deep chiaroscuro shadows. High-contrast graphite cinematic look. "
-                "No flat or muddy lighting. Ultra-realistic photography, 35mm film grain, "
-                "full-bleed, no borders, no frames."
+                "TECHNICAL: Ultra-realistic photography, 35mm film grain, "
+                "full-bleed, no borders, no frames, no captions, no watermarks."
             )
             # PARALLEL IMAGE GENERATION — build all act jobs (cheap, sequential),
             # then fire them concurrently (ThreadPoolExecutor max_workers=5); the
@@ -2992,25 +3058,72 @@ def _produce_variant_worker(
                     if _act_i > 0 and (_act_i - 1) < len(_spoken_snippets)
                     else ""
                 )
-                _act_desc = (
-                    _act_descriptors[_act_i]
-                    if _act_i < len(_act_descriptors)
-                    else f"ACT {_act_i + 1}: {resolved_subject}."
+                # Pull this act's (subject, shot, lighting) from the plan;
+                # subject-pool text now drives the scene concept itself, so
+                # the legacy _act_descriptors[_act_i] is only kept as a
+                # last-resort fallback if the plan is somehow short.
+                _plan_entry = (
+                    _ak_visual_plan[_act_i]
+                    if _act_i < len(_ak_visual_plan)
+                    else None
                 )
+                if _plan_entry:
+                    _subject_pair = _plan_entry["subject"]
+                    _shot_pair = _plan_entry["shot"]
+                    _light_pair = _plan_entry["lighting"]
+                    _act_desc = _subject_pair[1]
+                else:
+                    _subject_pair = ("(fallback-arc)", "")
+                    _shot_pair = None
+                    _light_pair = None
+                    _act_desc = (
+                        _act_descriptors[_act_i]
+                        if _act_i < len(_act_descriptors)
+                        else f"ACT {_act_i + 1}: {resolved_subject}."
+                    )
                 _align = build_aligned_visual_block(
                     spoken_snippet=_snippet,
                     act_index=_act_i,
                     total_acts=_seq_n,
                     main_subject=resolved_subject,
                     prev_snippet=_prev_snip,
+                    shot_override=_shot_pair,
+                    lighting_override=_light_pair,
+                )
+                # Per-episode subject-type directive leads the prompt so FLUX
+                # weights the pool item's "what to draw" instruction ABOVE the
+                # topic prefix (which historically pushed every image toward a
+                # centered pillar/doorway composition). Order: SUBJECT-TYPE
+                # (drives concept) -> topic context -> base style -> align/
+                # shot/lighting -> parallax + technical suffix -> RAG image
+                # guidance (mandatory elements + forbidden tokens).
+                _rag_tail = (
+                    f"\n\n{_ak_rag_image_block}"
+                    if _ak_rag_image_block
+                    else ""
                 )
                 _act_prompt = (
+                    f"{_act_desc} "
                     f"{_topic_entity_prefix}"
-                    f"{_ak_base_style}. {_act_desc} "
+                    f"{_ak_base_style}. "
                     f"{_align} "
                     f"{_parallax_directive}"
                     f"{_lighting_tail}"
+                    f"{_rag_tail}"
                 )
+                # Log per-act plan for verifiability — this is the anti-monotony
+                # signal that ends up in the compiled prompt.
+                try:
+                    _subj_name_log = _subject_pair[0] if _subject_pair else "(fallback)"
+                    _shot_name_log = _shot_pair[0] if _shot_pair else "(fallback-cycle)"
+                    _light_name_log = _light_pair[0] if _light_pair else "(none)"
+                    _LOG.info(
+                        "VISUAL PLAN | act %d/%d | subject=%s | shot=%s | lighting=%s",
+                        _act_i + 1, _seq_n,
+                        _subj_name_log, _shot_name_log, _light_name_log,
+                    )
+                except Exception:
+                    pass
                 _fallback_dest = _reel_img_dir / f"{stem}_act{_act_i + 1:02d}_fallback.png"
                 _sr_act_meta[_act_i] = {
                     "snippet": _snippet,
@@ -3774,6 +3887,7 @@ def _produce_variant_worker(
                 topic=str(resolved_subject or ""),
                 directive_path=_music_dir,
                 style_profile=_music_style,
+                channel_name=(page_ctx.page_id or "") if page_ctx else "",
             )
             _impact_sfx_path = None  # hard disable regardless of return
             if _music_bed is not None:
