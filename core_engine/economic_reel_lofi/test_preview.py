@@ -125,7 +125,7 @@ def run_lofi_test_preview(
     )
     rgba = PILImage.fromarray(graded).convert("RGBA")
 
-    # 3) LOFI caption — default Comic Sans MS Bold (rounded_hand)
+    # 3) LOFI caption — default Caveat (caveat)
     cap = render_lofi_caption_layer(
         caption_text, engine_root=engine_root, style=style_key,
     )

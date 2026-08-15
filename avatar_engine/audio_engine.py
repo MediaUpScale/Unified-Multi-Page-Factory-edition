@@ -63,6 +63,14 @@ _MUSIC_SIMPLE_PROMPT: str = (
     "Industrial cyberpunk percussion, driving cinematic drums from bar one, "
     "dark metallic hits, dystopian synth bass, 95 BPM, instrumental"
 )
+# Canonical Ancient Knowledge music-bed template (truncated to API line limits).
+# Slow-tempo, minimal-percussion, documentary-mystery mood. NEVER upbeat.
+_MYSTERY_MUSIC_TEMPLATE: str = (
+    "Cinematic dark ancient mystery documentary soundtrack, deep ambient drones, "
+    "sparse slow frame drums, eerie atmospheric pads, slow tempo, "
+    "no driving beat, minimal percussion, sub-bass, ancient undertones, "
+    "high quality, no voice, seamless loop."
+)
 # ElevenLabs Music API: section lines / chunk text max 200 chars (422 string_too_long).
 _MUSIC_LINE_API_MAX: int = 200
 _MUSIC_LINE_MAX_CHARS: int = 180  # hard truncate headroom under API 200
@@ -74,10 +82,35 @@ MUSIC_PROMPT_SYSTEM_DIRECTIVE: str = (
     "CONSTRAINT: Keep each section line/prompt concise, descriptive, and strictly under "
     "150 characters. Do not write long paragraphs or excessive descriptors."
 )
+MUSIC_PROMPT_MYSTERY_SYSTEM_DIRECTIVE: str = (
+    "Generate a unique ElevenLabs music prompt for a cinematic dark ancient "
+    "mystery documentary soundtrack. "
+    "MOOD (non-negotiable): mysterious, enigmatic, dark, somber, documentary-"
+    "mystery tone. Never upbeat, never triumphant, never bright, never major-"
+    "key-sounding, never celebratory. "
+    "TEMPO (non-negotiable): slow to moderate only. Slow tempo, minimal "
+    "percussion, no driving beat. Approx 48–68 BPM. "
+    "INSTRUMENTS: deep ambient drones, sparse slow frame drums, eerie "
+    "atmospheric pads, sub-bass, low brass/strings, ancient undertones. "
+    "Hook: subtle suspense. Mid/end: slower heavier darker atmosphere. "
+    "High quality, no voice, seamless loop. "
+    "STRICTLY FORBIDDEN: upbeat, energetic, fast-paced, danceable, EDM, pop, "
+    "party, triumphant, bright, driving beat, fast BPM, industrial cyberpunk "
+    "drums, synth leads, vocals with lyrics, long silent intro. "
+    "CONSTRAINT: Keep each section line/prompt concise, descriptive, and "
+    "strictly under 150 characters."
+)
 _MUSIC_PROMPT_DIRECTIVE_FILE: Path = (
     Path(__file__).resolve().parents[1]
     / "channels_config"
     / "master_mei"
+    / "prompts"
+    / "music_prompt_directive.txt"
+)
+_MUSIC_PROMPT_MYSTERY_DIRECTIVE_FILE: Path = (
+    Path(__file__).resolve().parents[1]
+    / "channels_config"
+    / "ancient_knowledge"
     / "prompts"
     / "music_prompt_directive.txt"
 )
@@ -331,6 +364,42 @@ def _chars_to_word_timings(
     return words
 
 
+def pad_narration_to_minimum(voice_path: "Path", min_s: float) -> "Path":
+    """Append silence so *voice_path* is never shorter than *min_s* (non-LLM)."""
+    src = Path(voice_path)
+    current = _audio_file_duration_s(src)
+    if current <= 0.0 or current >= float(min_s) or not src.is_file():
+        return src
+    pad_s = float(min_s) - current + 0.05
+    out = src.with_name(f"{src.stem}_padded{src.suffix}")
+    try:
+        from moviepy import AudioFileClip  # type: ignore[import]
+        from moviepy import concatenate_audioclips  # type: ignore[import]
+        from moviepy.audio.AudioClip import AudioArrayClip  # type: ignore[import]
+        import numpy as _np_pad
+
+        clip = AudioFileClip(str(src))
+        _sr = 44100
+        _sil = _np_pad.zeros((int(_sr * pad_s), 2), dtype=_np_pad.float32)
+        silence = AudioArrayClip(_sil, fps=_sr)
+        combined = concatenate_audioclips([clip, silence])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        combined.write_audiofile(str(out), fps=_sr, logger=None)
+        logger.info(
+            "pad_narration_to_minimum | %.1fs + %.1fs silence → %.1fs → %s",
+            current, pad_s, float(combined.duration or 0.0), out.name,
+        )
+        for _c in (clip, silence, combined):
+            try:
+                _c.close()
+            except Exception:
+                pass
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pad_narration_to_minimum failed (%s) — returning original.", exc)
+        return src
+
+
 def _audio_file_duration_s(path: Path) -> float:
     """Best-effort duration read for local audio (MoviePy → mutagen → 0)."""
     p = Path(path)
@@ -391,6 +460,7 @@ def generate_voiceover_with_timestamps(
     voice_settings: dict | None = None,
     enable_ssml: bool | None = None,
     expressive_mode: bool = True,
+    force_elevenlabs: bool = False,
 ) -> tuple[Path, list[tuple[str, float, float]]]:
     """
     Generate a TTS voiceover AND return word-level timing data for auto-subtitles.
@@ -410,10 +480,12 @@ def generate_voiceover_with_timestamps(
     When ``ENABLE_REMOTE_GPU_WORKFLOWS=true``, delegates audio to remote F5-TTS
     via ``generate_voiceover`` and synthesizes character-weighted approximate
     word timings from the returned clip duration (F5 has no alignment API).
+    Pass ``force_elevenlabs=True`` to skip F5 (needed when the page has no
+    F5 voice reference, e.g. ancient_knowledge).
     """
     from core_engine.remote_gpu_manager import is_remote_gpu_enabled  # noqa: PLC0415
 
-    if is_remote_gpu_enabled("audio"):
+    if not force_elevenlabs and is_remote_gpu_enabled("audio"):
         path = generate_voiceover(
             text,
             output_path,
@@ -1014,11 +1086,71 @@ def _mei_section_styles() -> tuple[list[str], list[str], list[str], list[str]]:
     return siege_pos, siege_neg, awaken_pos, awaken_neg
 
 
-def _load_music_prompt_directive(directive_path: "Path | None" = None) -> str:
+def _mystery_section_styles() -> tuple[list[str], list[str], list[str], list[str]]:
+    """Positive/negative styles — dark ancient mystery bed with mid-reel deepening."""
+    hook_pos = _sanitize_style_list([
+        "cinematic dark ancient mystery",
+        "subtle suspense from the first second",
+        "deep ambient drones",
+        "eerie atmospheric pads",
+        "slow tempo",
+        "hushed tension",
+        "instrumental",
+        "no vocals",
+    ])
+    hook_neg = _sanitize_style_list([
+        "upbeat",
+        "EDM",
+        "party",
+        "driving drums",
+        "cheerful pop",
+        "vocals",
+        "lyrics",
+        "long silent intro",
+        "fast BPM",
+    ])
+    depth_pos = _sanitize_style_list([
+        "cinematic dark ancient mystery",
+        "slower heavier darker mysterious rhythm",
+        "slow heavy rhythmic frame drums",
+        "deep sub-bass drone",
+        "eerie atmospheric pads",
+        "low brass and strings",
+        "eerie woodwinds",
+        "ancient Egyptian undertones",
+        "slow tempo",
+        "instrumental",
+        "no vocals",
+    ])
+    depth_neg = _sanitize_style_list([
+        "upbeat",
+        "EDM",
+        "party",
+        "cheerful pop",
+        "driving cyberpunk drums",
+        "vocals",
+        "lyrics",
+        "bright synth lead",
+        "fast BPM",
+    ])
+    return hook_pos, hook_neg, depth_pos, depth_neg
+
+
+def _load_music_prompt_directive(
+    directive_path: "Path | None" = None,
+    *,
+    style_profile: str = "warrior",
+) -> str:
+    profile = (style_profile or "warrior").strip().lower()
     candidates: list[Path] = []
     if directive_path is not None:
         candidates.append(Path(directive_path))
-    candidates.append(_MUSIC_PROMPT_DIRECTIVE_FILE)
+    if profile == "mystery":
+        candidates.append(_MUSIC_PROMPT_MYSTERY_DIRECTIVE_FILE)
+        default = MUSIC_PROMPT_MYSTERY_SYSTEM_DIRECTIVE
+    else:
+        candidates.append(_MUSIC_PROMPT_DIRECTIVE_FILE)
+        default = MUSIC_PROMPT_SYSTEM_DIRECTIVE
     for path in candidates:
         try:
             if path.is_file():
@@ -1027,7 +1159,7 @@ def _load_music_prompt_directive(directive_path: "Path | None" = None) -> str:
                     return text
         except Exception:  # noqa: BLE001
             continue
-    return MUSIC_PROMPT_SYSTEM_DIRECTIVE
+    return default
 
 
 def generate_dynamic_music_prompt(
@@ -1042,19 +1174,17 @@ def generate_dynamic_music_prompt(
 
     ``style_profile``:
       - ``warrior`` — industrial cyberpunk percussion (master_mei)
-      - ``mystery`` — dark documentary / ancient-temple underscore
+      - ``mystery`` — cinematic dark ancient mystery (hook suspense → heavier mid/end)
     Falls back to a deterministic unique prompt if Gemini is unavailable.
     """
     profile = (style_profile or "warrior").strip().lower()
-    directive = _load_music_prompt_directive(directive_path)
+    directive = _load_music_prompt_directive(
+        directive_path, style_profile=profile,
+    )
     theme = (topic or subject or "sovereignty against the digital matrix").strip()
     if profile == "mystery":
-        _mystery_simple = (
-            "Dark ancient mystery documentary underscore, low drone pads, "
-            "subtle ritual percussion, sparse cello, no vocals"
-        )
         fallback = _truncate_music_line(
-            f"{_mystery_simple}. Theme: {theme[:40]}. No silent intro.",
+            f"{_MYSTERY_MUSIC_TEMPLATE} Theme: {theme[:40]}.",
             _MUSIC_PROMPT_TARGET_CHARS,
         )
     else:
@@ -1070,7 +1200,14 @@ def generate_dynamic_music_prompt(
     user_block = (
         f"{directive}\n\n"
         f"Video topic: {theme}\n\n"
-        "Return ONLY the ElevenLabs music prompt as ONE concise line, strictly under "
+        + (
+            "Progression: opening hook = subtle suspense drones; "
+            "mid/end = slower heavier darker mysterious rhythm with frame drums "
+            "and deep bass.\n\n"
+            if profile == "mystery"
+            else ""
+        )
+        + "Return ONLY the ElevenLabs music prompt as ONE concise line, strictly under "
         "150 characters. Do not write long paragraphs or excessive descriptors. "
         "No quotes, no markdown, no explanation."
     )
@@ -1110,26 +1247,62 @@ def generate_dynamic_music_prompt(
             # Soft-enforce style cues if LLM omitted them (then hard-cap)
             low = text.lower()
             if profile == "mystery":
-                # Strip festive / upbeat bleed from the LLM before soft-enforce.
-                for bad in (
-                    "upbeat", "party", "festa", "festive", "dance", "edm",
-                    "driving beat", "driving drums", "percussion groove",
-                    "90 bpm", "95 bpm", "100 bpm", "110 bpm",
-                ):
+                # Strip any upbeat / fast-tempo bleed the LLM slipped in.
+                # Multi-word phrases before single tokens so we don't leave
+                # orphan "drums" / "beat" fragments behind.
+                _MYSTERY_FORBIDDEN = (
+                    "driving beat", "driving drums", "driving percussion",
+                    "percussion groove", "drum groove", "fast paced",
+                    "fast-paced", "fast tempo", "high tempo",
+                    "energetic", "upbeat", "danceable", "dance beat",
+                    "dance track", "edm", "pop beat", "party", "festive",
+                    "festa", "celebratory", "triumphant", "uplifting",
+                    "bright", "major key", "punchy drums", "punchy beat",
+                    "drum kit", "industrial cyberpunk drums",
+                    "cinematic drums from bar one", "marching",
+                    "martial cadence", "workout", "gym", "hype",
+                    "epic heroic swell", "epic-heroic swell",
+                    "80 bpm", "85 bpm", "90 bpm", "95 bpm", "100 bpm",
+                    "105 bpm", "110 bpm", "115 bpm", "120 bpm",
+                )
+                for bad in _MYSTERY_FORBIDDEN:
                     if bad in low:
-                        text = re.sub(re.escape(bad), "", text, flags=re.IGNORECASE)
-                        text = re.sub(r"\s+", " ", text).strip(" .")
+                        text = re.sub(
+                            re.escape(bad), "", text, flags=re.IGNORECASE,
+                        )
+                        text = re.sub(r"\s+", " ", text).strip(" .,")
                         low = text.lower()
-                if "bpm" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 18:
-                    text = f"{text} Tempo 50 BPM."
+                if "bpm" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 20:
+                    text = f"{text} Slow tempo 55 BPM."
                 if (
                     "drone" not in low
                     and "ambient" not in low
                     and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 28
                 ):
-                    text = f"{text} Slow enigmatic temple drone."
-                if "mysterious" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 14:
-                    text = f"{text} Mysterious."
+                    text = f"{text} Deep ambient drones."
+                if (
+                    "mysterious" not in low
+                    and "mystery" not in low
+                    and "dark" not in low
+                    and "somber" not in low
+                    and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 16
+                ):
+                    text = f"{text} Dark mysterious."
+                if (
+                    "no beat" not in low
+                    and "no driving" not in low
+                    and "minimal percussion" not in low
+                    and "sparse" not in low
+                    and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 22
+                ):
+                    text = f"{text} Minimal percussion, no driving beat."
+                if (
+                    "no voice" not in low
+                    and "no vocal" not in low
+                    and "instrumental" not in low
+                    and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 12
+                ):
+                    text = f"{text} No voice."
             else:
                 if "bpm" not in low and len(text) < _MUSIC_PROMPT_TARGET_CHARS - 18:
                     text = f"{text} Tempo 95 BPM."
@@ -1160,12 +1333,13 @@ def build_mei_music_v2_plan(
     total_ms: int,
     *,
     music_prompt: str = "",
+    style_profile: str = "warrior",
 ) -> dict[str, Any]:
     """
     Build a ``music_v2`` chunk-based composition plan.
 
-    Chunk 1 (0–15000 ms): Melancholic siege
-    Chunk 2 (15000–total): Inspiring / challenging resolve
+    Warrior: Chunk 1 Melancholic siege → Chunk 2 Challenging resolve.
+    Mystery: Chunk 1 subtle hook suspense → Chunk 2 slower heavier darker rhythm.
     Optional ``music_prompt`` (LLM) is injected into both chunk texts.
     """
     total = _clamp_music_duration_ms(
@@ -1177,32 +1351,39 @@ def build_mei_music_v2_plan(
     chunk2 = _clamp_music_duration_ms(
         total - chunk1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
     )
-    siege_pos, siege_neg, awaken_pos, awaken_neg = _mei_section_styles()
+    mystery = (style_profile or "warrior").strip().lower() == "mystery"
+    if mystery:
+        c1_pos, c1_neg, c2_pos, c2_neg = _mystery_section_styles()
+        h1, h2 = "[Subtle Suspense] ", "[Darker Depth] "
+        default_prompt = _MYSTERY_MUSIC_TEMPLATE
+    else:
+        c1_pos, c1_neg, c2_pos, c2_neg = _mei_section_styles()
+        h1, h2 = "[Melancholic Siege] ", "[Challenging Resolve] "
+        default_prompt = _MUSIC_SIMPLE_PROMPT
     # Cap prompt body so "HEADER + body + {instrumental}" stays ≤180 chars.
-    # Longest header here is "[Challenging Resolve] " (22) + " {instrumental}" (15).
     _v2_body_budget = max(
         40,
-        _MUSIC_LINE_MAX_CHARS - len("[Challenging Resolve] ") - len(" {instrumental}"),
+        _MUSIC_LINE_MAX_CHARS - max(len(h1), len(h2)) - len(" {instrumental}"),
     )
     prompt_body = _truncate_music_line(
-        (music_prompt or _MUSIC_SIMPLE_PROMPT).strip(),
+        (music_prompt or default_prompt).strip(),
         min(_MUSIC_PROMPT_TARGET_CHARS, _v2_body_budget),
     )
 
     plan = {
         "chunks": [
             {
-                "text": f"[Melancholic Siege] {prompt_body} {{instrumental}}",
+                "text": f"{h1}{prompt_body} {{instrumental}}",
                 "duration_ms": int(chunk1),
-                "positive_styles": siege_pos,
-                "negative_styles": siege_neg,
+                "positive_styles": c1_pos,
+                "negative_styles": c1_neg,
                 "context_adherence": "high",
             },
             {
-                "text": f"[Challenging Resolve] {prompt_body} {{instrumental}}",
+                "text": f"{h2}{prompt_body} {{instrumental}}",
                 "duration_ms": int(chunk2),
-                "positive_styles": awaken_pos,
-                "negative_styles": awaken_neg,
+                "positive_styles": c2_pos,
+                "negative_styles": c2_neg,
                 "context_adherence": "high",
             },
         ]
@@ -1214,6 +1395,7 @@ def build_mei_music_v1_plan(
     total_ms: int,
     *,
     music_prompt: str = "",
+    style_profile: str = "warrior",
 ) -> Any:
     """
     Build a typed ``MusicPrompt`` (``SongSection``) for ``music_v1`` only.
@@ -1228,9 +1410,29 @@ def build_mei_music_v1_plan(
     section2 = _clamp_music_duration_ms(
         total - section1, lo=_MUSIC_SECTION_MS_MIN, hi=_MUSIC_SECTION_MS_MAX,
     )
-    siege_pos, siege_neg, awaken_pos, awaken_neg = _mei_section_styles()
+    mystery = (style_profile or "warrior").strip().lower() == "mystery"
+    if mystery:
+        c1_pos, c1_neg, c2_pos, c2_neg = _mystery_section_styles()
+        n1, n2 = "Subtle Suspense", "Darker Depth"
+        default_prompt = _MYSTERY_MUSIC_TEMPLATE
+        pos_global = _sanitize_style_list([
+            "instrumental", "cinematic", "dark ambient", "ancient mystery",
+        ])
+        neg_global = _sanitize_style_list([
+            "vocals", "lyrics", "pop", "upbeat", "cheerful", "EDM", "party",
+        ])
+    else:
+        c1_pos, c1_neg, c2_pos, c2_neg = _mei_section_styles()
+        n1, n2 = "Melancholic Siege", "Challenging Resolve"
+        default_prompt = _MUSIC_SIMPLE_PROMPT
+        pos_global = _sanitize_style_list([
+            "instrumental", "cinematic", "melancholic", "cello",
+        ])
+        neg_global = _sanitize_style_list([
+            "vocals", "lyrics", "pop", "upbeat", "cheerful", "fast drums",
+        ])
     line = _truncate_music_line(
-        (music_prompt or _MUSIC_SIMPLE_PROMPT).strip() or "{instrumental}",
+        (music_prompt or default_prompt).strip() or "{instrumental}",
         _MUSIC_LINE_MAX_CHARS,
     )
 
@@ -1239,24 +1441,20 @@ def build_mei_music_v1_plan(
     except ImportError:
         # Dict fallback matching MusicPrompt JSON schema
         plan = {
-            "positive_global_styles": _sanitize_style_list([
-                "instrumental", "cinematic", "melancholic", "cello",
-            ]),
-            "negative_global_styles": _sanitize_style_list([
-                "vocals", "lyrics", "pop", "upbeat", "cheerful", "fast drums",
-            ]),
+            "positive_global_styles": pos_global,
+            "negative_global_styles": neg_global,
             "sections": [
                 {
-                    "section_name": "Melancholic Siege",
-                    "positive_local_styles": siege_pos,
-                    "negative_local_styles": siege_neg,
+                    "section_name": n1,
+                    "positive_local_styles": c1_pos,
+                    "negative_local_styles": c1_neg,
                     "duration_ms": int(section1),
                     "lines": [line, "{instrumental}"],
                 },
                 {
-                    "section_name": "Challenging Resolve",
-                    "positive_local_styles": awaken_pos,
-                    "negative_local_styles": awaken_neg,
+                    "section_name": n2,
+                    "positive_local_styles": c2_pos,
+                    "negative_local_styles": c2_neg,
                     "duration_ms": int(section2),
                     "lines": [line, "{instrumental}"],
                 },
@@ -1265,24 +1463,20 @@ def build_mei_music_v1_plan(
         return _enforce_composition_plan_line_limits(plan)
 
     plan = MusicPrompt(
-        positive_global_styles=_sanitize_style_list([
-            "instrumental", "cinematic", "melancholic", "cello",
-        ]),
-        negative_global_styles=_sanitize_style_list([
-            "vocals", "lyrics", "pop", "upbeat", "cheerful", "fast drums",
-        ]),
+        positive_global_styles=pos_global,
+        negative_global_styles=neg_global,
         sections=[
             SongSection(
-                section_name="Melancholic Siege",
-                positive_local_styles=siege_pos,
-                negative_local_styles=siege_neg,
+                section_name=n1,
+                positive_local_styles=c1_pos,
+                negative_local_styles=c1_neg,
                 duration_ms=int(section1),
                 lines=[line, "{instrumental}"],
             ),
             SongSection(
-                section_name="Challenging Resolve",
-                positive_local_styles=awaken_pos,
-                negative_local_styles=awaken_neg,
+                section_name=n2,
+                positive_local_styles=c2_pos,
+                negative_local_styles=c2_neg,
                 duration_ms=int(section2),
                 lines=[line, "{instrumental}"],
             ),
@@ -1352,10 +1546,14 @@ def generate_music_v2_bed(
         _dur_s, _MUSIC_MIN_DURATION_S, len(dyn_prompt),
     )
     v2_plan = _enforce_composition_plan_line_limits(
-        build_mei_music_v2_plan(total_ms, music_prompt=dyn_prompt)
+        build_mei_music_v2_plan(
+            total_ms, music_prompt=dyn_prompt, style_profile=_style,
+        )
     )
     v1_plan = _enforce_composition_plan_line_limits(
-        build_mei_music_v1_plan(total_ms, music_prompt=dyn_prompt)
+        build_mei_music_v1_plan(
+            total_ms, music_prompt=dyn_prompt, style_profile=_style,
+        )
     )
     saw_422 = False
 
@@ -1453,16 +1651,19 @@ def generate_music_v2_bed(
 
         # --- Pass 2: simple prompt (force_instrumental OK only here) ---
         simple_prompt = _truncate_music_line(
-            dyn_prompt or _MUSIC_SIMPLE_PROMPT,
+            dyn_prompt or (
+                _MYSTERY_MUSIC_TEMPLATE if _style == "mystery" else _MUSIC_SIMPLE_PROMPT
+            ),
             _MUSIC_LINE_MAX_CHARS,
         )
         if _style == "mystery":
             _style_tags = [
-                "slow enigmatic ancient mystery underscore",
-                "low drone pads only",
-                "no drums no dance beat",
-                "tempo 50 BPM",
-                "instrumental atmospheric",
+                "cinematic dark ancient mystery soundtrack",
+                "deep ambient drones",
+                "slow heavy rhythmic frame drums",
+                "eerie atmospheric pads",
+                "slow tempo",
+                "instrumental no vocals",
             ]
         else:
             _style_tags = [

@@ -448,6 +448,12 @@ def generate_content_with_model_fallback(
 
         for attempt in range(MAX_503_RETRIES):
             try:
+                try:
+                    import config as _app_cfg  # noqa: PLC0415
+
+                    _app_cfg.note_gemini_flash_call(str(model_id))
+                except Exception:
+                    pass
                 if config is not None:
                     response = client.models.generate_content(
                         model=model_id, contents=contents, config=config

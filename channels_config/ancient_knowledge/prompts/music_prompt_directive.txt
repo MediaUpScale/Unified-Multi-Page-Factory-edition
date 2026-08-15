@@ -1,11 +1,23 @@
-Generate a unique ElevenLabs music prompt for a slow, enigmatic ancient-mysteries documentary bed.
+Generate a unique ElevenLabs music prompt for a cinematic dark ancient mystery documentary soundtrack.
 
-STYLE: Quiet atmospheric underscore from the first second — low drones, distant hollow resonance, sparse tension. NO dance beat, NO party energy, NO driving percussion. Music must sit under narration and never compete with the voice.
+NON-NEGOTIABLE MOOD (every generation, without exception):
+Mysterious, enigmatic, dark, somber, cinematic documentary-mystery tone. Never upbeat, never triumphant, never bright, never major-key-sounding, never celebratory, never uplifting.
+
+NON-NEGOTIABLE TEMPO (every generation, without exception):
+Slow to moderate ONLY. Explicitly: "slow tempo, minimal percussion, no driving beat." Never competes with or rushes the narration. Approx 48–68 BPM ceiling. No rhythmic pulse strong enough to be a "beat" — only slow, sparse hits (frame drums, low thuds) that support the atmosphere.
+
+TOPIC CONTEXT (varies per episode — the ONLY part that changes):
+Weave the episode's specific ancient-mystery theme (e.g. Göbekli Tepe carvings, the Sphinx, buried mudflood windows) into the instrument/atmosphere choices so each track feels bespoke to the topic. Keep it evocative, never literal.
+
+CANONICAL STYLE (keep these ideas, unique wording each generation):
+"Cinematic dark ancient mystery soundtrack, deep ambient drones, slow sparse frame drums, eerie atmospheric pads, sub-bass, ancient undertones, high quality, no voice, seamless loop."
+
+PROGRESSION (encode in the prompt):
+- Hook (opening): subtle suspense — sparse drones, hushed tension, non-intrusive. Never silent.
+- Mid to end: deepen into a slower, heavier, darker mysterious atmosphere — slow sparse frame drums, deeper sub-bass, low brass/strings, eerie woodwinds. Still no driving beat.
+
+INSTRUMENTS: Deep sub-bass drones, ambient pads, low brass/strings, eerie woodwinds, distant frame drums (sparse hits only), muted rattles. NO synth leads, NO electronic percussion, NO drum kits, NO piano melody in the foreground.
 
 CONSTRAINT: Keep each section line/prompt concise, descriptive, and strictly under 150 characters. Do not write long paragraphs or excessive descriptors.
 
-PARAMETERS (every video — unique wording required):
-- Mood: Enigmatic, mysterious, solemn, ancient, hushed awe, investigative stillness.
-- Tempo: Very slow / ambient (approx 45–60 BPM feel — or free-tempo drone with almost no pulse).
-- Instrumentation: Deep drone pads, sparse cello or contrabass whispers, soft wind textures, distant wordless choir beds, faint temple resonance. Percussion only if extremely sparse and soft (no drums, no rhythmic groove).
-- Avoid: upbeat, festive, celebratory, party, EDM, pop, industrial cyberpunk drums, fast BPM, driving beats, bright synth leads, vocals with lyrics, long silent intros.
+STRICTLY FORBIDDEN (never appear in the prompt): upbeat, energetic, fast-paced, danceable, dance, EDM, pop, party, festive, celebratory, triumphant, uplifting, bright, major key, driving beat, driving drums, fast BPM, high tempo, rhythmic pulse, punchy, punchy drums, drum kit, groove, bassline groove, synth lead, bright synth, industrial cyberpunk drums, cinematic drums from bar one, marching, martial cadence, workout, gym, hype, epic-heroic swell, vocals with lyrics, singing, long silent intro.

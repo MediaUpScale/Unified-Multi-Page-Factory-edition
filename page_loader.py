@@ -553,6 +553,42 @@ class PageContext:
             return 90.0
 
     @property
+    def pacing_sequence(self) -> "list[float] | None":
+        """Exact per-still hold curve; None → engine default (AK stepped 3→7s)."""
+        raw = self.page_cfg.get("PACING_SEQUENCE", None)
+        if not raw:
+            return None
+        try:
+            seq = [float(x) for x in raw]
+        except (TypeError, ValueError):
+            return None
+        return seq if seq else None
+
+    @property
+    def scene_length(self) -> "float | None":
+        """Uniform per-still hold override (CLI ``--scene-length`` / SCENE_LENGTH)."""
+        raw = self.page_cfg.get("SCENE_LENGTH", None)
+        if raw is None or raw == "":
+            return None
+        try:
+            val = float(raw)
+            return val if val > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def encoding_preset(self) -> str:
+        return str(self.page_cfg.get("ENCODING_PRESET", "medium") or "medium").strip() or "medium"
+
+    @property
+    def enable_subtitle_padding(self) -> bool:
+        return bool(self.page_cfg.get("ENABLE_SUBTITLE_PADDING", True))
+
+    @property
+    def reuse_existing_images(self) -> bool:
+        return bool(self.page_cfg.get("REUSE_EXISTING_IMAGES", False))
+
+    @property
     def wan_reel_duration_target_min(self) -> float:
         """WAN_REEL duration floor (default 80). Independent of ECONOMIC_REEL."""
         try:

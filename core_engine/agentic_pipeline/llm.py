@@ -38,10 +38,12 @@ def _report_cost(response: Any, char_est: int) -> None:
         else:
             prompt_tok = int(float(getattr(um, "prompt_token_count", 0) or 0))
             completion_tok = int(float(getattr(um, "candidates_token_count", 0) or 0))
-        total = max(prompt_tok + completion_tok, int(char_est or 0))
+        total_tokens = prompt_tok + completion_tok
+        if total_tokens <= 0:
+            total_tokens = max(1, int(char_est or 0) // 4)
         tracker.track_text(
             "text_gemini_flash",
-            char_count=max(200, total),
+            token_count=total_tokens,
         )
     except Exception as exc:  # noqa: BLE001
         # Cost reporting must NEVER crash the pipeline.

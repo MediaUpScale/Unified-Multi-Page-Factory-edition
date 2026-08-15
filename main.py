@@ -174,9 +174,11 @@ from core_engine.reel_sequence_engine import (
     compile_sequence_reel as _core_compile_sequence_reel,
     build_sequence_script_prompt as _build_sequence_script_prompt,
     build_hook_body_act_durations as _build_hook_body_act_durations,
+    compute_audio_synced_act_durations as _compute_audio_synced_act_durations,
     compute_dense_act_count as _compute_dense_act_count,
     compute_hook_body_act_count as _compute_hook_body_act_count,
     segment_script_into_act_snippets as _segment_script_into_act_snippets,
+    snippets_from_word_timings as _snippets_from_word_timings,
 )
 from core_engine.scene_pacing import (
     describe_scene_plan as _describe_scene_plan,
@@ -193,6 +195,7 @@ from avatar_engine.content_library import (
     append_entry,
     build_library_metadata,
     dump_raw_research_to_log,
+    recent_topics as _recent_library_topics,
 )
 from avatar_engine.durable_library import (
     PENDING_CAPTION,
@@ -216,6 +219,8 @@ from avatar_engine.batch_planner import (
     BatchUniquenessGuard,
     MAX_UNIQUENESS_RETRIES,
     plan_angles_matrix,
+    select_distinct_pool_topics,
+    theme_key as _topic_theme_key,
 )
 from avatar_engine.text_utils import subject_slug
 from avatar_engine.visual_architect import VisualArchitect
@@ -456,115 +461,77 @@ def _format_cost_block(
     post_format: str = "",
     total_images: int = 0,
     scheduled_publish: str = "",
+    n_reels: int = 1,
+    per_reel_costs: "list[float] | None" = None,
 ) -> str:
     """
     Render a formatted terminal cost-analysis block from a CostTracker snapshot.
 
-    Groups entries by operation category (research / image / voice) and
-    displays individual line costs plus a TOTAL ESTIMATED COST footer.
-
-    Args:
-        breakdown:    CostTracker snapshot dict.
-        post_format:  Page post format string (e.g. "SEQUENCE_REEL", "DYNAMIC_REEL").
-                      Controls the Visual Assets description and the $0.00 render line.
-        total_images: Authoritative image count from the envelope (overrides breakdown
-                      count when > 0).
-
-    Returns a multi-line string ready for ``print()``.
+    Uses official formulas:
+      images × $0.003, TTS chars × $0.00003, Gemini tokens × $0.075/1M,
+      plus SFX/music API line items. Per-reel rows stay separate from the batch total.
     """
     fallback = "\n| COST ANALYSIS SUMMARY | (unavailable — using $0.00 fallback)\n"
     try:
         if not isinstance(breakdown, dict):
             return fallback
-        entries: list[dict] = breakdown.get("breakdown") or []
-        if not isinstance(entries, list):
-            entries = []
+        from core_engine.cost_tracker import CostTracker as _CT
+
+        tmp = _CT(page_id=str(breakdown.get("page_id") or "summary"))
+        cats = tmp.category_totals(breakdown.get("breakdown") or [])
         tier: str = str(breakdown.get("cost_tier") or "—")
 
-        research_cost = 0.0
-        research_chars = 0
-        research_model = "Gemini 2.5 Flash"
+        research_cost = float(cats["research_cost"])
+        research_tokens = int(cats["research_tokens"])
+        image_cost = float(cats["image_cost"])
+        image_count = int(cats["image_count"])
+        tts_chars = int(cats["tts_chars"])
+        audio_cost = float(cats["audio_cost"])
+        sfx_calls = int(cats["sfx_calls"])
+        music_beds = int(cats["music_beds"])
+        music_api = bool(cats["music_api"])
 
-        image_cost = 0.0
-        image_count = 0
-        image_model = "FLUX Schnell"
+        billed_imgs = image_count
+        compiled_hint = max(int(total_images or 0), billed_imgs)
+        if billed_imgs <= 0 and compiled_hint > 0:
+            # Compiled stills with no API hits this run (reused) — keep $0 but label it.
+            display_img = compiled_hint
+            img_note = "reused stills, no API this run"
+        else:
+            display_img = billed_imgs
+            if image_cost <= 0 and billed_imgs > 0:
+                image_cost = billed_imgs * 0.003
+            img_note = f"{billed_imgs} generation{'s' if billed_imgs != 1 else ''}"
 
-        voice_cost = 0.0
-        voice_chars = 0
-
-        def _sf(value: Any, default: float = 0.0) -> float:
-            if value is None:
-                return default
-            try:
-                out = float(value)
-                return default if out != out else out
-            except (TypeError, ValueError):
-                return default
-
-        def _si(value: Any, default: int = 0) -> int:
-            try:
-                return int(_sf(value, float(default)))
-            except (TypeError, ValueError):
-                return default
-
-        for e in entries:
-            if not isinstance(e, dict):
-                continue
-            op = str(e.get("operation") or "")
-            cost = max(0.0, _sf(e.get("cost_usd"), 0.0))
-            units = max(0.0, _sf(e.get("units"), 0.0))
-            mk = str(e.get("model_key") or "").lower()
-
-            if op == "text_generation":
-                research_cost += cost
-                research_chars += _si(units, 0)
-                if "deepseek" in mk:
-                    research_model = "DeepSeek V4"
-                elif "flash" in mk:
-                    research_model = "Gemini 2.5 Flash"
-                elif "pro" in mk:
-                    research_model = "Gemini Pro"
-            elif op == "image_generation":
-                image_cost += cost
-                image_count += _si(units, 0)
-                if "nano" in mk or "banana" in mk:
-                    image_model = "Nano Banana Pro"
-                elif "flux" in mk or "schnell" in mk:
-                    image_model = "FLUX Schnell"
-                elif "economic" in mk:
-                    image_model = "Gemini Flash Lite"
-                elif "premium" in mk:
-                    image_model = "Gemini Pro Image"
-            elif op == "audio_generation":
-                voice_cost += cost
-                voice_chars += _si(units, 0)
-
-        display_img_count = max(_si(total_images, 0), _si(image_count, 0))
-
+        n = max(1, int(n_reels or 1))
         _fmt = (post_format or "").upper()
         _is_reel = _fmt in ("SEQUENCE_REEL", "DYNAMIC_REEL", "HYBRID_VIDEO")
-        _is_sequence = _fmt == "SEQUENCE_REEL" or (_is_reel and display_img_count >= 2)
-
-        if _is_sequence:
+        if _is_reel and n > 1:
             _asset_desc = (
-                f"{display_img_count} AI Base Image{'s' if display_img_count != 1 else ''}"
-                " \u2192 Compiled to 1 MP4 Sequence Reel"
+                f"{display_img} FLUX API images → {n} MP4 sequence reels"
             )
-        elif _fmt in ("DYNAMIC_REEL", "HYBRID_VIDEO"):
-            _asset_desc = "1 AI Base Image \u2192 Animated to 1 MP4 Video"
-        elif _fmt == "CAROUSEL":
+        elif _is_reel:
             _asset_desc = (
-                f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Carousel Slides)"
+                f"{display_img} FLUX API image{'s' if display_img != 1 else ''}"
+                " → 1 MP4 Sequence Reel"
             )
         else:
             _asset_desc = (
-                f"{display_img_count} AI Image{'s' if display_img_count != 1 else ''} (Static Post)"
+                f"{display_img} AI Image{'s' if display_img != 1 else ''} (Static Post)"
             )
 
-        total = research_cost + image_cost + voice_cost
-        sep  = "+" + "=" * 62 + "+"
-        thin = "  " + "-" * 60
+        audio_bits = [f"{tts_chars:,} TTS chars"]
+        if sfx_calls:
+            audio_bits.append(f"{sfx_calls} SFX")
+        if music_beds:
+            audio_bits.append(
+                f"{music_beds} music {'API' if music_api else 'local $0'}"
+            )
+        audio_note = ", ".join(audio_bits)
 
+        total = research_cost + image_cost + audio_cost
+        sep = "+" + "=" * 62 + "+"
+        thin = "  " + "-" * 60
         lines = [
             "",
             sep,
@@ -573,34 +540,38 @@ def _format_cost_block(
             sep,
             f"  {'Visual Assets:'.ljust(36)} {_asset_desc}",
             "",
-            f"  - Research ({research_model}):".ljust(38) +
-                f"${research_cost:.4f}  ({research_chars:,} chars)",
-            f"  - Image Gen ({image_model}):".ljust(38) +
-                f"${image_cost:.4f}  ({display_img_count} generation{'s' if display_img_count != 1 else ''})",
-            f"  - Voice Gen (ElevenLabs):".ljust(38) +
-                f"${voice_cost:.4f}  ({voice_chars:,} characters)",
+            f"  - Research & Script (Gemini 2.5 Flash):".ljust(42)
+            + f"${research_cost:.4f}  ({research_tokens:,} tokens)",
+            f"  - Image Gen (FLUX Schnell):".ljust(42)
+            + f"${image_cost:.4f}  ({img_note})",
+            f"  - Voice & Audio (ElevenLabs):".ljust(42)
+            + f"${audio_cost:.4f}  ({audio_note})",
         ]
-
         if _is_reel:
             lines.append(
-                f"  - Video Render (MoviePy/FFmpeg):".ljust(38) +
-                "$0.0000  (local, no API charge)"
+                f"  - Video Render (MoviePy/FFmpeg):".ljust(42)
+                + "$0.0000  (local, no API charge)"
             )
-
         if scheduled_publish:
             lines.append(
-                f"  - Scheduled Publish (YouTube):".ljust(38) +
-                f"{scheduled_publish} (Shorts)"
+                f"  - Scheduled Publish (YouTube):".ljust(42)
+                + f"{scheduled_publish} (Shorts)"
             )
-
+        if per_reel_costs and n > 1:
+            lines.append(thin)
+            for i, rc in enumerate(per_reel_costs, 1):
+                lines.append(
+                    f"  Reel {i:>2}/{n}:".ljust(42) + f"${float(rc):.4f} USD"
+                )
         lines += [
             thin,
-            f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}",
+            f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}"
+            + (f"  ({n} reels)" if n > 1 else ""),
             sep,
+            "",
         ]
         return "\n".join(lines)
-    except Exception as exc:  # noqa: BLE001
-        _LOG.warning("Cost analysis block failed (%s) — using $0.00 fallback", exc)
+    except Exception:
         return fallback
 
 
@@ -685,11 +656,19 @@ def _print_production_summary(
     _sched_times = [r["youtube_scheduled_at"] for r in rows if r.get("youtube_scheduled_at")]
     _sched_display = _sched_times[0] if _sched_times else ""
     if _cost_snap:
+        _per_reel: list[float] = []
+        for _row in rows:
+            try:
+                _per_reel.append(float(_row.get("estimated_cost_usd") or 0.0))
+            except (TypeError, ValueError):
+                _per_reel.append(0.0)
         print(_format_cost_block(
             _cost_snap,
             post_format=page_ctx.post_format if page_ctx else "",
             total_images=_total_imgs,
             scheduled_publish=_sched_display,
+            n_reels=max(1, len(rows)),
+            per_reel_costs=_per_reel,
         ))
     print()
 
@@ -967,6 +946,183 @@ def _stitch_audio_sequential(
         return narration_path
 
 
+_MAX_AUDIO_DURATION_RETRIES: int = 1  # down from 2, now that the pre-TTS gate is reliable
+
+
+def _synthesize_sequence_voice_track(
+    script: str,
+    *,
+    reel_dir: Path,
+    stem: str,
+    variant: int,
+    page_ctx: "PageContext | None",
+    caption_engine: "CaptionEngine | None",
+    resolved_subject: str,
+    economic: bool,
+    n_acts: int,
+    batch_angle_block: str = "",
+    generated_hooks_cache: "list[str] | None" = None,
+    cost_tracker: "CostTracker | None" = None,
+) -> tuple["Path | None", list, float, float, str, "Path | None", float, float]:
+    """Narration TTS + CTA stitch with 80–90s validation / script regen.
+
+    Returns ``(voice_path, narr_word_timings, narr_dur, total_audio_s, script,
+    cta_path, cta_dur, silence_before_cta_s)``. ``cta_path`` and ``cta_dur``
+    are 0/None when no CTA was generated. Silence gap between narration and
+    CTA is fixed at 1.0 s (matches ``_stitch_audio_sequential`` default).
+    """
+    from avatar_engine.audio_engine import _audio_file_duration_s
+    from avatar_engine.audio_engine import pad_narration_to_minimum
+
+    page_id = (page_ctx.page_id if page_ctx else "").lower()
+    is_ak = page_id == "ancient_knowledge"
+    min_s = float(page_ctx.reel_duration_target_min if page_ctx else 80.0)
+    max_s = float(page_ctx.reel_duration_target_max if page_ctx else 90.0)
+    words_tgt = int(page_ctx.reel_narration_words if page_ctx else app_config.words_for_duration(80.0))
+    words_min = int(page_ctx.reel_narration_min_words if page_ctx else app_config.words_for_duration(80.0))
+    words_max = int(page_ctx.reel_narration_max_words if page_ctx else app_config.words_for_duration(90.0))
+    speed = 1.0 if is_ak else (page_ctx.tts_narration_speed if page_ctx else None)
+    vs = dict(page_ctx.elevenlabs_voice_settings if page_ctx else {})
+    if is_ak:
+        vs["speed"] = 1.0
+    voice_id = page_ctx.elevenlabs_voice_id if page_ctx else None
+    model_id = page_ctx.elevenlabs_model if page_ctx else "eleven_multilingual_v2"
+    cta_text = (page_ctx.reel_cta_text if page_ctx else "") or ""
+    if page_ctx is None or page_ctx.strip_audio_tags_before_tts:
+        cta_text = _strip_audio_behavior_tags(cta_text)
+    from avatar_engine.mei_narrative import fix_cta_typos
+    cta_text = fix_cta_typos(cta_text or "")
+
+    current = script or ""
+    voice_path: "Path | None" = None
+    narr_wts: list = []
+    narr_dur = 0.0
+    total_s = 0.0
+    cta_path: "Path | None" = None
+    cta_dur: float = 0.0
+    _cta_silence_s: float = 1.0
+
+    for attempt in range(_MAX_AUDIO_DURATION_RETRIES + 1):
+        current = _trim_script_to_word_limit(current, max_words=words_max)
+        if page_ctx is None or page_ctx.strip_audio_tags_before_tts:
+            current = _strip_audio_behavior_tags(current)
+        narr_out = reel_dir / f"{stem}_v{variant + 1:02d}_narration.mp3"
+        try:
+            voice_path, narr_wts = generate_voiceover_with_timestamps(
+                current,
+                narr_out,
+                voice_id=voice_id or None,
+                model_id=model_id,
+                speed=speed,
+                voice_settings=vs or None,
+                enable_ssml=bool(page_ctx.tts_enable_ssml) if page_ctx else False,
+                expressive_mode=False,
+            )
+            narr_wts = _filter_audio_tag_timings(narr_wts)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("Pre-image TTS failed (attempt %d): %s", attempt + 1, exc)
+            break
+        try:
+            narr_dur = float(_audio_file_duration_s(Path(voice_path)))
+        except Exception:
+            narr_dur = float(narr_wts[-1][2]) if narr_wts else 0.0
+
+        cta_path = None
+        cta_dur = 0.0
+        if cta_text and voice_path is not None:
+            cta_out = reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
+            try:
+                cta_path, _cta_wts = generate_voiceover_with_timestamps(
+                    cta_text,
+                    cta_out,
+                    voice_id=voice_id or None,
+                    model_id=model_id,
+                    speed=speed,
+                    voice_settings=vs or None,
+                    expressive_mode=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("Pre-image CTA TTS failed: %s", exc)
+                cta_path = None
+            if cta_path is not None:
+                try:
+                    cta_dur = float(_audio_file_duration_s(Path(cta_path)))
+                except Exception:
+                    cta_dur = 0.0
+        if voice_path is not None and cta_path is not None:
+            stitched = reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"
+            voice_path = _stitch_audio_sequential(
+                voice_path, cta_path, stitched, silence_s=_cta_silence_s,
+            )
+        try:
+            total_s = float(_audio_file_duration_s(Path(voice_path))) if voice_path else 0.0
+        except Exception:
+            total_s = narr_dur
+        _LOG.info(
+            "VOICE DURATION | attempt=%d narr=%.1fs total=%.1fs words=%d target=%.0f–%.0fs speed=%.2f",
+            attempt + 1, narr_dur, total_s, len(current.split()), min_s, max_s,
+            float(speed or 1.0),
+        )
+        if not is_ak or (min_s <= total_s <= max_s) or caption_engine is None:
+            break
+        if attempt >= _MAX_AUDIO_DURATION_RETRIES:
+            break
+        if total_s < min_s:
+            _prev_wc = len(current.split())
+            _deficit = max(int(words_max) - _prev_wc, 0)
+            _LOG.warning(
+                "VOICE DURATION SHORT | %.1fs < %.0fs — regenerating longer script",
+                total_s, min_s,
+            )
+            current = caption_engine.generate_sequence_voiceover(
+                resolved_subject,
+                page_niche=page_ctx.content_niche if page_ctx else "",
+                persona_voice="investigative documentary narrator — write a LONG full script",
+                n_acts=n_acts,
+                duration_s=page_ctx.reel_duration if page_ctx else 85.0,
+                total_words_target=words_max,
+                economic=economic,
+                niche_disclaimer=(
+                    (page_ctx.niche_disclaimer if page_ctx else "")
+                    + f" CRITICAL: Previous narration was {total_s:.0f}s ({_prev_wc} words). "
+                    f"That is {_deficit} words short of the "
+                    f"{words_max}-word target. Add that many words of new content, not padding."
+                ),
+                cta_line="",
+                narrative_mode=page_ctx.narrative_mode if page_ctx else "investigative",
+                batch_angle_block=batch_angle_block,
+                uniqueness_rejection=(
+                    f"TOO SHORT: {total_s:.0f}s audio ({_prev_wc} words). "
+                    f"Add {_deficit}+ words of new evidence and visual description. "
+                    f"Target {words_max} words."
+                ),
+                previously_generated_hooks=list(generated_hooks_cache or []),
+            ) or current
+            if cost_tracker is not None and current:
+                cost_tracker.track_text(char_count=len(current))
+        else:
+            _LOG.warning(
+                "VOICE DURATION LONG | %.1fs > %.0fs — trimming to %d words",
+                total_s, max_s, words_min,
+            )
+            current = _trim_script_to_word_limit(current, max_words=words_min)
+    if is_ak and voice_path is not None and total_s < min_s:
+        _LOG.warning(
+            "VOICE DURATION | still %.1fs after retries — "
+            "applying deterministic pad instead of shipping short",
+            total_s,
+        )
+        voice_path = pad_narration_to_minimum(voice_path, min_s)
+        try:
+            total_s = float(_audio_file_duration_s(Path(voice_path)))
+        except Exception:
+            pass
+    return (
+        voice_path, narr_wts, narr_dur, total_s, current,
+        cta_path, cta_dur, _cta_silence_s,
+    )
+
+
 # Known geographic/visual anchors mapped to camera-perspective image directives.
 _GEO_ANCHORS: list[tuple[tuple[str, ...], str]] = [
     (("nazca", "geoglyph", "nazca lines"),
@@ -1113,11 +1269,11 @@ def _track_adapter_image(
     adapter: "Any",
 ) -> int:
     """
-    Record image API cost using the adapter's real call count (incl. retries).
-    Remote GPU → ``track_gpu_seconds`` (RunPod rates); Together → per-image table.
-    Returns the number of API hits charged. Quiet during batch loops.
+    Record one generated image at the official FLUX Schnell rate ($0.003).
+    Remote GPU seconds are logged separately and excluded from pipeline totals.
     """
-    n = max(1, int(getattr(adapter, "last_api_call_count", 1) or 1))
+    # Official formula is $0.003 per generated image, not per retry hop.
+    n = 1
     if cost_tracker is None:
         return n
     _cost_key = getattr(adapter, "last_cost_key", None) or "image_flux_schnell"
@@ -1136,9 +1292,11 @@ def _track_adapter_image(
                 _gpu_s = 0.0
         if _gpu_s > 0:
             cost_tracker.track_gpu_seconds(_gpu_s, mode=mode, jobs=n)
-            return n
-    cost_tracker.track_image(model_key=_cost_key, count=n)
-    _LOG.debug("CostTracker | image hit key=%s n=%d", _cost_key, n)
+    _img_key = _cost_key if str(_cost_key).startswith("image_") else "image_flux_schnell"
+    if str(_img_key).startswith("image_remote"):
+        _img_key = "image_flux_schnell"
+    cost_tracker.track_image(model_key=_img_key, count=n)
+    _LOG.debug("CostTracker | image hit key=%s n=%d", _img_key, n)
     return n
 
 
@@ -1219,27 +1377,20 @@ def _print_video_cost_summary(
     total_variants: int = 1,
     batch_images_so_far: int | None = None,
     reel_cost_usd: float | None = None,
+    batch_cost_usd: float | None = None,
 ) -> None:
-    """Print reel-vs-batch cost summary after a video finishes rendering."""
+    """Print this-reel cost, then running batch total (never mix the two)."""
     from core_engine.cost_tracker import print_cost_summary
     from avatar_engine.providers.model_router import format_video_cost_summary
 
-    if cost_tracker is None:
+    cats = cost_tracker.category_totals() if cost_tracker is not None else {}
+    img_cost = float(cats.get("image_cost") or 0.0)
+    if img_cost <= 0 and image_count > 0:
         img_cost = 0.003 * max(0, image_count)
-        total = img_cost
-    else:
-        snap = cost_tracker.to_dict()
-        total = float(snap.get("total_estimated_usd") or 0.0)
-        img_cost = 0.0
-        for entry in snap.get("breakdown") or []:
-            if str(entry.get("operation") or "") == "image_generation":
-                img_cost += float(entry.get("cost_usd") or 0.0)
-        if img_cost <= 0 and image_count > 0:
-            img_cost = 0.003 * image_count
-    _reel_cost = (
+    reel_total = (
         float(reel_cost_usd)
         if reel_cost_usd is not None
-        else (0.003 * max(0, image_count))
+        else float(cats.get("total") or img_cost)
     )
     _batch_imgs = (
         int(batch_images_so_far)
@@ -1251,13 +1402,17 @@ def _print_video_cost_summary(
         total_variants=int(total_variants),
         images_this_reel=int(image_count),
         total_batch_images=_batch_imgs,
-        total_reel_cost=float(_reel_cost),
+        total_reel_cost=float(reel_total),
+        batch_cost=batch_cost_usd,
+        research_cost=float(cats.get("research_cost") or 0.0),
+        image_cost=img_cost,
+        audio_cost=float(cats.get("audio_cost") or 0.0),
     )
     line = format_video_cost_summary(
         image_count=image_count,
         image_model_label=image_model_label,
         image_cost_usd=img_cost,
-        pipeline_cost_usd=total,
+        pipeline_cost_usd=reel_total,
     )
     print(line, flush=True)
     _LOG.info(line)
@@ -1455,6 +1610,12 @@ def _produce_variant_worker(
     """
     stem = f"{slug}_v{variant + 1:02d}"
     variation_index = variant
+    batch_cost_tracker = cost_tracker
+    if batch_cost_tracker is not None:
+        cost_tracker = CostTracker(
+            page_id=batch_cost_tracker.page_id,
+            cost_tier=batch_cost_tracker.cost_tier,
+        )
 
     # ── Batch Angle injection (qty > 1) — Global DNA + unique sub-angle ─────
     _batch_angle: "BatchAngle | None" = None
@@ -2269,6 +2430,11 @@ def _produce_variant_worker(
     # image per snippet → Phase D TTS + compile (act_dur = audio / N).
     _sequence_image_paths: list = []
     _early_seq_script: str = ""
+    _ak_voice_ready = False
+    _voice_path = None
+    _narr_dur = 0.0
+    _narr_word_timings: list = []
+    _ak_act_durs: "list[float] | None" = None
     # Episode assets: outputs/<page>/assets/<episode_id>/
     # Clips always:   outputs/<page>/clips/
     _episode_id = f"ep_{datetime.now().strftime('%Y%m%d_%H%M')}"
@@ -2291,8 +2457,8 @@ def _produce_variant_worker(
             else page_ctx.atmosphere_style.rstrip(" .")
         )
         _is_mm = (page_ctx.page_id or "").lower() == "master_mei"
-        _seq_words = page_ctx.reel_narration_words if page_ctx else 140
-        _seq_min = page_ctx.reel_narration_min_words if page_ctx else 110
+        _seq_words = page_ctx.reel_narration_words if page_ctx else app_config.words_for_duration(80.0)
+        _seq_min = page_ctx.reel_narration_min_words if page_ctx else app_config.words_for_duration(80.0)
 
         # Master Mei: duration profile locks words + frame count (7/9/10).
         # Other pages: shared plan_scenes() engine (or legacy dense/hook).
@@ -2341,6 +2507,19 @@ def _produce_variant_worker(
                     seconds_per_act=page_ctx.reel_seconds_per_act,
                     min_acts=page_ctx.reel_image_min_count,
                     max_acts=page_ctx.reel_image_count,
+                )
+            _scene_len = page_ctx.scene_length
+            if _scene_len:
+                _seq_n = max(
+                    page_ctx.reel_image_min_count,
+                    min(
+                        page_ctx.reel_image_count,
+                        max(2, int(round(page_ctx.reel_duration / float(_scene_len)))),
+                    ),
+                )
+                _LOG.info(
+                    "SCENE_LENGTH override | %.1fs/still → %d acts",
+                    float(_scene_len), _seq_n,
                 )
 
         # ── Work dir under episode assets (final scene_XX.png copies land here) ──
@@ -2399,14 +2578,13 @@ def _produce_variant_worker(
                         uniqueness_rejection=_seq_reject,
                         previously_generated_hooks=_hooks_for_seq,
                     ) or ""
-                    _early_ok = (
-                        len((_early_seq_script or "").split()) >= _seq_min
-                        or len((_early_seq_script or "").strip()) >= 150
-                    )
+                    _early_ok = len((_early_seq_script or "").split()) >= _seq_min
                     if not _early_ok:
+                        _prev_wc = len((_early_seq_script or "").split())
+                        _deficit = max(int(_seq_min) - _prev_wc, 0)
                         _LOG.warning(
                             "SEQUENCE_REEL | early script short (%d words) — regenerating…",
-                            len((_early_seq_script or "").split()),
+                            _prev_wc,
                         )
                         if cost_tracker is not None:
                             cost_tracker.track_text(char_count=len(_early_seq_script or "") + 500)
@@ -2424,8 +2602,9 @@ def _produce_variant_worker(
                             economic=economic,
                             niche_disclaimer=(
                                 (page_ctx.niche_disclaimer or "")
-                                + f" CRITICAL: Write AT LEAST {_seq_min} words OR 150+ characters. "
-                                "Short scripts are forbidden."
+                                + f" CRITICAL: Previous draft had {_prev_wc} words. "
+                                f"That is {_deficit} words SHORT of {_seq_min}. "
+                                f"Add {_deficit}+ words of new content, not padding."
                             ),
                             cta_line="",
                             narrative_mode=page_ctx.narrative_mode,
@@ -2435,7 +2614,7 @@ def _produce_variant_worker(
                         ) or _early_seq_script
                     if uniqueness_guard is None or not _early_seq_script:
                         break
-                    _opening = " ".join((_early_seq_script or "").split()[:28])
+                    _opening = " ".join((_early_seq_script or "").split()[:80])
                     _ok_s, _prior_s, _score_s = uniqueness_guard.try_claim(_opening)
                     if _ok_s:
                         _LOG.info(
@@ -2455,7 +2634,12 @@ def _produce_variant_worker(
                         break
                 if _early_seq_script:
                     _early_seq_script = _trim_script_to_word_limit(
-                        _early_seq_script, max_words=_seq_words + 15
+                        _early_seq_script,
+                        max_words=(
+                            page_ctx.reel_narration_max_words
+                            if page_ctx and (page_ctx.page_id or "").lower() == "ancient_knowledge"
+                            else _seq_words + 15
+                        ),
                     )
                     if cost_tracker is not None:
                         cost_tracker.track_text(char_count=len(_early_seq_script))
@@ -2476,9 +2660,84 @@ def _produce_variant_worker(
             _seq_n,
         )
 
-        # Act 1 base: Master Mei regenerates Scene 1 via FLUX (never graphite raw_bg).
-        # Other pages keep the primary background as Act 1.
-        if not _is_mm:
+        # Ancient Knowledge: TTS first so image prompts bind to real word timestamps.
+        if (not _is_mm) and (page_ctx.page_id or "").lower() == "ancient_knowledge":
+            _clips_dir = Path(app_config.PAGE_OUTPUTS_DIR) / "clips"
+            _clips_dir.mkdir(parents=True, exist_ok=True)
+            (
+                _voice_path,
+                _narr_word_timings,
+                _narr_dur,
+                _ak_total_audio,
+                _early_seq_script,
+                _cta_audio_path,
+                _cta_audio_dur,
+                _cta_silence_s,
+            ) = _synthesize_sequence_voice_track(
+                _early_seq_script or (
+                    caption if caption and caption != "(skipped)" else resolved_subject
+                ),
+                reel_dir=_clips_dir,
+                stem=stem,
+                variant=variant,
+                page_ctx=page_ctx,
+                caption_engine=caption_engine,
+                resolved_subject=resolved_subject,
+                economic=economic,
+                n_acts=_seq_n,
+                batch_angle_block=_batch_angle_block,
+                generated_hooks_cache=generated_hooks_cache,
+                cost_tracker=cost_tracker,
+            )
+            if _voice_path is not None and _narr_dur > 0.5:
+                _ak_voice_ready = True
+                # Round-4 fix: hook/body-bucket/CTA planner runs AFTER measured
+                # audio (narration + silence + CTA) is known. Never estimates.
+                from core_engine.reel_sequence_engine import (
+                    plan_bucket_act_durations as _plan_bucket_act_durations,
+                )
+                # Per-act snippets from the FINAL script's own act boundaries —
+                # no timing/no Gemini needed. Guarantees Hook/Body word counts
+                # come from the actual spoken content.
+                _pre_snippets = _segment_script_into_act_snippets(
+                    _early_seq_script or resolved_subject,
+                    _seq_n,
+                )
+                # Fill any empty snippet with topic so bucketing (word count)
+                # never sees len(0) collapsing an act into a merge target.
+                _pre_snippets = [s or resolved_subject for s in _pre_snippets]
+                _ak_act_durs, _spoken_snippets, _ak_keep_map = (
+                    _plan_bucket_act_durations(
+                        _pre_snippets,
+                        narration_s=float(_narr_dur),
+                        cta_audio_s=float(_cta_audio_dur or 0.0),
+                        silence_before_cta_s=float(_cta_silence_s or 1.0),
+                    )
+                )
+                _ak_bucket_snippets = list(_spoken_snippets)
+                _spoken_snippets = [
+                    s or resolved_subject for s in _spoken_snippets
+                ]
+                if len(_ak_act_durs) != _seq_n:
+                    _LOG.info(
+                        "Bucket planner | merged %d short act(s) → keeping %d/%d stills",
+                        _seq_n - len(_ak_act_durs), len(_ak_act_durs), _seq_n,
+                    )
+                    _seq_n = len(_ak_act_durs)
+                _LOG.info(
+                    "BUCKET PLAN | n=%d durs=%s beats=%s",
+                    _seq_n,
+                    ",".join(f"{d:.2f}" for d in _ak_act_durs),
+                    " | ".join(
+                        f"{i+1}[{len((_ak_bucket_snippets[i] or '').split())}w→{_ak_act_durs[i]:.1f}s]:"
+                        f"{(_ak_bucket_snippets[i] or '')[:40]}"
+                        for i in range(_seq_n)
+                    ),
+                )
+
+        # Act 1: timestamp-bound generation for AK; cover reuse only as fallback.
+        # Master Mei regenerates Scene 1 via FLUX (never graphite raw_bg).
+        if not _is_mm and not _ak_voice_ready:
             _sequence_image_paths.append(
                 _ensure_sequence_image(raw_bg_path, fallback=raw_bg_path)
             )
@@ -2689,12 +2948,9 @@ def _produce_variant_worker(
             _mm_gpu_delta = _track_remote_gpu_batch(
                 cost_tracker, seconds_before=_mm_gpu_baseline, jobs=_mm_ok,
             )
-            if _mm_gpu_delta <= 0 and _mm_ok:
-                for _ in range(_mm_ok):
-                    _images_generated_this_variant += _track_adapter_image(
-                        cost_tracker, adapter
-                    )
-            else:
+            if _mm_ok:
+                if cost_tracker is not None:
+                    cost_tracker.track_image(model_key="image_flux_schnell", count=_mm_ok)
                 _images_generated_this_variant += _mm_ok
         else:
             # ancient_knowledge (+ other sequence pages): spoken-snippet → visual
@@ -2724,7 +2980,8 @@ def _produce_variant_worker(
             # HTTP calls under the hood.
             _sr_act_meta: dict[int, dict[str, Any]] = {}
             _sr_act_jobs: dict[int, Any] = {}
-            for _act_i in range(1, _seq_n):
+            _sr_act_start = 0 if _ak_voice_ready else 1
+            for _act_i in range(_sr_act_start, _seq_n):
                 _snippet = (
                     _spoken_snippets[_act_i]
                     if _act_i < len(_spoken_snippets)
@@ -2784,7 +3041,7 @@ def _produce_variant_worker(
             _sr_act_results = _run_acts_parallel(_sr_act_jobs)
 
             _ok_acts = 0
-            for _act_i in range(1, _seq_n):
+            for _act_i in range(_sr_act_start, _seq_n):
                 _meta = _sr_act_meta[_act_i]
                 _snippet = _meta["snippet"]
                 _fallback_dest = _meta["fallback_dest"]
@@ -2813,20 +3070,12 @@ def _produce_variant_worker(
             _gpu_delta = _track_remote_gpu_batch(
                 cost_tracker, seconds_before=_gpu_baseline, jobs=_ok_acts,
             )
-            if _gpu_delta <= 0 and _ok_acts:
-                # Together / non-timed path — charge per successful act
-                for _ in range(_ok_acts):
-                    _images_generated_this_variant += _track_adapter_image(
-                        cost_tracker, adapter
-                    )
-            else:
+            if _ok_acts:
+                if cost_tracker is not None:
+                    cost_tracker.track_image(model_key="image_flux_schnell", count=_ok_acts)
                 _images_generated_this_variant += _ok_acts
 
         if _sequence_image_paths:
-            _images_generated_this_variant = max(
-                _images_generated_this_variant,
-                len(_sequence_image_paths),
-            )
             _LOG.info(
                 "Sequence reel | frames=%d | api_image_units=%d",
                 len(_sequence_image_paths),
@@ -3164,7 +3413,8 @@ def _produce_variant_worker(
 
     if _is_economic_reel and img_path_display and Path(img_path_display).is_file():
         _LOG.info("ECONOMIC_REEL | Launching video compilation pipeline (variant %s)…", variant + 1)
-        _voice_path: Path | None = None
+        if not locals().get("_ak_voice_ready"):
+            _voice_path = None
         _ambient_path: Path | None = None
 
         # Always target the page clips/ folder (never loose root / episode clips)
@@ -3194,9 +3444,10 @@ def _produce_variant_worker(
             try:
                 if _early_seq_script and (
                     len(_early_seq_script.split()) >= (
-                        page_ctx.reel_narration_min_words if page_ctx else 110
+                        page_ctx.reel_narration_min_words
+                        if page_ctx
+                        else app_config.words_for_duration(80.0)
                     )
-                    or len(_early_seq_script.strip()) >= 150
                 ):
                     _seq_script = _early_seq_script
                     _LOG.info(
@@ -3229,10 +3480,12 @@ def _produce_variant_worker(
                     )
                     if cost_tracker is not None and _seq_script:
                         cost_tracker.track_text(char_count=len(_seq_script))
-                _min_ok = page_ctx.reel_narration_min_words if page_ctx else 110
-                if _seq_script and (
-                    len(_seq_script.split()) >= _min_ok or len(_seq_script.strip()) >= 150
-                ):
+                _min_ok = (
+                    page_ctx.reel_narration_min_words
+                    if page_ctx
+                    else app_config.words_for_duration(80.0)
+                )
+                if _seq_script and len(_seq_script.split()) >= _min_ok:
                     _voiceover_script = _seq_script
                     _LOG.info(
                         "SEQUENCE_REEL | documentary voiceover generated: %d words (min=%d)",
@@ -3240,22 +3493,36 @@ def _produce_variant_worker(
                     )
                 else:
                     _LOG.warning(
-                        "SEQUENCE_REEL | voiceover too short (%d words, need ≥%d or ≥150 chars) — "
-                        "video will trim to audio length (no silent 80s pad).",
+                        "SEQUENCE_REEL | voiceover too short (%d words, need ≥%d) — "
+                        "will pad audio to target after TTS if still short.",
                         len((_seq_script or "").split()), _min_ok,
                     )
-                    if _seq_script and (
-                        len(_seq_script.split()) >= 60 or len(_seq_script.strip()) >= 150
-                    ):
+                    if _seq_script and len(_seq_script.split()) >= 40:
                         _voiceover_script = _seq_script
             except Exception as _seq_exc:  # noqa: BLE001
                 _LOG.warning("SEQUENCE_REEL | voiceover generation failed: %s — using caption.", _seq_exc)
         _word_timings: list[tuple[str, float, float]] = []
-        if _voiceover_script and app_config.ELEVENLABS_API_KEY:
+        if locals().get("_ak_voice_ready") and _voice_path is not None:
+            _word_timings = list(locals().get("_narr_word_timings") or [])
+            _cta_text = (page_ctx.reel_cta_text if page_ctx else "") or ""
+            if _cta_text and float(locals().get("_narr_dur") or 0) > 0:
+                _cta_offset = float(_narr_dur) + 1.0
+                _cta_words = _cta_text.split()
+                _cta_slot = 3.5 / max(1, len(_cta_words))
+                _word_timings = _word_timings + [
+                    (w, _cta_offset + i * _cta_slot, _cta_offset + (i + 1) * _cta_slot)
+                    for i, w in enumerate(_cta_words)
+                ]
+            _LOG.info(
+                "SEQUENCE_REEL | reusing pre-image TTS | narr=%.1fs | %s",
+                float(locals().get("_narr_dur") or 0),
+                Path(_voice_path).name,
+            )
+        elif _voiceover_script and app_config.ELEVENLABS_API_KEY:
             # 1. Trim narration body to page word target (master_mei ≈ 175 for ~75 s).
             #    Allow slight headroom so we don't over-trim a correctly long script.
             _max_words = (page_ctx.reel_narration_words if page_ctx else 140) + 30
-            if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
+            if page_ctx and (page_ctx.page_id or "").lower() in ("master_mei", "ancient_knowledge"):
                 # Hard cap 260 per Master Philosophical Scriptwriter brief
                 _max_words = int(page_ctx.reel_narration_max_words)
             _voiceover_script = _trim_script_to_word_limit(_voiceover_script, max_words=_max_words)
@@ -3471,7 +3738,7 @@ def _produce_variant_worker(
             _cta_chars = len(locals().get("_cta_text", ""))
             cost_tracker.track_audio(
                 char_count=len(_voiceover_script) + _cta_chars,
-                sfx=bool(app_config.ELEVENLABS_API_KEY),
+                sfx=False,
             )
 
         # -- Three-channel mix: VO + atmosphere SFX loop + music_v2 BGM --------
@@ -3518,6 +3785,15 @@ def _produce_variant_worker(
                     Path(_music_bed).name,
                     _music_style,
                 )
+                if cost_tracker is not None:
+                    try:
+                        from avatar_engine.audio_engine import LAST_MUSIC_COMPOSE_MODE
+                        _mode = str(LAST_MUSIC_COMPOSE_MODE or "").strip().lower()
+                        cost_tracker.track_music(
+                            api=_mode not in ("", "local", "ambient", "none"),
+                        )
+                    except Exception:  # noqa: BLE001
+                        cost_tracker.track_music(api=False)
             # Continuous 10s atmosphere tile → looped 100% of video
             _sfx_out = _reel_dir / f"{stem}_v{variant + 1:02d}_atmosphere_sfx.mp3"
             _sfx_prompt = page_ctx.ambient_sfx_prompt if page_ctx else ""
@@ -3532,6 +3808,11 @@ def _produce_variant_worker(
                     (page_ctx.page_id or "PAGE").upper(),
                     Path(_sfx_loop_path).name,
                 )
+                if (
+                    cost_tracker is not None
+                    and Path(_sfx_loop_path).resolve() == Path(_sfx_out).resolve()
+                ):
+                    cost_tracker.track_sfx(calls=1)
         elif app_config.ELEVENLABS_API_KEY:
             _ambient_out = _reel_dir / f"{stem}_v{variant + 1:02d}_ambient.mp3"
             _sfx_prompt = page_ctx.ambient_sfx_prompt if page_ctx else ""
@@ -3543,6 +3824,11 @@ def _produce_variant_worker(
             # Single-tile path: also feed as loopable SFX so mix hears it
             if _ambient_path is not None and Path(_ambient_path).is_file():
                 _sfx_loop_path = Path(_ambient_path)
+                if (
+                    cost_tracker is not None
+                    and Path(_ambient_path).resolve() == Path(_ambient_out).resolve()
+                ):
+                    cost_tracker.track_sfx(calls=1)
 
         # -- Local ambient pad = FALLBACK only (never replace a generated bed) ─
         # NEVER prefer legacy rain/martial rain loops (hiss/clipping).
@@ -3726,7 +4012,26 @@ def _produce_variant_worker(
                     output_path=_reel_target,
                     target_duration=_reel_dur,
                     act_duration_s=page_ctx.reel_act_duration if page_ctx else None,
-                    act_durations=_paced_act_durs,
+                    act_durations=(
+                        # AK: bucket-planner durations (hook 3×3s, body 3/5/7s
+                        # by word count, CTA = measured cta+silence). Passed
+                        # strict → compile does no scale-to-fit and no last-
+                        # still slack absorption.
+                        list(locals().get("_ak_act_durs") or [])
+                        if (
+                            page_ctx
+                            and str(getattr(page_ctx, "page_id", "")).lower() == "ancient_knowledge"
+                            and locals().get("_ak_act_durs")
+                        )
+                        else _paced_act_durs
+                    ),
+                    strict_act_durations=(
+                        bool(
+                            page_ctx
+                            and str(getattr(page_ctx, "page_id", "")).lower() == "ancient_knowledge"
+                            and locals().get("_ak_act_durs")
+                        )
+                    ),
                     word_timings=_word_timings or None,
                     font_path=_font_path_abs or None,
                     overlay_opacity=page_ctx.reel_overlay_opacity if page_ctx else 0.35,
@@ -3762,10 +4067,16 @@ def _produce_variant_worker(
                     # Require a real narr duration (>0.5s) — a 0.0 fallback made
                     # the overlay paint from t=1s for the entire reel.
                     cta_start_s=(
-                        float(locals().get("_narr_dur", -1.0)) + 1.0
+                        float(locals().get("_narr_dur", -1.0)) + 0.3
                         if float(locals().get("_narr_dur", -1.0) or -1.0) > 0.5
                         else -1.0
                     ),
+                    narration_duration_s=(
+                        float(locals().get("_narr_dur", -1.0))
+                        if float(locals().get("_narr_dur", -1.0) or -1.0) > 0.5
+                        else None
+                    ),
+                    cta_visual_gap_s=0.3,
                     ambient_volume=(page_ctx.ambient_volume if page_ctx else None),
                     sfx_loop_audio=_sfx_loop_path,
                     sfx_loop_volume=(
@@ -3811,6 +4122,24 @@ def _produce_variant_worker(
                     exact_duration_s=(
                         page_ctx.reel_duration if page_ctx else 80.0
                     ),
+                    ffmpeg_preset=(
+                        page_ctx.encoding_preset if page_ctx else "medium"
+                    ),
+                    pacing_sequence=(
+                        page_ctx.pacing_sequence if page_ctx else None
+                    ),
+                    scene_length=(
+                        page_ctx.scene_length if page_ctx else None
+                    ),
+                    target_duration_min=(
+                        page_ctx.reel_duration_target_min if page_ctx else None
+                    ),
+                    target_duration_max=(
+                        page_ctx.reel_duration_target_max if page_ctx else None
+                    ),
+                    enable_subtitle_padding=(
+                        page_ctx.enable_subtitle_padding if page_ctx else True
+                    ),
                 )
             else:
                 reel_path = compile_dynamic_reel(
@@ -3839,32 +4168,32 @@ def _produce_variant_worker(
             _LOG.info("ECONOMIC_REEL compiled → %s", reel_path.name)
             video_path_str = str(reel_path)
             print(f"[reel] Video compiled -> {reel_path}")
-            _img_n = (
-                len(_sequence_image_paths)
-                if _sequence_image_paths
-                else max(1, int(_images_generated_this_variant or 1))
-            )
-            _batch_so_far = int(_img_n)
+            _api_imgs = max(0, int(_images_generated_this_variant or 0))
+            _batch_so_far = int(_api_imgs)
             _lock = batch_image_lock or write_lock
             if batch_image_counter is not None:
                 with _lock:
-                    batch_image_counter[0] = int(batch_image_counter[0]) + int(_img_n)
+                    batch_image_counter[0] = int(batch_image_counter[0]) + int(_api_imgs)
                     _batch_so_far = int(batch_image_counter[0])
-            _reel_cost = 0.003 * max(0, int(_img_n))
-            if cost_tracker is not None:
-                try:
-                    # Prefer image-generation slice attributed to this reel's count
-                    _reel_cost = max(_reel_cost, 0.003 * max(0, int(_img_n)))
-                except Exception:  # noqa: BLE001
-                    pass
+            _cats = cost_tracker.category_totals() if cost_tracker is not None else {}
+            _reel_cost = (
+                float(_cats.get("total") or 0.0)
+                if _cats
+                else (0.003 * _api_imgs)
+            )
+            _batch_usd = _reel_cost
+            if batch_cost_tracker is not None:
+                _batch_cats = batch_cost_tracker.category_totals()
+                _batch_usd = float(_batch_cats.get("total") or 0.0) + _reel_cost
             _print_video_cost_summary(
                 cost_tracker,
-                image_count=_img_n,
+                image_count=_api_imgs,
                 image_model_label="FLUX Schnell",
                 variant_index=variant + 1,
                 total_variants=qty,
                 batch_images_so_far=_batch_so_far,
                 reel_cost_usd=_reel_cost,
+                batch_cost_usd=_batch_usd,
             )
 
             # ── PHASE E1: Backblaze B2 upload ────────────────────────────────
@@ -4186,14 +4515,19 @@ def _produce_variant_worker(
             app_config.LIBRARY_DIR,
             variant_index=variant + 1,
         )
-        _return_dict["estimated_cost_usd"] = round(cost_tracker.total_usd(), 6)
+        _pipeline_usd = cost_tracker.pipeline_usd()
+        _return_dict["estimated_cost_usd"] = round(_pipeline_usd, 6)
         _return_dict["cost_tier"] = cost_tracker.cost_tier
-        # Full breakdown stored on the row so the summary printer can render it
         _return_dict["cost_breakdown"] = cost_tracker.to_dict()
         _LOG.info(
-            "CostTracker | variant %d total=$%.6f tier=%s",
-            variant + 1, cost_tracker.total_usd(), cost_tracker.cost_tier,
+            "CostTracker | variant %d pipeline=$%.6f ledger=$%.6f tier=%s",
+            variant + 1, _pipeline_usd, cost_tracker.total_usd(), cost_tracker.cost_tier,
         )
+        if batch_cost_tracker is not None:
+            try:
+                batch_cost_tracker.merge(cost_tracker)
+            except Exception as _mg:  # noqa: BLE001
+                _LOG.debug("CostTracker batch merge skipped (%s)", _mg)
 
     return _return_dict
 
@@ -4267,7 +4601,7 @@ def _produce_agentic(
         try:
             # Trust the node-reported ledger; just snapshot it into the envelope.
             envelope["final_cost_breakdown"] = _cost_tracker.to_dict()
-            envelope["estimated_cost_usd"] = round(_cost_tracker.total_usd(), 6)
+            envelope["estimated_cost_usd"] = round(_cost_tracker.pipeline_usd(), 6)
             if _track_on:
                 _cost_tracker.write_telemetry(
                     app_config.LIBRARY_DIR, variant_index=max(1, len(items)),
@@ -4275,7 +4609,7 @@ def _produce_agentic(
             _LOG.info(
                 "Agentic CostTracker | ops=%s total=$%.6f tier=%s",
                 len(_cost_tracker.to_dict().get("breakdown") or []),
-                _cost_tracker.total_usd(),
+                _cost_tracker.pipeline_usd(),
                 _cost_tracker.cost_tier,
             )
         except Exception as cost_exc:  # noqa: BLE001
@@ -4301,7 +4635,7 @@ def _produce_agentic(
             row.setdefault("imgbb_url", "")
         if _cost_tracker is not None:
             row.setdefault("cost_breakdown", _cost_tracker.to_dict())
-            row.setdefault("estimated_cost_usd", round(_cost_tracker.total_usd(), 6))
+            row.setdefault("estimated_cost_usd", round(_cost_tracker.pipeline_usd(), 6))
         try:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
             app_config.LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
@@ -4582,11 +4916,17 @@ def produce(
             resolved_subject = ""
             _cli_topic = ""
         if not resolved_subject:
-            resolved_subject = _channel.pick_niche_topic()
+            _recent_ak = _recent_library_topics(app_config.CONTENT_LIBRARY_PATH, 40)
+            _fresh = select_distinct_pool_topics(
+                _channel.get_niche_topics(), 1,
+                recent_topics=_recent_ak, rng=_rnd,
+            )
+            resolved_subject = _fresh[0] if _fresh else _channel.pick_niche_topic()
             _LOG.info(
-                "AK TOPIC HARD-OVERRIDE | selected niche topic → %r (bank=%d)",
+                "AK TOPIC HARD-OVERRIDE | selected niche topic → %r (bank=%d, library_filtered=%d)",
                 resolved_subject,
                 len(_channel.get_niche_topics()),
+                len(_recent_ak),
             )
     elif not resolved_subject:
         resolved_subject = imagine_subject(corpus)
@@ -4638,101 +4978,125 @@ def produce(
         economic,
     )
 
-    # ── BATCH PLANNER: Angles Matrix (qty > 1) ───────────────────────────────
-    # Deconstruct the core topic into N unique non-overlapping sub-angles BEFORE
-    # the generation loop. Each worker receives Global Topic DNA + Specific Angle.
+    # ── BATCH PLANNER ────────────────────────────────────────────────────────
     batch_angles: list[BatchAngle] | None = None
     uniqueness_guard: BatchUniquenessGuard | None = None
     global_topic_dna = (_cli_topic or resolved_subject or "").strip()
-
-    # ── PER-VARIANT TOPIC LIST (legacy pool / LLM topics) ────────────────────
-    # When qty > 1 and the user did not specify a topic, every variant must
-    # receive its own unique, freshly-generated subject.  The strategy is:
-    #   1. If the page topic_pool is large enough → shuffle + sample without
-    #      replacement (fast, zero API cost).
-    #   2. If the pool is too small → generate the remainder via Gemini in one
-    #      call using the page-specialised generate_bulk_topics() prompt.
-    #   3. Pool absent entirely → call generate_bulk_topics() for all qty slots.
     per_variant_topics: list[str] | None = None
     _seed_for_angles: list[str] | None = None
-    if not _cli_topic and qty > 1:
-        _pool = page_ctx.topic_pool if page_ctx else []
-        if _pool and len(_pool) >= qty:
-            _pool_copy = list(_pool)
-            _rnd.shuffle(_pool_copy)
-            # Anchor variant-0 to the already-resolved_subject so the pre-research
-            # phase that runs before the loop still uses a consistent base topic.
-            per_variant_topics = [resolved_subject] + [
-                t for t in _pool_copy if t != resolved_subject
-            ][:qty - 1]
-            _seed_for_angles = list(per_variant_topics)
-            _LOG.info(
-                "Bulk topics | pool-sampled %d unique topics for page=%s",
-                len(per_variant_topics), _page_id_lower,
-            )
-        else:
-            _llm_topics = generate_bulk_topics(
-                qty,
-                page_id=_page_id_lower,
-                page_niche=page_ctx.content_niche if page_ctx else "",
-            )
-            if _llm_topics:
-                # Combine pool topics + LLM topics, deduplicate, take qty
-                _combined = _llm_topics + list(_pool or [])
-                _seen: set[str] = set()
-                _deduped: list[str] = []
-                for _t in _combined:
-                    if _t.lower() not in _seen:
-                        _seen.add(_t.lower())
-                        _deduped.append(_t)
-                per_variant_topics = _deduped[:qty]
-                # Ensure the first variant matches the pre-resolved subject
-                if per_variant_topics:
-                    per_variant_topics[0] = resolved_subject
-                _seed_for_angles = list(per_variant_topics)
-                _LOG.info(
-                    "Bulk topics | LLM-generated %d unique topics for page=%s",
-                    len(per_variant_topics), _page_id_lower,
-                )
-            else:
-                _LOG.warning(
-                    "Bulk topics | LLM generation returned no topics — all variants "
-                    "will use the same resolved_subject: %r", resolved_subject,
-                )
+    _is_ak_page = _page_id_lower == "ancient_knowledge"
 
     if qty > 1:
         uniqueness_guard = BatchUniquenessGuard()
-        # Prefer explicit CLI topic as Global DNA; else resolved subject / niche
-        _core = (_cli_topic or "").strip() or global_topic_dna or (
-            page_ctx.content_niche if page_ctx else ""
-        ) or "Content series"
-        global_topic_dna = _core
-        batch_angles = plan_angles_matrix(
-            _core,
-            qty,
-            page_id=_page_id_lower,
-            page_niche=page_ctx.content_niche if page_ctx else "",
-            seed_topics=_seed_for_angles or per_variant_topics,
-        )
-        # Prefer angles matrix as the authoritative per-variant topic list
-        per_variant_topics = [a.combined_topic for a in batch_angles]
-        if batch_angles:
-            resolved_subject = batch_angles[0].combined_topic
-        envelope["batch_angles"] = [
-            {
-                "index": a.index,
-                "angle_title": a.angle_title,
-                "hook_style": a.hook_style,
-                "visual_focus": a.visual_focus,
-                "seo_title_hint": a.seo_title_hint,
-            }
-            for a in batch_angles
-        ]
+
+    if _is_ak_page and qty > 1:
+        # Distinct TOPIC_POOL subjects — never N angles of one monument.
+        _lookback = 40
+        if page_ctx is not None:
+            try:
+                _lookback = int(page_ctx.page_cfg.get("CONTENT_LIBRARY_LOOKBACK", 40))
+            except (TypeError, ValueError):
+                _lookback = 40
+        _recent = _recent_library_topics(app_config.CONTENT_LIBRARY_PATH, _lookback)
+        _pool = list(page_ctx.topic_pool if page_ctx else []) or list(_channel.get_niche_topics())
+        if _cli_topic:
+            _picked = select_distinct_pool_topics(
+                _pool, qty - 1, recent_topics=_recent,
+                reserved=[_cli_topic], rng=_rnd,
+            )
+            per_variant_topics = [_cli_topic] + [
+                t for t in _picked if _topic_theme_key(t) != _topic_theme_key(_cli_topic)
+            ]
+        else:
+            per_variant_topics = select_distinct_pool_topics(
+                _pool, qty, recent_topics=_recent, rng=_rnd,
+            )
+        if per_variant_topics:
+            per_variant_topics = per_variant_topics[:qty]
+            resolved_subject = per_variant_topics[0]
+            global_topic_dna = resolved_subject
+        batch_angles = None
         envelope["global_topic_dna"] = global_topic_dna
+        envelope["batch_topics"] = list(per_variant_topics or [])
         _LOG.info(
-            "BatchPlanner | uniqueness guard armed | angles=%d | core=%r",
-            len(batch_angles), global_topic_dna,
+            "AK batch topics | %d distinct TOPIC_POOL subjects (lookback=%d): %s",
+            len(per_variant_topics or []),
+            _lookback,
+            " | ".join(per_variant_topics or []),
         )
+    else:
+        # Other pages: pool sample / LLM topics, then optional angles matrix.
+        if not _cli_topic and qty > 1:
+            _pool = page_ctx.topic_pool if page_ctx else []
+            if _pool and len(_pool) >= qty:
+                _pool_copy = list(_pool)
+                _rnd.shuffle(_pool_copy)
+                per_variant_topics = [resolved_subject] + [
+                    t for t in _pool_copy if t != resolved_subject
+                ][:qty - 1]
+                _seed_for_angles = list(per_variant_topics)
+                _LOG.info(
+                    "Bulk topics | pool-sampled %d unique topics for page=%s",
+                    len(per_variant_topics), _page_id_lower,
+                )
+            else:
+                _llm_topics = generate_bulk_topics(
+                    qty,
+                    page_id=_page_id_lower,
+                    page_niche=page_ctx.content_niche if page_ctx else "",
+                )
+                if _llm_topics:
+                    _combined = _llm_topics + list(_pool or [])
+                    _seen: set[str] = set()
+                    _deduped: list[str] = []
+                    for _t in _combined:
+                        if _t.lower() not in _seen:
+                            _seen.add(_t.lower())
+                            _deduped.append(_t)
+                    per_variant_topics = _deduped[:qty]
+                    if per_variant_topics:
+                        per_variant_topics[0] = resolved_subject
+                    _seed_for_angles = list(per_variant_topics)
+                    _LOG.info(
+                        "Bulk topics | LLM-generated %d unique topics for page=%s",
+                        len(per_variant_topics), _page_id_lower,
+                    )
+                else:
+                    _LOG.warning(
+                        "Bulk topics | LLM generation returned no topics — all variants "
+                        "will use the same resolved_subject: %r", resolved_subject,
+                    )
+
+        if qty > 1:
+            _core = (_cli_topic or "").strip() or global_topic_dna or (
+                page_ctx.content_niche if page_ctx else ""
+            ) or "Content series"
+            global_topic_dna = _core
+            batch_angles = plan_angles_matrix(
+                _core,
+                qty,
+                page_id=_page_id_lower,
+                page_niche=page_ctx.content_niche if page_ctx else "",
+                seed_topics=_seed_for_angles or per_variant_topics,
+            )
+            per_variant_topics = [a.combined_topic for a in batch_angles]
+            if batch_angles:
+                resolved_subject = batch_angles[0].combined_topic
+            envelope["batch_angles"] = [
+                {
+                    "index": a.index,
+                    "angle_title": a.angle_title,
+                    "hook_style": a.hook_style,
+                    "visual_focus": a.visual_focus,
+                    "seo_title_hint": a.seo_title_hint,
+                }
+                for a in batch_angles
+            ]
+            envelope["global_topic_dna"] = global_topic_dna
+            _LOG.info(
+                "BatchPlanner | uniqueness guard armed | angles=%d | core=%r",
+                len(batch_angles), global_topic_dna,
+            )
 
     logging.info(
         "Models banner | verified_image=%s | verified_research=%s | humanizer=%s",
@@ -4760,13 +5124,23 @@ def produce(
             raise
 
     if _isolated:
-        if _channel.topic_is_off_niche(resolved_subject):
-            resolved_subject = _channel.pick_niche_topic()
         if per_variant_topics:
-            per_variant_topics = [
-                (t if not _channel.topic_is_off_niche(t) else _channel.pick_niche_topic())
-                for t in per_variant_topics
-            ]
+            _fixed_topics: list[str] = []
+            for _t in per_variant_topics:
+                if _channel.topic_is_off_niche(_t):
+                    _repl = select_distinct_pool_topics(
+                        _channel.get_niche_topics(), 1,
+                        reserved=_fixed_topics, rng=_rnd,
+                    )
+                    _fixed_topics.append(
+                        _repl[0] if _repl else _channel.pick_niche_topic()
+                    )
+                else:
+                    _fixed_topics.append(_t)
+            per_variant_topics = _fixed_topics
+            resolved_subject = per_variant_topics[0]
+        elif _channel.topic_is_off_niche(resolved_subject):
+            resolved_subject = _channel.pick_niche_topic()
         global_topic_dna = resolved_subject
         _LOG.info(
             "AK TOPIC LOCK FINAL | resolved_subject=%r | variants=%s",
@@ -4932,8 +5306,8 @@ def produce(
         render_approval_required=bool(render_approval_required),
     )
 
-    # ── Instantiate CostTracker — one per run, shared across workers ──────────
-    # Each worker receives the same tracker; thread-safety is handled internally.
+    # Batch CostTracker is the merge target. Each worker forks a per-reel
+    # tracker so parallel variants cannot mix global accumulators.
     _cost_tracker: CostTracker | None = None
     if page_ctx is not None and page_ctx.enable_cost_tracking:
         _cost_tracker = CostTracker(
@@ -4996,19 +5370,16 @@ def produce(
             qty,
         )
 
-    # ── FINAL COST SNAPSHOT: capture the shared tracker AFTER all workers ────
-    # Each worker writes its per-variant view of the tracker, but since all workers
-    # share the same CostTracker instance, the post-loop snapshot has the full
-    # accumulated totals across every variant.  Store it at the envelope level so
-    # _print_production_summary always displays the complete picture.
+    # ── FINAL COST SNAPSHOT: merged batch tracker after all workers return ──
     _total_images_generated = sum(r.get("images_generated", 0) for r in items)
     envelope["total_images_generated"] = _total_images_generated
     if _cost_tracker is not None and page_ctx is not None and page_ctx.enable_cost_tracking:
         envelope["final_cost_breakdown"] = _cost_tracker.to_dict()
+        envelope["estimated_cost_usd"] = round(_cost_tracker.pipeline_usd(), 6)
         _LOG.info(
-            "Final cost snapshot | total_images=%d | total_usd=%.6f | tier=%s",
+            "Final cost snapshot | api_images=%d | pipeline=$%.6f | tier=%s",
             _total_images_generated,
-            _cost_tracker.total_usd(),
+            _cost_tracker.pipeline_usd(),
             _cost_tracker.cost_tier,
         )
 
@@ -5715,6 +6086,18 @@ def cli() -> None:
             "progressive:start=4,step_every=3,step=1,cap=7.5 | equal"
         ),
     )
+    parser.add_argument(
+        "--scene-length",
+        dest="scene_length",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Force every B-roll still to this many seconds, overriding the "
+            "3/3/4/4/5 hold pattern. Timeline = sum(holds); no last-still "
+            "slack absorption."
+        ),
+    )
     args = parser.parse_args()
 
     # ── model_api_flows: resolve + apply before any generation ──────────────
@@ -5877,6 +6260,12 @@ def cli() -> None:
         print(
             f"[bootstrap] scene_duration={page_ctx.page_cfg['SCENE_DURATION']!r} "
             "(CLI override → plan_scenes)"
+        )
+    if getattr(args, "scene_length", None):
+        page_ctx.page_cfg["SCENE_LENGTH"] = float(args.scene_length)
+        print(
+            f"[bootstrap] scene_length={float(args.scene_length):.1f}s "
+            "(CLI override → uniform still holds)"
         )
 
     economic_choice: bool | None

@@ -240,8 +240,36 @@ DEEPSEEK_MODEL: str = DEEPSEEK_FLASH_MODEL
 # ---------------------------------------------------------------------------
 # "gemini" (default) | "deepseek" (legacy override — not recommended)
 TEXT_LLM_PRIMARY: str = (os.getenv("TEXT_LLM_PRIMARY") or "gemini").strip().lower()
+
+# Measured from actual ElevenLabs output at TTS_NARRATION_SPEED=1.0 for this voice.
+# Update this if the voice or speed setting changes.
+NARRATION_WORDS_PER_SECOND: float = 2.25  # ≈135 WPM at 1.0x — replace with your measured value
+
+# Episode-level Gemini generateContent counter (successful + attempted calls).
+GEMINI_FLASH_CALLS: int = 0
+
+
+def words_for_duration(seconds: float, safety_margin: float = 1.08) -> int:
+    """
+    Convert a target spoken duration into a word count, with a small safety
+    margin so we land at or above the target instead of just under it.
+    """
+    return round(float(seconds) * NARRATION_WORDS_PER_SECOND * float(safety_margin))
+
+
+def note_gemini_flash_call(task: str = "") -> int:
+    """Increment and log the per-process Gemini Flash call counter."""
+    global GEMINI_FLASH_CALLS
+    GEMINI_FLASH_CALLS += 1
+    logger.info("GEMINI_FLASH_CALL | n=%d task=%s", GEMINI_FLASH_CALLS, task)
+    return GEMINI_FLASH_CALLS
+
+
 # Minimum words accepted from sequence voiceover before Gemini retry/fallback
-SEQUENCE_VOICEOVER_MIN_WORDS: int = int(os.getenv("SEQUENCE_VOICEOVER_MIN_WORDS") or "110")
+_env_vo_min = (os.getenv("SEQUENCE_VOICEOVER_MIN_WORDS") or "").strip()
+SEQUENCE_VOICEOVER_MIN_WORDS: int = (
+    int(_env_vo_min) if _env_vo_min else words_for_duration(80.0)
+)
 
 # ---------------------------------------------------------------------------
 # ElevenLabs — voiceover TTS + ambient SFX for ECONOMIC_REEL

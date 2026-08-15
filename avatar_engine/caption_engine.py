@@ -1617,7 +1617,7 @@ class CaptionEngine:
         persona_voice: str = "investigative, neutral, immersive",
         n_acts: int = 4,
         duration_s: float = 80.0,
-        total_words_target: int = 140,
+        total_words_target: int | None = None,
         economic: bool = False,
         niche_disclaimer: str = "",
         cta_line: str = "",
@@ -1631,8 +1631,8 @@ class CaptionEngine:
 
         Unlike ``humanize_smart_bait`` (which produces a 65-80 word social-media
         caption), this method targets ``total_words_target`` words spread across
-        ``n_acts`` acts at a slow documentary pace (~100 WPM) to match an 80-second
-        visual timeline precisely.
+        ``n_acts`` acts. Word counts come from ``words_for_duration()``
+        (single measured WPS), not a hardcoded WPM table.
 
         When ``cta_line`` is provided the LLM is instructed to append it naturally
         as the final sentence so the output becomes a single, self-contained script
@@ -1644,8 +1644,12 @@ class CaptionEngine:
         Returns the cleaned narration string, or "" on failure.
         """
         from core_engine.reel_sequence_engine import build_sequence_script_prompt  # local import avoids circular
+        from config import words_for_duration
 
         import re as _re
+
+        if total_words_target is None:
+            total_words_target = words_for_duration(duration_s)
 
         prompt = build_sequence_script_prompt(
             topic=topic,
@@ -1702,23 +1706,24 @@ class CaptionEngine:
         )
 
         raw = ""
-        # Soft acceptance: duration-profile word band (80/100/120 s) @ 0.86× + breaks.
-        # Do NOT expand when cleaned chars fall in the soft accept window.
-        _min_words = int(getattr(app_config, "SEQUENCE_VOICEOVER_MIN_WORDS", 110) or 110)
-        _min_chars = 150
+        # Hard word-count floor from the single measured rate. No char-count escape.
+        _min_words = int(
+            getattr(app_config, "SEQUENCE_VOICEOVER_MIN_WORDS", 0)
+            or words_for_duration(80.0)
+        )
         if _warrior and _mei_prof:
-            _min_words = int(_mei_prof.get("words_min", 170))
-            _max_words = int(_mei_prof.get("words_max", 185))
-            # Soft char window scales roughly with word band
+            _min_words = int(_mei_prof.get("words_min", words_for_duration(80.0)))
+            _max_words = int(_mei_prof.get("words_max", words_for_duration(80.0) + 20))
             _accept_chars_lo = max(700, _min_words * 5)
             _accept_chars_hi = max(_accept_chars_lo + 200, _max_words * 8)
         elif _warrior:
-            _min_words = max(_min_words, 170)
-            _max_words = 185
+            _min_words = max(_min_words, words_for_duration(80.0))
+            _max_words = words_for_duration(80.0) + 20
             _accept_chars_lo = 1000
             _accept_chars_hi = 1350
         else:
-            _max_words = 10**9
+            _min_words = words_for_duration(80.0)
+            _max_words = words_for_duration(80.0) + 20
             _accept_chars_lo = 0
             _accept_chars_hi = 0
         _full_prompt = _sys_base + "\n\n" + prompt + cta_instruction
@@ -1775,17 +1780,13 @@ class CaptionEngine:
             if not cleaned:
                 return False
             wc = len(cleaned.split())
-            chars = len(cleaned)
             if _warrior:
                 if _min_words <= wc <= _max_words:
                     return True
-                # User rule: do NOT expand when cleaned chars are 1000–1350
-                if _accept_chars_lo <= chars <= _accept_chars_hi:
-                    return True
                 return False
-            return wc >= _min_words or chars >= _min_chars
+            return wc >= _min_words  # hard word-count floor only, no char-count escape hatch
 
-        def _try_gemini(*, attempt: int = 1, expand: bool = False) -> str:
+        def _try_gemini(*, attempt: int = 1, expand: bool = False, prev_text: str = "") -> str:
             try:
                 from avatar_engine.providers.gemini_utils import chain_with_preferred_first
                 from avatar_engine.providers.gemini_utils import generate_content_with_model_fallback
@@ -1817,11 +1818,14 @@ class CaptionEngine:
                             f"FIRST PERSON only. No 'Master Mei' third person. No Follow/Subscribe CTA."
                         )
                     else:
+                        prev_wc = len(_metrics_script(prev_text).split()) if prev_text else 0
+                        deficit = max(_min_words - prev_wc, 0)
                         boost = (
-                            f"\n\nCRITICAL EXPAND/RETRY: Your previous draft was TOO SHORT "
-                            f"(under {_min_chars} characters AND under {_min_words} words). "
-                            f"EXPAND it. Write AT LEAST {_min_words} words "
-                            f"(target {total_words_target}). Fill the {duration_s:.0f}-second narration."
+                            f"\n\nCRITICAL EXPAND/RETRY: Your previous draft had {prev_wc} words. "
+                            f"That is {deficit} words SHORT of the required minimum ({_min_words} words). "
+                            f"Do not just add filler — add {deficit}+ words of NEW descriptive content "
+                            f"(one additional visual detail or piece of evidence per act). "
+                            f"Final draft must be {_min_words}-{_min_words + 20} words."
                         )
                 response = generate_content_with_model_fallback(
                     self._gemini, chain,
@@ -1840,20 +1844,24 @@ class CaptionEngine:
         # ── Gemini ONLY (no Claude / DeepSeek fallbacks) ─────────────────────
         raw = _try_gemini(attempt=1)
         _chars = len(_metrics_script(raw))
-        if _passes_length(raw):
+        _first_wc = _word_count(raw)
+        _first_pass = _passes_length(raw)
+        logger.info(
+            "generate_sequence_voiceover | first_draft words=%d passed_gate=%s min_words=%d",
+            _first_wc, _first_pass, _min_words,
+        )
+        if _first_pass:
             logger.info(
                 "generate_sequence_voiceover | Gemini PRIMARY OK (%d chars, %d words)",
-                _chars, _word_count(raw),
+                _chars, _first_wc,
             )
         else:
             logger.warning(
-                "generate_sequence_voiceover | Gemini draft outside band "
-                "(%d chars / %d words; need %d–%d words OR %d–%d chars) — one retry.",
-                _chars, _word_count(raw), _min_words, _max_words,
-                _accept_chars_lo if _warrior else _min_chars,
-                _accept_chars_hi if _warrior else 10**9,
+                "generate_sequence_voiceover | Gemini draft below word floor "
+                "(%d words; need ≥%d) — one retry with deficit.",
+                _first_wc, _min_words,
             )
-            expanded = _try_gemini(attempt=2, expand=True)
+            expanded = _try_gemini(attempt=2, expand=True, prev_text=raw)
             if expanded and (
                 _passes_length(expanded)
                 or abs(_word_count(expanded) - int(total_words_target or _min_words))

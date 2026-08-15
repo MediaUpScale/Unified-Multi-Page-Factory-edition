@@ -29,44 +29,44 @@ MODULE_PAGE_GATES: dict[str, frozenset[str]] = {
 VALID_PAGES: frozenset[str] = frozenset({"momma_circle", "wonder_feed"})
 
 # Fixed Flux style base — short, positive, CLIP-front-loaded (BFL ~30-80 word band).
-# Lighting is swapped per scene via LIGHTING_MOODS (not hard-coded warm amber).
+# Flat poster blocks (not atmospheric glow). Palette swapped per scene via LIGHTING_MOODS.
 # Negations live in LOFI_NEGATIVE_PROMPT only (separate Together field).
 LOFI_STYLE_BASE: str = (
-    "ink illustration, halftone shading, hand-drawn linework, "
-    "textured paper grain, graphic novel style"
+    "flat color illustration, bold solid color blocks, minimal gradient, "
+    "high contrast, poster-style shading, 2-3 dominant colors, graphic novel linework"
 )
 
-# Per-scene lighting / mood rotation + matching grading duotone pairs.
-# Keep each lighting phrase short so base+lighting+scene stays under ~300 chars.
+# Per-scene palette rotation + matching grading duotone pairs.
+# Avoid "light source" / glow / backlight wording — those bias Flux toward radial skies.
+# Keep each palette phrase short so base+palette+scene stays under ~300 chars.
 LIGHTING_MOODS: tuple[dict[str, Any], ...] = (
     {
         "id": "amber_dusk",
-        "lighting": "warm amber dusk light",
-        # Teal shadows, amber highlights
+        "lighting": "flat warm amber and teal palette",
         "shadow": (28, 72, 88),
         "highlight": (250, 185, 105),
     },
     {
         "id": "moonlit",
-        "lighting": "cool blue moonlit night",
+        "lighting": "flat cool blue and navy palette",
         "shadow": (18, 32, 78),
         "highlight": (190, 210, 235),
     },
     {
         "id": "overcast",
-        "lighting": "overcast grey morning light",
+        "lighting": "flat sage grey and cream palette",
         "shadow": (42, 48, 58),
         "highlight": (220, 218, 210),
     },
     {
         "id": "golden_hour",
-        "lighting": "golden hour warm backlight",
+        "lighting": "flat gold and plum palette",
         "shadow": (55, 42, 62),
         "highlight": (255, 205, 95),
     },
     {
         "id": "indigo_night",
-        "lighting": "deep indigo night sky",
+        "lighting": "flat indigo and pale lavender palette",
         "shadow": (16, 18, 58),
         "highlight": (165, 175, 225),
     },
@@ -76,8 +76,9 @@ LIGHTING_MOODS: tuple[dict[str, Any], ...] = (
 LOFI_STYLE_PREFIX: str = f"{LOFI_STYLE_BASE}, {LIGHTING_MOODS[0]['lighting']}"
 
 LOFI_NEGATIVE_PROMPT: str = (
-    "photorealistic, photograph, 3d render, cgi, smooth vector art, flat color fill, "
-    "flat gradient sky, monochromatic, grayscale, silhouette only, no linework, "
+    "photorealistic, photograph, 3d render, cgi, smooth vector art, "
+    "radial glow, volumetric lighting, soft atmospheric haze, gradient sky wash, "
+    "painterly blended lighting, monochromatic, grayscale, silhouette only, no linework, "
     "text, watermark, logo, typography, subtitles, ui, deformed hands, extra fingers, "
     "garbled text, nsfw, nude, explicit"
 )
@@ -91,15 +92,27 @@ KEN_BURNS_ZOOM_END: float = 1.12
 # Defaults = amber_dusk pair (overridden per-scene via mood)
 DUOTONE_SHADOW: tuple[int, int, int] = (28, 72, 88)
 DUOTONE_HIGHLIGHT: tuple[int, int, int] = (250, 185, 105)
-GRAIN_INTENSITY: float = 0.035
-VIGNETTE_STRENGTH: float = 0.42
+# Posterize luminance into N discrete bands before color remap (flat blocks).
+DUOTONE_TONAL_BANDS: int = 4
+GRAIN_INTENSITY: float = 0.028
+# Near-zero vignette — radial falloff was adding soft sky glow.
+VIGNETTE_STRENGTH: float = 0.06
 
 # Text-handle watermark height as fraction of frame (was 0.028 → ~33% smaller).
 WATERMARK_SIZE_FRAC: float = 0.018
 
-# Caption typography style keys (see caption_style_lofi.py)
-DEFAULT_CAPTION_STYLE: str = "rounded_hand"  # Comic Sans MS Bold
-CAPTION_STYLES: frozenset[str] = frozenset({"rounded_hand", "lora_italic"})
+# Caption typography — style keys in caption_style_lofi.FONT_LIBRARY.
+# Applies to wonder_feed + momma_circle via assembler / test_preview / pipeline.
+DEFAULT_CAPTION_STYLE: str = "caveat"  # Caveat-VariableFont_wght
+CAPTION_STYLES: frozenset[str] = frozenset(
+    {
+        "caveat",
+        "playwrite_nz_basic",
+        "more_sugar_thin",
+        "lora_italic",
+        "rounded_hand",
+    }
+)
 
 # ── Per-channel watermark / brand ───────────────────────────────────────────
 CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {

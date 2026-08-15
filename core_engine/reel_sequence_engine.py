@@ -160,7 +160,419 @@ def sanitize_sequence_image_paths(
         if act1 is None:
             act1 = ok
         logger.debug("Sequence image act %d OK → %s", i + 1, ok.name)
+    # Keep every timeline slot. Deduping identical fallbacks used to collapse
+    # 14 B-rolls into 1 still stretched across the whole narration.
     return resolved
+
+
+def _dedupe_sequence_stills(image_paths: list[Path]) -> list[Path]:
+    """Keep the first occurrence of each still. Never cycle a small pool."""
+    seen: set[str] = set()
+    out: list[Path] = []
+    dropped = 0
+    for p in image_paths:
+        try:
+            key = str(Path(p).resolve())
+        except OSError:
+            key = str(p)
+        if key in seen:
+            dropped += 1
+            continue
+        seen.add(key)
+        out.append(Path(p))
+    if dropped:
+        logger.info(
+            "Dropped %d repeated still(s) — using %d unique images across the timeline",
+            dropped, len(out),
+        )
+    return out if out else list(image_paths)
+
+
+# Images 1–2: 3s; 3–4: 4s; 5+: 5s. Legacy fixed-cadence body pattern used by
+# ``compute_audio_synced_act_durations`` only — AK now runs through the
+# self-calibrating ``plan_bucket_act_durations`` planner instead.
+_STEPPED_HOLD_S: tuple[float, ...] = (3.0, 3.0, 4.0, 4.0)
+_STEPPED_BODY_S: float = 5.0
+_STEPPED_CAP_S: float = 5.0
+_MIN_LAST_BROLL_S: float = 2.0
+_TARGET_DURATION_MIN_S: float = 80.0
+_TARGET_DURATION_MAX_S: float = 90.0
+_CTA_VISUAL_GAP_S: float = 0.3  # CTA overlay starts this long after narration ends
+
+
+def _body_hold_pattern(
+    n_body: int,
+    sequence: "list[float] | tuple[float, ...] | None" = None,
+    *,
+    scene_length: "float | None" = None,
+) -> list[float]:
+    """Fixed hold curve: 3/3/4/4 then 5s, or a uniform ``scene_length`` override."""
+    n_body = max(1, int(n_body))
+    if scene_length is not None and float(scene_length) > 0:
+        return [float(scene_length)] * n_body
+    hook = [float(x) for x in (sequence if sequence else _STEPPED_HOLD_S)][:4]
+    if len(hook) < 4:
+        hook = list(_STEPPED_HOLD_S)
+    if n_body <= len(hook):
+        return hook[:n_body]
+    return hook + [_STEPPED_BODY_S] * (n_body - len(hook))
+
+
+def compute_progressive_act_durations(
+    n_acts: int,
+    *,
+    sequence: "list[float] | tuple[float, ...] | None" = None,
+    cap_s: float = _STEPPED_CAP_S,
+    lock_last: bool = True,
+) -> list[float]:
+    """Per-still holds: hook then 5s; last frame uses *cap_s* when locked."""
+    n = max(1, int(n_acts))
+    durs = _body_hold_pattern(n, sequence)
+    if lock_last:
+        durs[-1] = max(1.0, float(cap_s))
+    return durs
+
+
+def snippets_from_word_timings(
+    word_timings: "list[tuple[str, float, float]]",
+    act_durs: "list[float]",
+) -> list[str]:
+    """Map ElevenLabs word timestamps onto the same hold windows used at compile.
+
+    Each returned snippet is the spoken text whose ``[start, end)`` overlaps
+    that still's time window. Empty windows fall back to an empty string so
+    the caller can substitute the topic.
+    """
+    n = max(1, len(act_durs or []))
+    if not word_timings:
+        return [""] * n
+    snippets: list[str] = []
+    cursor = 0.0
+    for dur in act_durs:
+        win_end = cursor + max(0.05, float(dur))
+        words = [
+            str(w).strip()
+            for w, start, end in word_timings
+            if w and float(end) > cursor + 1e-3 and float(start) < win_end - 1e-3
+        ]
+        snippets.append(" ".join(words).strip())
+        cursor = win_end
+    return snippets
+
+
+# ---------------------------------------------------------------------------
+# Hook-locked / body-weighted / CTA-fixed image timing (post-audio measurement)
+# ---------------------------------------------------------------------------
+# Hook = 3 stills × 3.0 s each, always. Body = per-act WEIGHT from word count
+# (short=1.0, mid=1.67, long=2.33); each body still's duration is
+# (weight / Σweights) × (narration_s − hook_sum), then clamped to [2.5, 9.0] s
+# with the residual redistributed proportionally over the non-clamped acts.
+# CTA = own measured speech + silence. No fallback ever grows a still to
+# "absorb slack" — this planner is self-calibrating for any engine/voice/speed.
+_HOOK_LOCK_S: float = 3.0
+_HOOK_N: int = 3
+# Body-weight ratios (unitless). Same 3-tier shape as the old 3/5/7-s buckets,
+# expressed as ratios so total body time is derived from measured narration
+# rather than any hardcoded seconds constant.
+_BODY_WEIGHT_SHORT: float = 1.00   # ≤ 6 words
+_BODY_WEIGHT_MID: float = 1.67     # 7–12 words
+_BODY_WEIGHT_LONG: float = 2.33    # > 12 words
+_BUCKET_SHORT_THRESH: int = 6
+_BUCKET_MID_THRESH: int = 12
+_MERGE_INTO_NEXT_THRESH: int = 3
+# Per-body-still clamps. Nothing renders below ~2.5 s (unreadable) or above
+# 9 s (fatigue / freeze).
+_BODY_MIN_S: float = 2.5
+_BODY_MAX_S: float = 9.0
+_CLAMP_MAX_PASSES: int = 8
+
+
+def _body_weight_for_word_count(wc: int) -> float:
+    if wc <= _BUCKET_SHORT_THRESH:
+        return _BODY_WEIGHT_SHORT
+    if wc <= _BUCKET_MID_THRESH:
+        return _BODY_WEIGHT_MID
+    return _BODY_WEIGHT_LONG
+
+
+def _clamp_and_redistribute(
+    weights: "list[float]",
+    budget: float,
+    lo: float,
+    hi: float,
+) -> "list[float]":
+    """Scale *weights* → durations summing to *budget*, clamp to [lo, hi].
+
+    When a duration clamps, its residual is redistributed proportionally
+    over the still-unfrozen (non-clamped) acts by re-scaling their weight
+    share against the remaining budget. Iterates until no new clamps occur
+    or ``_CLAMP_MAX_PASSES`` is hit. Never touches hook / CTA.
+
+    If every act ends up clamped and Σclamps ≠ budget (budget infeasible
+    given [lo, hi] × n), the residual is spread across ALL acts
+    proportionally by weight. This keeps ``sum(result) == budget`` (video =
+    audio guarantee wins over the soft ceiling / floor), so the CTA slot
+    stays a function of its own speech and never absorbs body-vs-narration
+    mismatch.
+    """
+    n = len(weights)
+    if n <= 0:
+        return []
+    if budget <= 0:
+        return [max(lo, 0.0)] * n
+    frozen: list[float | None] = [None] * n
+    for _ in range(_CLAMP_MAX_PASSES):
+        active = [i for i, v in enumerate(frozen) if v is None]
+        if not active:
+            break
+        active_budget = float(budget) - float(
+            sum(v for v in frozen if v is not None)
+        )
+        active_w = sum(float(weights[i]) for i in active) or 1.0
+        newly_frozen = False
+        for i in active:
+            raw = (float(weights[i]) / active_w) * active_budget
+            if raw < lo:
+                frozen[i] = lo
+                newly_frozen = True
+            elif raw > hi:
+                frozen[i] = hi
+                newly_frozen = True
+        if not newly_frozen:
+            active = [i for i, v in enumerate(frozen) if v is None]
+            active_budget = float(budget) - float(
+                sum(v for v in frozen if v is not None)
+            )
+            active_w = sum(float(weights[i]) for i in active) or 1.0
+            for i in active:
+                frozen[i] = (float(weights[i]) / active_w) * active_budget
+            break
+    out = [float(v if v is not None else lo) for v in frozen]
+    # Budget-infeasibility fixup: if every act clamped and sum ≠ budget,
+    # spread the residual proportionally by weight across ALL acts so the
+    # timeline still lands exactly on the narration budget. This can push a
+    # single still slightly over ``hi`` or under ``lo`` — that's preferable
+    # to letting CTA absorb the mismatch (which is what Round 4 did wrong).
+    residual = float(budget) - float(sum(out))
+    if abs(residual) > 1e-3:
+        total_w = sum(float(w) for w in weights) or float(n)
+        for i, w in enumerate(weights):
+            out[i] = max(0.05, out[i] + residual * float(w) / total_w)
+    return out
+
+
+def plan_bucket_act_durations(
+    spoken_snippets: "list[str]",
+    *,
+    narration_s: float,
+    cta_audio_s: float,
+    silence_before_cta_s: float = 1.0,
+    hook_lock_s: float = _HOOK_LOCK_S,
+    hook_n: int = _HOOK_N,
+    merge_thresh: int = _MERGE_INTO_NEXT_THRESH,
+    body_min_s: float = _BODY_MIN_S,
+    body_max_s: float = _BODY_MAX_S,
+) -> "tuple[list[float], list[str], list[int]]":
+    """Hook-locked / body-weighted / CTA-fixed image timing planner.
+
+    Self-calibrating: body time is derived as a fraction of the *measured*
+    narration length, not from any hardcoded seconds-per-bucket constant.
+    Works identically for any TTS engine / voice / speed setting.
+
+    Inputs
+    ------
+    spoken_snippets      : one text snippet per originally-planned act.
+    narration_s          : measured narration audio length (NOT total audio —
+                           silence gap and CTA are handled separately).
+    cta_audio_s          : measured CTA voice segment length (alone).
+    silence_before_cta_s : silent gap between narration and CTA (default 1.0).
+
+    Returns
+    -------
+    act_durs        : final per-still hold durations (one per KEPT image).
+    merged_snippets : text snippet per KEPT image (short-act text folded in).
+    keep_indices    : original snippet index each kept still comes from.
+
+    Rules
+    -----
+    * Hook (acts 0..hook_n-1): ``hook_lock_s`` each. Never scaled, never
+      merged, never bucketed.
+    * Body (acts hook_n..len-2): per-act weight from word count
+      (≤6→1.0, 7–12→1.67, >12→2.33). Body budget = ``narration_s -
+      hook_sum``. Each body dur = (weight / Σweights) × budget, clamped to
+      ``[body_min_s, body_max_s]`` with residual redistributed proportionally
+      over the other body acts.
+      Acts with ``word_count ≤ merge_thresh`` fold into the following body
+      act — their still is dropped, snippet text is carried forward, and
+      the following act's word count (and therefore weight) includes it.
+    * CTA (last act): duration = ``cta_audio_s + silence_before_cta_s``
+      exactly. Never absorbs slack — body always sums to the narration
+      budget (or as close as clamping allows).
+
+    Guarantees
+    ----------
+    * ``sum(act_durs) == narration_s + silence_before_cta_s + cta_audio_s``
+      whenever the budget is feasible under [body_min_s, body_max_s] × n_body.
+    * No body still exceeds ``body_max_s`` (default 9 s) — no freeze possible.
+    """
+    snippets = [str(s or "") for s in (spoken_snippets or [])]
+    n = len(snippets)
+    cta_slot = max(0.05, float(cta_audio_s) + float(silence_before_cta_s))
+    if n < hook_n + 1:
+        return [cta_slot], [snippets[-1] if snippets else ""], [max(0, n - 1)]
+
+    hook_n = max(0, int(hook_n))
+    hook_lock = max(0.05, float(hook_lock_s))
+    hook_durs = [hook_lock] * hook_n
+    hook_snips = snippets[:hook_n]
+    hook_keep = list(range(hook_n))
+
+    body_snips_raw = snippets[hook_n : n - 1]
+    body_snips: list[str] = []
+    body_keep: list[int] = []
+    carry_text = ""
+    for local_i, snip in enumerate(body_snips_raw):
+        wc = len(snip.split())
+        if wc <= max(0, int(merge_thresh)) and local_i < len(body_snips_raw) - 1:
+            carry_text = (carry_text + " " + snip).strip() if carry_text else snip
+            continue
+        merged = (carry_text + " " + snip).strip() if carry_text else snip
+        body_snips.append(merged)
+        body_keep.append(hook_n + local_i)
+        carry_text = ""
+    if carry_text and body_snips:
+        body_snips[-1] = (body_snips[-1] + " " + carry_text).strip()
+        carry_text = ""
+
+    hook_sum = float(sum(hook_durs))
+    body_budget = max(0.0, float(narration_s) - hook_sum)
+    body_weights = [
+        _body_weight_for_word_count(len(s.split())) for s in body_snips
+    ]
+    if body_snips:
+        body_durs = _clamp_and_redistribute(
+            body_weights, body_budget, float(body_min_s), float(body_max_s),
+        )
+    else:
+        body_durs = []
+
+    durs = hook_durs + body_durs + [cta_slot]
+    kept_snippets = hook_snips + body_snips + [snippets[-1]]
+    keep_indices = hook_keep + body_keep + [n - 1]
+
+    body_sum = float(sum(body_durs))
+    logger.info(
+        "plan_bucket_act_durations | narration=%.2fs cta=%.2fs+silence=%.2fs "
+        "hook=%d×%.1fs=%.1fs body_budget=%.2fs body_sum=%.2fs (Δ=%+.2fs) "
+        "cta_slot=%.2fs kept=%d/%d total_video=%.2fs body=%s",
+        float(narration_s), float(cta_audio_s), float(silence_before_cta_s),
+        hook_n, hook_lock, hook_sum,
+        body_budget, body_sum, body_sum - body_budget,
+        cta_slot, len(durs), n, float(sum(durs)),
+        [
+            (len(s.split()), round(w, 2), round(d, 2))
+            for s, w, d in zip(body_snips, body_weights, body_durs)
+        ],
+    )
+    return durs, kept_snippets, keep_indices
+
+
+def compute_audio_synced_act_durations(
+    n_acts: int,
+    total_audio_s: float,
+    narration_s: float,
+    *,
+    sequence: "list[float] | tuple[float, ...] | None" = None,
+    cta_gap_s: float = _CTA_VISUAL_GAP_S,
+    min_cta_s: float = 3.0,
+    min_last_broll_s: float = _MIN_LAST_BROLL_S,
+    scene_length: "float | None" = None,
+) -> tuple[list[float], float]:
+    """Fixed holds ``[3, 3, 4, 4, 5, 5, …]`` (or uniform ``scene_length``).
+
+    LEGACY: returns the fixed hold cadence only. Callers must NOT grow the
+    last still to swallow ``voice_actual_dur - sum(durs)`` — that fallback
+    was deleted in Round 5. If the pattern overruns the audio, trailing
+    stills are dropped so the 3/3/4/4/5 cadence stays intact. Callers
+    should slice the image list to ``len(durs)``.
+
+    The AK pipeline uses ``plan_bucket_act_durations`` instead; this helper
+    is retained for legacy callers (``rebuild_ak_reels.py``, non-AK pages
+    that opt into a fixed pacing sequence).
+    """
+    n = max(1, int(n_acts))
+    total = max(1.0, float(total_audio_s))
+    min_cta = max(0.5, float(min_cta_s))
+    narr_in = float(narration_s) if narration_s and float(narration_s) > 0 else (total - min_cta)
+    narr = max(0.5, min(narr_in, total - min_cta))
+    gap = max(0.0, float(cta_gap_s))
+    cta_t0 = narr + gap
+    if cta_t0 > total - min_cta:
+        cta_t0 = max(narr, total - min_cta)
+    cta_t0 = max(0.0, min(cta_t0, total - 0.05))
+
+    if n == 1:
+        return [total], cta_t0
+
+    min_last = max(0.5, float(min_last_broll_s))
+    while n > 1:
+        pat = _body_hold_pattern(n, sequence, scene_length=scene_length)
+        head = [max(0.05, float(x)) for x in pat[:-1]]
+        last = total - float(sum(head))
+        if last >= min_last or n <= 2:
+            durs = head + [max(0.05, last)]
+            durs[-1] = max(0.05, total - float(sum(durs[:-1])))
+            return durs, cta_t0
+        n -= 1
+    return [total], cta_t0
+
+
+def fit_progressive_act_count(
+    n_available: int,
+    audio_s: float,
+    *,
+    min_s: "float | None" = None,
+    max_s: "float | None" = None,
+    sequence: "list[float] | tuple[float, ...] | None" = None,
+    cap_s: float = _STEPPED_CAP_S,
+) -> int:
+    """Pick still count: fill 80–90s when possible, never shorter than the voice track."""
+    n_available = max(2, int(n_available))
+    lo = float(min_s) if min_s and min_s > 0 else 0.0
+    hi = float(max_s) if max_s and max_s > 0 else 0.0
+    audio_floor = max(0.0, float(audio_s or 0.0))
+
+    def _sum(n: int) -> float:
+        return float(sum(compute_progressive_act_durations(n, sequence=sequence, cap_s=cap_s)))
+
+    def _cover_audio(n: int) -> int:
+        """Raise n until holds cover the spoken track (CTA must not be clipped)."""
+        while n < n_available and _sum(n) + 0.25 < audio_floor:
+            n += 1
+        return n
+
+    if lo > 0 and hi >= lo:
+        in_range: list[int] = []
+        for n in range(2, n_available + 1):
+            s = _sum(n)
+            if lo <= s <= hi:
+                in_range.append(n)
+            if s > hi:
+                break
+        if in_range:
+            return _cover_audio(in_range[-1])
+        if _sum(n_available) < lo:
+            return n_available
+        for n in range(2, n_available + 1):
+            if _sum(n) >= max(lo, audio_floor):
+                return n
+        return _cover_audio(n_available)
+
+    target = max(1.0, audio_floor)
+    for n in range(2, n_available + 1):
+        if _sum(n) >= target:
+            return n
+    return n_available
 
 
 # ---------------------------------------------------------------------------
@@ -369,9 +781,26 @@ def _resolve_sequence_mp4_path(
         dest = Path(output_path)
         if dest.suffix.lower() != ".mp4":
             dest = dest.with_suffix(".mp4")
-        # Relocate into page clips/ if caller pointed elsewhere
-        if dest.parent.resolve() != clips_dir.resolve():
-            dest = clips_dir / dest.name
+        # Relocate into page clips/ only when the caller pointed at another
+        # in-repo path. Explicit local staging dirs (e.g. %LOCALAPPDATA%) stay put
+        # so MoviePy can encode off Google Drive.
+        try:
+            dest_res = dest.expanduser().resolve()
+            clips_res = clips_dir.resolve()
+            in_clips = dest_res.parent == clips_res
+            repo_root = Path(__file__).resolve().parents[1]
+            in_repo = True
+            try:
+                dest_res.relative_to(repo_root)
+            except ValueError:
+                in_repo = False
+            if not in_clips and in_repo:
+                dest = clips_dir / dest.name
+            else:
+                dest = dest_res
+        except OSError:
+            if dest.parent.resolve() != clips_dir.resolve():
+                dest = clips_dir / dest.name
     os.makedirs(os.path.dirname(str(dest)) or str(clips_dir), exist_ok=True)
     return dest
 
@@ -603,8 +1032,7 @@ def build_sequence_script_prompt(
     total_words_target:
         Override the computed word count.  When provided the prompt instructs
         the LLM to hit exactly this many words total (spread evenly across acts).
-        Use 130-140 for slow 80-second documentary narration (~100 WPM pace).
-        Defaults to computing from ``duration_s`` at 130 WPM.
+        Defaults to ``words_for_duration(duration_s)`` (single measured WPS).
     narrative_mode:
         ``investigative`` (default for mystery channels) or ``warrior_discipline``
         (Master Mei SUPER channel).
@@ -620,9 +1048,19 @@ def build_sequence_script_prompt(
             _mei_prof = resolve_mei_duration_profile(duration_s)
         except Exception:  # noqa: BLE001
             _mei_prof = {}
-    _word_cap = int(_mei_prof.get("words_max", 185)) if _mode == "warrior_discipline" else 240
+    from config import NARRATION_WORDS_PER_SECOND, words_for_duration
+
+    _word_cap = (
+        int(_mei_prof.get("words_max", 185))
+        if _mode == "warrior_discipline"
+        else words_for_duration(duration_s) + 20
+    )
     _word_cap_pad = 10 if _mode == "warrior_discipline" else 20
-    _mei_min = int(_mei_prof.get("words_min", 170)) if _mode == "warrior_discipline" else 200
+    _mei_min = (
+        int(_mei_prof.get("words_min", 170))
+        if _mode == "warrior_discipline"
+        else words_for_duration(duration_s)
+    )
 
     if total_words_target is not None:
         words_per_act = max(1, int(total_words_target) // max(1, n_acts))
@@ -631,8 +1069,8 @@ def build_sequence_script_prompt(
         total_words = int(_mei_prof.get("words_target", 178))
         words_per_act = max(1, total_words // max(1, n_acts))
     else:
-        words_per_act = int((duration_s / n_acts) * (130 / 60))
-        total_words   = words_per_act * n_acts
+        total_words = words_for_duration(duration_s)
+        words_per_act = max(1, int(total_words) // max(1, n_acts))
 
     anti_repeat_block = ""
     if previously_generated_hooks:
@@ -643,21 +1081,33 @@ def build_sequence_script_prompt(
         )
 
     _max_seconds_target = int(_mei_prof.get("target_s", 120)) if _mode == "warrior_discipline" else 100
-    pacing_note = (
-        f"Write for a SLOW, deliberate, solemn delivery (0.85×–0.90× TTS + "
-        f'<break time="1.5s"/> after key philosophical impacts). '
-        f"Each act must be approximately {words_per_act} words "
-        f"(total EXACTLY {total_words}–{min(_word_cap, total_words + _word_cap_pad)} words across all {n_acts} acts; "
-        f"HARD CAP {_word_cap}; FLOOR {_mei_min} for Master Mei). "
-        f"The spoken narration MUST naturally fill "
-        f"~{max(100, int(duration_s) - 10) if _mode == 'warrior_discipline' else max(80, int(duration_s) - 10)}"
-        f"–{min(_max_seconds_target, max(int(duration_s), 120 if _mode == 'warrior_discipline' else 100))} "
-        f"seconds of airtime. Do NOT write a short viral caption — write a FULL 4-Act script."
-        if total_words_target is not None else
-        f"Each act must be approximately {words_per_act} words "
-        f"(total ~{total_words} words across all acts; Master Mei target "
-        f"{_mei_min}–{_word_cap})."
-    )
+    if _mode == "warrior_discipline" and total_words_target is not None:
+        pacing_note = (
+            f"Write for a SLOW, deliberate, solemn delivery (0.85×–0.90× TTS + "
+            f'<break time="1.5s"/> after key philosophical impacts). '
+            f"Each act must be approximately {words_per_act} words "
+            f"(total EXACTLY {total_words}–{min(_word_cap, total_words + _word_cap_pad)} words across all {n_acts} acts; "
+            f"HARD CAP {_word_cap}; FLOOR {_mei_min} for Master Mei). "
+            f"The spoken narration MUST naturally fill "
+            f"~{max(100, int(duration_s) - 10)}"
+            f"–{min(_max_seconds_target, max(int(duration_s), 120))} "
+            f"seconds of airtime. Do NOT write a short viral caption — write a FULL 4-Act script."
+        )
+    elif total_words_target is not None:
+        pacing_note = (
+            f"Write a FULL documentary narration of EXACTLY {total_words}–"
+            f"{total_words + 10} words (HARD FLOOR {total_words}, HARD CAP "
+            f"{min(_word_cap, total_words + 15)}) at a natural spoken pace "
+            f"(~{NARRATION_WORDS_PER_SECOND:.2f} words/sec). Each act ≈ {words_per_act} words. "
+            f"The spoken body MUST fill ~{max(70, int(duration_s) - 10)}–"
+            f"{int(duration_s)} seconds BEFORE the separate CTA. "
+            f"Do NOT write a short viral caption or a 45-second teaser."
+        )
+    else:
+        pacing_note = (
+            f"Each act must be approximately {words_per_act} words "
+            f"(total ~{total_words} words across all acts)."
+        )
 
     _directive_block = f"\nCHANNEL DIRECTIVE:\n{niche_disclaimer}\n" if niche_disclaimer else ""
     _batch_block = f"\n{batch_angle_block}\n" if batch_angle_block else ""
@@ -906,6 +1356,7 @@ def _build_act_clip(
     subtitle_y_position: "int | None" = None,
     hook_y_frac: float = 0.55,
     logo_static_array: "np.ndarray | None" = None,
+    logo_y_offset_px: int = 90,
     # Normalised (0..1) vignette mask; per-frame strength is applied via pulse.
     vignette_mask: "np.ndarray | None" = None,
     grain_intensity: float = 18.0,
@@ -1081,7 +1532,9 @@ def _build_act_clip(
             fill=subtitle_fill,
             stroke_width=subtitle_stroke_width,
             stroke_fill=subtitle_stroke_fill,
-            max_lines=2,  # Shorts: max 2 lines / 3–5 words per display
+            max_width_frac=0.94,
+            line_spacing=16,
+            max_lines=2,
         )
         _phrase_layer_cache[_ph] = np.array(_layer)
 
@@ -1190,12 +1643,8 @@ def _build_act_clip(
         if phrase and phrase in _phrase_layer_cache:
             _alpha_composite_numpy(frame_arr, _phrase_layer_cache[phrase], 0, 0)
 
-        # ── 10. Logo layer ────────────────────────────────────────────────────
-        if logo_static_array is not None:
-            lh, lw   = logo_static_array.shape[:2]
-            lx       = (_REEL_WIDTH  - lw) // 2
-            ly       = _REEL_HEIGHT  - lh - 100
-            _alpha_composite_numpy(frame_arr, logo_static_array, lx, ly)
+        # Logo is composited LAST (after grain/dust/rays) so post-FX never
+        # wash out the bottom-center watermark.
         frame = Image.fromarray(frame_arr)
 
         # ── 11. Film grain ────────────────────────────────────────────────────
@@ -1241,7 +1690,17 @@ def _build_act_clip(
 
         rgb_arr = np.clip(rgb_arr, 0, 255).astype(np.uint8)
 
-        # ── 13. Scene edge blend (DISABLED for hard cuts) ─────────────────────
+        # ── 13. Logo watermark — LAST overlay, full-duration, bottom-center ──
+        if logo_static_array is not None:
+            lh, lw = logo_static_array.shape[:2]
+            lx = (_REEL_WIDTH - lw) // 2
+            _margin = max(10, int(logo_y_offset_px))
+            ly = _REEL_HEIGHT - lh - _margin
+            ly = max(0, min(ly, _REEL_HEIGHT - lh))
+            lx = max(0, min(lx, _REEL_WIDTH - lw))
+            _alpha_composite_numpy(rgb_arr, logo_static_array, lx, ly)
+
+        # ── 14. Scene edge blend (DISABLED for hard cuts) ─────────────────────
         # When dissolve_*_dur > 0 this would fade to/from black. For Shorts/Reels
         # both durations are forced to 0.0 → instantaneous hard cuts.
         if dissolve_in_dur > 0 or dissolve_out_dur > 0:
@@ -1298,8 +1757,8 @@ def _draw_wrapped_text(
     y_center: int,
     canvas_width: int,
     fill: tuple = (255, 255, 255),
-    max_width_frac: float = 0.85,
-    line_spacing: int = 12,
+    max_width_frac: float = 0.94,
+    line_spacing: int = 16,
     stroke_width: int = 0,
     stroke_fill: "tuple | None" = None,
     max_lines: int = 2,
@@ -1357,6 +1816,28 @@ def _draw_wrapped_text(
             fill=fill, stroke_width=stroke_width, stroke_fill=stroke_fill,
         )
         y += lh + line_spacing
+
+
+def _wrap_cta_caption(text: str, max_chars: int = 40, max_lines: int = 2) -> str:
+    """Wrap CTA into ≤2 centered lines, preferring a balanced break."""
+    words = [w for w in (text or "").split() if w]
+    if not words:
+        return ""
+    joined = " ".join(words)
+    max_chars = max(24, int(max_chars))
+    max_lines = max(1, int(max_lines))
+    if max_lines < 2 or len(joined) <= max_chars:
+        return joined
+    best_i = max(1, len(words) // 2)
+    best_score = 10**9
+    for i in range(1, len(words)):
+        left, right = " ".join(words[:i]), " ".join(words[i:])
+        if len(left) > max_chars or len(right) > max_chars:
+            continue
+        score = abs(len(left) - len(right))
+        if score < best_score:
+            best_score, best_i = score, i
+    return " ".join(words[:best_i]) + "\n" + " ".join(words[best_i:])
 
 
 def _alpha_composite_numpy(
@@ -1461,6 +1942,14 @@ def compile_sequence_reel(
     enable_light_refraction: bool = False,  # prismatic glow for glass/crystal subjects
     # Override hard cap: set to a value > 80 to allow longer reels
     duration_override: "float | None" = None,
+    ffmpeg_preset: str = "medium",
+    pacing_sequence: "list[float] | tuple[float, ...] | None" = None,
+    scene_length: "float | None" = None,
+    target_duration_min: "float | None" = None,
+    target_duration_max: "float | None" = None,
+    enable_subtitle_padding: bool = True,
+    narration_duration_s: "float | None" = None,
+    cta_visual_gap_s: float = _CTA_VISUAL_GAP_S,
     # Guaranteed CTA text overlay — rendered as a fixed subtitle for the entire
     # CTA audio block so subtitles never go dark at the end of the video.
     cta_text: str = "",
@@ -1491,6 +1980,11 @@ def compile_sequence_reel(
     # (master_mei / ancient_knowledge 80 s mandate).
     force_exact_duration: bool = False,
     exact_duration_s: float = 80.0,
+    # When True, take *act_durations* as-is (no scale-to-fit, no last-still
+    # slack absorption). Total_duration = sum(act_durations). Used by the
+    # hook/bucket/CTA planner (plan_bucket_act_durations) which owns per-still
+    # timing end-to-end and never wants a downstream fit-to-target overwrite.
+    strict_act_durations: bool = False,
 ) -> Path:
     """
     Compile an N-image sequence reel from a list of background images.
@@ -1534,6 +2028,15 @@ def compile_sequence_reel(
         base_fallback=image_paths[0] if image_paths else None,
     )
     n_acts = len(image_paths)
+    _page = (page_id or "").lower()
+    _strict_durs = bool(strict_act_durations and act_durations)
+    _use_progressive = (
+        not _strict_durs and (
+            pacing_sequence is not None
+            or (_page == "ancient_knowledge" and not act_durations)
+        )
+    )
+    _progressive_locked = False
 
     # ── Canonical timeline ────────────────────────────────────────────────────
     _configured_dur = (
@@ -1555,33 +2058,108 @@ def compile_sequence_reel(
         total_duration = _configured_dur
 
     # ── Duration guardrails ───────────────────────────────────────────────────
-    # Timeline is AUDIO-DRIVEN: video_render_duration = tts_audio_duration + tail_pad.
-    # NEVER pad with silent B-roll to hit an 80 s floor — if VO is short, the
-    # container trims to match (master_mei mandate).  force_exact_duration is
-    # retained only as a soft *target hint* for logging; it must NOT inflate
-    # the timeline past the spoken track.
-    _DURATION_BUFFER_S = max(1.0, float(tail_pad_s) if tail_pad_s is not None else 1.0)
+    # Timeline is AUDIO-DRIVEN. Progressive/AK path matches voice duration
+    # EXACTLY (no tail pad, no still-hold cap) so CTA speech is never clipped.
+    _DURATION_BUFFER_S = (
+        1.0 if tail_pad_s is None else max(0.0, float(tail_pad_s))
+    )
     _exact_floor = float(exact_duration_s) if exact_duration_s and exact_duration_s > 0 else 80.0
-    if duration_override is not None:
+    if _strict_durs:
+        # Planner owns timing end-to-end. Video length = sum(act_durs).
+        total_duration = float(sum(float(d) for d in act_durations))
+    elif _use_progressive and _voice_actual_dur > 0:
+        total_duration = float(_voice_actual_dur)
+    elif duration_override is not None:
         total_duration = float(duration_override)
     elif _voice_actual_dur > 0:
-        total_duration = _voice_actual_dur + _DURATION_BUFFER_S   # audio-driven trim
+        total_duration = _voice_actual_dur + _DURATION_BUFFER_S
         if force_exact_duration and total_duration < _exact_floor:
-            # Legacy flag: log only — do NOT pad silent frames (causes dead air).
             logger.warning(
                 "force_exact_duration ignored for padding | audio+pad=%.1fs < target=%.1fs "
                 "— trimming to audio (no silent B-roll)",
                 total_duration, _exact_floor,
             )
     else:
-        # No voice track — fall back to configured duration with floor safety net
         total_duration = max(_configured_dur, _DURATION_FLOOR_S)
         if force_exact_duration:
             total_duration = max(total_duration, _exact_floor)
 
-    # Per-act durations: Master Mei hook ≤8s + body 10–12s; else equal split
+    # Per-act durations. Ancient Knowledge runs on strict planner-provided
+    # durations (``plan_bucket_act_durations``) — this legacy fallback only
+    # fires when a caller explicitly passes a ``pacing_sequence`` and no
+    # ``act_durations``. No last-still-absorbs-slack behavior anywhere.
     _act_durs: list[float]
-    if act_durations and len(act_durations) == n_acts:
+    _cta_visual_t0: float = -1.0
+    if _strict_durs:
+        # Bucket-planner path: no scale-to-fit, no last-still absorption.
+        _act_durs = [max(0.05, float(d)) for d in act_durations]
+        if len(_act_durs) != n_acts:
+            logger.warning(
+                "strict_act_durations | count mismatch (durs=%d imgs=%d) — "
+                "using min(len) so pairing stays 1:1",
+                len(_act_durs), n_acts,
+            )
+            _pair = min(len(_act_durs), n_acts)
+            _act_durs = _act_durs[:_pair]
+            image_paths = image_paths[:_pair]
+            n_acts = _pair
+        total_duration = float(sum(_act_durs))
+        # Derive CTA visual t0 from the plan: everything up to the last still.
+        _cta_visual_t0 = float(sum(_act_durs[:-1])) if len(_act_durs) > 1 else 0.0
+        logger.info(
+            "strict_act_durations | n=%d durs=%s sum=%.2fs cta_visual=%.2fs voice=%.2fs",
+            n_acts,
+            ",".join(f"{d:.2f}" for d in _act_durs),
+            total_duration, _cta_visual_t0, _voice_actual_dur,
+        )
+    elif _use_progressive:
+        _audio_target = (
+            _voice_actual_dur if _voice_actual_dur > 0 else float(total_duration)
+        )
+        total_duration = float(_audio_target)
+        _seq = pacing_sequence
+        n_acts = len(image_paths)
+        _gap = float(cta_visual_gap_s) if cta_visual_gap_s is not None else _CTA_VISUAL_GAP_S
+        _narr_s = -1.0
+        if narration_duration_s is not None and float(narration_duration_s) > 0:
+            _narr_s = float(narration_duration_s)
+        elif cta_start_s >= 0:
+            _narr_s = max(0.5, float(cta_start_s) - _gap)
+        if _narr_s <= 0:
+            _narr_s = max(0.5, total_duration - 5.0)
+        _act_durs, _cta_visual_t0 = compute_audio_synced_act_durations(
+            n_acts,
+            total_duration,
+            _narr_s,
+            sequence=_seq,
+            cta_gap_s=_gap,
+            scene_length=scene_length,
+        )
+        if len(_act_durs) != n_acts:
+            logger.warning(
+                "Audio-synced holds | keeping %d of %d stills so 3/3/4/4/5 cadence is not shrunk",
+                len(_act_durs), n_acts,
+            )
+            image_paths = image_paths[: len(_act_durs)]
+            n_acts = len(image_paths)
+        # NEVER grow the last still to "absorb" audio-vs-image mismatch.
+        # Timeline length = sum(planned holds); any drift is a caller bug the
+        # bucket planner (plan_bucket_act_durations) already prevents by
+        # sizing body time from measured narration.
+        total_duration = float(sum(_act_durs))
+        _progressive_locked = True
+        logger.info(
+            "Audio-synced holds | n=%d durs=%s last=%.1fs "
+            "narr=%.1fs cta_visual=%.1fs sum=%.1fs (audio=%.1fs)",
+            n_acts,
+            ",".join(f"{d:.1f}" for d in _act_durs),
+            _act_durs[-1] if _act_durs else 0.0,
+            _narr_s,
+            _cta_visual_t0,
+            total_duration,
+            _voice_actual_dur,
+        )
+    elif act_durations and len(act_durations) == n_acts:
         _act_durs = [max(0.05, float(d)) for d in act_durations]
         _scale = total_duration / max(1e-6, sum(_act_durs))
         _act_durs = [d * _scale for d in _act_durs]
@@ -1627,7 +2205,9 @@ def compile_sequence_reel(
         # Guard: CTA is an outro card — never paint for most of the reel.
         # A failed narr-duration read used to yield start≈1s / dur≈full length.
         _timeline = _voice_actual_dur if _voice_actual_dur > 0 else total_duration
-        if _timeline > 12.0 and _resolved_cta_t0 < (_timeline * 0.55):
+        if _progressive_locked and _cta_visual_t0 >= 0:
+            _resolved_cta_t0 = float(_cta_visual_t0)
+        elif _timeline > 12.0 and _resolved_cta_t0 < (_timeline * 0.55):
             _safe_t0 = max(0.0, _timeline - 8.0)
             logger.warning(
                 "CTA start %.1fs is too early for %.1fs reel — clamping to outro @ %.1fs",
@@ -1655,12 +2235,13 @@ def compile_sequence_reel(
             _VIGNETTE_PULSE_MIN, _VIGNETTE_PULSE_MAX, _VIGNETTE_PULSE_FREQ,
         )
 
-    # ── Build per-act clips ───────────────────────────────────────────────────
+    # ── Build per-act clips (one clip per still — never zip-truncate) ────────
     clips: list = []
-    for i, (img_path, (_t_start, _t_end, act_wt)) in enumerate(
-        zip(image_paths, act_segments)
-    ):
+    for i, img_path in enumerate(image_paths):
         _this_act_dur = float(_act_durs[i]) if i < len(_act_durs) else act_duration_locked
+        act_wt: list = []
+        if i < len(act_segments):
+            act_wt = act_segments[i][2]
         logger.info(
             "Rendering act %d/%d | %s | dur=%.1fs | zoom=%.2f→%.2f | pan_dir=%s | transition=hard_cut",
             i + 1, n_acts, img_path.name, _this_act_dur,
@@ -1679,6 +2260,7 @@ def compile_sequence_reel(
             subtitle_y_position = subtitle_y_position,
             hook_y_frac       = hook_y_frac,
             logo_static_array = logo_arr,
+            logo_y_offset_px = int(logo_y_offset_px) if logo_y_offset_px else 90,
             vignette_mask     = vignette_arr,
             grain_intensity   = grain_intensity,
             fps               = fps,
@@ -1699,13 +2281,31 @@ def compile_sequence_reel(
         )
         clips.append(clip)
 
-    # Hard-cut concatenate (chain = back-to-back; no padding / fade overlays)
-    logger.info("Concatenating %d clip(s) with hard cuts → %.1fs total …", len(clips), total_duration)
+    # Place each still on an explicit timeline so MoviePy cannot freeze clip 1
+    # across the full narration duration.
+    from moviepy import CompositeVideoClip  # type: ignore[import]
+
+    logger.info("Placing %d B-roll clip(s) on timeline → %.1fs total …", len(clips), total_duration)
+    _placed = []
+    _cursor = 0.0
+    for i, clip in enumerate(clips):
+        _d = float(_act_durs[i]) if i < len(_act_durs) else float(getattr(clip, "duration", 0.05) or 0.05)
+        try:
+            clip = clip.with_duration(_d).with_start(_cursor)
+        except Exception:
+            try:
+                clip = clip.set_duration(_d).set_start(_cursor)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        _placed.append(clip)
+        _cursor += _d
     try:
-        final_video = concatenate_videoclips(clips, method="chain")
+        final_video = CompositeVideoClip(
+            _placed, size=(_REEL_WIDTH, _REEL_HEIGHT),
+        )
     except TypeError:
-        # Older MoviePy builds may not expose method=; compose still hard-cuts
-        # when dissolve durations are 0 and clips share the same size.
+        final_video = concatenate_videoclips(clips, method="compose")
+    except Exception:
         final_video = concatenate_videoclips(clips, method="compose")
 
     # Always route final MP4 into outputs/{page}/clips/
@@ -1722,7 +2322,12 @@ def compile_sequence_reel(
     # ONLY text drawn in the CTA window.
     if cta_text and _resolved_cta_t0 >= 0:
         _cta_t0 = _resolved_cta_t0
-        _cta_dur = max(0.5, total_duration - _cta_t0)
+        if _progressive_locked and _cta_visual_t0 >= 0:
+            _cta_dur = max(0.5, total_duration - float(_cta_visual_t0))
+        elif _progressive_locked and _act_durs:
+            _cta_dur = max(0.5, total_duration - _cta_t0)
+        else:
+            _cta_dur = max(0.5, total_duration - _cta_t0)
         try:
             from moviepy import TextClip, CompositeVideoClip  # type: ignore[import]
             # Isolate CTA string only — strip tags + fix sovereignty typos
@@ -1735,38 +2340,34 @@ def compile_sequence_reel(
             _cta_safe = re.sub(r"\bsovereianty\b", "sovereignty", _cta_safe, flags=re.IGNORECASE)
             _cta_safe = re.sub(r"\bsoverignty\b", "sovereignty", _cta_safe, flags=re.IGNORECASE)
             _cta_safe = re.sub(r"\bsovereignity\b", "sovereignty", _cta_safe, flags=re.IGNORECASE)
-            # Hard isolation: if somehow a long script leaked into cta_text, keep
-            # only the first sentence / ~12 words.
             if len(_cta_safe.split()) > 16 or "\n\n" in _cta_safe:
                 _cta_safe = " ".join(_cta_safe.split()[:12])
-            # Flush: narration subtitles already stripped above — CTA is sole text
-            _max_chars = 28
-            _words = _cta_safe.split()
-            _lines: list[str] = []
-            _cur: list[str] = []
-            for _w in _words:
-                _cand = " ".join(_cur + [_w])
-                if len(_cand) <= _max_chars or not _cur:
-                    _cur.append(_w)
-                else:
-                    _lines.append(" ".join(_cur))
-                    _cur = [_w]
-                    if len(_lines) >= 2:
-                        _cur = []
-                        break
-            if _cur and len(_lines) < 2:
-                _lines.append(" ".join(_cur))
-            _lines = _lines[:2]  # Shorts: max 2 caption lines
-            _cta_wrapped = "\n".join(_lines) if _lines else _cta_safe
+            _cta_wrapped = (
+                _wrap_cta_caption(_cta_safe, max_chars=40, max_lines=2)
+                if enable_subtitle_padding
+                else _cta_safe
+            )
             _cta_y = subtitle_y_position or int(_REEL_HEIGHT * 0.72)
-            # Match main subtitle caption color/style exactly (no black banner bar)
             _cta_color = _rgb_tuple_to_moviepy_color(subtitle_fill)
             _cta_stroke = _rgb_tuple_to_moviepy_color(
                 subtitle_stroke_fill if subtitle_stroke_fill is not None else (0, 0, 0)
             )
             _cta_stroke_w = max(1, int(subtitle_stroke_width or 2))
-            _cta_tc = (
-                TextClip(
+            _cta_box_w = int(_REEL_WIDTH * 0.94)
+            try:
+                _cta_tc = TextClip(
+                    text=_cta_wrapped,
+                    font_size=subtitle_fontsize,
+                    color=_cta_color,
+                    font=font_path or "Arial",
+                    stroke_color=_cta_stroke,
+                    stroke_width=_cta_stroke_w,
+                    method="caption",
+                    size=(_cta_box_w, 280),
+                    text_align="center",
+                )
+            except (TypeError, ValueError):
+                _cta_tc = TextClip(
                     text=_cta_wrapped,
                     font_size=subtitle_fontsize,
                     color=_cta_color,
@@ -1776,16 +2377,17 @@ def compile_sequence_reel(
                     method="label",
                     text_align="center",
                 )
+            _cta_tc = (
+                _cta_tc
                 .with_start(_cta_t0)
                 .with_duration(_cta_dur)
                 .with_position(("center", _cta_y))
             )
-            # Transparent / natural frame behind CTA — text only, no black bar
             final_video = CompositeVideoClip([final_video, _cta_tc])
             final_video = final_video.with_duration(total_duration)
             logger.info(
-                "CTA overlay ISOLATED | text='%s' color=%s start=%.1fs dur=%.1fs (no bar)",
-                _cta_safe[:60], _cta_color, _cta_t0, _cta_dur,
+                "CTA overlay ISOLATED | text=%r color=%s start=%.1fs dur=%.1fs (no bar)",
+                _cta_wrapped.replace("\n", " | "), _cta_color, _cta_t0, _cta_dur,
             )
         except Exception as _cta_ov_exc:
             logger.warning(
@@ -2137,15 +2739,16 @@ def compile_sequence_reel(
     logger.info("Writing sequence reel → %s (audio_fps=%d)", output_path, _AUDIO_SAMPLE_RATE)
     os.makedirs(os.path.dirname(str(output_path)), exist_ok=True)
     try:
+        _enc_preset = (ffmpeg_preset or "medium").strip() or "medium"
         final_video.write_videofile(
             str(output_path),
             fps         = fps,
             codec       = "libx264",
             audio_codec = "aac",
             audio_fps   = _AUDIO_SAMPLE_RATE,
-            preset      = "medium",
-            threads     = 4,
-            ffmpeg_params=["-ar", str(_AUDIO_SAMPLE_RATE)],
+            preset      = _enc_preset,
+            threads     = 8,
+            ffmpeg_params=["-ar", str(_AUDIO_SAMPLE_RATE), "-preset", _enc_preset],
             logger      = None,
         )
     finally:

@@ -29,34 +29,41 @@ def apply_duotone(
     *,
     shadow: tuple[int, int, int] | None = None,
     highlight: tuple[int, int, int] | None = None,
+    bands: int | None = None,
 ) -> np.ndarray:
     """
-    True luminance-based duotone remap (not a color overlay).
+    Poster-style luminance remap (not a smooth gradient wash).
 
-    1. Convert to grayscale via Rec.601 luminance (discards source hue entirely).
-    2. Mild contrast curve on luminance only.
-    3. Per-pixel lerp: black → shadow_color, white → highlight_color.
-
-    Previous midtone muddiness came from a very dark shadow RGB + amber/teal
-    linear mix reading brown — callers should pass mood-matched, chromatic pairs.
+    1. Convert to grayscale via Rec.601 luminance (discards source hue).
+    2. Quantize luminance into a few discrete bands (default 4) so skies /
+       fills read as solid color blocks with hard-ish tone edges.
+    3. Map each band onto the shadow→highlight palette (no continuous lerp).
     """
     img = rgb.astype(np.float32)
-    # Step 1 — desaturate to luminance (replace original hue completely)
     lum = 0.299 * img[..., 0] + 0.587 * img[..., 1] + 0.114 * img[..., 2]
     t = np.clip(lum / 255.0, 0.0, 1.0)
-    # Step 2 — contrast on the grayscale axis only (keeps shadow color readable)
+    # Mild contrast before quantize so midtones don't collapse into one band
     t = np.power(t, 0.88)
+
+    n = int(bands if bands is not None else lofi_cfg.DUOTONE_TONAL_BANDS)
+    n = max(2, min(8, n))
+    # Snap to n discrete levels in [0, 1] (e.g. 0, 1/3, 2/3, 1 for n=4)
+    levels = np.round(t * (n - 1)) / float(n - 1)
+    levels = np.clip(levels, 0.0, 1.0)
+
     sh = np.array(shadow if shadow is not None else lofi_cfg.DUOTONE_SHADOW, dtype=np.float32)
     hi = np.array(
         highlight if highlight is not None else lofi_cfg.DUOTONE_HIGHLIGHT,
         dtype=np.float32,
     )
-    # Step 3 — full tonal remap onto the two target colors
-    out = sh + (hi - sh) * t[..., None]
+    out = sh + (hi - sh) * levels[..., None]
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def apply_vignette(rgb: np.ndarray, strength: float = lofi_cfg.VIGNETTE_STRENGTH) -> np.ndarray:
+    """Optional edge darken. Strength ~0 disables (avoids soft radial sky glow)."""
+    if strength is None or float(strength) <= 0.001:
+        return rgb
     h, w = rgb.shape[:2]
     y, x = np.ogrid[:h, :w]
     cy, cx = (h - 1) / 2.0, (w - 1) / 2.0
@@ -100,8 +107,9 @@ def prep_base_frame(
     arr = apply_duotone(np.array(im), shadow=shadow, highlight=highlight)
     # Mild contrast after remap — keep low so shadow hue stays visible
     pil = PILImage.fromarray(arr)
-    pil = ImageEnhance.Contrast(pil).enhance(1.05)
-    return apply_vignette(np.array(pil))
+    pil = ImageEnhance.Contrast(pil).enhance(1.08)
+    # Vignette nearly off by default (flat poster look)
+    return apply_vignette(np.array(pil), strength=lofi_cfg.VIGNETTE_STRENGTH)
 
 
 def grade_still_frame(
@@ -127,15 +135,19 @@ def grade_still_frame(
     sh = tuple(shadow) if shadow is not None else tuple(lofi_cfg.DUOTONE_SHADOW)
     hi = tuple(highlight) if highlight is not None else tuple(lofi_cfg.DUOTONE_HIGHLIGHT)
     print(
-        "[LOFI grade] apply_duotone ACTIVE (true luminance remap) | "
+        "[LOFI grade] apply_duotone ACTIVE (posterize bands="
+        f"{lofi_cfg.DUOTONE_TONAL_BANDS}) | "
         f"mood={mood_id or 'custom'} | "
-        f"shadow={sh} highlight={hi} | source={image_path}"
+        f"shadow={sh} highlight={hi} | vignette={lofi_cfg.VIGNETTE_STRENGTH} | "
+        f"source={image_path}"
     )
     _LOG.info(
-        "LOFI grade_still_frame | mood=%s | duotone shadow=%s highlight=%s | %s",
+        "LOFI grade_still_frame | mood=%s | bands=%s | duotone shadow=%s highlight=%s | vignette=%s | %s",
         mood_id,
+        lofi_cfg.DUOTONE_TONAL_BANDS,
         sh,
         hi,
+        lofi_cfg.VIGNETTE_STRENGTH,
         image_path,
     )
     return apply_film_grain(

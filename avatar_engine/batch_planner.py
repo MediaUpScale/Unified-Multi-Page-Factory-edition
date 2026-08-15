@@ -437,6 +437,77 @@ def plan_angles_matrix(
         return _fallback_angles(topic, n, seed_topics)
 
 
+_THEME_KEYS: tuple[str, ...] = (
+    "sphinx", "pyramid", "giza", "khufu", "dendera", "osireion", "abydos",
+    "saqqara", "baalbek", "trilithon", "puma punku", "sacsayhuaman",
+    "nazca", "göbekli", "gobekli", "atlantis", "tartaria", "younger dryas",
+    "antikythera", "baghdad battery", "voynich", "vimana", "paracas",
+    "crystal skull", "yonaguni", "el dorado", "dwarka", "alexandria",
+    "easter island", "moai", "oak island", "anunnaki", "dogon", "sirius",
+    "mohenjo", "helicopter", "hieroglyph",
+)
+
+
+def theme_key(topic: str) -> str:
+    """Stable monument/theme fingerprint for a topic string."""
+    low = (topic or "").lower()
+    for key in _THEME_KEYS:
+        if key in low:
+            return key
+    tokens = [t for t in re.findall(r"[a-z0-9']+", low) if len(t) > 3]
+    return " ".join(tokens[:3]) if tokens else low.strip()[:40]
+
+
+def select_distinct_pool_topics(
+    pool: Sequence[str],
+    qty: int,
+    *,
+    recent_topics: Sequence[str] | None = None,
+    reserved: Sequence[str] | None = None,
+    rng: "object | None" = None,
+) -> list[str]:
+    """Pick ``qty`` topics from ``pool`` with distinct theme keys.
+
+    Recent library topics and already-reserved themes are excluded first.
+    Falls back to unused pool keys (even if recently used) rather than
+    repeating the same monument inside one batch.
+    """
+    import random as _rnd
+
+    n = max(1, int(qty))
+    source = [str(t).strip() for t in (pool or []) if str(t).strip()]
+    if not source:
+        return []
+    blocked = {theme_key(t) for t in (recent_topics or []) if t}
+    reserved_keys = {theme_key(t) for t in (reserved or []) if t}
+    picker = rng if rng is not None else _rnd
+    candidates = list(source)
+    try:
+        picker.shuffle(candidates)
+    except Exception:
+        _rnd.shuffle(candidates)
+
+    chosen: list[str] = []
+    used = set(reserved_keys)
+
+    def _take(prefer_fresh: bool) -> None:
+        for topic in candidates:
+            key = theme_key(topic)
+            if not key or key in used:
+                continue
+            if prefer_fresh and key in blocked:
+                continue
+            chosen.append(topic)
+            used.add(key)
+            if len(chosen) >= n:
+                return
+
+    _take(prefer_fresh=True)
+    if len(chosen) < n:
+        _take(prefer_fresh=False)
+    return chosen[:n]
+
+
 def enforce_batch_uniqueness(
     *,
     guard: BatchUniquenessGuard | None,

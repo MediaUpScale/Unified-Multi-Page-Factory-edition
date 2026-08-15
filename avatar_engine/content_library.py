@@ -11,6 +11,19 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def recent_topics(path: Path, last_n: int = 40) -> list[str]:
+    """Return the most recent ``topic`` strings from ``content_library.json``."""
+    rows = load_library(path)
+    out: list[str] = []
+    for row in rows[-max(1, int(last_n)):]:
+        if not isinstance(row, dict):
+            continue
+        topic = str(row.get("topic") or "").strip()
+        if topic:
+            out.append(topic)
+    return out
+
+
 def load_library(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []

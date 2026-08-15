@@ -14,6 +14,8 @@ Cost mode: HARDCODED to "nano" (economic/lightweight) for all generation.
 """
 from __future__ import annotations
 
+from config import words_for_duration
+
 # ---------------------------------------------------------------------------
 # Core profile fields — satisfies BasePageProfile protocol
 # ---------------------------------------------------------------------------
@@ -108,6 +110,14 @@ LOGO_POSITION: str = "bottom_center"
 ELEVENLABS_VOICE_ID: str = "WdZjiN0nNcik2LBjOHiv"   # Direct voice ID — wise/mysterious narrator
 ELEVENLABS_MODEL: str = "eleven_multilingual_v2"        # Best char-per-credit efficiency
 TTS_VOICE_PREFERENCE: str = "WdZjiN0nNcik2LBjOHiv"    # Human-readable label mirrors voice ID
+TTS_NARRATION_SPEED: float = 1.0                       # natural pace — never speed up AK reels
+ELEVENLABS_VOICE_SETTINGS: dict = {
+    "stability": 0.80,
+    "similarity_boost": 0.85,
+    "style": 0.20,
+    "use_speaker_boost": True,
+    "speed": 1.0,
+}
 
 # F5-TTS remote voice reference (channels_config/.../voice_reference/).
 # Filenames are optional overrides — default convention is
@@ -133,9 +143,13 @@ REMOTE_GPU_LORA_URL: str = ""
 # plan_scenes() engine (SCENE_DURATION) — not hardcoded act counts.
 # Clip weights at compile scale to actual audio length (never hard-cut VO).
 # ---------------------------------------------------------------------------
-REEL_DURATION_TARGET_MIN: float = 70.0
+REEL_DURATION_TARGET_MIN: float = 80.0
 REEL_DURATION_TARGET_MAX: float = 90.0
-REEL_DURATION: float = 80.0          # planning target (= video_length default)
+REEL_DURATION: float = 85.0          # planning target (= video_length default)
+PACING_SEQUENCE: list = [3, 3, 4, 4]  # legacy fallback shape only — AK now uses plan_bucket_act_durations (self-calibrating body weights, no slack absorption)
+REUSE_EXISTING_IMAGES: bool = True
+ENABLE_SUBTITLE_PADDING: bool = True
+ENCODING_PRESET: str = "ultrafast"
 # Shared pacing engine (core_engine/scene_pacing.py). CLI --scene-duration wins.
 SCENE_DURATION: str = "progressive"
 SCENE_PROGRESSIVE_START_S: float = 4.0
@@ -147,8 +161,10 @@ REEL_ACT_DURATION: float = 5.5
 ENABLE_SEQUENCE_REEL: bool = True
 REEL_IMAGE_MIN_COUNT: int = 8        # soft floor for plan_scenes
 REEL_IMAGE_COUNT: int = 16           # soft ceiling for plan_scenes @ ~80 s
-REEL_NARRATION_WORDS: int = 135      # ~80 s @ ~135 WPM (body); CTA separate
-REEL_NARRATION_MIN_WORDS: int = 110
+REEL_NARRATION_WORDS: int = words_for_duration(REEL_DURATION_TARGET_MIN)
+REEL_NARRATION_MIN_WORDS: int = words_for_duration(REEL_DURATION_TARGET_MIN)
+REEL_NARRATION_MAX_WORDS: int = words_for_duration(REEL_DURATION_TARGET_MIN) + 20
+CONTENT_LIBRARY_LOOKBACK: int = 40   # reject repeating a monument/theme in last N posts
 
 # WAN_REEL duration window — separate from ECONOMIC_REEL (do not merge).
 # Animated blocks use FIXED clip length (never progressive image pacing).
@@ -170,19 +186,19 @@ REEL_CTA_TEXT: str = "Follow Ancient Knowledge for more hidden mysteries."
 # Local AMBIENT_AUDIO_RELPATH is fallback ONLY when generation fails.
 # ---------------------------------------------------------------------------
 USE_MUSIC_V2_BED: bool = True
-# Mix: narration dominant. BGM −8% from prior 0.28 → 0.2576; stronger duck under VO.
-AMBIENT_VOLUME: float = 0.26         # BGM bed (clearly under narration)
-ATMOSPHERE_SFX_VOLUME: float = 0.22  # soft atmosphere (also ducked under VO)
+# Mix vs VO at 1.0: −18 dB = 0.126 (unducked CTA/tail), −20 dB = 0.100 under narration.
+AMBIENT_VOLUME: float = 0.126        # BGM bed ≈ −18 dB relative to voiceover
+ATMOSPHERE_SFX_VOLUME: float = 0.12  # soft atmosphere (also ducked under VO)
 ATMOSPHERE_SFX_FADE_IN: float = 0.2
 AMBIENT_SFX_GAIN_MUL: float = 1.0
-AMBIENT_DUCK_RATIO: float = 0.48     # sidechain-style duck while narration plays
+AMBIENT_DUCK_RATIO: float = 0.80     # under VO: 0.126 × 0.80 ≈ 0.101 ≈ −20 dB
 BGM_START_TIME: float = 0.5
 BGM_FADE_IN_DURATION: float = 0.35
 MUSIC_V2_MIN_SECONDS: float = 40.0
 AMBIENT_SFX_PROMPT: str = (
-    "Slow dark ancient temple atmosphere, low stone chamber drone only, "
-    "distant wind through ruins, no rhythm, no percussion, no melody, "
-    "no vocals, seamless seamless loop"
+    "Dark mysterious ancient temple atmosphere, deep sub-bass stone chamber drone, "
+    "distant wind through ruins, eerie low resonance, no rhythm, no percussion, "
+    "no melody, no vocals, seamless loop"
 )
 AMBIENT_AUDIO_RELPATH: str = "assets/audio/ambient_mystery_loop.mp3"
 MUSIC_PROMPT_DIRECTIVE_RELPATH: str = (

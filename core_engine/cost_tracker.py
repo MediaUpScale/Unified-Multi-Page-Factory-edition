@@ -21,8 +21,10 @@ Usage
     tracker = CostTracker(page_id="ancient_knowledge", cost_tier="nano")
 
     tracker.track_image("image_nano")
-    tracker.track_text("text_deepseek", char_count=4000)
-    tracker.track_audio(char_count=1200, sfx=True)
+    tracker.track_text("text_gemini_flash", token_count=4000)
+    tracker.track_audio(char_count=1200, sfx=False)
+    tracker.track_sfx(calls=1)
+    tracker.track_music(api=False)
 
     payload["estimated_cost"] = tracker.total_usd()
     tracker.write_telemetry(outputs_dir / "library", variant_index=1)
@@ -72,32 +74,41 @@ def _normalize_tier(value: Any) -> Literal["nano", "economic", "premium"]:
     logger.warning("CostTracker | unknown cost_tier=%r — falling back to 'economic'", value)
     return "economic"
 
+# Official per-unit formulas (USD)
+FLUX_SCHNELL_USD_PER_IMAGE: float = 0.003
+ELEVENLABS_USD_PER_1K_CHARS: float = 0.030          # → $0.00003 / char
+GEMINI_FLASH_USD_PER_1M_TOKENS: float = 0.075       # input+output tokens
+ELEVENLABS_SFX_USD_PER_CALL: float = 0.002          # Sound Effects API
+ELEVENLABS_MUSIC_USD_PER_CALL: float = 0.030        # Music compose API
+LOCAL_MUSIC_USD_PER_BED: float = 0.0                # on-disk / failsafe bed
+
 # ---------------------------------------------------------------------------
-# Pricing table (USD per call/unit, approximate as of mid-2026)
+# Pricing table (USD per call/unit)
 # ---------------------------------------------------------------------------
 _PRICE: dict[str, float] = {
-    # Image generation — Together AI (dynamic by model)
-    "image_flux_schnell":  0.003_0,   # FLUX.1-schnell (default / cheapest)
-    "image_flux_dev":      0.025_0,   # FLUX.1-dev
-    "image_flux_pro":      0.050_0,   # FLUX.1-pro
-    "image_sdxl":          0.008_0,   # SDXL / Stable Diffusion XL
-    "image_nano":          0.003_0,   # alias → Schnell
-    "image_economic":      0.003_0,   # alias → Schnell
-    "image_premium":       0.025_0,   # alias → FLUX.1-dev
-    # Deprecated Gemini image keys (aliased; images no longer use Gemini)
-    "image_gemini_flash":  0.003_0,
-    "image_gemini_pro":    0.025_0,
+    # Image generation — Together AI FLUX.1-schnell = $0.003 / image
+    "image_flux_schnell":  FLUX_SCHNELL_USD_PER_IMAGE,
+    "image_flux_dev":      0.025_0,
+    "image_flux_pro":      0.050_0,
+    "image_sdxl":          0.008_0,
+    "image_nano":          FLUX_SCHNELL_USD_PER_IMAGE,
+    "image_economic":      FLUX_SCHNELL_USD_PER_IMAGE,
+    "image_premium":       FLUX_SCHNELL_USD_PER_IMAGE,
+    "image_gemini_flash":  FLUX_SCHNELL_USD_PER_IMAGE,
+    "image_gemini_pro":    FLUX_SCHNELL_USD_PER_IMAGE,
 
-    # Text / LLM — approximate per inference call (not per token for simplicity)
-    "text_deepseek":       0.000_2,   # DeepSeek V4 — optional secondary fallback only
-    "text_gemini_flash":   0.000_4,   # Gemini 2.5 Flash text (PRIMARY default)
-    "text_gemini_pro":     0.002_0,   # Gemini Pro text
-    "text_claude_haiku":   0.001_0,   # Claude Haiku
-    "text_claude_sonnet":  0.005_0,   # Claude Sonnet
+    # Text / LLM — Gemini 2.5 Flash billed per token (not a flat per-call fee)
+    "text_gemini_flash":   GEMINI_FLASH_USD_PER_1M_TOKENS,  # $ / 1M tokens
+    "text_gemini_pro":     0.075_0,
+    "text_deepseek":       0.000_2,
+    "text_claude_haiku":   0.001_0,
+    "text_claude_sonnet":  0.005_0,
 
-    # Audio — ElevenLabs TTS
-    "tts_per_char":        0.000_030, # ~$30 / 1M characters
-    "sfx_per_call":        0.002_0,   # per SFX generation call
+    # Audio — ElevenLabs
+    "tts_per_char":        ELEVENLABS_USD_PER_1K_CHARS / 1000.0,  # $0.00003
+    "sfx_per_call":        ELEVENLABS_SFX_USD_PER_CALL,
+    "music_api_per_call":  ELEVENLABS_MUSIC_USD_PER_CALL,
+    "music_local_per_bed": LOCAL_MUSIC_USD_PER_BED,
 
     # Remote GPU — RunPod RTX 4090 (override via env — see track_gpu_seconds)
     # Pod on-demand (public pricing page): Community $0.34/hr, Secure $0.69/hr
@@ -214,27 +225,30 @@ class CostTracker:
     def track_text(
         self,
         model_key: str | None = None,
-        char_count: int = 2000,
+        char_count: int = 0,
+        token_count: int | None = None,
     ) -> float:
         """
-        Record the estimated cost for one LLM text inference call.
+        Record LLM cost. Gemini 2.5 Flash = ``$0.075 / 1M tokens``.
 
-        Parameters
-        ----------
-        model_key:
-            One of the ``text_*`` keys in ``_PRICE``.
-        char_count:
-            Approximate character count of the prompt+response (informational only;
-            current pricing is flat-per-call for simplicity).
+        ``token_count`` wins when provided; otherwise tokens ≈ ``char_count / 4``.
         """
         try:
             chars = max(0, _safe_int(char_count, 0))
+            tokens = _safe_int(token_count, 0) if token_count is not None else max(0, chars // 4)
+            if tokens <= 0 and chars > 0:
+                tokens = max(1, chars // 4)
             key = model_key or _TIER_TEXT_KEY.get(self.cost_tier, "text_gemini_flash")
-            price = _safe_float(
-                _PRICE.get(key, _PRICE["text_gemini_flash"]),
-                _PRICE["text_gemini_flash"],
-            )
-            return self._add("text_generation", key, float(chars), price)
+            if str(key).startswith("text_gemini"):
+                price_per_m = _safe_float(
+                    _PRICE.get(key, GEMINI_FLASH_USD_PER_1M_TOKENS),
+                    GEMINI_FLASH_USD_PER_1M_TOKENS,
+                )
+                cost = tokens * price_per_m / 1_000_000.0
+            else:
+                # Non-Gemini keys remain small per-call estimates
+                cost = _safe_float(_PRICE.get(key, 0.0), 0.0)
+            return self._add("text_generation", key, float(tokens), cost)
         except Exception as exc:  # noqa: BLE001
             logger.warning("CostTracker.track_text failed (%s) — recording $0 fallback", exc)
             return 0.0
@@ -245,29 +259,43 @@ class CostTracker:
         sfx: bool = False,
         model_key: str = "tts_per_char",
     ) -> float:
-        """
-        Record the estimated cost for ElevenLabs TTS + optional SFX.
-
-        Parameters
-        ----------
-        char_count:
-            Character count of the TTS script (drives per-char cost).
-        sfx:
-            True if a separate SFX generation call was also made.
-        """
+        """Record ElevenLabs TTS at ``$0.030 / 1,000 characters``. Optional SFX call."""
         try:
             chars = max(0, _safe_int(char_count, 0))
-            tts_cost = _safe_float(_PRICE.get("tts_per_char"), 0.0) * chars
-            sfx_cost = _safe_float(_PRICE.get("sfx_per_call"), 0.0) if sfx else 0.0
-            total = tts_cost + sfx_cost
-            return self._add(
-                "audio_generation",
-                "elevenlabs_tts" + ("+sfx" if sfx else ""),
-                float(chars),
-                total,
-            )
+            tts_cost = chars * (ELEVENLABS_USD_PER_1K_CHARS / 1000.0)
+            total = tts_cost
+            if sfx:
+                total += self.track_sfx(calls=1)
+            if chars > 0:
+                self._add("audio_generation", "elevenlabs_tts", float(chars), tts_cost)
+            return total
         except Exception as exc:  # noqa: BLE001
             logger.warning("CostTracker.track_audio failed (%s) — recording $0 fallback", exc)
+            return 0.0
+
+    def track_sfx(self, calls: int = 1) -> float:
+        """ElevenLabs Sound Effects API — one billed generation."""
+        try:
+            n = max(1, _safe_int(calls, 1))
+            cost = ELEVENLABS_SFX_USD_PER_CALL * n
+            return self._add("sfx_generation", "elevenlabs_sfx", float(n), cost)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("CostTracker.track_sfx failed (%s)", exc)
+            return 0.0
+
+    def track_music(self, *, api: bool = False, beds: int = 1) -> float:
+        """Music bed: ElevenLabs Music compose, or $0.0000 for a local/cached file."""
+        try:
+            n = max(1, _safe_int(beds, 1))
+            if api:
+                cost = ELEVENLABS_MUSIC_USD_PER_CALL * n
+                key = "music_api_per_call"
+            else:
+                cost = LOCAL_MUSIC_USD_PER_BED * n
+                key = "music_local_per_bed"
+            return self._add("music_generation", key, float(n), cost)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("CostTracker.track_music failed (%s)", exc)
             return 0.0
 
     def track_gpu_seconds(
@@ -389,6 +417,84 @@ class CostTracker:
         with self._lock:
             return self._total_usd
 
+    def merge(self, other: "CostTracker") -> None:
+        """Append another tracker's line items into this batch accumulator."""
+        if other is None or other is self:
+            return
+        with other._lock:
+            entries = list(other._entries)
+        for e in entries:
+            self._add(
+                str(e.get("operation") or "unknown"),
+                str(e.get("model_key") or "unknown"),
+                _safe_float(e.get("units"), 0.0),
+                _safe_float(e.get("cost_usd"), 0.0),
+            )
+
+    def category_totals(self, entries: list[dict] | None = None) -> dict[str, Any]:
+        """Roll up line items into research / image / voice+sfx+music buckets."""
+        src = entries
+        if src is None:
+            with self._lock:
+                src = list(self._entries)
+        research_cost = research_tokens = 0.0
+        image_cost = image_count = 0.0
+        tts_cost = tts_chars = 0.0
+        sfx_cost = sfx_calls = 0.0
+        music_cost = music_beds = 0.0
+        music_api = False
+        for e in src or []:
+            if not isinstance(e, dict):
+                continue
+            op = str(e.get("operation") or "")
+            cost = max(0.0, _safe_float(e.get("cost_usd"), 0.0))
+            units = max(0.0, _safe_float(e.get("units"), 0.0))
+            mk = str(e.get("model_key") or "")
+            if op == "text_generation":
+                research_cost += cost
+                research_tokens += units
+            elif op == "image_generation":
+                image_cost += cost
+                image_count += units
+            elif op == "audio_generation":
+                tts_cost += cost
+                tts_chars += units
+            elif op == "sfx_generation":
+                sfx_cost += cost
+                sfx_calls += units
+            elif op == "music_generation":
+                music_cost += cost
+                music_beds += units
+                if "api" in mk:
+                    music_api = True
+        if image_count > 0 and image_cost <= 0:
+            image_cost = image_count * FLUX_SCHNELL_USD_PER_IMAGE
+        if tts_chars > 0 and tts_cost <= 0:
+            tts_cost = tts_chars * (ELEVENLABS_USD_PER_1K_CHARS / 1000.0)
+        if research_tokens > 0 and research_cost <= 0:
+            research_cost = research_tokens * GEMINI_FLASH_USD_PER_1M_TOKENS / 1_000_000.0
+        audio_cost = tts_cost + sfx_cost + music_cost
+        total = research_cost + image_cost + audio_cost
+        return {
+            "research_cost": research_cost,
+            "research_tokens": int(research_tokens),
+            "image_cost": image_cost,
+            "image_count": int(image_count),
+            "tts_cost": tts_cost,
+            "tts_chars": int(tts_chars),
+            "sfx_cost": sfx_cost,
+            "sfx_calls": int(sfx_calls),
+            "music_cost": music_cost,
+            "music_beds": int(music_beds),
+            "music_api": music_api,
+            "audio_cost": audio_cost,
+            "total": total,
+        }
+
+    def pipeline_usd(self) -> float:
+        """Official pipeline total: Gemini + FLUX images + ElevenLabs VO/SFX/music (no GPU)."""
+        return float(self.category_totals().get("total") or 0.0)
+
     def to_dict(self) -> dict:
         """
         Return a serialisable snapshot of the cost run.
@@ -397,13 +503,17 @@ class CostTracker:
         from ``avatar_engine.durable_library``.
         """
         with self._lock:
-            return {
-                "page_id": self.page_id,
-                "cost_tier": self.cost_tier,
-                "total_estimated_usd": round(self._total_usd, 6),
-                "breakdown": list(self._entries),
-                "tracked_at": datetime.now(timezone.utc).isoformat(),
-            }
+            entries = list(self._entries)
+            ledger = _safe_float(self._total_usd, 0.0)
+        cats = self.category_totals(entries)
+        return {
+            "page_id": self.page_id,
+            "cost_tier": self.cost_tier,
+            "total_estimated_usd": round(float(cats.get("total") or 0.0), 6),
+            "ledger_usd": round(ledger, 6),
+            "breakdown": entries,
+            "tracked_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def annotate_payload(self, payload: dict) -> dict:
         """
@@ -415,7 +525,7 @@ class CostTracker:
         """
         if not isinstance(payload, dict):
             payload = {}
-        payload["estimated_cost"] = round(_safe_float(self.total_usd(), 0.0), 6)
+        payload["estimated_cost"] = round(_safe_float(self.pipeline_usd(), 0.0), 6)
         payload["cost_tier"] = self.cost_tier
         return payload
 
@@ -465,27 +575,40 @@ def print_cost_summary(
     images_this_reel: int,
     total_batch_images: int,
     total_reel_cost: float,
+    *,
+    batch_cost: float | None = None,
+    research_cost: float = 0.0,
+    image_cost: float = 0.0,
+    audio_cost: float = 0.0,
 ) -> None:
-    """
-    Prints an accurate summary log separating individual reel assets from cumulative batch metrics.
-    """
+    """Print per-reel cost, then batch totals when more than one reel exists."""
     try:
         v = max(1, _safe_int(variant_index, 1))
         n = max(1, _safe_int(total_variants, 1))
         imgs = max(0, _safe_int(images_this_reel, 0))
         batch = max(0, _safe_int(total_batch_images, 0))
         cost = max(0.0, _safe_float(total_reel_cost, 0.0))
+        img_usd = max(0.0, _safe_float(image_cost, 0.0))
+        if img_usd <= 0 and imgs > 0:
+            img_usd = imgs * FLUX_SCHNELL_USD_PER_IMAGE
         print("=" * 62)
         print(f"| COST ANALYSIS SUMMARY - REEL {v}/{n}")
         print("=" * 62)
         print(
-            f"  Visual Assets (This Reel) : {imgs} AI Base Images "
-            f"-> Compiled to MP4 Reel v{v}"
+            f"  Visual Assets (This Reel) : {imgs} FLUX Schnell API image"
+            f"{'s' if imgs != 1 else ''} → compiled MP4"
         )
-        print(
-            f"  Batch Visual Assets Total : {batch} AI Base Images generated so far"
-        )
-        print(f"  Estimated Cost (This Reel): ${cost:.4f} USD")
+        print(f"  - Research & Script (Gemini): ${max(0.0, research_cost):.4f}")
+        print(f"  - Image Gen (FLUX Schnell):   ${img_usd:.4f}  ({imgs} generation{'s' if imgs != 1 else ''})")
+        print(f"  - Voice & Audio (ElevenLabs): ${max(0.0, audio_cost):.4f}")
+        print(f"  Estimated Cost (This Reel):   ${cost:.4f} USD")
+        if n > 1:
+            bcost = max(0.0, _safe_float(batch_cost, 0.0))
+            print("-" * 62)
+            print(
+                f"  Batch so far: {batch} API images | "
+                f"BATCH TOTAL: ${bcost:.4f} USD ({v}/{n} reels)"
+            )
         print("=" * 62)
     except Exception as exc:  # noqa: BLE001
         logger.warning("print_cost_summary failed (%s) — skipping block", exc)

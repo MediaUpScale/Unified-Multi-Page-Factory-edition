@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-LOFI caption typography — selectable styles.
+LOFI caption typography — selectable font library.
 
-DEFAULT: ``rounded_hand`` — Comic Sans MS Bold (bold rounded handwritten).
-Identified from the double-caption comparison plate where this face sat above
-Lora Italic; confirmed installed as ``Fonts/ComicSans/ComicSansMS-Bold.ttf``
-(and Windows ``comicbd.ttf``).
+DEFAULT: ``caveat`` — Caveat-VariableFont_wght
+  Fonts/Caveat/Caveat-VariableFont_wght.ttf
 
-Secondary: ``lora_italic`` — thin italic serif (Lora), kept selectable.
+Library (kept for easy swaps on wonder_feed + momma_circle):
+  - playwrite_nz_basic — PlaywriteNZBasic-VariableFont_wght
+  - more_sugar_thin   — More Sugar Thin (prior default)
+  - lora_italic       — Lora Italic
+  - rounded_hand      — Comic Sans MS Bold
 """
 from __future__ import annotations
 
@@ -31,31 +33,56 @@ LINE_HEIGHT_FRAC: float = 0.052  # ~5.2% of frame height per line
 LINE_GAP_FRAC: float = 0.028
 LETTER_SPACING_PX: float = 0.0
 
-# DEFAULT — bold rounded handwritten (Comic Sans MS Bold)
-ROUNDED_HAND_FONT_CANDIDATES: tuple[str, ...] = (
-    "Fonts/ComicSans/ComicSansMS-Bold.ttf",
-    "Fonts/ComicSans/comicbd.ttf",
-    r"C:\Windows\Fonts\comicbd.ttf",
-    # Soft fallbacks if Comic Sans unavailable
-    "Fonts/Poppins/Poppins-Bold.ttf",
-    "Fonts/Montserrat/static/Montserrat-Bold.ttf",
-)
-
-# Secondary — thin italic serif
-LORA_ITALIC_FONT_CANDIDATES: tuple[str, ...] = (
-    "Fonts/Lora/Lora-Italic.ttf",
-    "Fonts/Lora/EBGaramond-Italic.ttf",
-    "Fonts/Lora/CormorantGaramond-Italic.ttf",
-)
-
-STYLE_FONT_MAP: dict[str, tuple[str, ...]] = {
-    "rounded_hand": ROUNDED_HAND_FONT_CANDIDATES,
-    "lora_italic": LORA_ITALIC_FONT_CANDIDATES,
+# ── Font library (paths relative to engine root) ────────────────────────────
+FONT_LIBRARY: dict[str, dict[str, object]] = {
+    "caveat": {
+        "display": "Caveat",
+        "candidates": (
+            "Fonts/Caveat/Caveat-VariableFont_wght.ttf",
+            "Fonts/Caveat/Caveat[wght].ttf",
+        ),
+    },
+    "playwrite_nz_basic": {
+        "display": "Playwrite NZ Basic",
+        "candidates": (
+            "Fonts/PlaywriteNZBasic/PlaywriteNZBasic-VariableFont_wght.ttf",
+            "Fonts/PlaywriteNZBasic/PlaywriteNZBasic[wght].ttf",
+        ),
+    },
+    "more_sugar_thin": {
+        "display": "More Sugar Thin",
+        "candidates": (
+            "Fonts/MoreSugar/MoreSugar-Thin.ttf",
+            "Fonts/MoreSugar/MoreSugar-Thin.otf",
+        ),
+    },
+    "lora_italic": {
+        "display": "Lora Italic",
+        "candidates": (
+            "Fonts/Lora/Lora-Italic.ttf",
+            "Fonts/Lora/EBGaramond-Italic.ttf",
+            "Fonts/Lora/CormorantGaramond-Italic.ttf",
+        ),
+    },
+    "rounded_hand": {
+        "display": "Comic Sans MS Bold",
+        "candidates": (
+            "Fonts/ComicSans/ComicSansMS-Bold.ttf",
+            "Fonts/ComicSans/comicbd.ttf",
+            r"C:\Windows\Fonts\comicbd.ttf",
+            "Fonts/Poppins/Poppins-Bold.ttf",
+            "Fonts/Montserrat/static/Montserrat-Bold.ttf",
+        ),
+    },
 }
 
+# Derived maps (kept for existing call sites)
+STYLE_FONT_MAP: dict[str, tuple[str, ...]] = {
+    key: tuple(str(p) for p in (meta["candidates"] or ()))  # type: ignore[index]
+    for key, meta in FONT_LIBRARY.items()
+}
 STYLE_DISPLAY_NAME: dict[str, str] = {
-    "rounded_hand": "Comic Sans MS Bold",
-    "lora_italic": "Lora Italic",
+    key: str(meta["display"]) for key, meta in FONT_LIBRARY.items()
 }
 
 # Watermark handle (same family as caption style, smaller, low opacity)
@@ -74,13 +101,30 @@ def normalize_caption_style(style: str | None) -> str:
     return key
 
 
+def list_caption_font_library() -> list[dict[str, str]]:
+    """Return library entries for logging / CLI discovery."""
+    default = lofi_cfg.DEFAULT_CAPTION_STYLE
+    rows: list[dict[str, str]] = []
+    for key, meta in FONT_LIBRARY.items():
+        cands = [str(p) for p in (meta.get("candidates") or ())]
+        rows.append(
+            {
+                "style": key,
+                "display": str(meta.get("display") or key),
+                "primary_file": cands[0] if cands else "",
+                "default": "yes" if key == default else "",
+            }
+        )
+    return rows
+
+
 def resolve_lofi_caption_font(
     engine_root: Path,
     *,
     size: int | None = None,
     style: str | None = None,
 ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Resolve caption font for the requested style (default: rounded_hand)."""
+    """Resolve caption font for the requested style (default: caveat)."""
     style_key = normalize_caption_style(style)
     if size is None:
         size = max(28, int(lofi_cfg.REEL_HEIGHT * LINE_HEIGHT_FRAC))
@@ -173,8 +217,8 @@ def render_lofi_caption_layer(
     """
     White caption + soft blurred drop shadow, center-aligned upper-middle (~40%).
 
-    Default style is ``rounded_hand`` (Comic Sans MS Bold).
-    Pass ``style='lora_italic'`` for the secondary thin italic serif.
+    Default style is ``caveat`` (Caveat variable).
+    Pass ``style='lora_italic'`` / ``playwrite_nz_basic`` / etc. to swap.
     """
     style_key = normalize_caption_style(style)
     canvas = PILImage.new("RGBA", (width, height), (0, 0, 0, 0))
