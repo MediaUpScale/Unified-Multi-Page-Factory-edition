@@ -71,8 +71,9 @@ def validate_script(
             if not isinstance(row, dict):
                 reasons.append(f"scene {i} is not an object")
                 continue
-            text = str(row.get("text") or "").strip()
+            text = str(row.get("text") or row.get("beat_text") or "").strip()
             visual = str(row.get("visual_prompt") or "").strip()
+            use_v2 = bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
             if not text:
                 reasons.append(f"scene {i} has empty text")
             else:
@@ -98,10 +99,27 @@ def validate_script(
                     reasons.append(
                         f"scene {i} uses banned 'X is not Y, it's Z' template"
                     )
-            if not visual:
-                reasons.append(f"scene {i} missing visual_prompt")
-            if visual and text and visual.strip().lower() == text.strip().lower():
-                reasons.append(f"scene {i} visual_prompt must differ from caption text")
+            if use_v2:
+                st = str(row.get("subject_type") or "").strip().lower()
+                if st not in {
+                    "woman",
+                    "man",
+                    "couple",
+                    "silhouette",
+                    "object_focus",
+                }:
+                    reasons.append(f"scene {i} missing/invalid subject_type ({st!r})")
+                if not str(row.get("setting") or "").strip():
+                    reasons.append(f"scene {i} missing setting")
+                if not str(row.get("key_object") or "").strip():
+                    reasons.append(f"scene {i} missing key_object")
+                if not str(row.get("subject_expression") or "").strip():
+                    reasons.append(f"scene {i} missing subject_expression")
+            else:
+                if not visual:
+                    reasons.append(f"scene {i} missing visual_prompt")
+                if visual and text and visual.strip().lower() == text.strip().lower():
+                    reasons.append(f"scene {i} visual_prompt must differ from caption text")
 
         # Split-across-cut version of the same template
         for i in range(len(lines) - 1):

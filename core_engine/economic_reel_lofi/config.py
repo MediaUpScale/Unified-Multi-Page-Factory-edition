@@ -41,6 +41,11 @@ LOFI_STYLE_BASE: str = (
 # Verbatim riso prompts — do not prepend mood lighting that remaps palette.
 USE_RISO_PROMPT_LIBRARY: bool = True
 RISO_PROMPT_LIBRARY_REL: str = "core_engine/economic_reel_lofi/store/riso_prompt_library_v2.json"
+# Parallel v2 identity bank (does NOT overwrite the live riso library file).
+USE_VISUAL_IDENTITY_V2: bool = True
+VISUAL_IDENTITY_V2_REL: str = (
+    "core_engine/economic_reel_lofi/store/visual_identity_bank_v2.json"
+)
 # OFF — duotone/LUT crushed scene palettes (blue wash / TV-static first frames).
 LOFI_APPLY_GRADING: bool = False
 
@@ -89,6 +94,7 @@ LOFI_NEGATIVE_PROMPT: str = (
     "blown highlights, white bloom, halo, overexposed whites, blown-out chest, "
     "collar bloom, vignette bleed, overbright center wash, "
     "painterly blended lighting, monochromatic, grayscale, silhouette only, no linework, "
+    "flat graphic, solid color field, empty poster, no outlines, abstract blob, "
     "text, watermark, logo, typography, subtitles, ui, deformed hands, extra fingers, "
     "garbled text, nsfw, nude, explicit"
 )
@@ -96,6 +102,10 @@ LOFI_NEGATIVE_PROMPT: str = (
 LOFI_PROMPT_EXPOSURE_GUARD: str = (
     "even midtone exposure, no blown highlights, no white bloom or halo, "
     "no overexposed chest or collar, no vignette bleed"
+)
+LOFI_PROMPT_LINEWORK_GUARD: str = (
+    "fine black ink outlines, detailed interior objects, not a flat graphic, "
+    "not a solid color field, not an empty silhouette poster"
 )
 
 # Soft highlight clamp in prep_base_frame (before Ken Burns) — kills baked bloom.
@@ -134,8 +144,9 @@ CAPTION_FILM_MULTIPLY_OPACITY: float = 0.18
 ENABLE_DUST_OVERLAY: bool = True
 DUST_OVERLAY_REL: str = "channels_config/wonder_feed/overlays/overlay film grain.mp4"
 DUST_OVERLAY_PREFER_NPZ: bool = False
-DUST_OVERLAY_OPACITY: float = 0.32  # 20–35% screen
-DUST_OVERLAY_BLEND: str = "screen"
+DUST_OVERLAY_OPACITY: float = 0.40  # keep; overlay/soft-light (not normal alpha)
+DUST_OVERLAY_BLEND: str = "overlay"
+DUST_OVERLAY_OPACITY_CAP: float = 0.60
 # Dark vintage vignette (independent of particles)
 ENABLE_VIGNETTE: bool = True
 VIGNETTE_STRENGTH: float = 0.18  # ~15–20% corner darken
@@ -165,8 +176,8 @@ WATERMARK_SIZE_FRAC: float = 0.018
 
 # Caption typography — Edu NSW ACT Foundation Bold, Whispers-small, tight tracking
 DEFAULT_CAPTION_STYLE: str = "edu_nsw"
-CAPTION_LINE_HEIGHT_FRAC: float = 0.034  # ~65px at 1920h; one-line target
-CAPTION_MIN_LINE_HEIGHT_FRAC: float = 0.032  # wrap/shrink is rare fallback only
+CAPTION_LINE_HEIGHT_FRAC: float = 0.033  # ~63px at 1920h; one point down from 0.034
+CAPTION_MIN_LINE_HEIGHT_FRAC: float = 0.031
 CAPTION_LETTER_SPACING_PX: float = -1.5  # tighter tracking
 CAPTION_WORD_FADE_S: float = 0.20  # soft per-word fade-in
 CAPTION_STYLES: frozenset[str] = frozenset(
@@ -201,9 +212,9 @@ CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
         ],
         "watermark_handle": "@Wonder Feed",
         "logo_position": "bottom_center",
-        "logo_opacity": 0.88,
-        "logo_scale": 0.161,  # +15% vs 0.14
-        "logo_bottom_px": 70,  # raise ~30% vs 48px inset
+        "logo_opacity": 0.95,
+        "logo_scale": 0.224,  # +5% vs 0.213
+        "logo_bottom_px": 389,  # center ≈ 412px from bottom (was ~262; +150)
         "caption_color": (255, 255, 255),
         # Use channel PNG logo on LOFI stills/reels (not text handle).
         "use_text_watermark": False,

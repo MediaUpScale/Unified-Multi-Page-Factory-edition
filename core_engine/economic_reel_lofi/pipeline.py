@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi import lofi_collections as rag
 from core_engine.economic_reel_lofi.assembler import (
@@ -25,7 +27,10 @@ from core_engine.economic_reel_lofi.riso_prompt_bank import (
     assign_riso_prompts_for_scenes,
     export_active_library_diff,
 )
-from core_engine.economic_reel_lofi.script_agent import generate_script
+from core_engine.economic_reel_lofi.script_agent import (
+    _sanitize_caption_typos,
+    generate_script,
+)
 from core_engine.economic_reel_lofi.validator_agent import validate_script
 
 _LOG = logging.getLogger(__name__)
@@ -65,11 +70,57 @@ def _engine_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _assess_linework_complexity(image_path: Path) -> tuple[bool, list[str]]:
+    """Reject near-flat graphics with no inked structure (grief scene-3 failure)."""
+    try:
+        from PIL import Image as PILImage
+
+        im = PILImage.open(image_path).convert("RGB")
+        im.thumbnail((512, 512))
+        arr = np.array(im, dtype=np.float32)
+        gray = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+        lap = (
+            gray[1:-1, 1:-1] * 4
+            - gray[:-2, 1:-1]
+            - gray[2:, 1:-1]
+            - gray[1:-1, :-2]
+            - gray[1:-1, 2:]
+        )
+        lap_var = float(lap.var())
+        q = (arr.astype(np.uint8) // 16).reshape(-1, 3)
+        uniq = int(np.unique(q, axis=0).shape[0])
+        edge = float(
+            np.abs(gray[:, 1:] - gray[:, :-1]).mean()
+            + np.abs(gray[1:, :] - gray[:-1, :]).mean()
+        )
+        std = float(gray.std())
+        flaws: list[str] = []
+        if uniq < 90:
+            flaws.append(f"low color structure uniq16={uniq}")
+        if lap_var < 80 and edge < 3.0:
+            flaws.append(f"flat/no linework lap_var={lap_var:.1f} edge={edge:.2f}")
+        if std < 22 and uniq < 140:
+            flaws.append(f"near-flat luminance std={std:.1f}")
+        if flaws:
+            print(
+                f"[LOFI image QA] REJECT {image_path.name} "
+                f"uniq16={uniq} lap_var={lap_var:.1f} edge={edge:.2f} std={std:.1f} "
+                f"| {'; '.join(flaws)}"
+            )
+        return (len(flaws) == 0), flaws
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("linework QA failed for %s (%s)", image_path.name, exc)
+        return True, []
+
+
 def _qa_scene_image(image_path: Path, visual_prompt: str) -> tuple[bool, list[str]]:
     """
     Run VisualQA lofi_economic profile when available.
     Soft-fail open if Gemini/critic unavailable (log + accept).
+    Always run local linework/complexity check (rejects flat graphics).
     """
+    del visual_prompt
+    struct_ok, struct_flaws = _assess_linework_complexity(image_path)
     try:
         from VisualQA_Agent.channel_rag import get_channel_rules, set_channel_context
         from VisualQA_Agent.visual_critic import evaluate_image
@@ -82,23 +133,29 @@ def _qa_scene_image(image_path: Path, visual_prompt: str) -> tuple[bool, list[st
             rules=rules,
             quality_threshold=6.0,
         )
-        return bool(verdict.passed), list(verdict.flaws or [])
+        critic_ok = bool(verdict.passed)
+        critic_flaws = list(verdict.flaws or [])
     except Exception as exc:  # noqa: BLE001
         _LOG.warning("VisualQA skipped for %s (%s)", image_path.name, exc)
-        # Lightweight local heuristics when critic unavailable
-        flaws: list[str] = []
+        critic_ok = True
+        critic_flaws = []
         try:
             from PIL import Image as PILImage
 
             im = PILImage.open(image_path)
             w, h = im.size
             if h < w:
-                flaws.append("aspect ratio not vertical")
+                critic_flaws.append("aspect ratio not vertical")
+                critic_ok = False
             if w < 512 or h < 512:
-                flaws.append("resolution too low for reels")
+                critic_flaws.append("resolution too low for reels")
+                critic_ok = False
         except Exception:  # noqa: BLE001
             pass
-        return (len(flaws) == 0), flaws
+    flaws = list(struct_flaws)
+    if not critic_ok:
+        flaws.extend(critic_flaws)
+    return (struct_ok and critic_ok and not flaws), flaws
 
 
 def _generate_validated_script(
@@ -117,6 +174,7 @@ def _generate_validated_script(
             subtheme=str(theme_row.get("subtheme") or ""),
             scene_count=scene_count,
             feedback=feedback,
+            theme_row=theme_row,
         )
         script["subtheme"] = theme_row.get("subtheme")
         result = validate_script(
@@ -144,6 +202,9 @@ def _generate_validated_script(
         scene_count=scene_count,
         hook_type="definition",
         quote=None,
+        setting_object_pairs=theme_row.get("setting_object_pairs")
+        if isinstance(theme_row.get("setting_object_pairs"), list)
+        else None,
     )
     fallback["subtheme"] = theme_row.get("subtheme")
     result = validate_script(
@@ -221,8 +282,23 @@ def _produce_one(
         )
 
     lines = list(script.get("lines") or [])
-    # Replace LLM visual prompts with verbatim riso library entries
-    if bool(getattr(lofi_cfg, "USE_RISO_PROMPT_LIBRARY", True)):
+    # V2 identity bank assembles prompts from beat fields (live riso JSON untouched).
+    if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
+        from core_engine.economic_reel_lofi.visual_identity import apply_v2_prompts_to_lines
+
+        apply_v2_prompts_to_lines(lines, theme_row=theme_row)
+        for row in lines:
+            if not isinstance(row, dict):
+                continue
+            print(
+                f"[LOFI identity v2] scene={row.get('scene')} "
+                f"type={row.get('subject_type')} expr={row.get('subject_expression')!r} "
+                f"setting={row.get('setting')!r} object={row.get('key_object')!r} "
+                f"tod={row.get('time_of_day')} pal={row.get('palette_key')} "
+                f"act={row.get('arc_position')}"
+            )
+            print(f"[LOFI identity v2] prompt={row.get('visual_prompt')!r}")
+    elif bool(getattr(lofi_cfg, "USE_RISO_PROMPT_LIBRARY", True)):
         lib_diff = export_active_library_diff()
         try:
             from core_engine.economic_reel_lofi.riso_prompt_bank import load_riso_library
@@ -299,7 +375,7 @@ def _produce_one(
         scene_i = int(row.get("scene") or len(scene_paths) + 1)
         out_img = run_dir / f"scene_{scene_i:02d}.png"
         visual = str(row.get("visual_prompt") or "")
-        caption = str(row.get("text") or "")
+        caption = _sanitize_caption_typos(str(row.get("text") or ""))
         mood_meta = {
             "id": str(row.get("riso_id") or f"scene_{scene_i}"),
             "lighting": "from_riso_prompt",
@@ -310,10 +386,14 @@ def _produce_one(
         ok_img = False
         last_flaws: list[str] = []
         for attempt in range(1, lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE + 2):
+            prompt_i = visual
+            if attempt > 1:
+                guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
+                if guard:
+                    prompt_i = f"{visual} {guard}"
             try:
-                # Verbatim riso prompt — never nudge/rewrite the library text
                 _, mood_meta = generate_scene_image(
-                    visual,
+                    prompt_i,
                     out_img,
                     mood=mood_meta,
                     verbatim=True,
@@ -473,6 +553,9 @@ def _produce_one(
         "quote_id": script.get("quote_id"),
         "script": script,
         "riso_ids": [str(r.get("riso_id") or "") for r in lines],
+        "visual_identity": "v2"
+        if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
+        else "riso_library",
         "voice_id": getattr(lofi_cfg, "LOFI_VOICE_ID", None),
         "caption_style": lofi_cfg.DEFAULT_CAPTION_STYLE,
         "grading_applied": bool(getattr(lofi_cfg, "LOFI_APPLY_GRADING", False)),

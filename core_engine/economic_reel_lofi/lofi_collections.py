@@ -84,6 +84,8 @@ def ensure_seeded() -> None:
     for name, src in seeds.items():
         dest = _store_path(name)
         if dest.is_file():
+            if name.startswith("lofi_theme_bank_"):
+                _merge_new_seed_rows(dest, src)
             continue
         if src.is_file():
             _write_json(dest, _read_json(src, []))
@@ -171,17 +173,103 @@ def _theme_bank_name(module: str) -> str:
     return f"lofi_theme_bank_{module}"
 
 
+_THEME_FIELD_COPY = ("setting_object_pairs", "preferred_mood_palette", "sample_scene")
+
+
+def _merge_new_seed_rows(dest: Path, src: Path) -> None:
+    """Append missing seed rows; copy new fields onto live rows; never rewrite used status."""
+    if not src.is_file() or not dest.is_file():
+        return
+    seed_rows = _read_json(src, [])
+    live = _read_json(dest, [])
+    if not isinstance(seed_rows, list):
+        return
+    if not isinstance(live, list):
+        live = []
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in live:
+        if isinstance(r, dict):
+            by_key[(str(r.get("theme")), str(r.get("subtheme")))] = r
+    added = 0
+    filled = 0
+    for row in seed_rows:
+        if not isinstance(row, dict):
+            continue
+        key = (str(row.get("theme")), str(row.get("subtheme")))
+        if key in by_key:
+            live_row = by_key[key]
+            for field in _THEME_FIELD_COPY:
+                incoming_val = row.get(field)
+                if field == "setting_object_pairs" and isinstance(incoming_val, list):
+                    live_pairs = list(live_row.get(field) or [])
+                    have_p = {
+                        (str(p.get("setting")), str(p.get("key_object")))
+                        for p in live_pairs
+                        if isinstance(p, dict)
+                    }
+                    for p in incoming_val:
+                        if not isinstance(p, dict):
+                            continue
+                        pk = (str(p.get("setting")), str(p.get("key_object")))
+                        if pk in have_p:
+                            continue
+                        live_pairs.append(p)
+                        have_p.add(pk)
+                        filled += 1
+                    live_row[field] = live_pairs
+                    continue
+                if incoming_val and not live_row.get(field):
+                    live_row[field] = incoming_val
+                    filled += 1
+            continue
+        incoming = dict(row)
+        incoming.setdefault("status", "unused")
+        live.append(incoming)
+        by_key[key] = incoming
+        added += 1
+    if added or filled:
+        _write_json(dest, live)
+        _LOG.info(
+            "LOFI theme bank merged %s new rows, filled %s fields into %s",
+            added,
+            filled,
+            dest.name,
+        )
+        print(
+            f"[LOFI theme] merged {added} new seed themes, "
+            f"filled {filled} fields into {dest.name}"
+        )
+
+
+def _theme_lru_key(row: dict[str, Any]) -> str:
+    raw = str(row.get("last_used_date") or "").strip()
+    return raw if raw else "0000-01-01"
+
+
 def select_theme(module: str) -> dict[str, Any]:
-    """Pull next unused theme; recycle cooldown/used when bank exhausted."""
+    """Next unused theme, else least-recently-used — never collapse to rows[0]."""
     ensure_seeded()
     path = _store_path(_theme_bank_name(module))
     rows = _read_json(path, [])
     if not isinstance(rows, list) or not rows:
         return {"theme": "connection", "subtheme": "general", "status": "unused"}
 
-    unused = [r for r in rows if str(r.get("status", "unused")) == "unused"]
-    pool = unused or rows
-    chosen = dict(pool[0])
+    unused = [r for r in rows if isinstance(r, dict) and str(r.get("status", "unused")) == "unused"]
+    if unused:
+        chosen = dict(unused[0])
+        print(
+            f"[LOFI theme] unused theme={chosen.get('theme')} "
+            f"subtheme={chosen.get('subtheme')} remaining={len(unused)}"
+        )
+        return chosen
+
+    used = [r for r in rows if isinstance(r, dict)]
+    used.sort(key=_theme_lru_key)
+    chosen = dict(used[0])
+    print(
+        f"[LOFI theme] recycle LRU theme={chosen.get('theme')} "
+        f"subtheme={chosen.get('subtheme')} last_used={chosen.get('last_used_date')}"
+    )
     return chosen
 
 

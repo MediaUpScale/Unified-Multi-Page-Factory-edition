@@ -1,10 +1,644 @@
 [
-  {"theme": "trust", "subtheme": "consistency_over_promises", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "secure_love", "subtheme": "steadiness_vs_intensity", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "self_respect", "subtheme": "boundaries_without_guilt", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "attachment", "subtheme": "anxious_pursuit_cycles", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "communication", "subtheme": "repair_after_conflict", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "healing", "subtheme": "choosing_peace_over_chaos", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "vulnerability", "subtheme": "softness_as_strength", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "distance", "subtheme": "silence_that_speaks", "status": "unused", "last_used_date": null, "performance_score": null}
+  {
+    "theme": "trust",
+    "subtheme": "consistency_over_promises",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "kitchen at dawn",
+        "key_object": "two unmatched coffee cups"
+      },
+      {
+        "setting": "hallway by the front door",
+        "key_object": "set of house keys on a hook"
+      },
+      {
+        "setting": "small table by a window",
+        "key_object": "unopened envelope"
+      },
+      {
+        "setting": "stoop at evening",
+        "key_object": "same worn shoes"
+      },
+      {
+        "setting": "fridge door in a dim kitchen",
+        "key_object": "old grocery list"
+      },
+      {
+        "setting": "kitchen table at dawn",
+        "key_object": "receipt on the fridge"
+      },
+      {
+        "setting": "front stoop after work",
+        "key_object": "same scuffed shoes"
+      },
+      {
+        "setting": "hallway hook by the door",
+        "key_object": "keys dropped in a bowl"
+      }
+    ]
+  },
+  {
+    "theme": "secure_love",
+    "subtheme": "steadiness_vs_intensity",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "sofa in a quiet living room",
+        "key_object": "shared knitted blanket"
+      },
+      {
+        "setting": "doorway at dusk",
+        "key_object": "two coats on one hook"
+      },
+      {
+        "setting": "kitchen counter at night",
+        "key_object": "single lamp left on"
+      },
+      {
+        "setting": "park path after rain",
+        "key_object": "two umbrellas"
+      },
+      {
+        "setting": "bedside table",
+        "key_object": "glass of water refilled"
+      },
+      {
+        "setting": "shared sofa at night",
+        "key_object": "two mugs on one tray"
+      },
+      {
+        "setting": "bedside in low lamp light",
+        "key_object": "refilled water glass"
+      },
+      {
+        "setting": "porch swing at dusk",
+        "key_object": "folded shared blanket"
+      }
+    ]
+  },
+  {
+    "theme": "self_respect",
+    "subtheme": "boundaries_without_guilt",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "apartment doorway",
+        "key_object": "closed door from inside"
+      },
+      {
+        "setting": "kitchen table",
+        "key_object": "half-written reply"
+      },
+      {
+        "setting": "bathroom mirror at night",
+        "key_object": "phone face-down"
+      },
+      {
+        "setting": "porch steps",
+        "key_object": "suitcase left packed"
+      },
+      {
+        "setting": "empty cafe booth",
+        "key_object": "unpaid bill for one"
+      },
+      {
+        "setting": "apartment hallway at night",
+        "key_object": "phone left face-down"
+      },
+      {
+        "setting": "kitchen table after a call",
+        "key_object": "unfinished letter"
+      },
+      {
+        "setting": "front door from inside",
+        "key_object": "chain lock fastened"
+      }
+    ]
+  },
+  {
+    "theme": "attachment",
+    "subtheme": "anxious_pursuit_cycles",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "bed at 2am",
+        "key_object": "glowing unanswered phone"
+      },
+      {
+        "setting": "window overlooking the street",
+        "key_object": "empty sidewalk"
+      },
+      {
+        "setting": "hallway",
+        "key_object": "coat still on the chair"
+      },
+      {
+        "setting": "kitchen at night",
+        "key_object": "cold cup of coffee"
+      },
+      {
+        "setting": "bus stop after dark",
+        "key_object": "missed-bus bench"
+      },
+      {
+        "setting": "bedroom window at 2am",
+        "key_object": "glowing unanswered phone"
+      },
+      {
+        "setting": "empty bus stop bench",
+        "key_object": "coat left on the seat"
+      }
+    ]
+  },
+  {
+    "theme": "communication",
+    "subtheme": "repair_after_conflict",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "kitchen table after dinner",
+        "key_object": "two mugs still full"
+      },
+      {
+        "setting": "car parked at night",
+        "key_object": "silent radio"
+      },
+      {
+        "setting": "bedroom doorway",
+        "key_object": "folded letter"
+      },
+      {
+        "setting": "stair landing",
+        "key_object": "shoes facing opposite ways"
+      },
+      {
+        "setting": "small balcony",
+        "key_object": "ashtray and one chair"
+      },
+      {
+        "setting": "parked car at night",
+        "key_object": "silent radio"
+      },
+      {
+        "setting": "kitchen after dishes",
+        "key_object": "two mugs still full"
+      }
+    ]
+  },
+  {
+    "theme": "healing",
+    "subtheme": "choosing_peace_over_chaos",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "sunlit kitchen",
+        "key_object": "open window"
+      },
+      {
+        "setting": "made bed in morning light",
+        "key_object": "folded blanket"
+      },
+      {
+        "setting": "park bench",
+        "key_object": "closed journal"
+      },
+      {
+        "setting": "bathroom sink",
+        "key_object": "cleared counter"
+      },
+      {
+        "setting": "front steps at dawn",
+        "key_object": "watering can"
+      },
+      {
+        "setting": "sunlit kitchen window",
+        "key_object": "open notebook"
+      }
+    ]
+  },
+  {
+    "theme": "vulnerability",
+    "subtheme": "softness_as_strength",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "edge of the bed",
+        "key_object": "unbuttoned coat"
+      },
+      {
+        "setting": "kitchen floor",
+        "key_object": "dropped dish towel"
+      },
+      {
+        "setting": "rain-streaked cafe window",
+        "key_object": "two hands almost touching"
+      },
+      {
+        "setting": "dim living room",
+        "key_object": "record left spinning"
+      },
+      {
+        "setting": "hallway mirror",
+        "key_object": "unsent text on a phone"
+      },
+      {
+        "setting": "rain-streaked cafe window",
+        "key_object": "two cups between them"
+      },
+      {
+        "setting": "hallway mirror at night",
+        "key_object": "unsent text on a phone"
+      }
+    ]
+  },
+  {
+    "theme": "distance",
+    "subtheme": "silence_that_speaks",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {
+        "setting": "opposite ends of a sofa",
+        "key_object": "wide empty cushion"
+      },
+      {
+        "setting": "rainy street corner",
+        "key_object": "two umbrellas not touching"
+      },
+      {
+        "setting": "train platform",
+        "key_object": "suitcase standing alone"
+      },
+      {
+        "setting": "long kitchen table",
+        "key_object": "unused place setting"
+      },
+      {
+        "setting": "apartment hallway",
+        "key_object": "closed bedroom door"
+      }
+    ]
+  },
+  {
+    "theme": "loneliness",
+    "subtheme": "the_room_that_stays_empty",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "indigo_violet_night",
+    "sample_scene": "one person at a kitchen table with a second unused chair, cool window light, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "bedroom, edge of a neatly made bed",
+        "key_object": "untouched pillow"
+      },
+      {
+        "setting": "spare room with the lamp left on",
+        "key_object": "empty bed"
+      },
+      {
+        "setting": "kitchen table at night",
+        "key_object": "empty chair"
+      },
+      {
+        "setting": "stairwell inside the house",
+        "key_object": "unheard footsteps"
+      },
+      {
+        "setting": "front hallway at dusk",
+        "key_object": "door that never opens"
+      },
+      {
+        "setting": "window seat facing the street",
+        "key_object": "cold cup of coffee"
+      },
+      {
+        "setting": "stairwell inside the house",
+        "key_object": "shoes with no pair"
+      }
+    ]
+  },
+  {
+    "theme": "grief",
+    "subtheme": "learning_to_carry_it",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "muted_dawn",
+    "sample_scene": "figure holding a worn coat by a closed door, grey morning light, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "closed front door at morning",
+        "key_object": "worn coat on a hook"
+      },
+      {
+        "setting": "bedroom chair",
+        "key_object": "folded sweater"
+      },
+      {
+        "setting": "kitchen sink",
+        "key_object": "second unused mug"
+      },
+      {
+        "setting": "park path in grey light",
+        "key_object": "empty bench"
+      },
+      {
+        "setting": "windowsill",
+        "key_object": "photograph face-down"
+      },
+      {
+        "setting": "kitchen sink at a tiled window",
+        "key_object": "second unused mug on the rack"
+      },
+      {
+        "setting": "closed front door in grey morning",
+        "key_object": "worn coat on a wooden hook"
+      },
+      {
+        "setting": "bedroom chair by the window",
+        "key_object": "folded sweater in the seat"
+      },
+      {
+        "setting": "windowsill with cooling tea",
+        "key_object": "photograph face-down"
+      }
+    ]
+  },
+  {
+    "theme": "loss",
+    "subtheme": "what_the_leaving_took",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "indigo_violet_night",
+    "sample_scene": "empty bus seat by a rain-streaked window, dusk, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "bus seat by a rain-streaked window",
+        "key_object": "empty seat beside"
+      },
+      {
+        "setting": "closet with the light on",
+        "key_object": "gap where clothes were"
+      },
+      {
+        "setting": "kitchen drawer",
+        "key_object": "spare key left behind"
+      },
+      {
+        "setting": "train platform at dusk",
+        "key_object": "abandoned ticket"
+      },
+      {
+        "setting": "apartment floor",
+        "key_object": "half-packed box"
+      },
+      {
+        "setting": "closet with the light still on",
+        "key_object": "gap where clothes were"
+      }
+    ]
+  },
+  {
+    "theme": "perseverance",
+    "subtheme": "getting_up_anyway",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "coral_day",
+    "sample_scene": "person tying shoes on a stoop at dawn, flat warm light, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "stoop at dawn",
+        "key_object": "untied shoes"
+      },
+      {
+        "setting": "kitchen before sunrise",
+        "key_object": "kettle just starting"
+      },
+      {
+        "setting": "narrow hallway",
+        "key_object": "work bag by the door"
+      },
+      {
+        "setting": "bathroom mirror",
+        "key_object": "cold water on a face"
+      },
+      {
+        "setting": "bus stop in early light",
+        "key_object": "same weekly pass"
+      },
+      {
+        "setting": "stoop at dawn",
+        "key_object": "untied work shoes"
+      }
+    ]
+  },
+  {
+    "theme": "inspiration",
+    "subtheme": "a_light_that_is_yours",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "golden_dusk",
+    "sample_scene": "someone looking up at a small window of sky between buildings, late sun, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "alley between buildings",
+        "key_object": "strip of late sky"
+      },
+      {
+        "setting": "desk under a small lamp",
+        "key_object": "open notebook"
+      },
+      {
+        "setting": "rooftop at dusk",
+        "key_object": "single lit window across the street"
+      },
+      {
+        "setting": "studio floor",
+        "key_object": "unfinished drawing"
+      },
+      {
+        "setting": "kitchen table at sunrise",
+        "key_object": "plant turning toward the window"
+      }
+    ]
+  },
+  {
+    "theme": "regret",
+    "subtheme": "the_sentence_never_said",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "amber_teal",
+    "sample_scene": "hand hovering over a phone that never gets picked up, lamp light, close mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "lamp-lit kitchen table",
+        "key_object": "unanswered phone"
+      },
+      {
+        "setting": "desk at night",
+        "key_object": "folded letter never sent"
+      },
+      {
+        "setting": "doorway after someone left",
+        "key_object": "hand still on the frame"
+      },
+      {
+        "setting": "cafe table for two",
+        "key_object": "cold cup of coffee"
+      },
+      {
+        "setting": "train window",
+        "key_object": "empty seat pulling away"
+      }
+    ]
+  },
+  {
+    "theme": "belonging",
+    "subtheme": "looking_for_a_place",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "muted_dawn",
+    "sample_scene": "figure at the edge of a gathering, porch light behind them, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "edge of a porch gathering",
+        "key_object": "empty extra chair"
+      },
+      {
+        "setting": "party kitchen doorway",
+        "key_object": "untouched drink"
+      },
+      {
+        "setting": "long dining table",
+        "key_object": "place setting not claimed"
+      },
+      {
+        "setting": "apartment stairwell",
+        "key_object": "neighbors' closed doors"
+      },
+      {
+        "setting": "park picnic edge",
+        "key_object": "blanket with a gap"
+      },
+      {
+        "setting": "apartment stairwell",
+        "key_object": "neighbors closed doors"
+      }
+    ]
+  },
+  {
+    "theme": "time",
+    "subtheme": "ordinary_minutes_leaving",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "golden_dusk",
+    "sample_scene": "clock and cooling tea on a windowsill, late afternoon, still mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "windowsill in late afternoon",
+        "key_object": "clock and cooling tea"
+      },
+      {
+        "setting": "kitchen at golden hour",
+        "key_object": "sun moving off the floor"
+      },
+      {
+        "setting": "bedroom chair",
+        "key_object": "calendar with crossed days"
+      },
+      {
+        "setting": "bus window",
+        "key_object": "same daily route"
+      },
+      {
+        "setting": "sink at dusk",
+        "key_object": "unwashed cup from morning"
+      }
+    ]
+  },
+  {
+    "theme": "forgiveness",
+    "subtheme": "putting_the_weight_down",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "coral_day",
+    "sample_scene": "person setting a heavy bag down on a bench, open park path, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "park path, open bench",
+        "key_object": "heavy bag set down"
+      },
+      {
+        "setting": "river wall at dusk",
+        "key_object": "stone placed and left"
+      },
+      {
+        "setting": "kitchen table",
+        "key_object": "letter finally opened"
+      },
+      {
+        "setting": "church steps",
+        "key_object": "hands unclenched"
+      },
+      {
+        "setting": "bedroom floor",
+        "key_object": "old box closed"
+      }
+    ]
+  },
+  {
+    "theme": "hope",
+    "subtheme": "after_the_worst_night",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "golden_dusk",
+    "sample_scene": "first pale light on a quiet street, one window lit, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "quiet street at first light",
+        "key_object": "one window still lit"
+      },
+      {
+        "setting": "kitchen at pale dawn",
+        "key_object": "kettle beginning to steam"
+      },
+      {
+        "setting": "bedroom curtains",
+        "key_object": "first stripe of sun"
+      },
+      {
+        "setting": "bus stop after rain",
+        "key_object": "clearing sky"
+      },
+      {
+        "setting": "front steps",
+        "key_object": "unopened morning paper"
+      }
+    ]
+  }
 ]

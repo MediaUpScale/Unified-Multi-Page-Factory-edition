@@ -343,9 +343,14 @@ def ensure_dust_overlay_asset(engine_root: Path) -> Path:
             "channels_config/wonder_feed/overlays/overlay film grain.mp4",
         )
     )
-    path = Path(engine_root) / rel
+    path = Path(rel) if Path(rel).is_absolute() else Path(engine_root) / rel
     if path.is_file() and path.stat().st_size > 10_000:
         return path
+    overlay_dir = Path(engine_root) / "channels_config" / "wonder_feed" / "overlays"
+    for cand in sorted(overlay_dir.glob("overlay*grain*.mp4")):
+        if cand.is_file() and cand.stat().st_size > 10_000:
+            print(f"[LOFI assemble] grain_overlay fallback path={cand}")
+            return cand
     npz_path = path.with_suffix(".npz")
     if bool(getattr(lofi_cfg, "DUST_OVERLAY_PREFER_NPZ", False)) and npz_path.is_file():
         return npz_path
@@ -452,6 +457,81 @@ def _load_overlay_frames(path: Path) -> tuple[np.ndarray, float]:
     return frames, fps
 
 
+_GRAIN_PREP_LOGGED = False
+
+
+def _cover_crop_to_canvas(ov: np.ndarray, w: int, h: int) -> np.ndarray:
+    """Center-cover to 9:16 canvas (crop, never stretch)."""
+    arr = np.asarray(ov)
+    if arr.ndim == 2:
+        arr = np.stack([arr, arr, arr], axis=-1)
+    if arr.shape[-1] == 4:
+        arr = arr[..., :3]
+    oh, ow = int(arr.shape[0]), int(arr.shape[1])
+    scale = max(w / max(ow, 1), h / max(oh, 1))
+    nw = max(w, int(round(ow * scale)))
+    nh = max(h, int(round(oh * scale)))
+    if (ow, oh) != (nw, nh):
+        arr = np.array(
+            PILImage.fromarray(arr.astype(np.uint8)).resize((nw, nh), PILImage.LANCZOS)
+        )
+    y0 = max(0, (arr.shape[0] - h) // 2)
+    x0 = max(0, (arr.shape[1] - w) // 2)
+    cropped = arr[y0 : y0 + h, x0 : x0 + w]
+    if cropped.shape[0] != h or cropped.shape[1] != w:
+        cropped = np.array(
+            PILImage.fromarray(cropped.astype(np.uint8)).resize((w, h), PILImage.LANCZOS)
+        )
+    return cropped
+
+
+def _extract_grain_specks(ov: np.ndarray) -> np.ndarray:
+    """Lift near-black film-grain plates so Screen/Overlay actually reads."""
+    rgb = ov.astype(np.float32)
+    luma = rgb.mean(axis=2)
+    mean = float(luma.mean())
+    std = float(luma.std())
+    p99 = float(np.percentile(luma, 99.7))
+    thr = mean + 0.25 * std
+    denom = max(p99 - thr, 4.0)
+    specks = np.clip((luma - thr) / denom, 0.0, 1.0)
+    plate = specks * 255.0
+    return np.stack([plate, plate, plate], axis=-1)
+
+
+def _midgray_grain_plate(ov: np.ndarray) -> np.ndarray:
+    """Center a dark film-grain plate on mid-gray so overlay/soft-light is identity-neutral."""
+    rgb = ov.astype(np.float32)
+    luma = rgb.mean(axis=2)
+    mean = float(luma.mean())
+    p99 = float(np.percentile(luma, 99.5))
+    scale = 90.0 / max(p99 - mean, 6.0)
+    centered = np.clip(128.0 + (luma - mean) * scale, 0.0, 255.0)
+    return np.stack([centered, centered, centered], axis=-1)
+
+
+def _blend_overlay(base: np.ndarray, blend: np.ndarray) -> np.ndarray:
+    return np.where(
+        base < 0.5,
+        2.0 * base * blend,
+        1.0 - 2.0 * (1.0 - base) * (1.0 - blend),
+    )
+
+
+def _blend_soft_light(base: np.ndarray, blend: np.ndarray) -> np.ndarray:
+    # W3C / Photoshop soft-light
+    d = np.where(
+        base <= 0.25,
+        ((16.0 * base - 12.0) * base + 4.0) * base,
+        np.sqrt(np.clip(base, 0.0, 1.0)),
+    )
+    return np.where(
+        blend <= 0.5,
+        base - (1.0 - 2.0 * blend) * base * (1.0 - base),
+        base + (2.0 * blend - 1.0) * (d - base),
+    )
+
+
 def apply_dust_overlay_screen(
     rgb: np.ndarray,
     *,
@@ -462,11 +542,13 @@ def apply_dust_overlay_screen(
     fps: float = 30.0,
     overlay_duration_s: float | None = None,
 ) -> np.ndarray:
-    """Screen-blend reference overlay (below caption). Loop if short, trim if long."""
+    """Overlay/soft-light/screen grain (below caption). Never normal-alpha flatten."""
+    del overlay_duration_s
     if not bool(getattr(lofi_cfg, "ENABLE_DUST_OVERLAY", True)):
         return rgb
-    op = float(getattr(lofi_cfg, "DUST_OVERLAY_OPACITY", 0.32))
-    op = max(0.0, min(0.45, op))
+    op = float(getattr(lofi_cfg, "DUST_OVERLAY_OPACITY", 0.40))
+    cap = float(getattr(lofi_cfg, "DUST_OVERLAY_OPACITY_CAP", 0.60))
+    op = max(0.0, min(cap, op))
     if op < 0.001:
         return rgb
     ov = None
@@ -481,17 +563,33 @@ def apply_dust_overlay_screen(
         return rgb
     ov = np.asarray(ov)
     h, w = rgb.shape[:2]
-    if ov.shape[0] != h or ov.shape[1] != w:
-        ov = np.array(
-            PILImage.fromarray(ov.astype(np.uint8)).resize((w, h), PILImage.BILINEAR),
-            dtype=np.float32,
-        )
+    native_h, native_w = int(ov.shape[0]), int(ov.shape[1])
+    ov = _cover_crop_to_canvas(ov, w, h)
+    blend = str(getattr(lofi_cfg, "DUST_OVERLAY_BLEND", "overlay")).lower()
+    if blend == "screen":
+        grain = _extract_grain_specks(ov)
     else:
-        ov = ov.astype(np.float32)
-    base = rgb.astype(np.float32)
-    a = base / 255.0
-    b = (ov / 255.0) * op
-    out = 1.0 - (1.0 - a) * (1.0 - b)
+        grain = _midgray_grain_plate(ov)
+    global _GRAIN_PREP_LOGGED
+    if not _GRAIN_PREP_LOGGED:
+        _GRAIN_PREP_LOGGED = True
+        print(
+            f"[LOFI assemble] grain_prep native={native_w}x{native_h} "
+            f"cover_crop={w}x{h} blend={blend} op={op:.2f} "
+            f"src_mean={float(np.asarray(ov).mean()):.1f} "
+            f"plate_mean={float(grain.mean()):.1f} loop=True"
+        )
+    a = rgb.astype(np.float32) / 255.0
+    g = grain.astype(np.float32) / 255.0
+    if blend == "soft-light" or blend == "softlight":
+        mixed = _blend_soft_light(a, g)
+        out = a * (1.0 - op) + mixed * op
+    elif blend == "screen":
+        b = g * op
+        out = 1.0 - (1.0 - a) * (1.0 - b)
+    else:
+        mixed = _blend_overlay(a, g)
+        out = a * (1.0 - op) + mixed * op
     return np.clip(out * 255.0, 0, 255).astype(np.uint8)
 
 
@@ -651,7 +749,8 @@ def render_logo_layer(
     canvas.paste(logo, (x, y), logo)
     print(
         f"[LOFI assemble] logo={Path(logo_path).name} scale={scale:.3f} "
-        f"px={target_w}x{target_h} pos=bottom_center y={y} inset={inset} every_scene=True"
+        f"px={target_w}x{target_h} pos=bottom_center y={y} inset={inset} "
+        f"center_from_bottom={inset + target_h / 2:.0f} every_scene=True"
     )
     return np.array(canvas)
 
@@ -829,9 +928,12 @@ def assemble_lofi_reel(
                 u = min(max(0.0, u), _dur - 1e-3)
                 return _clip.get_frame(u)
             print(
-                f"[LOFI assemble] grain_overlay={ov_path.name} "
-                f"src_dur={ov_dur:.2f}s loop_or_trim=True screen_op="
-                f"{getattr(lofi_cfg, 'DUST_OVERLAY_OPACITY', 0.32)} below_caption=True"
+                f"[LOFI assemble] grain_overlay={ov_path} "
+                f"native={int(overlay_clip.w)}x{int(overlay_clip.h)} "
+                f"src_dur={ov_dur:.2f}s loop_or_trim=True blend="
+                f"{getattr(lofi_cfg, 'DUST_OVERLAY_BLEND', 'overlay')} "
+                f"op={getattr(lofi_cfg, 'DUST_OVERLAY_OPACITY', 0.40)} "
+                f"below_caption=True"
             )
         except Exception as exc:  # noqa: BLE001
             _LOG.warning("grain overlay load failed: %s", exc)
@@ -936,6 +1038,10 @@ def assemble_lofi_reel(
             if bool(getattr(lofi_cfg, "ENABLE_PROCEDURAL_GRAIN", False)):
                 frame = apply_film_grain(frame, seed=17, t=t_global)
             frame = apply_vignette(frame)
+            if bool(getattr(lofi_cfg, "ENABLE_DUST_PARTICLES", False)):
+                frame = apply_dust_particles(frame, t=t_global, seed=11)
+            frame = apply_caption_film_multiply(frame, seed=41, t=0.0)
+            # Grain last (below caption) so multiply does not crush the plate
             frame = apply_dust_overlay_screen(
                 frame,
                 t=t_global,
@@ -943,9 +1049,6 @@ def assemble_lofi_reel(
                 start_offset_s=_ov_start,
                 fps=overlay_fps,
             )
-            if bool(getattr(lofi_cfg, "ENABLE_DUST_PARTICLES", False)):
-                frame = apply_dust_particles(frame, t=t_global, seed=11)
-            frame = apply_caption_film_multiply(frame, seed=41, t=0.0)
 
             cap = render_lofi_caption_layer_word_fade(
                 _caption,

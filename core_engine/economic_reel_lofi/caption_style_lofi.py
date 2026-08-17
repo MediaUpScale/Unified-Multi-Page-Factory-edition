@@ -29,7 +29,7 @@ SHADOW_BLUR_RADIUS: float = 6.0
 MAX_WIDTH_FRAC: float = 0.80
 # Upper-middle third (~35–45% from top); avoid top 15% safe zone
 CAPTION_CENTER_Y_FRAC: float = 0.40
-LINE_HEIGHT_FRAC: float = 0.034  # body size; override via CAPTION_LINE_HEIGHT_FRAC
+LINE_HEIGHT_FRAC: float = 0.033  # body size; override via CAPTION_LINE_HEIGHT_FRAC
 LINE_GAP_FRAC: float = 0.028
 LETTER_SPACING_PX: float = -1.5  # tighter tracking; overridden by CAPTION_LETTER_SPACING_PX
 

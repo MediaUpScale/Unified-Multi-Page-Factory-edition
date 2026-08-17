@@ -10,6 +10,11 @@ from typing import Any
 
 from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi import lofi_collections as rag
+from core_engine.economic_reel_lofi.visual_identity import (
+    DEFAULT_SETTING_OBJECT_PAIRS,
+    act_for_index,
+    setting_object_pool,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -47,6 +52,27 @@ def _draw_hook_type() -> str:
     return "rhetorical_question"
 
 
+_CAPTION_TYPOS: tuple[tuple[str, str], ...] = (
+    (r"\bYearz\b", "Years"),
+    (r"\byearz\b", "years"),
+    (r"\bTeh\b", "The"),
+    (r"\bteh\b", "the"),
+    (r"\bDont\b", "Don't"),
+    (r"\bdont\b", "don't"),
+    (r"\bWont\b", "Won't"),
+    (r"\bwont\b", "won't"),
+    (r"\bCant\b", "Can't"),
+    (r"\bcant\b", "can't"),
+)
+
+
+def _sanitize_caption_typos(text: str) -> str:
+    out = text or ""
+    for pat, repl in _CAPTION_TYPOS:
+        out = re.sub(pat, repl, out)
+    return out
+
+
 def _extract_json_object(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     if not raw:
@@ -54,18 +80,17 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, re.IGNORECASE)
     if fence:
         raw = fence.group(1).strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        raw = raw[start : end + 1]
+    raw = re.sub(r",\s*([}\]])", r"\1", raw)
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
             return data
     except json.JSONDecodeError:
         pass
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        data = json.loads(raw[start : end + 1])
-        if isinstance(data, dict):
-            return data
     raise ValueError("LLM response was not valid JSON object")
 
 
@@ -85,7 +110,7 @@ def _call_claude(prompt: str) -> str:
     print(f"[LOFI script] writer=claude model={model}")
     kwargs: dict[str, Any] = dict(
         model=model,
-        max_tokens=2500,
+        max_tokens=6000,
         system=(
             "You write continuous first-person spoken-word scripts for short vertical reels. "
             "Every line must follow causally from the previous one. Output STRICT JSON only."
@@ -143,6 +168,41 @@ def _call_llm(prompt: str) -> str:
         return _call_gemini(prompt)
 
 
+_FALLBACK_SUBJECTS: tuple[str, ...] = (
+    "woman",
+    "object_focus",
+    "man",
+    "silhouette",
+    "couple",
+    "woman",
+    "object_focus",
+    "silhouette",
+    "woman",
+)
+_FALLBACK_EXPR: tuple[str, ...] = (
+    "hopeful",
+    "waiting",
+    "tired",
+    "distant",
+    "resigned",
+    "quiet",
+    "still",
+    "soft",
+    "settled",
+)
+_FALLBACK_TOD: tuple[str, ...] = (
+    "dawn",
+    "morning",
+    "afternoon",
+    "dusk",
+    "night",
+    "dusk",
+    "evening",
+    "night",
+    "dawn",
+)
+
+
 def _fallback_script(
     *,
     module: str,
@@ -150,34 +210,41 @@ def _fallback_script(
     scene_count: int,
     hook_type: str,
     quote: dict[str, Any] | None,
+    setting_object_pairs: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Offline story fallback — interior, punchy, one short line per scene."""
     del quote
     theme_s = theme.replace("_", " ")
+    pool = setting_object_pairs or [dict(p) for p in DEFAULT_SETTING_OBJECT_PAIRS]
     beats = [
-        ("I believed the loudest promise.", "opening_hook", "opening"),
-        ("So I waited for grand words.", "longing", "build"),
-        ("The words kept coming.", "quiet_sorrowful", "build"),
-        ("Nothing underneath them moved.", "doubt", "build"),
-        ("Years later I saw it.", "realization", "turn"),
-        ("The vow was never the point.", "realization", "turn"),
-        ("He just showed up Tuesday.", "acceptance", "resolution"),
-        ("Same door, every day.", "hopeful_bittersweet", "resolution"),
-        ("Now I watch what happens.", "resolution_warmth", "resolution"),
+        ("I believed the loudest promise.", "opening_hook"),
+        ("So I waited for grand words.", "longing"),
+        ("The words kept coming.", "quiet_sorrowful"),
+        ("Nothing underneath them moved.", "doubt"),
+        ("Years later I saw it.", "realization"),
+        ("The vow was never the point.", "realization"),
+        ("He just showed up Tuesday.", "acceptance"),
+        ("Same door, every day.", "hopeful_bittersweet"),
+        ("Now I watch what happens.", "resolution_warmth"),
     ]
     monologue = " ".join(b[0] for b in beats)
     lines = []
     for i in range(scene_count):
-        text, emo, arc = beats[i % len(beats)]
-        if i == 0:
-            text, emo, arc = beats[0]
+        text, emo = beats[i % len(beats)]
+        pair = pool[i % len(pool)]
         lines.append(
             {
                 "scene": i + 1,
-                "text": text[: lofi_cfg.MAX_CAPTION_CHARS],
+                "text": _sanitize_caption_typos(text[: lofi_cfg.MAX_CAPTION_CHARS]),
+                "beat_text": _sanitize_caption_typos(text[: lofi_cfg.MAX_CAPTION_CHARS]),
                 "visual_prompt": f"story beat {i + 1} {theme_s}",
                 "emotion": emo,
-                "arc_position": arc,
+                "arc_position": act_for_index(i, scene_count),
+                "subject_type": _FALLBACK_SUBJECTS[i % len(_FALLBACK_SUBJECTS)],
+                "subject_expression": _FALLBACK_EXPR[i % len(_FALLBACK_EXPR)],
+                "setting": pair["setting"],
+                "key_object": pair["key_object"],
+                "time_of_day": _FALLBACK_TOD[i % len(_FALLBACK_TOD)],
             }
         )
     return {
@@ -197,6 +264,7 @@ def generate_script(
     scene_count: int,
     feedback: str | None = None,
     force_hook_type: str | None = None,
+    theme_row: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Write ONE continuous spoken-word story, then split across scenes.
@@ -213,9 +281,13 @@ def generate_script(
     feedback_block = (
         f"\nPREVIOUS REJECTION FEEDBACK (must fix):\n{feedback}\n" if feedback else ""
     )
-    arc_guide = ", ".join(
-        f"{i+1}:{_ARC_9[i] if scene_count == 9 and i < 9 else 'build'}"
-        for i in range(scene_count)
+    pool = setting_object_pool(theme_row)
+    pool_block = "\n".join(
+        f'  - setting="{p["setting"]}" | key_object="{p["key_object"]}"'
+        for p in pool
+    )
+    act_guide = ", ".join(
+        f"{i+1}:{act_for_index(i, scene_count)}" for i in range(scene_count)
     )
 
     prompt = f"""Write a spoken-word vertical-reel script.
@@ -224,7 +296,10 @@ MODULE: {module}
 THEME: {theme}
 SUBTHEME: {subtheme or "(none)"}
 SCENE_COUNT: {scene_count}
-ARC PER SCENE: {arc_guide}
+ARC PER SCENE (act1=scenes 1-3, act2=4-6, act3=7-9): {act_guide}
+
+SETTING_OBJECT_POOL (pick setting + key_object from this list only — do not invent new locations):
+{pool_block}
 {feedback_block}
 
 This is ONE continuous first-person voice moving through a single small emotional arc:
@@ -263,8 +338,18 @@ RULES:
 8) emotion per line from: opening_hook, quiet_sorrowful, melancholic_quiet, bittersweet,
    longing, doubt, realization, acceptance, hopeful_bittersweet, resolution_warmth,
    melancholic_romantic
-9) arc_position must match ARC PER SCENE.
-10) visual_prompt is a short stub only.
+9) arc_position MUST be act1, act2, or act3 matching ARC PER SCENE.
+10) For EVERY beat also emit visual fields. Do not write a freeform image prompt.
+    - subject_type: exactly one of woman | man | couple | silhouette | object_focus
+      Vary subject_type across the {scene_count} beats (do not use woman for all).
+    - subject_expression: 1–3 words only (fills a locked character template slot)
+    - setting + key_object: copy from SETTING_OBJECT_POOL (pair any listed setting
+      with any listed key_object). Do not invent a new environment.
+      Every beat MUST have a concrete setting and key_object even if the spoken
+      line is abstract ("I forget you're gone" still needs a room + object).
+      Do not reuse the exact same setting+object on consecutive beats.
+    - time_of_day: dawn | morning | afternoon | dusk | night | evening
+    - beat_text: same as text
 
 Output STRICT JSON only, no markdown:
 {{
@@ -276,27 +361,46 @@ Output STRICT JSON only, no markdown:
     {{
       "scene": 1,
       "text": "<scene 1 hook>",
+      "beat_text": "<same as text>",
       "emotion": "opening_hook",
-      "arc_position": "opening",
-      "visual_prompt": "stub"
+      "arc_position": "act1",
+      "subject_type": "woman",
+      "subject_expression": "resigned, distant",
+      "setting": "bedroom, edge of a neatly made bed",
+      "key_object": "untouched pillow",
+      "time_of_day": "dusk"
     }}
   ]
 }}
 Exactly {scene_count} lines, scene numbers 1..{scene_count}.
+Valid JSON only: no trailing commas, no comments, escape quotes inside strings.
 No NSFW. No real private individuals named. Brand-safe for {module}.
 """
 
-    try:
-        raw = _call_llm(prompt)
-        data = _extract_json_object(raw)
-    except Exception as exc:  # noqa: BLE001
-        _LOG.warning("ScriptGeneratorAgent LLM failed (%s) — using fallback script", exc)
+    data = None
+    last_exc: Exception | None = None
+    for attempt in range(1, 3):
+        try:
+            raw = _call_llm(prompt)
+            data = _extract_json_object(raw)
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            _LOG.warning(
+                "ScriptGeneratorAgent parse attempt %s failed (%s)", attempt, exc
+            )
+            print(f"[LOFI script] JSON parse attempt {attempt} failed: {exc}")
+    if data is None:
+        _LOG.warning(
+            "ScriptGeneratorAgent LLM failed (%s) — using fallback script", last_exc
+        )
         return _fallback_script(
             module=module,
             theme=theme,
             scene_count=scene_count,
             hook_type=hook_type,
             quote=quote,
+            setting_object_pairs=pool,
         )
 
     data["hook_type"] = hook_type
@@ -305,19 +409,18 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
     lines = data.get("lines") or []
     if not isinstance(lines, list):
         lines = []
-    # Guarantee emotion + arc fields
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue
         row["scene"] = int(row.get("scene") or i + 1)
-        if not row.get("arc_position"):
-            row["arc_position"] = (
-                _ARC_9[i] if scene_count == 9 and i < 9 else "build"
-            )
+        row["arc_position"] = act_for_index(i, scene_count)
         if not row.get("emotion"):
-            arc = str(row.get("arc_position") or "build")
-            row["emotion"] = _EMOTION_BY_ARC.get(arc, ("longing",))[0]
-        row["text"] = str(row.get("text") or "")[: lofi_cfg.MAX_CAPTION_CHARS]
+            emo_arc = _ARC_9[i] if scene_count == 9 and i < 9 else "build"
+            row["emotion"] = _EMOTION_BY_ARC.get(emo_arc, ("longing",))[0]
+        row["text"] = _sanitize_caption_typos(
+            str(row.get("text") or row.get("beat_text") or "")
+        )[: lofi_cfg.MAX_CAPTION_CHARS]
+        row["beat_text"] = row["text"]
         if not row.get("visual_prompt"):
             row["visual_prompt"] = f"story beat {i + 1}"
     data["lines"] = lines
