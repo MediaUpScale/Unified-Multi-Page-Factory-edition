@@ -241,9 +241,27 @@ DEEPSEEK_MODEL: str = DEEPSEEK_FLASH_MODEL
 # "gemini" (default) | "deepseek" (legacy override — not recommended)
 TEXT_LLM_PRIMARY: str = (os.getenv("TEXT_LLM_PRIMARY") or "gemini").strip().lower()
 
-# Measured from actual ElevenLabs output at TTS_NARRATION_SPEED=1.0 for this voice.
-# Update this if the voice or speed setting changes.
-NARRATION_WORDS_PER_SECOND: float = 2.25  # ≈135 WPM at 1.0x — replace with your measured value
+# SEED-ONLY (Round 7 — Measure-Then-Correct 2026-08-15). DO NOT use this as
+# a duration gate anywhere in the pipeline. Every calibration bug this
+# project has hit (2.25 vs 1.70 vs 3.15 vs 1.77, across ElevenLabs / F5-TTS,
+# across voice-preset changes) traces back to the same anti-pattern:
+# PREDICTING how long N words will take to speak with a stored constant
+# BEFORE any real audio exists. That number is always eventually wrong
+# for some voice/engine/update.
+#
+# The pipeline now uses this constant purely as an INITIAL word-count SEED
+# for the first Gemini script request. Downstream,
+# ``main.py::_synthesize_sequence_voice_track`` synthesizes the narration
+# ONCE, MEASURES the actual audio duration + observed WPS live for this
+# voice + engine + speed, and if the resulting total is outside ±15 % of
+# the requested video duration it does EXACTLY ONE corrective script
+# regeneration using the just-measured WPS (not this constant). No third
+# try. No infinite loop.
+#
+# → Bottom line: this value only affects the first draft's rough length.
+#   Actual duration accuracy is a downstream measurement, not an assumption.
+#   Never re-introduce logic that gates acceptance/rejection against it.
+NARRATION_WORDS_PER_SECOND: float = 1.77  # SEED ONLY — not a gate.
 
 # Episode-level Gemini generateContent counter (successful + attempted calls).
 GEMINI_FLASH_CALLS: int = 0
@@ -251,8 +269,24 @@ GEMINI_FLASH_CALLS: int = 0
 
 def words_for_duration(seconds: float, safety_margin: float = 1.08) -> int:
     """
-    Convert a target spoken duration into a word count, with a small safety
-    margin so we land at or above the target instead of just under it.
+    SEED-ONLY (Round 7 — Measure-Then-Correct). Convert a target spoken
+    duration into a rough word count for use as the FIRST-DRAFT script
+    request only.
+
+    This is NOT a correctness gate. The actual per-run WPS is measured
+    live in ``main.py::_synthesize_sequence_voice_track`` after TTS, and
+    a corrective regeneration (if needed) uses that observed WPS instead
+    of this constant. Never build acceptance/rejection logic on top of
+    this function — it will be silently wrong for any voice/engine/
+    speed the ``NARRATION_WORDS_PER_SECOND`` constant hasn't been
+    hand-tuned for, which is every case we haven't measured yet.
+
+    The 1.08 safety margin was a historical bias-toward-overshoot; kept
+    for backwards compatibility of callers that consume the seed
+    directly (e.g. ``page_loader.reel_narration_words``). The
+    measure-then-correct path in ``_synthesize_sequence_voice_track``
+    does not care about this margin — it derives the corrective word
+    count from the observed WPS.
     """
     return round(float(seconds) * NARRATION_WORDS_PER_SECOND * float(safety_margin))
 
@@ -265,11 +299,38 @@ def note_gemini_flash_call(task: str = "") -> int:
     return GEMINI_FLASH_CALLS
 
 
-# Minimum words accepted from sequence voiceover before Gemini retry/fallback
+# Minimum words accepted from sequence voiceover before Gemini retry/fallback.
+#
+# DEPRECATED (Final Round 2026-08-15): the caption_engine word-floor gate now
+# reads ``words_for_duration(duration_s)`` directly from the runtime
+# ``duration_s`` argument, so this module-level constant is no longer used by
+# the AK pipeline. The scalar is retained for backwards compatibility with any
+# external ops script that imports ``app_config.SEQUENCE_VOICEOVER_MIN_WORDS``
+# — it now resolves to the words-for-80 s baseline. Prefer calling
+# ``sequence_voiceover_min_words(duration_s)`` (below) instead when a caller
+# needs a duration-scaled floor.
 _env_vo_min = (os.getenv("SEQUENCE_VOICEOVER_MIN_WORDS") or "").strip()
 SEQUENCE_VOICEOVER_MIN_WORDS: int = (
     int(_env_vo_min) if _env_vo_min else words_for_duration(80.0)
 )
+
+
+def sequence_voiceover_min_words(duration_s: float) -> int:
+    """Minimum accepted narration words for a reel of ``duration_s`` seconds.
+
+    Duration-proportional replacement for the ``SEQUENCE_VOICEOVER_MIN_WORDS``
+    module-level constant. Honours the ``SEQUENCE_VOICEOVER_MIN_WORDS`` env
+    var override when set (returned as-is regardless of ``duration_s``);
+    otherwise returns ``words_for_duration(duration_s)`` so longer
+    ``--video-length`` overrides scale the floor correctly.
+    """
+    env = (os.getenv("SEQUENCE_VOICEOVER_MIN_WORDS") or "").strip()
+    if env:
+        try:
+            return int(env)
+        except (TypeError, ValueError):
+            pass
+    return int(words_for_duration(float(duration_s)))
 
 # ---------------------------------------------------------------------------
 # ElevenLabs — voiceover TTS + ambient SFX for ECONOMIC_REEL

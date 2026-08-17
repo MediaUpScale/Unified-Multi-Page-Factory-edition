@@ -17,6 +17,7 @@ import logging
 import mimetypes
 import os
 import random
+import re
 import threading
 import time
 import uuid
@@ -825,6 +826,43 @@ def set_node_input(
     inputs[key] = value
 
 
+def _log_wan_sampler_inputs(workflow: Mapping[str, Any], *, four_step: bool) -> None:
+    """Log the steps/cfg/model values KSampler will actually receive in this prompt."""
+    for nid in find_nodes_by_class(workflow, "KSamplerAdvanced"):
+        inp = ((workflow.get(nid) or {}).get("inputs") or {})
+        logger.info(
+            "WAN KSampler payload | node=%s four_step_flag=%s steps=%r cfg=%r "
+            "start_at_step=%r end_at_step=%r model=%r",
+            nid,
+            four_step,
+            inp.get("steps"),
+            inp.get("cfg"),
+            inp.get("start_at_step"),
+            inp.get("end_at_step"),
+            inp.get("model"),
+        )
+    for nid in find_nodes_by_class(workflow, "ComfySwitchNode"):
+        inp = ((workflow.get(nid) or {}).get("inputs") or {})
+        title = str(((workflow.get(nid) or {}).get("_meta") or {}).get("title") or "")
+        logger.info(
+            "WAN Switch payload | node=%s title=%r switch=%r on_true=%r on_false=%r",
+            nid, title, inp.get("switch"), inp.get("on_true"), inp.get("on_false"),
+        )
+    for nid in find_nodes_by_class(workflow, "PrimitiveBoolean"):
+        inp = ((workflow.get(nid) or {}).get("inputs") or {})
+        title = str(((workflow.get(nid) or {}).get("_meta") or {}).get("title") or "")
+        logger.info(
+            "WAN PrimitiveBoolean | node=%s title=%r value=%r",
+            nid, title, inp.get("value"),
+        )
+    for nid in find_nodes_by_class(workflow, "LoraLoaderModelOnly"):
+        inp = ((workflow.get(nid) or {}).get("inputs") or {})
+        logger.info(
+            "WAN LoRA loader in graph | node=%s lora_name=%r model=%r",
+            nid, inp.get("lora_name"), inp.get("model"),
+        )
+
+
 def patch_workflow(
     workflow: MutableMapping[str, Any],
     patches: Mapping[str, Mapping[str, Any]],
@@ -886,6 +924,45 @@ def resolve_node(
     )
 
 
+_VRAM_STAGING_RE = re.compile(
+    r"(dynamic\s+vram|vram\s+loading|partially\s+loaded|unloading\s+(?:model|unet|weight)"
+    r"|offload|distorch|model_management|loading\s+WAN|loading\s+diffusion"
+    r"|unloaded|memory\s+low|oom)",
+    re.IGNORECASE,
+)
+
+
+def _summarize_runpod_status(data: Mapping[str, Any], *, job_id: str) -> dict[str, Any]:
+    """Keep timing/log fields from a RunPod status payload; drop base64 blobs."""
+    output = data.get("output") if isinstance(data, dict) else None
+    logs = ""
+    if isinstance(output, dict):
+        raw_logs = output.get("logs") or output.get("log") or output.get("worker_logs")
+        if isinstance(raw_logs, str):
+            logs = raw_logs
+        elif isinstance(raw_logs, list):
+            logs = "\n".join(str(x) for x in raw_logs)
+    elif isinstance(data, dict):
+        raw_logs = data.get("logs") or data.get("log")
+        if isinstance(raw_logs, str):
+            logs = raw_logs
+    hits = [m.group(0) for m in _VRAM_STAGING_RE.finditer(logs)] if logs else []
+    return {
+        "job_id": job_id,
+        "status": data.get("status") if isinstance(data, dict) else None,
+        "delayTime": data.get("delayTime") if isinstance(data, dict) else None,
+        "executionTime": data.get("executionTime") if isinstance(data, dict) else None,
+        "workerId": data.get("workerId") if isinstance(data, dict) else None,
+        "gpu": data.get("gpu") if isinstance(data, dict) else None,
+        "vram_staging_hits": sorted(set(hits), key=str.lower),
+        "vram_staging_present": bool(hits),
+        "log_excerpt": (logs[-4000:] if logs else ""),
+        "output_keys": (
+            list(output.keys()) if isinstance(output, dict) else []
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
 # HTTP client (stdlib urllib — no new hard dependency)
 # ---------------------------------------------------------------------------
@@ -931,6 +1008,7 @@ class ComfyUIClient:
         )
         self.client_id = str(uuid.uuid4())
         self.last_job_seconds: float = 0.0
+        self.last_job_meta: dict[str, Any] = {}
         self._gpu_seconds_lock = threading.Lock()
         self.total_gpu_seconds: float = 0.0
 
@@ -1227,9 +1305,18 @@ class ComfyUIClient:
                 continue
             status = str(data.get("status") or "").upper()
             if status in ("COMPLETED", "SUCCESS"):
-                logger.info("RunPod completed | job_id=%s", job_id)
+                meta = _summarize_runpod_status(data, job_id=job_id)
+                self.last_job_meta = meta
+                logger.info(
+                    "RunPod completed | job_id=%s | delay_ms=%s | exec_ms=%s | worker=%s",
+                    job_id,
+                    meta.get("delayTime"),
+                    meta.get("executionTime"),
+                    meta.get("workerId"),
+                )
                 return data
             if status in ("FAILED", "CANCELLED", "TIMED_OUT", "ERROR"):
+                self.last_job_meta = _summarize_runpod_status(data, job_id=job_id)
                 raise RemoteGPUError(f"RunPod job {job_id} ended with status={status}: {data}")
             time.sleep(self.poll_interval_s)
         raise RemoteGPUError(
@@ -1448,6 +1535,186 @@ class ComfyUIClient:
 
 
 # ---------------------------------------------------------------------------
+# Wan 2.2 LightX2V path diagnostics / hardcode bypass
+# ---------------------------------------------------------------------------
+
+def _resolve_link_or_value(
+    workflow: Mapping[str, Any],
+    value: Any,
+    *,
+    depth: int = 0,
+) -> Any:
+    """Follow Primitive / ComfySwitchNode links to a concrete value (client-side)."""
+    if depth > 8:
+        return value
+    if not (isinstance(value, list) and len(value) >= 1):
+        return value
+    src_id = str(value[0])
+    src = workflow.get(src_id)
+    if not isinstance(src, dict):
+        return value
+    ct = str(src.get("class_type") or "")
+    inputs = src.get("inputs") or {}
+    if ct == "ComfySwitchNode":
+        sw = _resolve_link_or_value(workflow, inputs.get("switch"), depth=depth + 1)
+        branch = "on_true" if bool(sw) else "on_false"
+        return _resolve_link_or_value(workflow, inputs.get(branch), depth=depth + 1)
+    if ct.startswith("Primitive"):
+        return inputs.get("value")
+    if ct == "LoraLoaderModelOnly":
+        return {
+            "node": src_id,
+            "lora_name": inputs.get("lora_name"),
+            "strength_model": inputs.get("strength_model"),
+        }
+    if ct in {"UNETLoader", "CheckpointLoaderSimple"}:
+        return {
+            "node": src_id,
+            "class_type": ct,
+            "unet_name": inputs.get("unet_name") or inputs.get("ckpt_name"),
+        }
+    if ct == "ModelSamplingSD3":
+        return _resolve_link_or_value(workflow, inputs.get("model"), depth=depth + 1)
+    return {"node": src_id, "class_type": ct}
+
+
+def diagnose_wan_sampler_path(workflow: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Client-side resolution of what each KSamplerAdvanced will receive.
+
+    This is the closest we can get without injecting prints into the remote
+    ComfyUI worker: it mirrors ComfySwitchNode boolean selection on the
+    submitted prompt graph.
+    """
+    switch_bool = None
+    if "129:131" in workflow:
+        switch_bool = (workflow["129:131"].get("inputs") or {}).get("value")
+    samplers: list[dict[str, Any]] = []
+    for nid, node in workflow.items():
+        if not isinstance(node, dict) or node.get("class_type") != "KSamplerAdvanced":
+            continue
+        inp = node.get("inputs") or {}
+        steps_v = _resolve_link_or_value(workflow, inp.get("steps"))
+        cfg_v = _resolve_link_or_value(workflow, inp.get("cfg"))
+        start_v = _resolve_link_or_value(workflow, inp.get("start_at_step"))
+        end_v = _resolve_link_or_value(workflow, inp.get("end_at_step"))
+        model_v = _resolve_link_or_value(workflow, inp.get("model"))
+        samplers.append(
+            {
+                "node": nid,
+                "steps": steps_v,
+                "cfg": cfg_v,
+                "start_at_step": start_v,
+                "end_at_step": end_v,
+                "model": model_v,
+                "steps_input_raw": inp.get("steps"),
+                "model_input_raw": inp.get("model"),
+            }
+        )
+    lora_nodes = []
+    for nid, node in workflow.items():
+        if not isinstance(node, dict) or node.get("class_type") != "LoraLoaderModelOnly":
+            continue
+        inp = node.get("inputs") or {}
+        lora_nodes.append(
+            {
+                "node": nid,
+                "lora_name": inp.get("lora_name"),
+                "reachable_from_sampler": any(
+                    isinstance(s.get("model"), dict)
+                    and s["model"].get("node") == nid
+                    for s in samplers
+                ),
+            }
+        )
+    switches: list[dict[str, Any]] = []
+    for nid, node in workflow.items():
+        if not isinstance(node, dict) or node.get("class_type") != "ComfySwitchNode":
+            continue
+        inp = node.get("inputs") or {}
+        title = str((node.get("_meta") or {}).get("title") or "")
+        sw_raw = inp.get("switch")
+        sw_resolved = _resolve_link_or_value(workflow, sw_raw)
+        switches.append(
+            {
+                "node": nid,
+                "title": title,
+                "switch_raw": sw_raw,
+                "switch_resolved": sw_resolved,
+                "on_true": inp.get("on_true"),
+                "on_false": inp.get("on_false"),
+                "selected_branch": (
+                    "on_true" if bool(sw_resolved) else "on_false"
+                ),
+            }
+        )
+    path = "lightx2v_4step" if switch_bool else "default_20step"
+    if samplers and all(
+        isinstance(s.get("steps"), (int, float)) and int(s["steps"]) == 4
+        and isinstance(s.get("steps_input_raw"), (int, float))
+        for s in samplers
+    ):
+        path = "hardcoded_4step_bypass_switch"
+    steps_are_links = any(
+        isinstance(s.get("steps_input_raw"), list) for s in samplers
+    )
+    return {
+        "enable_4step_switch_bool": switch_bool,
+        "resolved_path": path,
+        "ksampler_steps_are_graph_links": steps_are_links,
+        "samplers": samplers,
+        "switches": switches,
+        "lora_loaders": lora_nodes,
+        "env_WAN_ENABLE_4STEP_LORA": os.getenv("WAN_ENABLE_4STEP_LORA"),
+        "note": (
+            "KSampler.steps is a ComfySwitchNode link unless hardcoded. "
+            "RunPod COMPLETED/FAILED payloads have empty Comfy logs, so this "
+            "client-side resolution is the execution-time proxy. If the worker "
+            "ComfySwitchNode is not lazy or prefers its widget default (false), "
+            "runtime can diverge from this diag."
+        ),
+    }
+
+
+def _hardcode_wan_lightx2v_4step(workflow: dict[str, Any]) -> dict[str, Any]:
+    """
+    Bypass ComfySwitchNode entirely: wire LoRA models + literal steps=4 into
+    both KSamplerAdvanced nodes (high-noise then low-noise split at 2).
+    """
+    wf = workflow
+    # Force boolean true for any leftover switch consumers / logging clarity
+    if "129:131" in wf:
+        set_node_input(wf, "129:131", "value", True)
+    # ModelSamplingSD3 ← LoraLoaderModelOnly (skip Switch Model)
+    if "129:104" in wf and "129:101" in wf:
+        set_node_input(wf, "129:104", "model", ["129:101", 0])
+    if "129:103" in wf and "129:102" in wf:
+        set_node_input(wf, "129:103", "model", ["129:102", 0])
+    # Samplers: literal ints (no Switch Steps / CFG / Split)
+    # 129:86 = high-noise (0 → split), 129:85 = low-noise (split → steps)
+    if "129:86" in wf:
+        set_node_input(wf, "129:86", "steps", 4)
+        set_node_input(wf, "129:86", "cfg", 1.0)
+        set_node_input(wf, "129:86", "start_at_step", 0)
+        set_node_input(wf, "129:86", "end_at_step", 2)
+    if "129:85" in wf:
+        set_node_input(wf, "129:85", "steps", 4)
+        set_node_input(wf, "129:85", "cfg", 1.0)
+        set_node_input(wf, "129:85", "start_at_step", 2)
+        set_node_input(wf, "129:85", "end_at_step", 4)
+    logger.warning(
+        "WAN HARDCODE: bypassed ComfySwitchNode — KSampler steps=4 cfg=1 "
+        "split=2, models wired to LightX2V LoRA loaders"
+    )
+    print(
+        "[WAN HARDCODE] KSampler steps=4 cfg=1.0 split=2 | "
+        "models <- lightx2v LoRA (switch bypassed)",
+        flush=True,
+    )
+    return wf
+
+
+# ---------------------------------------------------------------------------
 # High-level manager + public wrappers
 # ---------------------------------------------------------------------------
 
@@ -1463,6 +1730,7 @@ class RemoteGPUManager:
         self.workflows_path = workflows_path or workflows_dir()
         self.client = client or ComfyUIClient()
         self._cache: dict[str, dict[str, Any]] = {}
+        self.last_video_workflow_diag: dict[str, Any] = {}
 
     def _template(self, filename: str) -> dict[str, Any]:
         if filename not in self._cache:
@@ -1747,6 +2015,8 @@ class RemoteGPUManager:
         fps: float | None = None,
         image_name: str | None = None,
         extra_patches: Mapping[str, Mapping[str, Any]] | None = None,
+        four_step: bool | None = None,
+        hardcode_4step_bypass_switch: bool = False,
     ) -> dict[str, Any]:
         wf = self._template(WORKFLOW_WAN22_IMG2VID)
         server_name = image_name or self.client.upload_file(
@@ -1821,21 +2091,32 @@ class RemoteGPUManager:
                 fps_node = _WAN_FPS_NODE if _WAN_FPS_NODE in wf else ""
             if fps_node:
                 patches[fps_node] = {"value": float(fps)}
-        if steps is not None:
-            for nid in find_nodes_by_class(wf, "PrimitiveInt"):
-                title = str(((wf[nid] or {}).get("_meta") or {}).get("title") or "")
-                if "step" in title.lower():
-                    patches[nid] = {"value": int(steps)}
-            # Also hit legacy hardcoded ids when present
-            for legacy in (_WAN_STEPS_4_NODE, _WAN_STEPS_20_NODE):
-                if legacy in wf:
-                    patches[legacy] = {"value": int(steps)}
+
+        # Explicit kwarg wins. Env alone is unsafe: config.py load_dotenv(override=True)
+        # re-imports during apply_production_flow and can clobber WAN_ENABLE_4STEP_LORA
+        # back to .env false after the benchmark set it true.
+        if four_step is None:
+            four_step = str(
+                _cfg("WAN_ENABLE_4STEP_LORA", os.getenv("WAN_ENABLE_4STEP_LORA", "false"))
+                or "false"
+            ).strip().lower() in ("1", "true", "yes", "on")
+        else:
+            four_step = bool(four_step)
+
+        if steps is not None and not hardcode_4step_bypass_switch:
+            # Only patch the active branch's steps primitive so the inactive
+            # branch keeps its baked-in 4 vs 20 defaults.
+            target = _WAN_STEPS_4_NODE if four_step else _WAN_STEPS_20_NODE
+            if target in wf:
+                patches[target] = {"value": int(steps)}
+            else:
+                for nid in find_nodes_by_class(wf, "PrimitiveInt"):
+                    title = str(((wf[nid] or {}).get("_meta") or {}).get("title") or "")
+                    if title.lower().strip() == "int (steps)":
+                        patches[nid] = {"value": int(steps)}
+
         # LightX2V 4-step LoRA trades motion dynamics for speed (Wan 2.2 docs).
-        # Default OFF → full 20-step / CFG 3.5 path. Opt in with WAN_ENABLE_4STEP_LORA=true.
-        four_step = str(
-            _cfg("WAN_ENABLE_4STEP_LORA", os.getenv("WAN_ENABLE_4STEP_LORA", "false"))
-            or "false"
-        ).strip().lower() in ("1", "true", "yes", "on")
+        # Default OFF → full 20-step / CFG 3.5 path.
         for nid in find_nodes_by_class(wf, "PrimitiveBoolean"):
             title = str(((wf[nid] or {}).get("_meta") or {}).get("title") or "")
             if "4step" in title.lower().replace(" ", "") or "4-step" in title.lower():
@@ -1847,7 +2128,18 @@ class RemoteGPUManager:
         if extra_patches:
             for nid, fields in extra_patches.items():
                 patches.setdefault(nid, {}).update(dict(fields))
-        return patch_workflow(wf, patches)
+        patched = patch_workflow(wf, patches)
+
+        if hardcode_4step_bypass_switch:
+            patched = _hardcode_wan_lightx2v_4step(patched)
+            four_step = True
+
+        diag = diagnose_wan_sampler_path(patched)
+        self.last_video_workflow_diag = diag
+        _log_wan_sampler_inputs(patched, four_step=bool(four_step))
+        logger.info("WAN workflow path diag: %s", diag)
+        print(f"[WAN prepare] {diag}", flush=True)
+        return patched
 
     def generate_video(
         self,
@@ -1878,6 +2170,10 @@ class RemoteGPUManager:
             fps=fps,
             image_name=kwargs.get("image_name"),
             extra_patches=kwargs.get("extra_patches"),
+            four_step=kwargs.get("four_step"),
+            hardcode_4step_bypass_switch=bool(
+                kwargs.get("hardcode_4step_bypass_switch", False)
+            ),
         )
         dest_dir = output_dir or (None if output_path else default_output_dir("video"))
         return self.client.run_workflow(
@@ -2055,6 +2351,7 @@ __all__ = [
     "WORKFLOW_FLUX_TXT2IMG",
     "WORKFLOW_WAN22_IMG2VID",
     "deep_copy_workflow",
+    "diagnose_wan_sampler_path",
     "generate_audio",
     "generate_image",
     "generate_video",

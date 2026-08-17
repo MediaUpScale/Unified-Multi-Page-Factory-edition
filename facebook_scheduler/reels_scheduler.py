@@ -96,10 +96,10 @@ class ReelsScheduler(UniversalComposerScheduler):
 
     def prepare_composer_for_item(self, item: MediaItem) -> None:
         """
-        Always force a fresh Reel composer load for every queue item.
+        Always hard-reload the dedicated Reel composer for every queue item.
 
         Meta leaves a success / post-schedule UI that hides "Add video";
-        skipping navigation when already on ``reels_composer`` breaks batches.
+        soft same-URL navigation is not enough between batch items.
         """
         if self.dry_run:
             return
@@ -113,17 +113,23 @@ class ReelsScheduler(UniversalComposerScheduler):
             return
 
         self._dismiss_composer_error_modals()
-        _log.info("Forcing navigation to fresh Reel Composer endpoint...")
-        self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
+        self._hard_reload_reels_composer()
+
+    def reset_page(self) -> None:
+        """Hard-reload Reel composer after errors so Add video remounts."""
+        _log.info("Resetting Reel composer after error...")
+        if self.dry_run:
+            return
         try:
-            self.page.wait_for_load_state(
-                "networkidle", timeout=config.LONG_TIMEOUT_MS
-            )
+            for _ in range(3):
+                self.page.keyboard.press("Escape")
+                self.page.wait_for_timeout(400)
         except Exception:
             pass
-        # Give Meta's heavy React UI time to fully render the buttons
-        self.page.wait_for_timeout(4_000)
-        self._dismiss_composer_error_modals()
+        try:
+            self._hard_reload_reels_composer()
+        except Exception as exc:
+            _log.warning("Reel composer hard reload during reset failed: %s", exc)
 
     def on_media_uploaded(self, item: MediaItem, *, is_video: bool) -> None:
         """After CDP attach, wait for Reel composer processing."""

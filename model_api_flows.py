@@ -263,14 +263,25 @@ def env_default_flow() -> ResolvedFlow:
     """Today's behaviour when no new CLI flags are passed."""
     if _env_remote_gpu_on():
         mode = _env_remote_mode()
+        # Images default to Together so the RunPod worker pool stays on video
+        # (and F5-TTS). Override with IMAGE_PROVIDER=remote_gpu to restore
+        # Flux-on-RunPod. VIDEO always stays on the Comfy endpoint.
+        _img_prov = (os.getenv("IMAGE_PROVIDER") or "together").strip().lower()
+        if _img_prov in ("together", "together_ai", "flux_together"):
+            _img = MediaResolved(
+                provider="together",
+                model=(os.getenv("TOGETHER_IMAGE_MODEL") or TOGETHER_FLUX_SCHNELL),
+            )
+        else:
+            _img = MediaResolved(
+                provider="remote_gpu",
+                workflow=WORKFLOW_FLUX_LORA_TXT2IMG,
+            )
         return ResolvedFlow(
             preset_name="env_default",
             source="env_default(ENABLE_REMOTE_GPU_WORKFLOWS=true)",
             mode=mode,
-            image=MediaResolved(
-                provider="remote_gpu",
-                workflow=WORKFLOW_FLUX_LORA_TXT2IMG,
-            ),
+            image=_img,
             audio=MediaResolved(
                 provider="remote_gpu",
                 workflow=WORKFLOW_F5TTS_TXT2AUDIO,

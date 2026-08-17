@@ -943,12 +943,58 @@ class PageContext:
     def reel_image_count(self) -> int:
         """
         Max distinct images in a SEQUENCE_REEL.
+
         Defaults to 11 (ECONOMIC_REEL paced); dense pages may still set 18.
+
+        When USE_TWO_TIER_PACING is True (AK), the page_cfg REEL_IMAGE_COUNT
+        entry is deliberately omitted so this property returns a large
+        sentinel (9999) that effectively removes the static ceiling — the
+        actual per-variant act count is computed at runtime via
+        ``core_engine.reel_sequence_engine.compute_two_tier_act_count``
+        from ``page_ctx.reel_duration`` (see main.py). This closes the
+        Round-6 bug where --video-length 180 silently rendered only 90 s
+        of content because the 16-still cap clipped the plan.
         """
+        if bool(self.page_cfg.get("USE_TWO_TIER_PACING", False)) and \
+                "REEL_IMAGE_COUNT" not in self.page_cfg:
+            return 9999
         try:
             return max(2, int(self.page_cfg.get("REEL_IMAGE_COUNT", 11)))
         except (TypeError, ValueError):
             return 11
+
+    @property
+    def use_two_tier_pacing(self) -> bool:
+        """Opt-in flag for two-tier act pacing (Tier1 fast-cut / Tier2 slower)."""
+        return bool(self.page_cfg.get("USE_TWO_TIER_PACING", False))
+
+    @property
+    def reel_tier1_max_acts(self) -> int:
+        try:
+            return max(4, int(self.page_cfg.get("REEL_TIER1_MAX_ACTS", 20)))
+        except (TypeError, ValueError):
+            return 20
+
+    @property
+    def reel_tier1_horizon_s(self) -> float:
+        try:
+            return max(30.0, float(self.page_cfg.get("REEL_TIER1_HORIZON_S", 90.0)))
+        except (TypeError, ValueError):
+            return 90.0
+
+    @property
+    def reel_tier1_seconds_per_act(self) -> float:
+        try:
+            return max(3.0, min(6.0, float(self.page_cfg.get("REEL_TIER1_SECONDS_PER_ACT", 4.5))))
+        except (TypeError, ValueError):
+            return 4.5
+
+    @property
+    def reel_tier2_seconds_per_act(self) -> float:
+        try:
+            return max(6.0, min(14.0, float(self.page_cfg.get("REEL_TIER2_SECONDS_PER_ACT", 10.0))))
+        except (TypeError, ValueError):
+            return 10.0
 
     @property
     def reel_seconds_per_act(self) -> float:
@@ -1342,29 +1388,71 @@ class PageContext:
         """When True, sequence reel container is floored at REEL_DURATION (e.g. 80 s)."""
         return bool(self.page_cfg.get("REEL_FORCE_EXACT_DURATION", False))
 
-    @property
-    def reel_narration_words(self) -> int:
-        """Target narration word count for sequence TTS (master_mei ≈ 230 for ~100–120 s)."""
+    def _words_for_duration_runtime(self) -> int:
+        """Runtime words_for_duration(self.reel_duration) — used when the
+        page_cfg omits an explicit REEL_NARRATION_* value so ``--video-length``
+        overrides scale the word budget instead of being pinned to the
+        REEL_DURATION_TARGET_MIN import-time constant (the Round-6 bug)."""
         try:
-            return max(80, int(self.page_cfg.get("REEL_NARRATION_WORDS", 140)))
-        except (TypeError, ValueError):
+            from config import words_for_duration as _wfd
+            return int(_wfd(float(self.reel_duration)))
+        except Exception:  # noqa: BLE001
             return 140
 
     @property
-    def reel_narration_min_words(self) -> int:
-        """Minimum acceptable narration word count before regenerate/fallback warn."""
+    def reel_narration_words(self) -> int:
+        """Target narration word count for sequence TTS.
+
+        Behaviour: if the page_cfg supplies an explicit REEL_NARRATION_WORDS
+        value it wins (backwards-compat with pages that still pin a fixed
+        word budget). Otherwise fall through to
+        ``words_for_duration(self.reel_duration)`` at read time so
+        ``--video-length`` (or any runtime duration override) scales the
+        Gemini word target correctly.
+        """
+        raw = self.page_cfg.get("REEL_NARRATION_WORDS", None)
+        if raw in (None, ""):
+            return self._words_for_duration_runtime()
         try:
-            return max(60, int(self.page_cfg.get("REEL_NARRATION_MIN_WORDS", 110)))
+            return max(80, int(raw))
         except (TypeError, ValueError):
-            return 110
+            return self._words_for_duration_runtime()
+
+    @property
+    def reel_narration_min_words(self) -> int:
+        """Minimum acceptable narration word count before regenerate/fallback warn.
+
+        Falls through to ``words_for_duration(self.reel_duration)`` when
+        the page_cfg omits an explicit value.
+        """
+        raw = self.page_cfg.get("REEL_NARRATION_MIN_WORDS", None)
+        if raw in (None, ""):
+            return self._words_for_duration_runtime()
+        try:
+            return max(60, int(raw))
+        except (TypeError, ValueError):
+            return self._words_for_duration_runtime()
 
     @property
     def reel_narration_max_words(self) -> int:
-        """Hard ceiling for narration trim (master_mei ≈ 240)."""
+        """Hard ceiling for narration trim.
+
+        Falls through to ``words_for_duration(reel_duration) + 25 %`` of
+        the requested duration (in words) when the page_cfg omits an
+        explicit REEL_NARRATION_MAX_WORDS value.
+        """
+        raw = self.page_cfg.get("REEL_NARRATION_MAX_WORDS", None)
+        if raw in (None, ""):
+            try:
+                from config import words_for_duration as _wfd
+                dur = float(self.reel_duration)
+                return int(_wfd(dur) + max(20.0, dur * 0.25))
+            except Exception:  # noqa: BLE001
+                return max(240, self.reel_narration_words)
         try:
             return max(
                 self.reel_narration_words,
-                int(self.page_cfg.get("REEL_NARRATION_MAX_WORDS", 240)),
+                int(raw),
             )
         except (TypeError, ValueError):
             return max(240, self.reel_narration_words)

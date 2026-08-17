@@ -1,0 +1,57 @@
+[
+  {
+    "id": "amber_teal",
+    "palette": "flat warm amber and teal palette",
+    "emotional_beats": [
+      "trust",
+      "secure_love",
+      "warmth",
+      "steadiness"
+    ],
+    "status": "active"
+  },
+  {
+    "id": "indigo_violet_night",
+    "palette": "cool indigo and violet night palette",
+    "emotional_beats": [
+      "distance",
+      "silence",
+      "reflection",
+      "night"
+    ],
+    "status": "active"
+  },
+  {
+    "id": "golden_dusk",
+    "palette": "warm golden dusk palette",
+    "emotional_beats": [
+      "healing",
+      "closure",
+      "tenderness",
+      "dusk"
+    ],
+    "status": "active"
+  },
+  {
+    "id": "muted_dawn",
+    "palette": "muted dawn palette",
+    "emotional_beats": [
+      "patience",
+      "softness",
+      "vulnerability",
+      "dawn"
+    ],
+    "status": "active"
+  },
+  {
+    "id": "coral_day",
+    "palette": "warm coral and cream day palette",
+    "emotional_beats": [
+      "communication",
+      "repair",
+      "connection",
+      "play"
+    ],
+    "status": "active"
+  }
+]

@@ -286,6 +286,19 @@ _BODY_MIN_S: float = 2.5
 _BODY_MAX_S: float = 9.0
 _CLAMP_MAX_PASSES: int = 8
 
+# ── Two-tier long-video pacing (Final Round 2026-08-15) ────────────────────
+# Tier 1 = punchy fast-cut opening (existing _BODY_MIN_S/_BODY_MAX_S band).
+# Tier 2 = slower body for videos longer than TIER1_HORIZON_S; a wider,
+# higher clamp band so long narrations don't fragment into dozens of
+# 3-second flashes. Total act count is unbounded — a 10-minute reel simply
+# generates more stills than a 90-second one, by design.
+_TIER1_MAX_ACTS: int = 20
+_TIER1_HORIZON_S: float = 90.0
+_TIER1_SECONDS_PER_ACT: float = 4.5
+_TIER2_SECONDS_PER_ACT: float = 10.0
+_TIER2_BODY_MIN_S: float = 8.0
+_TIER2_BODY_MAX_S: float = 12.0
+
 
 def _body_weight_for_word_count(wc: int) -> float:
     if wc <= _BUCKET_SHORT_THRESH:
@@ -372,6 +385,9 @@ def plan_bucket_act_durations(
     merge_thresh: int = _MERGE_INTO_NEXT_THRESH,
     body_min_s: float = _BODY_MIN_S,
     body_max_s: float = _BODY_MAX_S,
+    tier2_body_start: "int | None" = None,
+    tier2_body_min_s: float = _TIER2_BODY_MIN_S,
+    tier2_body_max_s: float = _TIER2_BODY_MAX_S,
 ) -> "tuple[list[float], list[str], list[int]]":
     """Hook-locked / body-weighted / CTA-fixed image timing planner.
 
@@ -449,26 +465,66 @@ def plan_bucket_act_durations(
     body_weights = [
         _body_weight_for_word_count(len(s.split())) for s in body_snips
     ]
-    if body_snips:
+
+    # Two-tier split (Final Round 2026-08-15): if a tier-2 boundary is
+    # supplied AND at least one body act falls into it, run
+    # _clamp_and_redistribute TWICE — once for the fast Tier-1 body slots
+    # with the tight [body_min_s, body_max_s] band, once for the slower
+    # Tier-2 slots with the wider [tier2_body_min_s, tier2_body_max_s] band.
+    # Body budget is split between the two tiers proportionally to their
+    # word-weight totals so short-word Tier-2 acts don't monopolise time.
+    t2_start_body = int(tier2_body_start) if tier2_body_start is not None else None
+    n_body = len(body_snips)
+    use_two_tier = (
+        t2_start_body is not None
+        and 0 < t2_start_body < n_body
+        and n_body > 0
+    )
+    if not body_snips:
+        body_durs = []
+    elif use_two_tier:
+        t1_w = body_weights[:t2_start_body]
+        t2_w = body_weights[t2_start_body:]
+        w_sum_t1 = float(sum(t1_w)) or 1e-9
+        w_sum_t2 = float(sum(t2_w)) or 1e-9
+        w_sum_total = w_sum_t1 + w_sum_t2
+        t1_share = w_sum_t1 / w_sum_total
+        t1_budget = body_budget * t1_share
+        t2_budget = body_budget - t1_budget
+        t1_durs = _clamp_and_redistribute(
+            t1_w, t1_budget, float(body_min_s), float(body_max_s),
+        ) if t1_w else []
+        t2_durs = _clamp_and_redistribute(
+            t2_w, t2_budget, float(tier2_body_min_s), float(tier2_body_max_s),
+        ) if t2_w else []
+        body_durs = t1_durs + t2_durs
+    else:
         body_durs = _clamp_and_redistribute(
             body_weights, body_budget, float(body_min_s), float(body_max_s),
         )
-    else:
-        body_durs = []
 
     durs = hook_durs + body_durs + [cta_slot]
     kept_snippets = hook_snips + body_snips + [snippets[-1]]
     keep_indices = hook_keep + body_keep + [n - 1]
 
     body_sum = float(sum(body_durs))
+    tier_desc = (
+        f" tier2_body_start={t2_start_body} "
+        f"tier1_body={t2_start_body} tier2_body={n_body - t2_start_body} "
+        f"tier1_band=[{body_min_s:.1f},{body_max_s:.1f}] "
+        f"tier2_band=[{tier2_body_min_s:.1f},{tier2_body_max_s:.1f}]"
+        if use_two_tier
+        else ""
+    )
     logger.info(
         "plan_bucket_act_durations | narration=%.2fs cta=%.2fs+silence=%.2fs "
         "hook=%d×%.1fs=%.1fs body_budget=%.2fs body_sum=%.2fs (Δ=%+.2fs) "
-        "cta_slot=%.2fs kept=%d/%d total_video=%.2fs body=%s",
+        "cta_slot=%.2fs kept=%d/%d total_video=%.2fs%s body=%s",
         float(narration_s), float(cta_audio_s), float(silence_before_cta_s),
         hook_n, hook_lock, hook_sum,
         body_budget, body_sum, body_sum - body_budget,
         cta_slot, len(durs), n, float(sum(durs)),
+        tier_desc,
         [
             (len(s.split()), round(w, 2), round(d, 2))
             for s, w, d in zip(body_snips, body_weights, body_durs)
@@ -608,6 +664,50 @@ def compute_dense_act_count(
     hi = max(lo, int(max_acts))
     n = int(round(dur / spa))
     return max(lo, min(hi, n))
+
+
+def compute_two_tier_act_count(
+    duration_s: float,
+    *,
+    tier1_max_acts: int = _TIER1_MAX_ACTS,
+    tier1_horizon_s: float = _TIER1_HORIZON_S,
+    tier1_seconds_per_act: float = _TIER1_SECONDS_PER_ACT,
+    tier2_seconds_per_act: float = _TIER2_SECONDS_PER_ACT,
+    min_acts: int = _DENSE_MIN_ACTS,
+) -> "tuple[int, int, int]":
+    """Two-tier act count for arbitrarily long narrations.
+
+    Returns ``(tier1_acts, tier2_acts, total_acts)``.
+
+    * Tier 1 (fast-cut opening): ``min(duration_s, tier1_horizon_s)``
+      seconds of narration, ~``tier1_seconds_per_act`` per still, capped
+      at ``tier1_max_acts`` (default 20 for the first ~90 s). This
+      preserves the punchy opening rhythm regardless of total duration.
+    * Tier 2 (slower body): remaining ``duration_s - tier1_horizon_s``
+      seconds beyond the Tier-1 horizon, at ~``tier2_seconds_per_act``
+      per still (default 10 s). Zero when ``duration_s <= tier1_horizon_s``
+      so short reels stay 100 % Tier 1.
+    * No upper ceiling on ``total_acts`` — a 5-minute reel simply
+      generates more images than a 90 s one, by design.
+
+    The tier-1 word cadence is clamped to 3.0-6.0 s / still and the tier-2
+    cadence to 6.0-14.0 s so pathological config values can't produce a
+    freeze or a stroboscopic flash.
+    """
+    import math
+    dur = max(1.0, float(duration_s))
+    t1_horizon = max(30.0, float(tier1_horizon_s))
+    t1_dur = min(dur, t1_horizon)
+    t1_spa = max(3.0, min(6.0, float(tier1_seconds_per_act)))
+    lo = max(2, int(min_acts))
+    tier1 = min(
+        max(2, int(tier1_max_acts)),
+        max(lo, int(math.ceil(t1_dur / t1_spa))),
+    )
+    remaining = max(0.0, dur - t1_horizon)
+    t2_spa = max(6.0, min(14.0, float(tier2_seconds_per_act)))
+    tier2 = int(math.ceil(remaining / t2_spa)) if remaining > 0 else 0
+    return tier1, tier2, tier1 + tier2
 
 
 def compute_hook_body_act_count(
@@ -1736,6 +1836,148 @@ def _build_act_clip(
     return clip
 
 
+def _cover_frame_to_reel(arr: "np.ndarray") -> "np.ndarray":
+    """Scale-and-center-crop an RGB frame onto the 1080×1920 reel canvas."""
+    frame = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).convert("RGB")
+    canvas_ratio = _REEL_WIDTH / _REEL_HEIGHT
+    img_ratio = frame.width / max(1, frame.height)
+    if img_ratio > canvas_ratio:
+        new_h = _REEL_HEIGHT
+        new_w = int(new_h * img_ratio)
+    else:
+        new_w = _REEL_WIDTH
+        new_h = int(new_w / img_ratio)
+    frame = frame.resize((max(1, new_w), max(1, new_h)), Image.LANCZOS)
+    x0 = max(0, (frame.width - _REEL_WIDTH) // 2)
+    y0 = max(0, (frame.height - _REEL_HEIGHT) // 2)
+    cropped = frame.crop((x0, y0, x0 + _REEL_WIDTH, y0 + _REEL_HEIGHT))
+    if cropped.size != (_REEL_WIDTH, _REEL_HEIGHT):
+        cropped = cropped.resize((_REEL_WIDTH, _REEL_HEIGHT), Image.LANCZOS)
+    return np.array(cropped, dtype=np.uint8)
+
+
+def _build_wan_video_act_clip(
+    video_path: "Path",
+    *,
+    act_duration: float,
+    word_timings: "list[tuple[str, float, float]]",
+    hook_text: str,
+    enable_hook_text: bool,
+    overlay_opacity: float,
+    font_path: str | None,
+    subtitle_fontsize: int,
+    subtitle_y_position: "int | None",
+    hook_y_frac: float,
+    logo_static_array: "np.ndarray | None",
+    logo_y_offset_px: int,
+    fps: int,
+    act_index: int,
+    words_per_phrase: int,
+    subtitle_fill: tuple,
+    subtitle_stroke_width: int,
+    subtitle_stroke_fill: "tuple | None",
+):
+    """
+    Wrap a pre-generated Wan mp4 as a reel act: cover-crop to 9:16, match hold
+    duration, burn the same subtitle / hook / logo chrome as Ken Burns acts.
+    """
+    from moviepy import VideoClip, VideoFileClip  # type: ignore[import]
+
+    src = VideoFileClip(str(video_path))
+    src_dur = float(getattr(src, "duration", 0) or 0.0)
+    if src_dur <= 0.05:
+        try:
+            src.close()
+        except Exception:
+            pass
+        raise ValueError(f"Wan clip has no duration: {video_path}")
+
+    try:
+        if font_path:
+            _font_subtitle = ImageFont.truetype(font_path, subtitle_fontsize)
+            _font_hook = ImageFont.truetype(font_path, max(28, int(subtitle_fontsize * 1.35)))
+        else:
+            _font_subtitle = ImageFont.load_default()
+            _font_hook = ImageFont.load_default()
+    except Exception:
+        _font_subtitle = ImageFont.load_default()
+        _font_hook = ImageFont.load_default()
+
+    _subtitle_y = subtitle_y_position if subtitle_y_position is not None else int(_REEL_HEIGHT * 0.82)
+    _raw_phrases = _chunk_words_into_phrases(word_timings, words_per_phrase)
+    _display_timings: list[tuple[str, float, float]] = []
+    _act_cut = max(0.05, float(act_duration) - 0.04)
+    for _ph, _ps, _pe in _sanitize_subtitle_timings(_raw_phrases):
+        _ps2 = max(0.0, float(_ps))
+        _pe2 = min(_act_cut, float(_pe))
+        if _ps2 < _pe2 and _ph.strip():
+            _toks = _ph.split()
+            if len(_toks) > max(1, int(words_per_phrase or 4)):
+                _ph = " ".join(_toks[: max(1, int(words_per_phrase or 4))])
+            _display_timings.append((_ph, _ps2, _pe2))
+    _display_timings = _sanitize_subtitle_timings(_display_timings)
+    _phrase_layer_cache: dict[str, "np.ndarray"] = {}
+    for _ph, _, _ in _display_timings:
+        if _ph in _phrase_layer_cache:
+            continue
+        _layer = Image.new("RGBA", (_REEL_WIDTH, _REEL_HEIGHT), (0, 0, 0, 0))
+        _ldraw = ImageDraw.Draw(_layer)
+        _draw_wrapped_text(
+            _ldraw, _ph, _font_subtitle, _subtitle_y, _REEL_WIDTH,
+            fill=subtitle_fill,
+            stroke_width=subtitle_stroke_width,
+            stroke_fill=subtitle_stroke_fill,
+            max_width_frac=0.94,
+            line_spacing=16,
+            max_lines=2,
+        )
+        _phrase_layer_cache[_ph] = np.array(_layer)
+
+    def _current_phrase(t: float) -> str:
+        if t < 0 or t >= _act_cut:
+            return ""
+        for phrase, ws, we in _display_timings:
+            if ws <= t < we:
+                return phrase
+        return ""
+
+    def _src_t(t: float) -> float:
+        if src_dur >= act_duration:
+            return min(max(0.0, t), src_dur - 0.001)
+        # Loop short Wan clips to fill the narration hold.
+        return max(0.0, float(t) % src_dur)
+
+    def _make_frame(t: float) -> np.ndarray:
+        raw = src.get_frame(_src_t(t))
+        arr = _cover_frame_to_reel(raw).astype(np.float32)
+        arr *= (1.0 - overlay_opacity)
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+        frame = Image.fromarray(arr, mode="RGB").convert("RGBA")
+        draw = ImageDraw.Draw(frame)
+        if enable_hook_text and hook_text and act_index == 0:
+            hook_y = int(_REEL_HEIGHT * hook_y_frac)
+            _draw_centered_text(draw, hook_text, _font_hook, hook_y, _REEL_WIDTH)
+        phrase = _current_phrase(t)
+        frame_arr = np.array(frame)
+        if phrase and phrase in _phrase_layer_cache:
+            _alpha_composite_numpy(frame_arr, _phrase_layer_cache[phrase], 0, 0)
+        rgb_arr = np.array(Image.fromarray(frame_arr).convert("RGB"))
+        if logo_static_array is not None:
+            lh, lw = logo_static_array.shape[:2]
+            lx = (_REEL_WIDTH - lw) // 2
+            _margin = max(10, int(logo_y_offset_px))
+            ly = _REEL_HEIGHT - lh - _margin
+            ly = max(0, min(ly, _REEL_HEIGHT - lh))
+            lx = max(0, min(lx, _REEL_WIDTH - lw))
+            _alpha_composite_numpy(rgb_arr, logo_static_array, lx, ly)
+        return rgb_arr
+
+    clip = VideoClip(frame_function=_make_frame, duration=act_duration)
+    clip = clip.with_fps(fps)
+    clip._wan_src_clip = src  # keep decoder alive for get_frame
+    return clip
+
+
 # ---------------------------------------------------------------------------
 # Text rendering helpers
 # ---------------------------------------------------------------------------
@@ -2001,6 +2243,9 @@ def compile_sequence_reel(
     # hook/bucket/CTA planner (plan_bucket_act_durations) which owns per-still
     # timing end-to-end and never wants a downstream fit-to-target overwrite.
     strict_act_durations: bool = False,
+    # Optional per-act Wan (or other) video files. ``None`` / missing file →
+    # Ken Burns still via ``_build_act_clip``. ECONOMIC_REEL leaves this unset.
+    act_video_paths: "list[Path | None] | None" = None,
 ) -> Path:
     """
     Compile an N-image sequence reel from a list of background images.
@@ -2137,6 +2382,8 @@ def compile_sequence_reel(
             _pair = min(len(_act_durs), n_acts)
             _act_durs = _act_durs[:_pair]
             image_paths = image_paths[:_pair]
+            if act_video_paths:
+                act_video_paths = list(act_video_paths)[:_pair]
             n_acts = _pair
         total_duration = float(sum(_act_durs))
         # Derive CTA visual t0 from the plan: everything up to the last still.
@@ -2176,6 +2423,8 @@ def compile_sequence_reel(
                 len(_act_durs), n_acts,
             )
             image_paths = image_paths[: len(_act_durs)]
+            if act_video_paths:
+                act_video_paths = list(act_video_paths)[: len(_act_durs)]
             n_acts = len(image_paths)
         # NEVER grow the last still to "absorb" audio-vs-image mismatch.
         # Timeline length = sum(planned holds); any drift is a caller bug the
@@ -2272,11 +2521,51 @@ def compile_sequence_reel(
 
     # ── Build per-act clips (one clip per still — never zip-truncate) ────────
     clips: list = []
+    _wan_src_clips: list = []
+    _video_override = list(act_video_paths) if act_video_paths else []
     for i, img_path in enumerate(image_paths):
         _this_act_dur = float(_act_durs[i]) if i < len(_act_durs) else act_duration_locked
         act_wt: list = []
         if i < len(act_segments):
             act_wt = act_segments[i][2]
+        _wan_path = _video_override[i] if i < len(_video_override) else None
+        _wan_ok = bool(_wan_path) and Path(_wan_path).is_file()
+        if _wan_ok:
+            logger.info(
+                "Rendering act %d/%d | WAN video %s | dur=%.1fs | transition=hard_cut",
+                i + 1, n_acts, Path(_wan_path).name, _this_act_dur,
+            )
+            try:
+                clip = _build_wan_video_act_clip(
+                    Path(_wan_path),
+                    act_duration=_this_act_dur,
+                    word_timings=act_wt,
+                    hook_text=hook_text,
+                    enable_hook_text=enable_hook_text,
+                    overlay_opacity=overlay_opacity,
+                    font_path=font_path,
+                    subtitle_fontsize=subtitle_fontsize,
+                    subtitle_y_position=subtitle_y_position,
+                    hook_y_frac=hook_y_frac,
+                    logo_static_array=logo_arr,
+                    logo_y_offset_px=int(logo_y_offset_px) if logo_y_offset_px else 90,
+                    fps=fps,
+                    act_index=i,
+                    words_per_phrase=words_per_phrase,
+                    subtitle_fill=subtitle_fill,
+                    subtitle_stroke_width=subtitle_stroke_width,
+                    subtitle_stroke_fill=subtitle_stroke_fill,
+                )
+                src_keep = getattr(clip, "_wan_src_clip", None)
+                if src_keep is not None:
+                    _wan_src_clips.append(src_keep)
+                clips.append(clip)
+                continue
+            except Exception as _wan_wrap_exc:  # noqa: BLE001
+                logger.warning(
+                    "WAN act %d wrap failed (%s) — Ken Burns fallback.",
+                    i + 1, _wan_wrap_exc,
+                )
         logger.info(
             "Rendering act %d/%d | %s | dur=%.1fs | zoom=%.2f→%.2f | pan_dir=%s | transition=hard_cut",
             i + 1, n_acts, img_path.name, _this_act_dur,
@@ -2790,6 +3079,11 @@ def compile_sequence_reel(
         for c in clips:
             try:
                 c.close()
+            except Exception:
+                pass
+        for src in _wan_src_clips:
+            try:
+                src.close()
             except Exception:
                 pass
         try:

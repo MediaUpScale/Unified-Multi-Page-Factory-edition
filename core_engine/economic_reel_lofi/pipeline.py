@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,12 +16,30 @@ from typing import Any
 
 from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi import lofi_collections as rag
-from core_engine.economic_reel_lofi.assembler import assemble_lofi_reel
+from core_engine.economic_reel_lofi.assembler import (
+    assemble_lofi_reel,
+    compute_caption_scene_duration_s,
+)
 from core_engine.economic_reel_lofi.image_gen import generate_scene_image
+from core_engine.economic_reel_lofi.riso_prompt_bank import (
+    assign_riso_prompts_for_scenes,
+    export_active_library_diff,
+)
 from core_engine.economic_reel_lofi.script_agent import generate_script
 from core_engine.economic_reel_lofi.validator_agent import validate_script
 
 _LOG = logging.getLogger(__name__)
+
+
+def _tts_text_with_breaks(caption: str) -> str:
+    """Insert ElevenLabs SSML pauses at commas / dashes. Caption on-screen stays clean."""
+    text = (caption or "").strip()
+    if not text:
+        return text
+    text = re.sub(r"\s*[—–]\s*", ' <break time="0.40s" /> ', text)
+    text = re.sub(r",\s+", ', <break time="0.30s" /> ', text)
+    text = re.sub(r";\s+", '; <break time="0.32s" /> ', text)
+    return " ".join(text.split())
 
 
 @dataclass
@@ -116,6 +135,26 @@ def _generate_validated_script(
             lofi_cfg.SCRIPT_MAX_RETRIES,
             feedback,
         )
+    # Last resort: deterministic short-line fallback so a test still renders
+    from core_engine.economic_reel_lofi.script_agent import _fallback_script
+
+    fallback = _fallback_script(
+        module=module,
+        theme=str(theme_row.get("theme") or "connection"),
+        scene_count=scene_count,
+        hook_type="definition",
+        quote=None,
+    )
+    fallback["subtheme"] = theme_row.get("subtheme")
+    result = validate_script(
+        fallback,
+        module=module,
+        scene_count=scene_count,
+        persist_on_pass=True,
+    )
+    if result.ok and result.script:
+        print("[LOFI script] using fallback after validator retries")
+        return result.script, [], False
     return None, last_errors or ["script validation failed"], True
 
 
@@ -182,32 +221,102 @@ def _produce_one(
         )
 
     lines = list(script.get("lines") or [])
+    # Replace LLM visual prompts with verbatim riso library entries
+    if bool(getattr(lofi_cfg, "USE_RISO_PROMPT_LIBRARY", True)):
+        lib_diff = export_active_library_diff()
+        try:
+            from core_engine.economic_reel_lofi.riso_prompt_bank import load_riso_library
+
+            live_dump = clips_dir / f"riso_library_live_{stamp}.json"
+            live_dump.write_text(
+                json.dumps(load_riso_library(), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"[LOFI riso] full live library exported -> {live_dump}")
+            print(f"[LOFI riso] diff added={lib_diff.get('added')} removed={lib_diff.get('removed')}")
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("library export failed: %s", exc)
+        emotions = [str(r.get("emotion") or r.get("mood") or "") for r in lines]
+        arcs = [str(r.get("arc_position") or "") for r in lines]
+        riso_rows = assign_riso_prompts_for_scenes(
+            len(lines) if lines else scene_count,
+            theme=str(script.get("theme") or ""),
+            seed=None,
+            scene_emotions=emotions,
+            scene_arcs=arcs,
+        )
+        for i, row in enumerate(lines):
+            if i >= len(riso_rows):
+                break
+            r = riso_rows[i]
+            row["visual_prompt"] = str(r.get("prompt") or "")
+            row["riso_id"] = r.get("id")
+            row["riso_palette"] = r.get("palette")
+            row["riso_mood"] = r.get("mood")
+            row["riso_scene_type"] = r.get("scene_type")
+            row["riso_emotion_tags"] = r.get("emotion_tags")
+            row["riso_arc_position"] = r.get("arc_position")
+            row.pop("lighting_mood", None)
+        ids = [str(r.get("id")) for r in riso_rows[: len(lines)]]
+        print("[LOFI pipeline] riso prompts assigned: " + ", ".join(ids))
+        if len(ids) != len(set(ids)):
+            raise RuntimeError(f"duplicate riso ids in one video: {ids}")
+        print(
+            "[LOFI pipeline] riso_013/014 distinct scenes: "
+            f"013={'riso_013' in ids} 014={'riso_014' in ids}"
+        )
+
     scene_paths: list[Path] = []
     captions: list[str] = []
     scene_moods: list[dict] = []
     qa_flags: list[str] = []
-    theme_str = str(script.get("theme") or "")
+    voice_paths: list[Path | None] = []
+    word_timings_per_scene: list[list[tuple[str, float, float]] | None] = []
+    voice_settings_result: dict[str, Any] | None = None
+
+    if bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
+        try:
+            from avatar_engine.audio_engine import apply_elevenlabs_voice_settings
+
+            voice_id_pre = str(getattr(lofi_cfg, "LOFI_VOICE_ID", "") or "")
+            speed_pre = float(getattr(lofi_cfg, "LOFI_VOICE_SPEED", 0.8))
+            voice_settings_result = apply_elevenlabs_voice_settings(
+                voice_id_pre,
+                speed=speed_pre,
+                stability=1.0,
+                similarity_boost=1.0,
+                style=0.0,
+                use_speaker_boost=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            msg = f"ElevenLabs voice settings/edit failed: {exc}"
+            _LOG.warning(msg)
+            print(f"[LOFI VO] WARN {msg}")
+            if bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True)):
+                qa_flags.append(msg)
 
     for row in lines:
         scene_i = int(row.get("scene") or len(scene_paths) + 1)
         out_img = run_dir / f"scene_{scene_i:02d}.png"
         visual = str(row.get("visual_prompt") or "")
         caption = str(row.get("text") or "")
-        mood_id = row.get("lighting_mood") or row.get("mood")
-        mood_key = f"{theme_str}|scene{scene_i}"
-        resolved_mood = lofi_cfg.select_lighting_mood(
-            key=mood_key,
-            mood_id=str(mood_id) if mood_id else None,
-        )
+        mood_meta = {
+            "id": str(row.get("riso_id") or f"scene_{scene_i}"),
+            "lighting": "from_riso_prompt",
+            "palette": row.get("riso_palette"),
+            "shadow": lofi_cfg.DUOTONE_SHADOW,
+            "highlight": lofi_cfg.DUOTONE_HIGHLIGHT,
+        }
         ok_img = False
         last_flaws: list[str] = []
         for attempt in range(1, lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE + 2):
             try:
-                _, resolved_mood = generate_scene_image(
+                # Verbatim riso prompt — never nudge/rewrite the library text
+                _, mood_meta = generate_scene_image(
                     visual,
                     out_img,
-                    mood_id=str(mood_id) if mood_id else None,
-                    mood_key=mood_key,
+                    mood=mood_meta,
+                    verbatim=True,
                 )
             except Exception as exc:  # noqa: BLE001
                 last_flaws = [f"image gen failed: {exc}"]
@@ -224,25 +333,97 @@ def _produce_one(
                 attempt,
                 "; ".join(flaws),
             )
-            # Nudge prompt on retry
-            visual = visual + ", stronger ink illustration, avoid photorealism, clean anatomy"
+            # Retry same verbatim prompt (do not expand/hallucinate)
         if not ok_img:
             qa_flags.append(f"scene_{scene_i}: {'; '.join(last_flaws) or 'qa failed'}")
             if not out_img.is_file():
-                # last-resort solid placeholder so assembly still completes
                 from PIL import Image as PILImage
 
                 PILImage.new("RGB", (768, 1344), (30, 40, 55)).save(out_img)
-        row["lighting_mood"] = resolved_mood.get("id")
+        row["riso_id"] = mood_meta.get("id")
         scene_paths.append(out_img)
         captions.append(caption)
-        scene_moods.append(resolved_mood)
+        scene_moods.append(mood_meta)
+
+        # Per-scene VO + word timestamps (test voice until approved)
+        vo_path: Path | None = None
+        timings: list[tuple[str, float, float]] | None = None
+        if bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)) and caption.strip():
+            try:
+                from avatar_engine.audio_engine import generate_voiceover_with_timestamps
+
+                vo_path = run_dir / f"vo_scene_{scene_i:02d}.mp3"
+                voice_id = str(getattr(lofi_cfg, "LOFI_VOICE_ID", "") or "")
+                tts_text = _tts_text_with_breaks(caption)
+                use_ssml = "<break" in tts_text
+                speed = float(getattr(lofi_cfg, "LOFI_VOICE_SPEED", 0.8))
+                print(
+                    f"[LOFI VO] scene={scene_i} voice={voice_id} "
+                    f"speed={speed} ssml={use_ssml} text={caption!r} tts={tts_text!r}"
+                )
+                vo_path, raw_timings = generate_voiceover_with_timestamps(
+                    tts_text,
+                    vo_path,
+                    voice_id=voice_id or None,
+                    force_elevenlabs=True,
+                    expressive_mode=False,
+                    enable_ssml=use_ssml,
+                    speed=speed,
+                    voice_settings={
+                        "stability": 1.0,
+                        "similarity_boost": 1.0,
+                        "style": 0.0,
+                        "use_speaker_boost": True,
+                        "speed": speed,
+                    },
+                )
+                timings = [
+                    (str(w), float(s), float(e))
+                    for w, s, e in (raw_timings or [])
+                    if str(w).strip()
+                    and not str(w).startswith("<")
+                    and str(w).lower() not in {"break", "time"}
+                ]
+            except Exception as exc:  # noqa: BLE001
+                msg = f"scene_{scene_i} VO failed: {exc}"
+                _LOG.warning(msg)
+                if bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True)):
+                    qa_flags.append(msg)
+                vo_path = None
+                timings = None
+        voice_paths.append(vo_path)
+        word_timings_per_scene.append(timings)
 
     theme_slug = "".join(
         c if c.isalnum() else "_"
         for c in str(script.get("theme") or "lofi").lower()
     ).strip("_")[:32] or "lofi"
     out_mp4 = clips_dir / f"lofi_reel_{theme_slug}_{stamp}_v{index:02d}.mp4"
+    scene_durations: list[float] = []
+    scene_timing_flags: list[dict[str, Any]] = []
+    for i, cap in enumerate(captions):
+        timings_i = word_timings_per_scene[i] if i < len(word_timings_per_scene) else None
+        vp_i = voice_paths[i] if i < len(voice_paths) else None
+        dur_i, extended_i, dur_meta = compute_caption_scene_duration_s(
+            timings_i,
+            Path(vp_i) if vp_i else None,
+        )
+        scene_durations.append(dur_i)
+        scene_timing_flags.append(
+            {
+                "scene": i + 1,
+                "text": cap,
+                "extended": extended_i,
+                **dur_meta,
+            }
+        )
+        if extended_i:
+            print(
+                f"[LOFI caption-timing] FLAG scene {i + 1} extended to {dur_i:.2f}s "
+                f"(base={lofi_cfg.SCENE_DURATION_S:.1f}s) so the line can fully "
+                f"display + hold | text={cap!r}"
+            )
+    actual_dur = float(sum(scene_durations))
     try:
         assemble_lofi_reel(
             scene_paths,
@@ -251,8 +432,11 @@ def _produce_one(
             engine_root=_engine_root(),
             page_id=page_id,
             scene_duration_s=lofi_cfg.SCENE_DURATION_S,
+            scene_durations=scene_durations,
             moods=scene_moods,
             caption_style=lofi_cfg.DEFAULT_CAPTION_STYLE,
+            voice_paths=voice_paths,
+            word_timings_per_scene=word_timings_per_scene,
         )
     except Exception as exc:  # noqa: BLE001
         _LOG.error("assemble failed: %s", exc, exc_info=True)
@@ -262,7 +446,7 @@ def _produce_one(
             theme=str(script.get("theme") or ""),
             hook_type=str(script.get("hook_type") or ""),
             scene_count=scene_count,
-            duration_s=scene_count * lofi_cfg.SCENE_DURATION_S,
+            duration_s=actual_dur,
             manual_review=True,
             errors=[f"assemble failed: {exc}"],
             script=script,
@@ -273,16 +457,28 @@ def _produce_one(
         "page": page_id,
         "module": module,
         "duration_requested_s": duration_s,
-        "duration_actual_s": scene_count * lofi_cfg.SCENE_DURATION_S,
+        "duration_actual_s": actual_dur,
         "scene_count": scene_count,
         "scene_duration_s": lofi_cfg.SCENE_DURATION_S,
-        "theme": script.get("theme"),
+        "scene_durations": scene_durations,
+        "caption_timing": scene_timing_flags,
+        "voice_settings_api": voice_settings_result,
+        "voice_speed": getattr(lofi_cfg, "LOFI_VOICE_SPEED", None),
+        "logo_path": str(
+            lofi_cfg.resolve_logo_path(page_id, _engine_root()) or ""
+        ),
+        "caption_line_height_frac": lofi_cfg.CAPTION_LINE_HEIGHT_FRAC,
         "subtheme": script.get("subtheme"),
         "hook_type": script.get("hook_type"),
         "quote_id": script.get("quote_id"),
         "script": script,
+        "riso_ids": [str(r.get("riso_id") or "") for r in lines],
+        "voice_id": getattr(lofi_cfg, "LOFI_VOICE_ID", None),
+        "caption_style": lofi_cfg.DEFAULT_CAPTION_STYLE,
+        "grading_applied": bool(getattr(lofi_cfg, "LOFI_APPLY_GRADING", False)),
         "video_path": str(out_mp4),
         "scene_images": [str(p) for p in scene_paths],
+        "voice_paths": [str(p) if p else None for p in voice_paths],
         "work_dir": str(run_dir),
         "visual_qa_flags": qa_flags,
         "manual_review": bool(qa_flags),
@@ -299,7 +495,7 @@ def _produce_one(
         theme=str(script.get("theme") or ""),
         hook_type=str(script.get("hook_type") or ""),
         scene_count=scene_count,
-        duration_s=scene_count * lofi_cfg.SCENE_DURATION_S,
+        duration_s=actual_dur,
         manual_review=bool(qa_flags),
         errors=qa_flags,
         script=script,

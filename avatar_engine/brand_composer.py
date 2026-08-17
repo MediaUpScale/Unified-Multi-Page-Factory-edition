@@ -194,7 +194,7 @@ def apply_text_overlay(
     #                      video_engine.compile_dynamic_reel(); baking it into the PNG
     #                      would cause a double-text artefact and block the Ken Burns
     #                      zoom from being applied correctly.
-    if post_type in ("LONG_CAPTION_IMAGE", "ECONOMIC_REEL"):
+    if post_type in ("LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "WAN_REEL"):
         logger.info(
             "BrandComposer | %s detected — preserving pristine graphite background, "
             "applying logo only.",

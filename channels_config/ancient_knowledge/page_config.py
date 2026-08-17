@@ -156,14 +156,30 @@ SCENE_PROGRESSIVE_START_S: float = 4.0
 SCENE_PROGRESSIVE_STEP_EVERY: int = 3
 SCENE_PROGRESSIVE_STEP_S: float = 1.0
 SCENE_PROGRESSIVE_CAP_S: float = 7.5
-REEL_SECONDS_PER_ACT: float = 5.5    # legacy dense fallback only
+REEL_SECONDS_PER_ACT: float = 5.5    # legacy dense fallback only (unused when USE_TWO_TIER_PACING=True)
 REEL_ACT_DURATION: float = 5.5
 ENABLE_SEQUENCE_REEL: bool = True
-REEL_IMAGE_MIN_COUNT: int = 8        # soft floor for plan_scenes
-REEL_IMAGE_COUNT: int = 16           # soft ceiling for plan_scenes @ ~80 s
-REEL_NARRATION_WORDS: int = words_for_duration(REEL_DURATION_TARGET_MIN)
-REEL_NARRATION_MIN_WORDS: int = words_for_duration(REEL_DURATION_TARGET_MIN)
-REEL_NARRATION_MAX_WORDS: int = words_for_duration(REEL_DURATION_TARGET_MIN) + 20
+REEL_IMAGE_MIN_COUNT: int = 8        # soft floor for plan_scenes / tier-1
+# REEL_IMAGE_COUNT is deliberately NOT set here — the AK per-variant loop
+# in main.py now uses the two-tier planner
+# (core_engine.reel_sequence_engine.compute_two_tier_act_count) which
+# scales with page_ctx.reel_duration without any static ceiling. A page_
+# config REEL_IMAGE_COUNT would silently re-cap long-video reels to 16
+# stills (the Round-6 bug that made --video-length 180 render only 90 s
+# of content). The page_loader property still returns a large default
+# (see USE_TWO_TIER_PACING) so this omission is intentional, not
+# accidental.
+USE_TWO_TIER_PACING: bool = True
+REEL_TIER1_MAX_ACTS: int = 20        # fast-cut opening, ~90 s @ ~4.5 s/still
+REEL_TIER1_HORIZON_S: float = 90.0   # narration seconds covered by Tier 1
+REEL_TIER1_SECONDS_PER_ACT: float = 4.5
+REEL_TIER2_SECONDS_PER_ACT: float = 10.0  # slower body, ~8-12 s / still clamped
+# REEL_NARRATION_WORDS / _MIN_WORDS / _MAX_WORDS are deliberately NOT set
+# here — page_loader.py properties fall through to
+# words_for_duration(self.reel_duration) at read time, so --video-length
+# overrides scale the word budget correctly. Setting them as import-time
+# constants pinned to REEL_DURATION_TARGET_MIN was the Round-6 root cause
+# of the silent under-delivery bug at long durations.
 CONTENT_LIBRARY_LOOKBACK: int = 40   # reject repeating a monument/theme in last N posts
 
 # WAN_REEL duration window — separate from ECONOMIC_REEL (do not merge).

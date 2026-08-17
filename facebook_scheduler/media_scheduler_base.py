@@ -22,10 +22,12 @@ optionally ``prepare_caption()`` / ``advance_composer()``.
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import shutil
 import time
+import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -102,12 +104,13 @@ _CREATE_POST_CANDIDATES: list[tuple] = [
 ]
 
 _CAPTION_CANDIDATES: list[tuple] = [
-    ("locator", 'div[role="textbox"][contenteditable="true"]'),
-    ("locator", 'div[contenteditable="true"][role="textbox"]'),
-    ("locator", 'div[aria-label*="Write a caption" i]'),
-    ("locator", 'div[aria-label*="caption" i][contenteditable="true"]'),
     ("locator", 'div[aria-label*="description" i][contenteditable="true"]'),
-    ("locator", 'div[role="textbox"]'),
+    ("locator", 'div[aria-label*="Descrição" i][contenteditable="true"]'),
+    ("locator", 'div[aria-label*="Describe your reel" i][contenteditable="true"]'),
+    ("locator", 'div[aria-label*="Write a caption" i][contenteditable="true"]'),
+    ("locator", 'div[aria-label*="Escreva uma" i][contenteditable="true"]'),
+    ("locator", 'div[data-lexical-editor="true"]'),
+    ("locator", 'div[role="textbox"][aria-multiline="true"]'),
 ]
 
 _SCHEDULE_TOGGLE_SELS = [
@@ -409,11 +412,6 @@ class LocalMediaQueue:
                 or row.get("media_path")
                 or ""
             )
-            if not video:
-                return
-            name = Path(str(video)).name.lower()
-            if not name:
-                return
             meta = dict(row)
             # Promote best available caption into facebook_caption when missing.
             if not str(meta.get("facebook_caption") or "").strip():
@@ -433,7 +431,21 @@ class LocalMediaQueue:
                 fb = str(meta.get("facebook_caption") or "").strip()
                 if fb:
                     meta["caption"] = fb
-            index[name] = meta
+
+            if video:
+                name = Path(str(video)).name.lower()
+                if name:
+                    index[name] = meta
+                    stem = LocalMediaQueue._clip_match_key(name)
+                    if stem:
+                        index[f"__stem__:{stem}"] = meta
+
+            # Topic-only rows (common in content_library.json) for fuzzy match
+            topic = str(row.get("topic") or "").strip()
+            if topic and str(meta.get("facebook_caption") or meta.get("caption") or "").strip():
+                topic_key = LocalMediaQueue._clip_match_key(topic)
+                if topic_key:
+                    index.setdefault(f"__topic__:{topic_key}", meta)
 
         # 1) Lean content library
         if self.content_library_path.is_file():
@@ -469,10 +481,229 @@ class LocalMediaQueue:
         return index
 
     def metadata_for(self, media_path: Path) -> dict[str, Any]:
-        """Return metadata dict for *media_path* (may be empty)."""
+        """Return metadata dict for *media_path* (exact or fuzzy library match)."""
         if self._metadata_by_filename is None:
             self._metadata_by_filename = self._index_metadata_library()
-        return dict(self._metadata_by_filename.get(media_path.name.lower(), {}))
+        return dict(self._lookup_library_metadata(media_path.name))
+
+    @staticmethod
+    def _normalize_string_for_match(text: str) -> str:
+        """
+        Strip accents, reel prefixes, version suffixes, and normalize separators.
+
+        Example: ``reel_sacsayhuamán__seismic_engineerin_v01.mp4``
+        → ``sacsayhuaman seismic engineerin``
+        """
+        raw = str(text or "")
+        raw = unicodedata.normalize("NFKD", raw)
+        raw = raw.encode("ASCII", "ignore").decode("utf-8")
+        raw = raw.lower().replace("\\", "/")
+        raw = Path(raw).name
+
+        raw = re.sub(r"^(reel|clip|video)[_\s]+", "", raw, flags=re.I)
+        # ``_v01.mp4``, ``__v10_enginefix.mp4``, junk after version marker
+        raw = re.sub(r"_+v\d+.*$", "", raw, flags=re.I)
+        if raw.endswith(".mp4"):
+            raw = raw[: -len(".mp4")]
+
+        raw = raw.replace("_", " ").replace("-", " ")
+        raw = re.sub(r"[^a-z0-9\s]+", " ", raw)
+        raw = re.sub(r"\s+", " ", raw).strip()
+        return raw
+
+    @staticmethod
+    def _clip_match_key(filename: str) -> str:
+        """Underscore form of ``_normalize_string_for_match`` for stem index keys."""
+        return (
+            LocalMediaQueue._normalize_string_for_match(filename)
+            .replace(" ", "_")
+            .strip("_")
+        )
+
+    @staticmethod
+    def _clip_match_tokens(key: str) -> set[str]:
+        stop = {
+            "that",
+            "with",
+            "from",
+            "this",
+            "what",
+            "when",
+            "were",
+            "been",
+            "have",
+            "they",
+            "them",
+            "their",
+            "about",
+            "into",
+            "over",
+            "under",
+            "after",
+            "before",
+            "which",
+            "where",
+            "while",
+            "could",
+            "would",
+            "should",
+            "mere",
+            "just",
+            "only",
+            "like",
+            "than",
+            "then",
+            "also",
+            "enginefix",
+        }
+        return {
+            t
+            for t in re.split(r"[\s_]+", key.lower())
+            if len(t) >= 4 and t not in stop
+        }
+
+    def _lookup_library_metadata(self, filename: str) -> dict[str, Any]:
+        """
+        Resolve content_library / post_*.json metadata for a rendered clip name.
+
+        Matching order: exact basename → accent-normalized containment →
+        stem keys → token overlap against library filenames and topics.
+        """
+        index = self._metadata_by_filename or {}
+        name = Path(str(filename)).name.lower()
+        if name in index:
+            return dict(index[name])
+
+        clean_filename = self._normalize_string_for_match(name)
+        if not clean_filename:
+            return {}
+
+        # Accent-safe containment against every indexed name / topic / stem
+        contain_hits: list[tuple[int, dict[str, Any]]] = []
+        for lib_name, meta in index.items():
+            if lib_name.startswith("__stem__:"):
+                clean_key = lib_name.split(":", 1)[-1].replace("_", " ")
+            elif lib_name.startswith("__topic__:"):
+                clean_key = lib_name.split(":", 1)[-1].replace("_", " ")
+            elif lib_name.startswith("__"):
+                continue
+            else:
+                clean_key = self._normalize_string_for_match(lib_name)
+
+            if not clean_key:
+                continue
+            if clean_key == clean_filename:
+                return dict(meta)
+            if clean_key in clean_filename or clean_filename in clean_key:
+                contain_hits.append(
+                    (abs(len(clean_key) - len(clean_filename)), meta)
+                )
+
+            topic = str(meta.get("topic") or "").strip()
+            if topic:
+                clean_topic = self._normalize_string_for_match(topic)
+                if clean_topic and (
+                    clean_topic in clean_filename
+                    or clean_filename in clean_topic
+                ):
+                    contain_hits.append(
+                        (abs(len(clean_topic) - len(clean_filename)), meta)
+                    )
+
+        if contain_hits:
+            contain_hits.sort(key=lambda x: x[0])
+            return dict(contain_hits[0][1])
+
+        clean = self._clip_match_key(name)
+        stem_entry = index.get(f"__stem__:{clean}")
+        if stem_entry:
+            return dict(stem_entry)
+
+        tokens = self._clip_match_tokens(clean_filename)
+
+        # Distinctive long token (e.g. ``sacsayhuaman``) unique to one library row
+        for token in sorted(tokens, key=len, reverse=True):
+            if len(token) < 8:
+                continue
+            unique_hits: list[dict[str, Any]] = []
+            seen_caps: set[str] = set()
+            for lib_name, meta in index.items():
+                if lib_name.startswith("__") and not lib_name.startswith(
+                    ("__stem__:", "__topic__:")
+                ):
+                    continue
+                if lib_name.startswith("__stem__:"):
+                    blob = lib_name.split(":", 1)[-1].replace("_", " ")
+                elif lib_name.startswith("__topic__:"):
+                    blob = lib_name.split(":", 1)[-1].replace("_", " ")
+                else:
+                    blob = self._normalize_string_for_match(lib_name)
+                topic = self._normalize_string_for_match(
+                    str(meta.get("topic") or "")
+                )
+                hay = f"{blob} {topic}"
+                if token in hay.split() or f" {token} " in f" {hay} ":
+                    topic_key = topic or blob
+                    if topic_key and topic_key not in seen_caps:
+                        seen_caps.add(topic_key)
+                        unique_hits.append(meta)
+            if len(unique_hits) == 1:
+                _log.info(
+                    "Library caption matched via unique token %r for %r.",
+                    token,
+                    name,
+                )
+                return dict(unique_hits[0])
+
+        if len(tokens) < 2:
+            _log.warning(
+                "Could not find library match for normalized name: %r",
+                clean_filename,
+            )
+            return {}
+
+        best_meta: dict[str, Any] | None = None
+        best_score = 0.0
+
+        def _consider(candidate_key: str, meta: dict[str, Any]) -> None:
+            nonlocal best_meta, best_score
+            other = self._clip_match_tokens(candidate_key)
+            if len(other) < 2:
+                return
+            overlap = tokens & other
+            if len(overlap) < 2:
+                return
+            score = len(overlap) / float(min(len(tokens), len(other)))
+            if score > best_score:
+                best_score = score
+                best_meta = meta
+
+        for lib_name, meta in index.items():
+            if lib_name.startswith("__stem__:"):
+                _consider(lib_name.split(":", 1)[-1], meta)
+            elif lib_name.startswith("__topic__:"):
+                _consider(lib_name.split(":", 1)[-1], meta)
+            elif lib_name.startswith("__"):
+                continue
+            else:
+                _consider(self._normalize_string_for_match(lib_name), meta)
+            topic = str(meta.get("topic") or "").strip()
+            if topic:
+                _consider(self._normalize_string_for_match(topic), meta)
+
+        if best_meta is not None and best_score >= 0.5:
+            _log.info(
+                "Library caption fuzzy-matched %r (score=%.2f).",
+                name,
+                best_score,
+            )
+            return dict(best_meta)
+
+        _log.warning(
+            "Could not find library match for normalized name: %r",
+            clean_filename,
+        )
+        return {}
 
     @classmethod
     def resolve_caption(
@@ -560,144 +791,36 @@ class LocalMediaQueue:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _mp4_basename_from_cell(val: Any) -> str | None:
-        """Extract an ``.mp4`` basename from a path, URL, or bare filename cell."""
-        from urllib.parse import unquote
+    def is_file_ready(filepath: str | Path) -> bool:
+        """True when the file is fully written and not locked by a renderer."""
+        path = Path(filepath)
+        try:
+            initial_size = path.stat().st_size
+            if initial_size == 0:
+                return False
 
-        s = str(val).strip()
-        if ".mp4" not in s.lower():
-            return None
-        s = unquote(s.split("?")[0].split("#")[0]).replace("\\", "/")
-        base = Path(s).name
-        if base.lower().endswith(".mp4"):
-            return base
-        return None
+            time.sleep(1.0)
 
-    def _load_postplanner_posted_mp4s(self) -> set[str]:
-        """
-        Collect posted ``.mp4`` basenames from ancient_knowledge Postplanner sheets.
+            final_size = path.stat().st_size
+            if initial_size != final_size:
+                return False  # still growing
 
-        Always reads ``postplan_20260802_212650.xlsx`` (canonical batch marker),
-        then unions every other ``postplanner/postplan_*.xlsx`` (and the bulk
-        import sheet when present) so URL-based MEDIA rows are not missed.
-        """
-        import pandas as pd
-
-        postplanner_dir = self.channel_dir / "postplanner"
-        primary = postplanner_dir / "postplan_20260802_212650.xlsx"
-        sheets: list[Path] = []
-        if primary.is_file():
-            sheets.append(primary)
-        if postplanner_dir.is_dir():
-            for p in sorted(postplanner_dir.glob("postplan_*.xlsx")):
-                if p.resolve() != primary.resolve():
-                    sheets.append(p)
-        bulk = self.channel_dir / "automated_bulk_posts_import.xlsx"
-        if bulk.is_file():
-            sheets.append(bulk)
-
-        posted_files: set[str] = set()
-        if not sheets:
-            _log.error(
-                "No Postplanner Excel found under %s — ancient_knowledge "
-                "queue filter aborted.",
-                postplanner_dir,
-            )
-            return posted_files
-
-        for excel_path in sheets:
-            try:
-                df = pd.read_excel(excel_path)
-                before = len(posted_files)
-                for col in df.columns:
-                    for val in df[col].dropna():
-                        name = self._mp4_basename_from_cell(val)
-                        if name:
-                            posted_files.add(name)
-                added = len(posted_files) - before
-                if added:
-                    _log.info(
-                        "Postplanner %s: +%d .mp4 name(s) (running total %d).",
-                        excel_path.name,
-                        added,
-                        len(posted_files),
-                    )
-            except Exception as exc:
-                _log.error(
-                    "Failed to read Postplanner Excel %s: %s", excel_path, exc
-                )
-
-        _log.info(
-            "Loaded %d previously posted files from Postplanner Excel set.",
-            len(posted_files),
-        )
-        return posted_files
-
-    def _get_ancient_knowledge_queue(
-        self, clips_dir: str | Path, max_clips: int = 6
-    ) -> list[Path]:
-        """
-        Postplanner Excel + mtime filter for ``ancient_knowledge``.
-
-        1. Load posted ``.mp4`` basenames from Postplanner Excel sheets.
-        2. Cutoff = mtime of the newest posted clip still on disk.
-        3. Keep unposted clips newer than that cutoff.
-        4. Take the newest ``max_clips``, then order oldest→newest for schedule.
-        """
-        clips_path = Path(clips_dir)
-        posted_files = self._load_postplanner_posted_mp4s()
-        if not posted_files and not (self.channel_dir / "postplanner").is_dir():
-            return []
-
-        all_clips: list[dict[str, Any]] = []
-        if not clips_path.is_dir():
-            return []
-        for path in clips_path.iterdir():
-            if not path.is_file():
-                continue
-            if path.suffix.lower() != ".mp4":
-                continue
-            if path.name.endswith(".bak") or ".bak_" in path.name:
-                continue
-            all_clips.append(
-                {
-                    "name": path.name,
-                    "path": path,
-                    "mtime": path.stat().st_mtime,
-                }
-            )
-
-        if not all_clips:
-            return []
-
-        posted_mtimes = [
-            c["mtime"] for c in all_clips if c["name"] in posted_files
-        ]
-        cutoff_mtime = max(posted_mtimes) if posted_mtimes else 0.0
-
-        unposted_clips = [
-            c
-            for c in all_clips
-            if c["name"] not in posted_files and c["mtime"] > cutoff_mtime
-        ]
-
-        unposted_clips.sort(key=lambda x: x["mtime"], reverse=True)
-        target_clips = unposted_clips[:max_clips]
-        # Schedule oldest of the selected 6 first
-        target_clips.sort(key=lambda x: x["mtime"])
-
-        _log.info(
-            "Filtered ancient_knowledge queue down to %d clips "
-            "(cutoff_mtime=%.0f, excel_posted=%d, candidates=%d).",
-            len(target_clips),
-            cutoff_mtime,
-            len(posted_files),
-            len(unposted_clips),
-        )
-        return [c["path"] for c in target_clips]
+            # Windows: rename-to-self fails when another process holds a lock
+            os_path = str(path)
+            os.rename(os_path, os_path)
+            return True
+        except (OSError, PermissionError):
+            return False
 
     def scan_pending(self, *, format_type: str = "reel") -> list[MediaItem]:
-        """Return pending media files not yet recorded as posted."""
+        """
+        Return pending media files not yet recorded as posted.
+
+        Uses only ``facebook_history.json`` + ``posted_facebook/`` for
+        exclusion (no Postplanner Excel). Sorted newest-first by
+        ``max(ctime, mtime)``. ``is_file_ready`` runs only on the 5 newest
+        candidates (older Drive files are assumed finished).
+        """
         if not self.media_dir.is_dir():
             _log.warning("Media directory missing: %s", self.media_dir)
             return []
@@ -707,30 +830,44 @@ class LocalMediaQueue:
         posted = self.posted_filenames()
         items: list[MediaItem] = []
         meta_hits = 0
+        skipped_rendering = 0
 
-        if self.channel_name == "ancient_knowledge":
-            pending_paths = self._get_ancient_knowledge_queue(
-                self.media_dir, max_clips=6
+        raw_files: list[dict[str, Any]] = []
+        for path in self.media_dir.iterdir():
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in self.extensions:
+                continue
+            if path.name in posted:
+                continue
+            if path.name.endswith(".bak") or ".bak_" in path.name:
+                continue
+            st = path.stat()
+            raw_files.append(
+                {
+                    "name": path.name,
+                    "path": path,
+                    "sort_time": max(st.st_ctime, st.st_mtime),
+                }
             )
-            # Still honor local facebook_history / posted_facebook moves
-            pending_paths = [p for p in pending_paths if p.name not in posted]
-        else:
-            pending_paths = []
-            for path in sorted(
-                self.media_dir.iterdir(), key=lambda p: p.name.lower()
-            ):
-                if not path.is_file():
-                    continue
-                if path.suffix.lower() not in self.extensions:
-                    continue
-                if path.name in posted:
-                    continue
-                # Skip backup / intermediate files
-                if path.name.endswith(".bak") or ".bak_" in path.name:
-                    continue
-                pending_paths.append(path)
 
-        for path in pending_paths:
+        # Sort newest first BEFORE lock/growth checks
+        raw_files.sort(key=lambda x: x["sort_time"], reverse=True)
+
+        pending: list[dict[str, Any]] = []
+        for index, entry in enumerate(raw_files):
+            if index < 5:
+                if not self.is_file_ready(entry["path"]):
+                    skipped_rendering += 1
+                    _log.warning(
+                        "Skipping %r — file is still rendering or locked.",
+                        entry["name"],
+                    )
+                    continue
+            pending.append(entry)
+
+        for entry in pending:
+            path = entry["path"]
             meta = self.metadata_for(path)
             caption, source = self.resolve_caption(path, meta)
             if source != "fallback":
@@ -747,11 +884,13 @@ class LocalMediaQueue:
 
         _log.info(
             "Queue scan [%s/%s]: %d pending file(s) (%d already posted, "
-            "%d with library captions).",
+            "%d still rendering/locked among top-5, %d with library captions, "
+            "newest first).",
             self.channel_name,
             self.media_subdir,
             len(items),
             len(posted),
+            skipped_rendering,
             meta_hits,
         )
         return items
@@ -829,12 +968,33 @@ class UniversalComposerScheduler(ABC):
         except Exception:
             pass
 
+    def _hard_reload_reels_composer(self) -> None:
+        """
+        Force a full remount of Meta's Reel composer.
+
+        Soft same-URL navigations leave the post-schedule success UI (no
+        ``Add video``). Blank → composer + networkidle clears that state.
+        """
+        _log.info("Forcing hard reload of Composer URL to clear Meta UI state...")
+        try:
+            self.page.goto("about:blank", wait_until="domcontentloaded")
+        except Exception:
+            pass
+        self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
+        try:
+            self.page.wait_for_load_state(
+                "networkidle", timeout=config.LONG_TIMEOUT_MS
+            )
+        except Exception:
+            pass
+        self.page.wait_for_timeout(3_000)
+        self._dismiss_composer_error_modals()
+
     def prepare_composer_for_item(self, item: MediaItem) -> None:
         """
         Open the correct Meta Business Suite composer for this file type.
 
-        * Video → always ``goto`` ``reels_composer`` (fresh UI every item;
-          Meta leaves a success state that hides "Add video" after schedule)
+        * Video → always hard-reload ``reels_composer`` (fresh UI every item)
         * Photo → ``https://business.facebook.com/latest/`` (Universal Post)
 
         Always dismisses leftover error modals first. Does not steal OS focus.
@@ -849,16 +1009,7 @@ class UniversalComposerScheduler(ABC):
 
         current = self.page.url or ""
         if video:
-            _log.info("Forcing navigation to fresh Reel Composer endpoint...")
-            self.page.goto(REELS_COMPOSER_URL, wait_until="domcontentloaded")
-            try:
-                self.page.wait_for_load_state(
-                    "networkidle", timeout=config.LONG_TIMEOUT_MS
-                )
-            except Exception:
-                pass
-            # Give Meta's heavy React UI time to render Add video / controls
-            self.page.wait_for_timeout(4_000)
+            self._hard_reload_reels_composer()
         else:
             _log.info("Opening Universal Post Composer endpoint...")
             if "reels_composer" in current or "/latest/" not in current:
@@ -873,7 +1024,7 @@ class UniversalComposerScheduler(ABC):
             else:
                 _log.info("Already on Business Suite /latest/ — skipping navigation.")
 
-        self._dismiss_composer_error_modals()
+            self._dismiss_composer_error_modals()
 
     def _inject_file_via_cdp(self, file_path: str) -> None:
         """
@@ -1529,11 +1680,10 @@ class UniversalComposerScheduler(ABC):
 
     def fill_caption(self, caption: str) -> None:
         """
-        Fill caption into Meta's Universal Composer editor (full text).
+        Fill caption into Meta Reels description / Lexical editor.
 
-        Background-safe: polls caption selectors while video processes, prefers
-        a visible editor when available, fills via ``force`` click + ``fill`` /
-        JS ``dispatchEvent`` (no OS keyboard focus).
+        Prefers aria-label description/caption selectors so search textboxes
+        are not hit. Types via keyboard so Lexical registers the input.
         """
         caption_text = (caption or "").strip()
         _log.info("Filling caption (%d chars)...", len(caption_text))
@@ -1541,67 +1691,52 @@ class UniversalComposerScheduler(ABC):
             return
 
         caption_selectors = [
-            'div[role="textbox"][aria-label*="Describe your reel" i]',
-            'div[contenteditable="true"][role="textbox"]',
-            'div[contenteditable="true"]',
-            'div[aria-label*="caption" i]',
-            'div[aria-label*="description" i]',
-            "textarea",
-            'div[role="textbox"]',
+            'div[aria-label*="description" i][contenteditable="true"]',
+            'div[aria-label*="Descrição" i][contenteditable="true"]',
+            'div[aria-label*="Describe your reel" i][contenteditable="true"]',
+            'div[aria-label*="Write a caption" i][contenteditable="true"]',
+            'div[aria-label*="Escreva uma" i][contenteditable="true"]',
+            'div[data-lexical-editor="true"]',
+            'div[role="textbox"][aria-multiline="true"]',
         ]
 
-        textbox = None
-        attached_fallback = None
+        caption_locator = None
         # Poll up to 20s — caption often mounts only after upload processing.
         deadline = time.time() + 20.0
-        while time.time() < deadline and textbox is None:
+        while time.time() < deadline and caption_locator is None:
             for selector in caption_selectors:
                 loc = self.page.locator(selector).first
                 try:
                     if loc.count() == 0:
                         continue
                     if loc.is_visible(timeout=300):
-                        textbox = loc
+                        caption_locator = loc
                         _log.info("Caption field visible via %r", selector)
                         break
-                    if attached_fallback is None:
-                        attached_fallback = loc
                 except Exception:
                     continue
-            if textbox is None:
+            if caption_locator is None:
                 self.page.wait_for_timeout(400)
 
-        if textbox is None and attached_fallback is not None:
-            textbox = attached_fallback
-            _log.info("Caption field using attached (not yet visible) fallback.")
+        if caption_locator is None:
+            caption_locator = self.page.locator(
+                'div[contenteditable="true"][role="textbox"]'
+            ).first
+            _log.warning("Using fallback generic caption selector.")
+            try:
+                caption_locator.wait_for(state="visible", timeout=10_000)
+            except Exception:
+                caption_locator.wait_for(state="attached", timeout=5_000)
 
-        if textbox is None:
-            textbox = self.page.get_by_role("textbox").first
-            textbox.wait_for(state="attached", timeout=15_000)
+        # Focus + Lexical-friendly keyboard entry
+        caption_locator.click(force=True)
+        self.page.wait_for_timeout(500)
 
-        try:
-            textbox.click(force=True)
-            self.page.wait_for_timeout(300)
-            textbox.fill(caption_text)
-        except Exception as exc:
-            _log.warning(
-                "Standard fill fallback to JS text injection: %s", exc
-            )
-            textbox.evaluate(
-                """(el, text) => {
-                    el.focus();
-                    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-                        el.value = text;
-                    } else {
-                        el.innerText = text;
-                    }
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                }""",
-                caption_text,
-            )
+        self.page.keyboard.press("Control+A")
+        self.page.keyboard.press("Backspace")
+        self.page.keyboard.type(caption_text, delay=10)
 
-        _log.info("Caption filled successfully.")
+        _log.info("Caption filled successfully via keyboard typing.")
         self.hb.pause(0.6, 1.2)
 
     def enable_schedule_and_fill(self, scheduled_dt: datetime) -> None:
@@ -1697,7 +1832,7 @@ class UniversalComposerScheduler(ABC):
         self.hb.pause(1.0, 2.0)
 
     def reset_page(self) -> None:
-        """Dismiss stuck modals and return to Business Suite home."""
+        """Dismiss stuck modals and hard-reload a clean composer surface."""
         _log.info("Resetting page after error...")
         if self.dry_run:
             return
@@ -1708,9 +1843,13 @@ class UniversalComposerScheduler(ABC):
         except Exception:
             pass
         try:
-            self.navigate_home()
+            # Reel batches need a hard composer remount; photos go home.
+            if self.format_type in ("reel", "reels", "video"):
+                self._hard_reload_reels_composer()
+            else:
+                self.navigate_home()
         except Exception as exc:
-            _log.warning("Home navigation during reset failed: %s", exc)
+            _log.warning("Composer/home navigation during reset failed: %s", exc)
 
     # ---- internals ------------------------------------------------------
 

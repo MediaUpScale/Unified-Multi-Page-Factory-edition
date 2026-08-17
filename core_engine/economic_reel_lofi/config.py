@@ -7,16 +7,18 @@ from pathlib import Path
 from typing import Any
 
 # ── Scene timing ────────────────────────────────────────────────────────────
-SCENE_DURATION_S: float = 4.0
-DEFAULT_DURATION_S: int = 34
-MIN_DURATION_S: int = 30
-MAX_DURATION_S: int = 38
-MIN_SCENES: int = 7
-MAX_SCENES: int = 10
+SCENE_DURATION_S: float = 3.0
+DEFAULT_DURATION_S: int = 27  # 9 scenes × 3 s
+MIN_DURATION_S: int = 27
+MAX_DURATION_S: int = 27
+MIN_SCENES: int = 9
+MAX_SCENES: int = 9
 
 # ── Script / validation ─────────────────────────────────────────────────────
-MAX_CAPTION_CHARS: int = 90
-AUTHORITY_QUOTE_PROBABILITY: float = 0.15
+MAX_CAPTION_CHARS: int = 42  # one line at ~65px; ~3–6 words
+MAX_CAPTION_WORDS: int = 7
+CAPTION_HOLD_S: float = 0.55  # breath after the last word before a cut
+AUTHORITY_QUOTE_PROBABILITY: float = 0.0  # story monologue, not quote-maxims
 SCRIPT_MAX_RETRIES: int = 3
 DEDUP_SIMILARITY_THRESHOLD: float = 0.85
 IMAGE_MAX_RETRIES_PER_SCENE: int = 2
@@ -28,13 +30,19 @@ MODULE_PAGE_GATES: dict[str, frozenset[str]] = {
 }
 VALID_PAGES: frozenset[str] = frozenset({"momma_circle", "wonder_feed"})
 
-# Fixed Flux style base — short, positive, CLIP-front-loaded (BFL ~30-80 word band).
-# Flat poster blocks (not atmospheric glow). Palette swapped per scene via LIGHTING_MOODS.
-# Negations live in LOFI_NEGATIVE_PROMPT only (separate Together field).
+# Riso library is the primary prompt source (verbatim). This base is fallback only
+# when a prompt is missing style language — never used to override library palettes.
 LOFI_STYLE_BASE: str = (
-    "flat color illustration, bold solid color blocks, minimal gradient, "
-    "high contrast, poster-style shading, 2-3 dominant colors, graphic novel linework"
+    "riso print illustration, rich saturated nostalgic color palette, "
+    "bold flat color blocks with fine hand-inked linework, grainy halftone texture, "
+    "no smooth gradient, hard-edged color shading, vintage poster illustration style, "
+    "no photography, vertical 9:16 composition"
 )
+# Verbatim riso prompts — do not prepend mood lighting that remaps palette.
+USE_RISO_PROMPT_LIBRARY: bool = True
+RISO_PROMPT_LIBRARY_REL: str = "core_engine/economic_reel_lofi/store/riso_prompt_library_v2.json"
+# OFF — duotone/LUT crushed scene palettes (blue wash / TV-static first frames).
+LOFI_APPLY_GRADING: bool = False
 
 # Per-scene palette rotation + matching grading duotone pairs.
 # Avoid "light source" / glow / backlight wording — those bias Flux toward radial skies.
@@ -78,34 +86,92 @@ LOFI_STYLE_PREFIX: str = f"{LOFI_STYLE_BASE}, {LIGHTING_MOODS[0]['lighting']}"
 LOFI_NEGATIVE_PROMPT: str = (
     "photorealistic, photograph, 3d render, cgi, smooth vector art, "
     "radial glow, volumetric lighting, soft atmospheric haze, gradient sky wash, "
+    "blown highlights, white bloom, halo, overexposed whites, blown-out chest, "
+    "collar bloom, vignette bleed, overbright center wash, "
     "painterly blended lighting, monochromatic, grayscale, silhouette only, no linework, "
     "text, watermark, logo, typography, subtitles, ui, deformed hands, extra fingers, "
     "garbled text, nsfw, nude, explicit"
 )
+# Appended to Flux prompts (does not remap riso palettes).
+LOFI_PROMPT_EXPOSURE_GUARD: str = (
+    "even midtone exposure, no blown highlights, no white bloom or halo, "
+    "no overexposed chest or collar, no vignette bleed"
+)
 
-# ── Video canvas ────────────────────────────────────────────────────────────
+# Soft highlight clamp in prep_base_frame (before Ken Burns) — kills baked bloom.
+ENABLE_HIGHLIGHT_CLAMP: bool = True
+HIGHLIGHT_SOFT_KNEE: float = 208.0
+HIGHLIGHT_COMPRESS: float = 0.48
+HIGHLIGHT_CLAMP_CEILING: float = 236.0
+
+# ── Video canvas / motion ───────────────────────────────────────────────────
 REEL_WIDTH: int = 1080
 REEL_HEIGHT: int = 1920
 REEL_FPS: int = 30
+# Ken Burns — barely-perceptible drift (3–5% scale), ease-in-out, no parallax
 KEN_BURNS_ZOOM_START: float = 1.00
-KEN_BURNS_ZOOM_END: float = 1.12
-# Defaults = amber_dusk pair (overridden per-scene via mood)
+KEN_BURNS_ZOOM_END: float = 1.04  # 4% across the scene
+KEN_BURNS_ZOOM_CAP: float = 1.05  # hard ceiling
+KEN_BURNS_EASE: str = "smootherstep"  # ease-in-out
+# Tiny residual drift only — reference is near-static
+ENABLE_KINETIC_PAN: bool = True
+KEN_BURNS_PAN_AMP_X: float = 5.0
+KEN_BURNS_PAN_AMP_Y: float = 3.0
+# Animated lighting pulse (measurable luminance delta ~0.5–1s apart)
+ENABLE_LIGHT_BREATH: bool = True
+LIGHT_BREATH_AMP: float = 0.065  # more perceptible than 0.045
+LIGHT_BREATH_PERIOD_S: float = 6.5
+LIGHT_BREATH_SOURCE_BIAS: float = 0.70  # bias toward bright sources
+LIGHT_BREATH_BLOOM: float = 0.012  # keep off baked chest/collar bloom
+LIGHT_BREATH_DEBUG: bool = True  # log brightness_factor independently of zoom
+# Procedural numpy grain — OFF; replaced by reference overlay film grain.mp4
+ENABLE_PROCEDURAL_GRAIN: bool = False
+GRAIN_OPACITY: float = 0.0
+GRAIN_HALF_RES: bool = True
+# Film-stock multiply BEHIND caption only
+CAPTION_FILM_MULTIPLY_OPACITY: float = 0.18
+# Reference film-grain overlay (Screen), below caption; loop/trim to video duration
+ENABLE_DUST_OVERLAY: bool = True
+DUST_OVERLAY_REL: str = "channels_config/wonder_feed/overlays/overlay film grain.mp4"
+DUST_OVERLAY_PREFER_NPZ: bool = False
+DUST_OVERLAY_OPACITY: float = 0.32  # 20–35% screen
+DUST_OVERLAY_BLEND: str = "screen"
+# Dark vintage vignette (independent of particles)
+ENABLE_VIGNETTE: bool = True
+VIGNETTE_STRENGTH: float = 0.18  # ~15–20% corner darken
+# Legacy procedural dust (disabled when overlay asset is used)
+ENABLE_DUST_PARTICLES: bool = False
+DUST_PARTICLE_COUNT: int = 48
+DUST_PARTICLE_OPACITY: float = 0.12
+# Library BGM — random pick, trimmed to clip length (no generated beds)
+BGM_DIR_REL: str = "channels_config/wonder_feed/audio/bgm"
+BGM_VOLUME: float = 0.38  # duck under VO
+BGM_EXCLUDE_PREFIXES: tuple[str, ...] = ("lofi_bed",)
+REQUIRE_BGM: bool = True
+# Voiceover (ElevenLabs)
+ENABLE_VOICEOVER: bool = True
+LOFI_VOICE_ID: str = "hNtG3AcS155nfu8sfWXk"
+LOFI_VOICE_VOLUME: float = 1.0
+LOFI_VOICE_SPEED: float = 0.80  # ElevenLabs settings API (0.7–1.2); 0.9 still read fast
+REQUIRE_VOICEOVER: bool = True
+# Defaults = amber_dusk pair (legacy grading path only; LOFI_APPLY_GRADING=False)
 DUOTONE_SHADOW: tuple[int, int, int] = (28, 72, 88)
 DUOTONE_HIGHLIGHT: tuple[int, int, int] = (250, 185, 105)
-# Posterize luminance into N discrete bands before color remap (flat blocks).
 DUOTONE_TONAL_BANDS: int = 4
-GRAIN_INTENSITY: float = 0.028
-# Near-zero vignette — radial falloff was adding soft sky glow.
-VIGNETTE_STRENGTH: float = 0.06
+GRAIN_INTENSITY: float = 0.028  # legacy still-grade additive
 
-# Text-handle watermark height as fraction of frame (was 0.028 → ~33% smaller).
+# Text-handle watermark height as fraction of frame
 WATERMARK_SIZE_FRAC: float = 0.018
 
-# Caption typography — style keys in caption_style_lofi.FONT_LIBRARY.
-# Applies to wonder_feed + momma_circle via assembler / test_preview / pipeline.
-DEFAULT_CAPTION_STYLE: str = "caveat"  # Caveat-VariableFont_wght
+# Caption typography — Edu NSW ACT Foundation Bold, Whispers-small, tight tracking
+DEFAULT_CAPTION_STYLE: str = "edu_nsw"
+CAPTION_LINE_HEIGHT_FRAC: float = 0.034  # ~65px at 1920h; one-line target
+CAPTION_MIN_LINE_HEIGHT_FRAC: float = 0.032  # wrap/shrink is rare fallback only
+CAPTION_LETTER_SPACING_PX: float = -1.5  # tighter tracking
+CAPTION_WORD_FADE_S: float = 0.20  # soft per-word fade-in
 CAPTION_STYLES: frozenset[str] = frozenset(
     {
+        "edu_nsw",
         "caveat",
         "playwrite_nz_basic",
         "more_sugar_thin",
@@ -132,12 +198,12 @@ CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
     "wonder_feed": {
         "logo_candidates": [
             "channels_config/wonder_feed/logo/logo.png",
-            "assets/logos/wonder_feed_watermark.png",
         ],
         "watermark_handle": "@Wonder Feed",
         "logo_position": "bottom_center",
-        "logo_opacity": 0.55,
-        "logo_scale": 0.04,  # was 0.06 (~33% smaller)
+        "logo_opacity": 0.88,
+        "logo_scale": 0.161,  # +15% vs 0.14
+        "logo_bottom_px": 70,  # raise ~30% vs 48px inset
         "caption_color": (255, 255, 255),
         # Use channel PNG logo on LOFI stills/reels (not text handle).
         "use_text_watermark": False,
@@ -190,7 +256,7 @@ def build_style_prefix(mood: dict[str, Any] | None = None) -> str:
 
 
 def scene_count_for_duration(duration_s: int | float) -> int:
-    """Scene count = round(duration / 4), clamped to sane min/max."""
+    """Scene count = round(duration / SCENE_DURATION_S), clamped to min/max."""
     d = float(duration_s)
     n = int(round(d / SCENE_DURATION_S))
     return max(MIN_SCENES, min(MAX_SCENES, n))

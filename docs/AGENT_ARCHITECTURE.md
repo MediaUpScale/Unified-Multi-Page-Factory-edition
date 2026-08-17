@@ -33,6 +33,36 @@ Every phase's output is the next phase's input; there is no cross-phase
 branching. Phase D depends on Phase C's measured audio (the Round-5
 lesson: never plan against a pre-TTS estimate).
 
+**Duration scaling (Round 7 — Measure-Then-Correct 2026-08-15).** The
+entire pipeline is driven end-to-end by `page_ctx.reel_duration`, which
+honours the CLI `--video-length` override without clamping to the
+channel's 80-90 s window. But — **the pipeline no longer PREDICTS how
+long N words will take to speak using any stored constant.** Every
+calibration bug this project has hit (2.25 vs 1.70 vs 3.15 vs 1.77 WPS,
+across ElevenLabs / F5-TTS, across voice-preset changes) traced back to
+that anti-pattern.
+
+The new philosophy is **measure, don't predict**:
+
+1. Phase B (script) generates ONE draft at the seed word count from
+   `config.words_for_duration(reel_duration)`. Word count is a hint,
+   not a gate.
+2. Phase C (TTS) synthesises the narration ONCE. Measures the actual
+   audio duration + observed WPS live for this voice + engine + speed.
+3. If the resulting total (narration + 1 s silence + CTA audio) is
+   outside ±15 % of `reel_duration`, does EXACTLY ONE corrective
+   regeneration using the just-measured WPS (not any stored constant),
+   TTS again, and accepts whatever comes back. CTA audio from
+   attempt 1 is reused — its text hasn't changed.
+4. Phase D (image bucket planner + hook/CTA) already syncs to the
+   measured audio duration from step 2/3 — no change.
+
+Hard ceiling: **at most 2 narration script-generation calls per reel**
+(initial + at most 1 corrective), regardless of voice/engine, ever.
+`NARRATION_WORDS_PER_SECOND` in `config.py` is now marked SEED-ONLY —
+never build acceptance/rejection logic against it. Section 7 covers the
+full flow.
+
 ---
 
 ## 2. Individual agents
@@ -40,9 +70,13 @@ lesson: never plan against a pre-TTS estimate).
 ### 2.1 Script / voiceover agent
 
 **What it does.** Builds an LLM prompt that instructs Gemini Flash to
-write an N-act voiceover script whose spoken duration matches the target.
-Runs the prompt, gates the output on word count, retries once if short,
-then hands the cleaned prose to the TTS agent.
+write an N-act voiceover script whose spoken duration matches the
+target. Runs the prompt ONCE per call — no internal word-count retry
+for non-warrior channels (Round 7 change). Duration accuracy is a
+downstream measurement problem, not a prompt-level guessing problem.
+The Master Mei (warrior) path still retries on strict word-floor
+failure because MEI has structural act-length requirements that are
+NOT duration-derived.
 
 **Where it lives.**
 
@@ -470,19 +504,28 @@ callers and should not be confused.
   / music) without touching either RAG mechanism directly.
 * Functions: `get_image_guidance`, `get_script_guidance`,
   `get_motion_guidance`, `get_music_guidance`, `get_full_bundle`
-* Content-type coverage today:
+* Content-type coverage today (Final Round 2026-08-15):
 
-  | Agent | RAG section queried | Populated? |
-  |-------|--------------------|-----------|
-  | Image-prompt | `mandatory_elements`, `lighting_style`, `forbidden_tokens`, `visual_concepts` | Yes for all 3 seeded channels |
-  | Script / VO | `script_rules` | **No — gap** (falls back to `target_audience_rules`) |
-  | Video / motion | `motion_rules` | **No — gap** (returns empty; motion cycle uses hardcoded defaults) |
-  | Music-prompt | `music_rules` | **No — gap** (falls back to `lighting_style` mood proxy; directive file remains primary source) |
+  | Agent | RAG section queried | ancient_knowledge | master_mei | lofi_economic |
+  |-------|--------------------|-------------------|------------|---------------|
+  | Image-prompt | `mandatory_elements`, `lighting_style`, `forbidden_tokens`, `visual_concepts` | Populated | Populated | Populated |
+  | Script / VO | `script_rules` | **Populated** (voice, word_budget, structural_pacing, hook_rule, cta, forbidden_phrases) | Gap → `target_audience_rules` fallback | Gap → `target_audience_rules` fallback |
+  | Video / motion | `motion_rules` | **Populated** (motion_cadence, parallax_depth_directive, shot_variety_rule, post_fx_toggles) | Gap → hardcoded `_MOTION_PROFILES` fallback | Gap → hardcoded `_MOTION_PROFILES` fallback |
+  | Music-prompt | `music_rules` | **Populated** (mood, sound_palette, mix_levels, generation, forbidden) | Gap → `lighting_style` mood proxy | Gap → `lighting_style` mood proxy |
+
+  All three previously-gap sections for `ancient_knowledge` were populated
+  in the Final Round; no `CHANNEL_RAG_GAP | channel=ancient_knowledge`
+  warning fires anymore. `master_mei` and `lofi_economic` still emit gap
+  warnings by design — their creative direction lives in dedicated prompt
+  files inside their respective `channels_config/{channel}/prompts/`
+  folders, not in the RAG.
 
 * Gap-closing recipe: add the missing section to that channel's dict in
   `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` (as a string, a list
   of strings, or a dict). The bridge picks it up on the next call — no
-  code change needed here.
+  code change needed here. `_normalize_rules()` in the same file was
+  extended so the three new sections (`script_rules`, `motion_rules`,
+  `music_rules`) round-trip through the JSON store without being stripped.
 
 ---
 
@@ -547,3 +590,171 @@ callers and should not be confused.
    that needs it.
 4. Add the agent to Section 2 of this document and update Section 4's
    quick reference.
+
+---
+
+## 7. Two-tier pacing + duration scaling (Final Round 2026-08-15)
+
+This section describes the current act-count and word-budget architecture
+that replaced the fixed-cap / import-time-constant model in Round 6.
+
+### 7.1 Two-tier act count
+
+`core_engine/reel_sequence_engine.py::compute_two_tier_act_count`
+computes the total number of stills for any requested `duration_s`:
+
+* **Tier 1 — fast-cut opening.** `min(duration_s, tier1_horizon_s)`
+  seconds of narration @ `~tier1_seconds_per_act` per still (default
+  4.5 s), capped at `tier1_max_acts` stills (default 20). Preserves the
+  punchy rhythm of the first ~90 s regardless of total duration.
+* **Tier 2 — slower body.** `duration_s - tier1_horizon_s` seconds
+  beyond the horizon @ `~tier2_seconds_per_act` per still (default
+  10 s). Zero when `duration_s <= tier1_horizon_s` — short reels stay
+  100 % Tier 1.
+* **No upper ceiling on total acts** — a 5-minute reel produces ~41
+  stills, a 10-minute one ~65. The former `REEL_IMAGE_COUNT = 16`
+  ceiling that silently clipped long-video renders in Round 6 has been
+  removed from the AK page config entirely.
+
+Sample scaling table (AK defaults, `min_acts=8`):
+
+| Requested duration | Tier 1 acts | Tier 2 acts | Total acts | Narration words | Est. narration audio |
+|-------------------:|------------:|------------:|-----------:|----------------:|---------------------:|
+| 60 s | 14 | 0 | 14 | 146 | 65 s |
+| 85 s (default) | 19 | 0 | 19 | 207 | 92 s |
+| 90 s | 20 | 0 | 20 | 219 | 97 s |
+| 180 s | 20 | 9 | 29 | 437 | 194 s |
+| 300 s | 20 | 21 | 41 | 729 | 324 s |
+
+### 7.2 Two-tier bucket clamp bands
+
+`plan_bucket_act_durations()` accepts an optional `tier2_body_start`
+parameter (body-index where Tier 2 begins). When passed:
+
+* Body acts `[0..tier2_body_start-1]` clamp to `[body_min_s,
+  body_max_s]` = `[2.5, 9.0]` s (Tier-1 band).
+* Body acts `[tier2_body_start..]` clamp to `[tier2_body_min_s,
+  tier2_body_max_s]` = `[8.0, 12.0]` s (Tier-2 band).
+* Body budget is split proportionally to the sum of word-weights in
+  each tier so short-word Tier-2 acts don't monopolise time.
+* CTA stays its own final slot in either tier, unaffected.
+
+The no-consecutive-repeat rules (subject / shot / lighting) and the
+Round-6 topic-theme weighting apply across BOTH tiers — a long-video
+Tier 2 act still gets the same variety-rotation treatment as a Tier 1
+act, just held longer on screen.
+
+`main.py` gates the two-tier path on `page_ctx.use_two_tier_pacing`
+(opt-in via `USE_TWO_TIER_PACING = True` in the channel's `page_config.py`).
+Other channels continue to use `compute_dense_act_count` or
+`compute_hook_body_act_count` with their own `REEL_IMAGE_COUNT` ceiling.
+
+### 7.3 The 5 duration-scaling fixes
+
+Applied in the Final Round to make the pipeline actually honour long
+`--video-length` requests:
+
+| # | File / line | Before | After |
+|---|-------------|--------|-------|
+| 1 | `channels_config/ancient_knowledge/page_config.py:163` | `REEL_IMAGE_COUNT = 16` | Removed. `page_loader.reel_image_count` returns 9999 (effective ∞) when `USE_TWO_TIER_PACING=True` and no explicit cap is set. The two-tier planner computes the actual count from `reel_duration`. |
+| 2 | Same file, lines 164-166 | `REEL_NARRATION_WORDS = words_for_duration(REEL_DURATION_TARGET_MIN)` (import-time constant → pinned to 194) | Deleted. `page_loader.reel_narration_words` is now a `@property` that returns `words_for_duration(self.reel_duration)` at read time — `--video-length 180` requests 437 words, `300` requests 729. Same for `reel_narration_min_words` and `reel_narration_max_words`. |
+| 3 | `avatar_engine/caption_engine.py:1720-1737` | `_min_words = words_for_duration(80.0)`; `_max_words = words_for_duration(80.0) + 20` (hardcoded to 80 s regardless of the `duration_s` argument!) | `_min_words = int(words_for_duration(duration_s))`; `_max_words = int(words_for_duration(duration_s) + max(20, duration_s * 0.25))` — proportional to the runtime target. |
+| 4 | `config.py:270-272` | `SEQUENCE_VOICEOVER_MIN_WORDS: int = words_for_duration(80.0)` (import-time constant) | Deprecated but retained for backwards compat. New callable `config.sequence_voiceover_min_words(duration_s)` computes on demand. Caption engine no longer references the module-level scalar. |
+| 5 | `main.py:3571` | `_words_tgt = page_ctx.reel_narration_words` (was reading a stale import-time value) | Unchanged — but now resolves correctly at runtime because of fix #2. |
+
+### 7.3.5 Round 7 — Measure-Then-Correct (supersedes 7.3.1 WPS calibration)
+
+Round 7 abandoned per-engine / per-voice calibration entirely. The
+`NARRATION_WORDS_PER_SECOND` constant remains in `config.py` at 1.77
+but is now marked **SEED ONLY** — the pipeline never uses it as a
+duration gate.
+
+**The new flow, per reel (AK path):**
+
+1. **Early script** — `main.py::seq_reel block ~line 2652`. Single
+   Gemini call at `total_words_target = words_for_duration(reel_duration)`
+   (the seed). Whatever word count comes back is accepted. Uniqueness
+   gate may loop this call up to `MAX_UNIQUENESS_RETRIES` times, but
+   there is no per-attempt word-floor retry anymore.
+2. **TTS + measure — attempt 1** —
+   `main.py::_synthesize_sequence_voice_track`. Narration + CTA are
+   synthesised (2 ElevenLabs calls, CTA once and only once). Total
+   audio is measured. `observed_wps = narration_words /
+   narration_seconds` is computed from the actual result.
+3. **Correction decision** — if `|total_s - reel_duration| /
+   reel_duration <= 0.15` (±15 %), accept attempt 1 and return.
+4. **Corrective regen — attempt 2** — otherwise, compute
+   `desired_narr_s = reel_duration - cta_dur - 1.0`, `corrected_words =
+   round(desired_narr_s * observed_wps)`, call
+   `caption_engine.generate_sequence_voiceover(...,
+   total_words_target=corrected_words, ...)`. This is the second (and
+   final) Gemini call for narration in the reel.
+5. **TTS + measure — attempt 2** — synthesise the corrected
+   narration. Reuse the CTA audio from attempt 1 (its text is
+   unchanged). Re-stitch. Log the final observed WPS.
+6. **Accept.** No third attempt, ever. Downstream (two-tier planner,
+   hook/CTA slotting) picks up the measured audio duration and plans
+   image act durations from that.
+
+**Guarantees:**
+
+* At most **2 Gemini script-generation calls per reel** for narration
+  (early gen + optional corrective gen). The uniqueness gate is a
+  separate axis and its retries are unaffected.
+* At most **3 ElevenLabs TTS calls per reel** (narration attempt 1 +
+  CTA once + narration attempt 2 only if corrective). Attempt 2 is
+  skipped entirely when attempt 1 lands within tolerance.
+* Zero dependency on a stored WPS constant for accuracy — the
+  correction math uses the WPS that was just observed on this specific
+  voice/engine/speed for this specific run. Changing the ElevenLabs
+  voice, switching to F5-TTS, adjusting `speed`, or any other change
+  that shifts the delivery rate will self-correct on the next reel
+  without any config edit.
+* Sanity guards: if `observed_wps` falls outside `[0.8, 4.0]` (broken
+  measurement / near-zero narration duration) the code accepts attempt
+  1 and logs a warning instead of running the correction math on garbage.
+
+**What replaced what:**
+
+| Old (Round 6 / Final Round) | New (Round 7) |
+|-----------------------------|---------------|
+| `_MAX_AUDIO_DURATION_RETRIES = 1` loop that alternated "VOICE DURATION SHORT → regenerate longer" and "VOICE DURATION LONG → trim" against a pre-calibrated `NARRATION_WORDS_PER_SECOND` | Single `_VOICE_TOLERANCE_FRACTION = 0.15` window + single corrective regen with observed WPS |
+| Widening the 80-90 s acceptance window to `reel_duration × (0.92, 1.12)` for `--video-length` overrides | Same 15 % tolerance applies uniformly at every duration; the widening code is gone |
+| Word-floor retry inside `caption_engine.generate_sequence_voiceover` (non-warrior path) | Removed. Word count is a seed hint. Warrior/MEI still retries on its structural length floor. |
+| Word-floor retry in `main.py`'s early-script block | Removed. Single Gemini call, uniqueness gate stays. |
+| `config.NARRATION_WORDS_PER_SECOND = 2.25 → 1.77` calibration edit as fix #6 | Constant left at 1.77 but reduced to a **seed only** — never gates anything |
+
+The 5 duration-scaling fixes from Section 7.3 are still in place — they
+made the pipeline actually honour `--video-length` end-to-end. Round 7
+sits on top of them and removes the last remaining assumption (the
+stored WPS gate).
+
+### 7.4 Extension points
+
+* Change the Tier-1 horizon or per-still cadence per channel: set
+  `REEL_TIER1_HORIZON_S`, `REEL_TIER1_SECONDS_PER_ACT`,
+  `REEL_TIER1_MAX_ACTS`, or `REEL_TIER2_SECONDS_PER_ACT` in that
+  channel's `page_config.py`. The `page_loader` properties expose
+  them via `reel_tier1_*` / `reel_tier2_*` and `main.py` passes them
+  into `compute_two_tier_act_count` at call time.
+* Opt a new channel into two-tier pacing: set `USE_TWO_TIER_PACING =
+  True` in its `page_config.py` and delete any `REEL_IMAGE_COUNT` entry
+  so the ceiling doesn't fight the runtime planner.
+* Widen or narrow the measure-then-correct tolerance: edit
+  `_VOICE_TOLERANCE_FRACTION` in
+  `main.py::_synthesize_sequence_voice_track` (default `0.15` =
+  ±15 %). Tighter values force more corrective regens (higher LLM
+  cost, tighter duration match); looser values accept more variance
+  (fewer regens, slightly more duration slack).
+* Adjust the observed-WPS sanity window: edit `_VOICE_MIN_OBSERVED_WPS`
+  (0.8) and `_VOICE_MAX_OBSERVED_WPS` (4.0) in the same file. Only
+  used to reject the correction path when the first-attempt
+  measurement itself looks broken; too-narrow values will cause
+  correction to no-op on unusual but real voices.
+* Change the initial seed word count: edit
+  `config.NARRATION_WORDS_PER_SECOND` (1.77 today, from the AK
+  ElevenLabs baseline). Only affects the FIRST draft's rough length —
+  the correction step self-adjusts regardless of this value.
+* Add a new voice / TTS engine: no config change required. The
+  measure-then-correct flow will discover its WPS on the first reel
+  and apply the correction on attempt 2 automatically.

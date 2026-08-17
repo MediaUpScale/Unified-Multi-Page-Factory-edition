@@ -1,0 +1,69 @@
+{
+  "style_base": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, vintage poster illustration style, no photography, vertical 9:16 composition",
+  "prompts": [
+    {
+      "id": "riso_001",
+      "scene_type": "lone_figure_walking",
+      "mood": "quiet_sorrowful",
+      "palette": "misty lavender, pale seafoam green, soft slate grey (low-saturation pastel)",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful, very sad woman with dark hair and sad expression on her face walks along a foggy, deserted beach at dawn. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Low-saturation pastel color palette dominated by misty lavender, pale seafoam green, and soft slate grey. Evoking a quiet, sorrowful mood. No photography, just illustration."
+    },
+    {
+      "id": "riso_002",
+      "scene_type": "lone_figure_bench",
+      "mood": "melancholic_quiet",
+      "palette": "cool indigo and violet tones",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, a lone figure sitting on a park bench under a streetlamp at night, back turned to camera, empty path stretching into the distance, cool indigo and violet tones, melancholic quiet mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_003_template",
+      "scene_type": "TEMPLATE — action/interaction scene",
+      "mood": "[mood]",
+      "palette": "variable per scene",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, [SCENE WITH ACTION/INTERACTION — not a static figure staring at the horizon], [SECONDARY/AMBIENT LIGHT SOURCE — streetlamp, window, lamp, NOT a giant sun disc], [mood] mood, vintage poster illustration style, vertical 9:16 composition",
+      "notes": "Fill-in template for the RAG engine to generate new scene variants. Must always include an action/interaction element and a specific ambient light source — never a static staring pose or an oversized sun."
+    },
+    {
+      "id": "riso_004",
+      "scene_type": "two_people_table_tension",
+      "mood": "melancholic_quiet_tension",
+      "palette": "muted amber and deep teal",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, two people sitting apart at opposite ends of a kitchen table, dim warm lamp light, long shadows, quiet tension, muted amber and deep teal palette, melancholic mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_005",
+      "scene_type": "two_people_rainy_street",
+      "mood": "bittersweet",
+      "palette": "muted blue-grey and warm streetlight amber",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, two people standing apart on a rainy street corner, umbrellas overlapping briefly, reflections on wet pavement, muted blue-grey and warm streetlight amber, bittersweet mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_006",
+      "scene_type": "lone_figure_train_platform",
+      "mood": "hopeful_bittersweet",
+      "palette": "soft pink and amber morning light",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, a lone figure standing at a train platform at dawn, back turned to camera, suitcase beside them, soft pink and amber morning light, hopeful bittersweet mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_007",
+      "scene_type": "portrait_closeup_sad_woman_rain",
+      "mood": "bittersweet",
+      "palette": "muted blue-grey with warm streetlight amber reflections",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful, very sad woman with dark curly hair and tears on her face stands on a rainy street corner at night, holding an umbrella. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Rich saturated nostalgic color palette dominated by muted blue-grey tones and warm streetlight amber reflecting on the wet pavement. Evoking a bittersweet mood, vertical 9:16 composition."
+    },
+    {
+      "id": "riso_008",
+      "scene_type": "portrait_closeup_sad_woman_manga",
+      "mood": "lonely_melancholic",
+      "palette": "muted blue-grey with warm low-key amber glow",
+      "prompt": "A close-up illustration of a beautiful, deeply sad woman with tears on her face, in the style of classic manga comic book art. Fine hand-inked linework, bold flat color blocks, and a grainy halftone dots texture. Hard-edged comic book shading with no smooth gradients, creating a lonely and melancholic atmosphere. Saturated yet nostalgic color palette with muted blue-grey tones and a warm, low-key amber glow. Retro pop-art print aesthetic, bittersweet, cinematic, and solitary mood."
+    },
+    {
+      "id": "riso_009",
+      "scene_type": "lone_figure_subway_platform_wide",
+      "mood": "quiet_sorrowful",
+      "palette": "misty lavender, pale seafoam green, soft slate grey (low-saturation pastel)",
+      "prompt": "A risograph print wide shot illustration in vintage poster style. A lonely old man with white hair and a slumped posture stands alone from a distance on a completely deserted underground subway platform at night. He is waiting under a single dim overhead lamp that casts a sharp shadow. In the background, the empty train tracks disappear into the dark tunnel. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged graphic shading and no smooth gradients. Low-saturation pastel color palette of misty lavender, pale seafoam green, and soft slate grey. No photography, just illustration, vertical 9:16 composition."
+    }
+  ]
+}

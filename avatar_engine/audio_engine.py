@@ -191,6 +191,100 @@ def _build_voice_settings_obj(_VoiceSettings, vs: dict, speed: float):
         return _VoiceSettings(**common), _spd
 
 
+def apply_elevenlabs_voice_settings(
+    voice_id: str,
+    *,
+    speed: float = 0.9,
+    stability: float = 1.0,
+    similarity_boost: float = 1.0,
+    style: float = 0.0,
+    use_speaker_boost: bool = True,
+) -> dict[str, Any]:
+    """
+    Persist voice performance via ElevenLabs ``/v1/voices/{id}/settings/edit``.
+
+    This is the official settings API (not post-playback speed). Valid ``speed``
+    is roughly 0.7–1.2; 1.0 is the default. Logs request and response.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    api_key = app_config.ELEVENLABS_API_KEY
+    if not api_key:
+        raise ValueError("ELEVENLABS_API_KEY not set. Add it to your .env file.")
+    vid = (voice_id or "").strip()
+    if not vid:
+        raise ValueError("voice_id is required for ElevenLabs settings/edit")
+
+    payload = {
+        "stability": float(stability),
+        "use_speaker_boost": bool(use_speaker_boost),
+        "similarity_boost": float(similarity_boost),
+        "style": float(style),
+        "speed": float(speed),
+    }
+    url = f"https://api.elevenlabs.io/v1/voices/{vid}/settings/edit"
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "xi-api-key": str(api_key),
+        },
+    )
+    print(f"[ElevenLabs voice settings] POST {url}")
+    print(f"[ElevenLabs voice settings] request={payload}")
+    logger.info("ElevenLabs settings/edit POST %s payload=%s", url, payload)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            status = int(getattr(resp, "status", 200) or 200)
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        print(f"[ElevenLabs voice settings] HTTP {exc.code} response={raw[:1200]}")
+        logger.error("ElevenLabs settings/edit failed HTTP %s: %s", exc.code, raw[:800])
+        raise RuntimeError(
+            f"ElevenLabs settings/edit failed HTTP {exc.code}: {raw[:400]}"
+        ) from exc
+    print(f"[ElevenLabs voice settings] status={status} response={raw[:1200]!r}")
+    logger.info("ElevenLabs settings/edit status=%s response=%s", status, raw[:800])
+
+    stored: dict[str, Any] = {}
+    get_url = f"https://api.elevenlabs.io/v1/voices/{vid}/settings"
+    try:
+        get_req = urllib.request.Request(
+            get_url,
+            method="GET",
+            headers={
+                "Accept": "application/json",
+                "xi-api-key": str(api_key),
+            },
+        )
+        with urllib.request.urlopen(get_req, timeout=20) as resp:
+            get_raw = resp.read().decode("utf-8", errors="replace")
+        print(f"[ElevenLabs voice settings] GET {get_url} -> {get_raw[:1200]}")
+        logger.info("ElevenLabs voice settings GET %s", get_raw[:800])
+        try:
+            stored = json.loads(get_raw) if get_raw else {}
+        except json.JSONDecodeError:
+            stored = {"raw": get_raw}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ElevenLabs voice settings] GET verify failed: {exc}")
+        logger.warning("ElevenLabs settings GET verify failed: %s", exc)
+
+    try:
+        parsed = json.loads(raw) if raw else {"ok": True}
+    except json.JSONDecodeError:
+        parsed = {"ok": True, "raw": raw}
+    if isinstance(parsed, dict):
+        parsed["verified_settings"] = stored
+    return parsed if isinstance(parsed, dict) else {"ok": True, "raw": raw}
+
+
 def generate_voiceover(
     text: str,
     output_path: Path,
@@ -536,6 +630,12 @@ def generate_voiceover_with_timestamps(
         "speed=%.2f | stability=%.2f | expressive=%s | ssml=%s",
         vid, _model, len(text), _speed, _vs["stability"], expressive_mode, _ssml,
     )
+    print(
+        f"[ElevenLabs TTS] convert_with_timestamps voice={vid} model={_model} "
+        f"speed={_speed:.2f} stability={_vs.get('stability')} "
+        f"similarity={_vs.get('similarity_boost')} style={_vs.get('style')} "
+        f"chars={len(text)}"
+    )
 
     word_timings: list[tuple[str, float, float]] = []
     audio_bytes: bytes = b""
@@ -569,6 +669,11 @@ def generate_voiceover_with_timestamps(
                     **_ts_kwargs, speed=_speed
                 )
             except TypeError:
+                print(
+                    f"[ElevenLabs TTS] WARN convert_with_timestamps dropped "
+                    f"speed={_speed:.2f} (SDK TypeError) — relying on "
+                    f"voice settings/edit API"
+                )
                 result = client.text_to_speech.convert_with_timestamps(**_ts_kwargs)
 
         # Decode audio — try the correct field name first, then legacy/fallback names

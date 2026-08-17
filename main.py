@@ -131,6 +131,7 @@ import functools
 import logging
 import random
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -242,6 +243,15 @@ from run_ledger import (
 
 
 _LOG = logging.getLogger(__name__)
+
+# ECONOMIC_REEL + WAN_REEL share script/TTS/still generation in the variant worker.
+# WAN_REEL only diverges at compile (Wan img2vid vs Ken Burns).
+_SEQUENCE_VIDEO_POST_TYPES = frozenset({"ECONOMIC_REEL", "WAN_REEL"})
+
+
+def _is_sequence_video_post(post_type: str) -> bool:
+    return str(post_type or "").strip().upper() in _SEQUENCE_VIDEO_POST_TYPES
+
 
 # ---------------------------------------------------------------------------
 # ENGAGEMENT BAIT LOADER
@@ -946,7 +956,26 @@ def _stitch_audio_sequential(
         return narration_path
 
 
-_MAX_AUDIO_DURATION_RETRIES: int = 1  # down from 2, now that the pre-TTS gate is reliable
+# Duration-scaling philosophy (Round 7 — Measure-Then-Correct 2026-08-15):
+# ------------------------------------------------------------------
+# The pipeline no longer PREDICTS how long N words will take to speak
+# using a stored constant (``NARRATION_WORDS_PER_SECOND`` was found to be
+# aspirational, not measured — and per-voice/per-engine calibration drifts).
+# Instead: synthesize once, MEASURE the actual audio duration, compute the
+# observed WPS live for THIS voice + engine + speed, and if the total is
+# outside a comfortable tolerance of the requested video duration, do
+# exactly ONE corrective regeneration using the just-measured WPS. Then
+# accept whatever comes back — downstream (two-tier planner, hook/CTA)
+# already syncs to the measured audio duration.
+#
+# Ceiling is HARD: at most 2 narration script-generation calls (initial +
+# at most one corrective) per reel, ever. No third try. No "chase the
+# exact number" loop.
+_VOICE_TOLERANCE_FRACTION: float = 0.15   # ±15 % of target video duration
+_VOICE_MIN_OBSERVED_WPS: float = 0.8      # sanity floor for WPS math
+_VOICE_MAX_OBSERVED_WPS: float = 4.0      # sanity ceiling for WPS math
+# Retained for one-off backwards-compat imports; unused by the new flow.
+_MAX_AUDIO_DURATION_RETRIES: int = 1
 
 
 def _synthesize_sequence_voice_track(
@@ -964,23 +993,33 @@ def _synthesize_sequence_voice_track(
     generated_hooks_cache: "list[str] | None" = None,
     cost_tracker: "CostTracker | None" = None,
 ) -> tuple["Path | None", list, float, float, str, "Path | None", float, float]:
-    """Narration TTS + CTA stitch with 80–90s validation / script regen.
+    """Narration TTS + CTA stitch with measure-then-correct duration control.
 
-    Returns ``(voice_path, narr_word_timings, narr_dur, total_audio_s, script,
-    cta_path, cta_dur, silence_before_cta_s)``. ``cta_path`` and ``cta_dur``
-    are 0/None when no CTA was generated. Silence gap between narration and
-    CTA is fixed at 1.0 s (matches ``_stitch_audio_sequential`` default).
+    Round 7 (Measure-Then-Correct): exactly one initial script → TTS →
+    measure. If the resulting total audio is more than ``±15 %`` off the
+    requested ``page_ctx.reel_duration``, do EXACTLY ONE corrective
+    script regeneration using the just-measured WPS (not any stored
+    constant), TTS again, accept. No further loop.
+
+    On the corrective attempt the CTA audio from attempt 1 is reused —
+    it's the same fixed text, so re-synthesising it wastes an
+    ElevenLabs API call.
+
+    Returns ``(voice_path, narr_word_timings, narr_dur, total_audio_s,
+    script, cta_path, cta_dur, silence_before_cta_s)``. ``cta_path`` and
+    ``cta_dur`` are ``None`` / ``0`` when no CTA was generated. Silence
+    gap between narration and CTA is fixed at 1.0 s (matches
+    ``_stitch_audio_sequential`` default).
     """
     from avatar_engine.audio_engine import _audio_file_duration_s
-    from avatar_engine.audio_engine import pad_narration_to_minimum
 
     page_id = (page_ctx.page_id if page_ctx else "").lower()
     is_ak = page_id == "ancient_knowledge"
-    min_s = float(page_ctx.reel_duration_target_min if page_ctx else 80.0)
-    max_s = float(page_ctx.reel_duration_target_max if page_ctx else 90.0)
-    words_tgt = int(page_ctx.reel_narration_words if page_ctx else app_config.words_for_duration(80.0))
-    words_min = int(page_ctx.reel_narration_min_words if page_ctx else app_config.words_for_duration(80.0))
-    words_max = int(page_ctx.reel_narration_max_words if page_ctx else app_config.words_for_duration(90.0))
+    _reel_dur = float(page_ctx.reel_duration if page_ctx else 85.0)
+    words_max = int(
+        page_ctx.reel_narration_max_words if page_ctx
+        else app_config.words_for_duration(90.0)
+    )
     speed = 1.0 if is_ak else (page_ctx.tts_narration_speed if page_ctx else None)
     vs = dict(page_ctx.elevenlabs_voice_settings if page_ctx else {})
     if is_ak:
@@ -993,23 +1032,17 @@ def _synthesize_sequence_voice_track(
     from avatar_engine.mei_narrative import fix_cta_typos
     cta_text = fix_cta_typos(cta_text or "")
 
-    current = script or ""
-    voice_path: "Path | None" = None
-    narr_wts: list = []
-    narr_dur = 0.0
-    total_s = 0.0
-    cta_path: "Path | None" = None
-    cta_dur: float = 0.0
     _cta_silence_s: float = 1.0
 
-    for attempt in range(_MAX_AUDIO_DURATION_RETRIES + 1):
-        current = _trim_script_to_word_limit(current, max_words=words_max)
+    def _synth_narr(text: str, attempt_label: int) -> tuple["Path | None", list, float]:
+        """Single narration TTS call. Returns (voice_path, word_timings, dur_s)."""
+        cleaned = _trim_script_to_word_limit(text or "", max_words=words_max)
         if page_ctx is None or page_ctx.strip_audio_tags_before_tts:
-            current = _strip_audio_behavior_tags(current)
+            cleaned = _strip_audio_behavior_tags(cleaned)
         narr_out = reel_dir / f"{stem}_v{variant + 1:02d}_narration.mp3"
         try:
-            voice_path, narr_wts = generate_voiceover_with_timestamps(
-                current,
+            _vp, _wts = generate_voiceover_with_timestamps(
+                cleaned,
                 narr_out,
                 voice_id=voice_id or None,
                 model_id=model_id,
@@ -1018,105 +1051,179 @@ def _synthesize_sequence_voice_track(
                 enable_ssml=bool(page_ctx.tts_enable_ssml) if page_ctx else False,
                 expressive_mode=False,
             )
-            narr_wts = _filter_audio_tag_timings(narr_wts)
+            _wts = _filter_audio_tag_timings(_wts)
         except Exception as exc:  # noqa: BLE001
-            _LOG.warning("Pre-image TTS failed (attempt %d): %s", attempt + 1, exc)
-            break
+            _LOG.warning("Pre-image TTS failed (attempt %d): %s", attempt_label, exc)
+            return None, [], 0.0
         try:
-            narr_dur = float(_audio_file_duration_s(Path(voice_path)))
+            _d = float(_audio_file_duration_s(Path(_vp)))
         except Exception:
-            narr_dur = float(narr_wts[-1][2]) if narr_wts else 0.0
+            _d = float(_wts[-1][2]) if _wts else 0.0
+        return _vp, _wts, _d
 
-        cta_path = None
-        cta_dur = 0.0
-        if cta_text and voice_path is not None:
-            cta_out = reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
-            try:
-                cta_path, _cta_wts = generate_voiceover_with_timestamps(
-                    cta_text,
-                    cta_out,
-                    voice_id=voice_id or None,
-                    model_id=model_id,
-                    speed=speed,
-                    voice_settings=vs or None,
-                    expressive_mode=False,
-                )
-            except Exception as exc:  # noqa: BLE001
-                _LOG.warning("Pre-image CTA TTS failed: %s", exc)
-                cta_path = None
-            if cta_path is not None:
-                try:
-                    cta_dur = float(_audio_file_duration_s(Path(cta_path)))
-                except Exception:
-                    cta_dur = 0.0
-        if voice_path is not None and cta_path is not None:
-            stitched = reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"
-            voice_path = _stitch_audio_sequential(
-                voice_path, cta_path, stitched, silence_s=_cta_silence_s,
-            )
+    def _synth_cta_once() -> tuple["Path | None", float]:
+        if not cta_text:
+            return None, 0.0
+        cta_out = reel_dir / f"{stem}_v{variant + 1:02d}_cta.mp3"
         try:
-            total_s = float(_audio_file_duration_s(Path(voice_path))) if voice_path else 0.0
+            _cp, _ = generate_voiceover_with_timestamps(
+                cta_text,
+                cta_out,
+                voice_id=voice_id or None,
+                model_id=model_id,
+                speed=speed,
+                voice_settings=vs or None,
+                expressive_mode=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("Pre-image CTA TTS failed: %s", exc)
+            return None, 0.0
+        try:
+            _cd = float(_audio_file_duration_s(Path(_cp)))
         except Exception:
-            total_s = narr_dur
+            _cd = 0.0
+        return _cp, _cd
+
+    def _stitch(voice_only_path: "Path | None", cta_only_path: "Path | None"
+                ) -> "Path | None":
+        if voice_only_path is None:
+            return None
+        if cta_only_path is None:
+            return voice_only_path
+        stitched_out = reel_dir / f"{stem}_v{variant + 1:02d}_voice.mp3"
+        return _stitch_audio_sequential(
+            voice_only_path, cta_only_path, stitched_out, silence_s=_cta_silence_s,
+        )
+
+    # ── Attempt 1 — synthesize once, measure ─────────────────────────────
+    current = script or ""
+    voice_only_1, narr_wts, narr_dur = _synth_narr(current, attempt_label=1)
+    if voice_only_1 is None:
+        return (None, [], 0.0, 0.0, current, None, 0.0, _cta_silence_s)
+    cta_path, cta_dur = _synth_cta_once()
+    voice_path = _stitch(voice_only_1, cta_path)
+    try:
+        total_s = float(_audio_file_duration_s(Path(voice_path))) if voice_path else 0.0
+    except Exception:
+        total_s = narr_dur + (cta_dur + _cta_silence_s if cta_path else 0.0)
+    wc1 = len(current.split())
+    observed_wps_1 = (wc1 / narr_dur) if narr_dur > 0 else 0.0
+    _LOG.info(
+        "VOICE MEASURE | attempt=1 narr=%.1fs cta=%.1fs silence=%.1fs "
+        "total=%.1fs target=%.1fs words=%d observed_wps=%.3f delta=%+.1fs (%+.1f%%)",
+        narr_dur, cta_dur, _cta_silence_s, total_s, _reel_dur, wc1,
+        observed_wps_1, total_s - _reel_dur,
+        100.0 * (total_s - _reel_dur) / _reel_dur if _reel_dur > 0 else 0.0,
+    )
+
+    # ── Correction decision — MEASURE-then-correct, one shot only ────────
+    within_tolerance = (
+        _reel_dur > 0
+        and abs(total_s - _reel_dur) / _reel_dur <= _VOICE_TOLERANCE_FRACTION
+    )
+    if within_tolerance or caption_engine is None or not is_ak:
         _LOG.info(
-            "VOICE DURATION | attempt=%d narr=%.1fs total=%.1fs words=%d target=%.0f–%.0fs speed=%.2f",
-            attempt + 1, narr_dur, total_s, len(current.split()), min_s, max_s,
-            float(speed or 1.0),
+            "VOICE ACCEPT | attempt=1 total=%.1fs (target %.1fs, tolerance ±%.0f%%)",
+            total_s, _reel_dur, 100.0 * _VOICE_TOLERANCE_FRACTION,
         )
-        if not is_ak or (min_s <= total_s <= max_s) or caption_engine is None:
-            break
-        if attempt >= _MAX_AUDIO_DURATION_RETRIES:
-            break
-        if total_s < min_s:
-            _prev_wc = len(current.split())
-            _deficit = max(int(words_max) - _prev_wc, 0)
-            _LOG.warning(
-                "VOICE DURATION SHORT | %.1fs < %.0fs — regenerating longer script",
-                total_s, min_s,
-            )
-            current = caption_engine.generate_sequence_voiceover(
-                resolved_subject,
-                page_niche=page_ctx.content_niche if page_ctx else "",
-                persona_voice="investigative documentary narrator — write a LONG full script",
-                n_acts=n_acts,
-                duration_s=page_ctx.reel_duration if page_ctx else 85.0,
-                total_words_target=words_max,
-                economic=economic,
-                niche_disclaimer=(
-                    (page_ctx.niche_disclaimer if page_ctx else "")
-                    + f" CRITICAL: Previous narration was {total_s:.0f}s ({_prev_wc} words). "
-                    f"That is {_deficit} words short of the "
-                    f"{words_max}-word target. Add that many words of new content, not padding."
-                ),
-                cta_line="",
-                narrative_mode=page_ctx.narrative_mode if page_ctx else "investigative",
-                batch_angle_block=batch_angle_block,
-                uniqueness_rejection=(
-                    f"TOO SHORT: {total_s:.0f}s audio ({_prev_wc} words). "
-                    f"Add {_deficit}+ words of new evidence and visual description. "
-                    f"Target {words_max} words."
-                ),
-                previously_generated_hooks=list(generated_hooks_cache or []),
-            ) or current
-            if cost_tracker is not None and current:
-                cost_tracker.track_text(char_count=len(current))
-        else:
-            _LOG.warning(
-                "VOICE DURATION LONG | %.1fs > %.0fs — trimming to %d words",
-                total_s, max_s, words_min,
-            )
-            current = _trim_script_to_word_limit(current, max_words=words_min)
-    if is_ak and voice_path is not None and total_s < min_s:
+        return (
+            voice_path, narr_wts, narr_dur, total_s, current,
+            cta_path, cta_dur, _cta_silence_s,
+        )
+
+    # Sanity-clamp observed WPS so a broken measurement can't drive the
+    # correction into absurd territory (e.g. divide by ~0 → millions of words).
+    if not (_VOICE_MIN_OBSERVED_WPS <= observed_wps_1 <= _VOICE_MAX_OBSERVED_WPS):
         _LOG.warning(
-            "VOICE DURATION | still %.1fs after retries — "
-            "applying deterministic pad instead of shipping short",
-            total_s,
+            "VOICE CORRECT | observed_wps=%.3f outside sanity range "
+            "[%.2f, %.2f] — falling back to seed WPS and accepting attempt=1",
+            observed_wps_1, _VOICE_MIN_OBSERVED_WPS, _VOICE_MAX_OBSERVED_WPS,
         )
-        voice_path = pad_narration_to_minimum(voice_path, min_s)
-        try:
-            total_s = float(_audio_file_duration_s(Path(voice_path)))
-        except Exception:
-            pass
+        return (
+            voice_path, narr_wts, narr_dur, total_s, current,
+            cta_path, cta_dur, _cta_silence_s,
+        )
+
+    desired_narr_s = max(5.0, _reel_dur - float(cta_dur or 0.0) - _cta_silence_s)
+    corrected_words = max(40, int(round(desired_narr_s * observed_wps_1)))
+    _LOG.info(
+        "VOICE CORRECT | attempt=2 planned | target_narr=%.1fs observed_wps=%.3f "
+        "corrected_words=%d (prev=%d, delta=%+d)",
+        desired_narr_s, observed_wps_1, corrected_words, wc1, corrected_words - wc1,
+    )
+    try:
+        new_script = caption_engine.generate_sequence_voiceover(
+            resolved_subject,
+            page_niche=page_ctx.content_niche if page_ctx else "",
+            persona_voice=(
+                "investigative documentary narrator — "
+                f"target EXACTLY {corrected_words} spoken words"
+            ),
+            n_acts=n_acts,
+            duration_s=page_ctx.reel_duration if page_ctx else 85.0,
+            total_words_target=corrected_words,
+            economic=economic,
+            niche_disclaimer=(
+                (page_ctx.niche_disclaimer if page_ctx else "")
+                + f" DURATION CORRECTION: previous draft was {wc1} words / "
+                f"{narr_dur:.0f}s of narration. Re-plan the script to "
+                f"~{corrected_words} spoken words so the narration lands "
+                f"near {desired_narr_s:.0f}s. Do NOT pad or truncate — "
+                f"restructure the content density to hit that word count "
+                f"naturally."
+            ),
+            cta_line="",
+            narrative_mode=(
+                page_ctx.narrative_mode if page_ctx else "investigative"
+            ),
+            batch_angle_block=batch_angle_block,
+            previously_generated_hooks=list(generated_hooks_cache or []),
+        ) or ""
+    except Exception as _regen_exc:  # noqa: BLE001
+        _LOG.warning(
+            "VOICE CORRECT | script regen failed (%s) — accepting attempt=1",
+            _regen_exc,
+        )
+        new_script = ""
+
+    if not new_script or len(new_script.split()) < 40:
+        _LOG.warning(
+            "VOICE CORRECT | regen returned unusable output (%d words) — "
+            "accepting attempt=1",
+            len(new_script.split()) if new_script else 0,
+        )
+        return (
+            voice_path, narr_wts, narr_dur, total_s, current,
+            cta_path, cta_dur, _cta_silence_s,
+        )
+    if cost_tracker is not None:
+        cost_tracker.track_text(char_count=len(new_script))
+
+    current = new_script
+    voice_only_2, narr_wts, narr_dur = _synth_narr(current, attempt_label=2)
+    if voice_only_2 is None:
+        _LOG.warning(
+            "VOICE CORRECT | attempt=2 TTS failed — falling back to attempt=1 audio"
+        )
+        return (
+            voice_path, narr_wts, narr_dur, total_s, current,
+            cta_path, cta_dur, _cta_silence_s,
+        )
+    # Reuse CTA audio — the text hasn't changed
+    voice_path = _stitch(voice_only_2, cta_path)
+    try:
+        total_s = float(_audio_file_duration_s(Path(voice_path))) if voice_path else 0.0
+    except Exception:
+        total_s = narr_dur + (cta_dur + _cta_silence_s if cta_path else 0.0)
+    wc2 = len(current.split())
+    observed_wps_2 = (wc2 / narr_dur) if narr_dur > 0 else 0.0
+    _LOG.info(
+        "VOICE MEASURE | attempt=2 narr=%.1fs cta=%.1fs total=%.1fs "
+        "target=%.1fs words=%d observed_wps=%.3f delta=%+.1fs (%+.1f%%) — FINAL",
+        narr_dur, cta_dur, total_s, _reel_dur, wc2, observed_wps_2,
+        total_s - _reel_dur,
+        100.0 * (total_s - _reel_dur) / _reel_dur if _reel_dur > 0 else 0.0,
+    )
     return (
         voice_path, narr_wts, narr_dur, total_s, current,
         cta_path, cta_dur, _cta_silence_s,
@@ -1386,8 +1493,12 @@ def _run_acts_parallel(
     max_workers: int | None = None,
 ) -> "dict[int, Any]":
     """
-    Concurrent act jobs — delegates to ``remote_gpu_manager.run_parallel_jobs``
-    (generic submission-layer fan-out for image / future WAN video / audio).
+    Concurrent act jobs — delegates to ``remote_gpu_manager.run_parallel_jobs``.
+
+    Together AI (default image path): one HTTP call per prompt; Together does
+    not accept a list of different prompts in a single request, so this is the
+    batch. RunPod Flux (IMAGE_PROVIDER=remote_gpu): still one Comfy job per
+    still — images no longer share the video worker pool when Together is on.
     """
     from core_engine.remote_gpu_manager import run_parallel_jobs  # noqa: PLC0415
 
@@ -1638,6 +1749,9 @@ def _produce_variant_worker(
     """
     stem = f"{slug}_v{variant + 1:02d}"
     variation_index = variant
+    _wan_t0_variant = time.monotonic()
+    _wan_stage_times: dict[str, float] = {}
+    _wan_act_status: list[str] = []
     batch_cost_tracker = cost_tracker
     if batch_cost_tracker is not None:
         cost_tracker = CostTracker(
@@ -1700,7 +1814,7 @@ def _produce_variant_worker(
     visual_subject: str = ""  # LLM-authored scene description for image generation
     _seo_title_local = ""
 
-    if post_type in ("SMART_BAIT", "ECONOMIC_REEL", "CAROUSEL") and not skip_caption:
+    if post_type in ("SMART_BAIT", "ECONOMIC_REEL", "WAN_REEL", "CAROUSEL") and not skip_caption:
         assert caption_engine is not None
         try:
             # Load engagement bait examples from the wonder_feed reference spreadsheet
@@ -1841,7 +1955,7 @@ def _produce_variant_worker(
     # Master Mei NEVER uses wonder_feed graphite / pencil-drawing pipelines.
     _graphite_locked = (
         (not _is_master_mei_page)
-        and post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL")
+        and post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "WAN_REEL", "CAROUSEL")
         and (
             bool(page_ctx and (page_ctx.base_graphite_prompt or page_ctx.sketch_style_prompt))
             or image_style == "SKETCH"   # --draw-style SKETCH always forces graphite pipeline
@@ -1860,7 +1974,7 @@ def _produce_variant_worker(
     _mutated_subject = resolved_subject or ""
     if (
         (not _is_master_mei_page)
-        and post_type in ("SMART_BAIT", "ECONOMIC_REEL")
+        and post_type in ("SMART_BAIT", "ECONOMIC_REEL", "WAN_REEL")
         and overlay_text
         and caption_engine is not None
     ):
@@ -1936,13 +2050,13 @@ def _produce_variant_worker(
     if post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "CAROUSEL"):
         image_avatar_mode = "OFF"
     elif (
-        post_type == "ECONOMIC_REEL"
+        post_type in ("ECONOMIC_REEL", "WAN_REEL")
         and page_ctx
         and (page_ctx.page_id or "").lower() == "master_mei"
         and not page_ctx.sequence_force_avatar_off
     ):
         image_avatar_mode = "ON"
-    elif post_type == "ECONOMIC_REEL":
+    elif post_type in ("ECONOMIC_REEL", "WAN_REEL"):
         image_avatar_mode = "OFF"
     else:
         image_avatar_mode = avatar_mode
@@ -2386,7 +2500,7 @@ def _produce_variant_worker(
         if (
             isinstance(img_path_display, Path)
             and img_path_display.is_file()
-            and post_type != "ECONOMIC_REEL"
+            and post_type not in ("ECONOMIC_REEL", "WAN_REEL")
         ):
             video_path_str = _maybe_convert_to_video(
                 img_path_display,
@@ -2467,7 +2581,7 @@ def _produce_variant_worker(
     # Clips always:   outputs/<page>/clips/
     _episode_id = f"ep_{datetime.now().strftime('%Y%m%d_%H%M')}"
     _episode_assets_dir: Path | None = None
-    if post_type == "ECONOMIC_REEL":
+    if post_type in ("ECONOMIC_REEL", "WAN_REEL"):
         _episode_assets_dir = Path(app_config.ASSETS_DIR) / _episode_id
         _episode_assets_dir.mkdir(parents=True, exist_ok=True)
         Path(app_config.PAGE_OUTPUTS_DIR, "clips").mkdir(parents=True, exist_ok=True)
@@ -2475,7 +2589,7 @@ def _produce_variant_worker(
     if (
         page_ctx
         and page_ctx.enable_sequence_reel
-        and post_type == "ECONOMIC_REEL"
+        and post_type in ("ECONOMIC_REEL", "WAN_REEL")
         and raw_bg_path is not None
         and adapter is not None
     ):
@@ -2509,7 +2623,63 @@ def _produce_variant_worker(
                 _mei_prof["max_consec_training"],
             )
         else:
-            if page_ctx.uses_plan_scenes_pacing:
+            # Two-tier act count for long videos (Final Round 2026-08-15).
+            # ancient_knowledge opts in via USE_TWO_TIER_PACING=True:
+            # Tier 1 = first ~90 s narration @ ~4.5 s/still, capped at 20
+            # acts (fast-cut opening). Tier 2 = remaining narration at
+            # ~10 s/still (slower body, 8-12 s clamped). No arbitrary
+            # ceiling on total acts — a 300 s reel produces ~39 stills.
+            _tier1_body_target: "int | None" = None  # → passed to plan_bucket_act_durations
+            if post_type == "WAN_REEL":
+                # Isolated from ECONOMIC_REEL two-tier / progressive still pacing.
+                # page_config WAN_SCENE_DURATION=fixed:7 → ~10–12 longer clips.
+                from core_engine.scene_pacing import (
+                    parse_scene_duration as _parse_wan_scene_dur,
+                )
+
+                _wan_spec = _parse_wan_scene_dur(page_ctx.wan_scene_duration)
+                _wan_hold = (
+                    float(_wan_spec.fixed_s)
+                    if _wan_spec.mode == "fixed" and float(_wan_spec.fixed_s) > 0
+                    else 7.0
+                )
+                _wan_dur = float(
+                    getattr(page_ctx, "wan_reel_duration", None)
+                    or page_ctx.reel_duration
+                    or 70.0
+                )
+                _seq_n = max(8, min(14, int(round(_wan_dur / _wan_hold))))
+                _planned_scene_durs = [_wan_hold] * _seq_n
+                _LOG.info(
+                    "WAN_REEL scene pacing | %s hold=%.1fs duration=%.1fs → %d acts "
+                    "(ECONOMIC_REEL two-tier unused)",
+                    page_ctx.wan_scene_duration, _wan_hold, _wan_dur, _seq_n,
+                )
+            elif getattr(page_ctx, "use_two_tier_pacing", False):
+                from core_engine.reel_sequence_engine import (
+                    compute_two_tier_act_count as _compute_two_tier_act_count,
+                )
+                _tier1_n, _tier2_n, _seq_n = _compute_two_tier_act_count(
+                    page_ctx.reel_duration,
+                    tier1_max_acts=page_ctx.reel_tier1_max_acts,
+                    tier1_horizon_s=page_ctx.reel_tier1_horizon_s,
+                    tier1_seconds_per_act=page_ctx.reel_tier1_seconds_per_act,
+                    tier2_seconds_per_act=page_ctx.reel_tier2_seconds_per_act,
+                    min_acts=page_ctx.reel_image_min_count,
+                )
+                _tier1_body_target = max(0, _tier1_n - 3)  # tier-1 body = tier1_n minus hook_n(3)
+                _LOG.info(
+                    "TWO-TIER PACING | duration=%.1fs → tier1=%d acts (hook 3 + body %d) "
+                    "+ tier2=%d acts (body 8-12s) = %d total | tier1_horizon=%.0fs "
+                    "tier1_spa=%.1fs tier2_spa=%.1fs (no static ceiling)",
+                    page_ctx.reel_duration,
+                    _tier1_n, _tier1_body_target,
+                    _tier2_n, _seq_n,
+                    page_ctx.reel_tier1_horizon_s,
+                    page_ctx.reel_tier1_seconds_per_act,
+                    page_ctx.reel_tier2_seconds_per_act,
+                )
+            elif page_ctx.uses_plan_scenes_pacing:
                 _planned_scene_durs = _plan_scenes(
                     page_ctx.reel_duration,
                     page_ctx.scene_duration,
@@ -2537,7 +2707,15 @@ def _produce_variant_worker(
                     max_acts=page_ctx.reel_image_count,
                 )
             _scene_len = page_ctx.scene_length
-            if _scene_len:
+            if (
+                _scene_len
+                and post_type != "WAN_REEL"
+                and not getattr(page_ctx, "use_two_tier_pacing", False)
+            ):
+                # SCENE_LENGTH override — legacy fixed-cadence path. Two-tier
+                # pacing IGNORES this override on purpose so long-video Tier
+                # 2 acts stay at their 10 s cadence instead of being clipped
+                # by a channel-level SCENE_LENGTH constant.
                 _seq_n = max(
                     page_ctx.reel_image_min_count,
                     min(
@@ -2556,6 +2734,15 @@ def _produce_variant_worker(
         _reel_img_dir.mkdir(parents=True, exist_ok=True)
         if _is_mm:
             _pace_label = "mei_profile"
+        elif post_type == "WAN_REEL":
+            _pace_label = (
+                f"wan_fixed:{page_ctx.wan_scene_duration} n={_seq_n}"
+            )
+        elif getattr(page_ctx, "use_two_tier_pacing", False):
+            _pace_label = (
+                f"two-tier tier1={locals().get('_tier1_n', 0)}@{page_ctx.reel_tier1_seconds_per_act:.1f}s "
+                f"tier2={locals().get('_tier2_n', 0)}@{page_ctx.reel_tier2_seconds_per_act:.1f}s"
+            )
         elif locals().get("_planned_scene_durs"):
             _pace_label = (
                 f"plan_scenes:{page_ctx.scene_duration} | "
@@ -2580,8 +2767,18 @@ def _produce_variant_worker(
             _reel_img_dir,
         )
 
-        # Early script for ALL sequence pages → exact spoken-beat image prompts
-        # Uniqueness gate: reject near-duplicate scripts BEFORE any act images / TTS.
+        # Early script for ALL sequence pages → exact spoken-beat image prompts.
+        # Uniqueness gate rejects near-duplicate scripts BEFORE any act images / TTS
+        # (that loop stays — uniqueness is a separate axis from duration).
+        #
+        # Round 7 (Measure-Then-Correct): the old "early script short →
+        # regenerate longer" inner retry has been REMOVED. Word count from
+        # a single Gemini call is now treated as a seed hint, not a gate —
+        # ``_synthesize_sequence_voice_track`` downstream measures the
+        # ACTUAL TTS duration and issues at most one corrective regen using
+        # observed WPS. Chasing word count here without any TTS
+        # measurement was the source of most of the extra Gemini calls
+        # seen in the 10-reel batch log.
         if caption_engine is not None:
             try:
                 _seq_reject = ""
@@ -2606,40 +2803,12 @@ def _produce_variant_worker(
                         uniqueness_rejection=_seq_reject,
                         previously_generated_hooks=_hooks_for_seq,
                     ) or ""
-                    _early_ok = len((_early_seq_script or "").split()) >= _seq_min
-                    if not _early_ok:
-                        _prev_wc = len((_early_seq_script or "").split())
-                        _deficit = max(int(_seq_min) - _prev_wc, 0)
-                        _LOG.warning(
-                            "SEQUENCE_REEL | early script short (%d words) — regenerating…",
-                            _prev_wc,
+                    if _early_seq_script:
+                        _LOG.info(
+                            "SEQUENCE_REEL | early script drafted (%d words) — "
+                            "seed only, downstream measures actual TTS duration.",
+                            len(_early_seq_script.split()),
                         )
-                        if cost_tracker is not None:
-                            cost_tracker.track_text(char_count=len(_early_seq_script or "") + 500)
-                        _early_seq_script = caption_engine.generate_sequence_voiceover(
-                            resolved_subject,
-                            page_niche=page_ctx.content_niche,
-                            persona_voice=(
-                                "VERY SLOW meditative ancient master — write a LONG full script"
-                                if _is_mm
-                                else "investigative documentary narrator — write a LONG full script"
-                            ),
-                            n_acts=_seq_n,
-                            duration_s=page_ctx.reel_duration,
-                            total_words_target=max(_seq_words, _seq_min + 20),
-                            economic=economic,
-                            niche_disclaimer=(
-                                (page_ctx.niche_disclaimer or "")
-                                + f" CRITICAL: Previous draft had {_prev_wc} words. "
-                                f"That is {_deficit} words SHORT of {_seq_min}. "
-                                f"Add {_deficit}+ words of new content, not padding."
-                            ),
-                            cta_line="",
-                            narrative_mode=page_ctx.narrative_mode,
-                            batch_angle_block=_batch_angle_block,
-                            uniqueness_rejection=_seq_reject,
-                            previously_generated_hooks=_hooks_for_seq,
-                        ) or _early_seq_script
                     if uniqueness_guard is None or not _early_seq_script:
                         break
                     _opening = " ".join((_early_seq_script or "").split()[:80])
@@ -2734,14 +2903,59 @@ def _produce_variant_worker(
                 # Fill any empty snippet with topic so bucketing (word count)
                 # never sees len(0) collapsing an act into a merge target.
                 _pre_snippets = [s or resolved_subject for s in _pre_snippets]
-                _ak_act_durs, _spoken_snippets, _ak_keep_map = (
-                    _plan_bucket_act_durations(
-                        _pre_snippets,
-                        narration_s=float(_narr_dur),
-                        cta_audio_s=float(_cta_audio_dur or 0.0),
-                        silence_before_cta_s=float(_cta_silence_s or 1.0),
+                if post_type == "WAN_REEL":
+                    # Keep ~7 s clips in sync with measured audio. Do not run
+                    # the ECONOMIC_REEL bucket planner (it created 3–5.5 s holds).
+                    _audio_total = float(
+                        locals().get("_ak_total_audio") or 0.0
+                    ) or (
+                        float(_narr_dur)
+                        + float(_cta_audio_dur or 0.0)
+                        + float(_cta_silence_s or 1.0)
                     )
-                )
+                    _wan_n = max(8, min(14, int(round(_audio_total / 7.0)))) if _audio_total > 0.5 else _seq_n
+                    if _wan_n != _seq_n:
+                        _LOG.info(
+                            "WAN_REEL act recount after TTS | audio=%.1fs %d→%d acts (~7s)",
+                            _audio_total, _seq_n, _wan_n,
+                        )
+                        _seq_n = _wan_n
+                        _pre_snippets = _segment_script_into_act_snippets(
+                            _early_seq_script or resolved_subject,
+                            _seq_n,
+                        )
+                        _pre_snippets = [s or resolved_subject for s in _pre_snippets]
+                    _unit = (_audio_total / _seq_n) if _seq_n else 7.0
+                    _ak_act_durs = [_unit] * _seq_n
+                    _spoken_snippets = list(_pre_snippets)
+                    _ak_keep_map = list(range(_seq_n))
+                    _LOG.info(
+                        "WAN_REEL equal holds | n=%d hold=%.2fs sum=%.1fs (target ~7s)",
+                        _seq_n, _unit, _unit * _seq_n,
+                    )
+                else:
+                    # Two-tier body split: tell the bucket planner where Tier 2
+                    # begins so acts beyond the first ~90 s of narration use
+                    # the wider 8-12 s clamp band instead of the tight 2.5-9 s
+                    # Tier-1 band. Falls through to single-tier behaviour when
+                    # the channel does not opt in (page_ctx.use_two_tier_pacing).
+                    _bucket_kwargs: dict = {}
+                    _t1_body_local = locals().get("_tier1_body_target", None)
+                    if (
+                        getattr(page_ctx, "use_two_tier_pacing", False)
+                        and _t1_body_local is not None
+                        and int(_t1_body_local) > 0
+                    ):
+                        _bucket_kwargs["tier2_body_start"] = int(_t1_body_local)
+                    _ak_act_durs, _spoken_snippets, _ak_keep_map = (
+                        _plan_bucket_act_durations(
+                            _pre_snippets,
+                            narration_s=float(_narr_dur),
+                            cta_audio_s=float(_cta_audio_dur or 0.0),
+                            silence_before_cta_s=float(_cta_silence_s or 1.0),
+                            **_bucket_kwargs,
+                        )
+                    )
                 _ak_bucket_snippets = list(_spoken_snippets)
                 _spoken_snippets = [
                     s or resolved_subject for s in _spoken_snippets
@@ -3194,6 +3408,15 @@ def _produce_variant_worker(
                 len(_sequence_image_paths),
                 _images_generated_this_variant,
             )
+            if post_type == "WAN_REEL":
+                _wan_stage_times["script_tts_stills_s"] = round(
+                    time.monotonic() - _wan_t0_variant, 2
+                )
+                _LOG.info(
+                    "WAN_REEL | script+TTS+stills wall=%.1fs | frames=%d",
+                    _wan_stage_times["script_tts_stills_s"],
+                    len(_sequence_image_paths),
+                )
 
         # ── Visual Control Agent (Master Mei) — VLM + phash before compile ──
         if (
@@ -3286,7 +3509,7 @@ def _produce_variant_worker(
 
     # ---- Caption: STANDARD_QUOTE path -----------------------------------
     # SMART_BAIT, LONG_CAPTION_IMAGE, ECONOMIC_REEL, and CAROUSEL all generate captions in Phase B1.
-    if post_type not in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL") and not skip_caption:
+    if post_type not in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "WAN_REEL", "CAROUSEL") and not skip_caption:
         assert caption_engine is not None
         caption_mode_tag = "humanized"
 
@@ -3385,7 +3608,8 @@ def _produce_variant_worker(
     # - LONG_CAPTION_IMAGE: Layer 1 (bg) + Layer 4 (logo only) — clean standalone image
     # - IMAGE_BACKGROUND / IMAGE_QUOTE / TEXT_QUOTE: text overlay if overlay_text present
     _is_long_caption_image = (post_type == "LONG_CAPTION_IMAGE")
-    _is_economic_reel      = (post_type == "ECONOMIC_REEL")
+    _is_economic_reel      = _is_sequence_video_post(post_type)
+    _is_wan_reel           = (post_type == "WAN_REEL")
     # ECONOMIC_REEL: background PNG must stay clean (logo only).
     # Text is rendered directly into video frames by video_engine — baking it into
     # the PNG here would cause double-text in the final reel.
@@ -3542,32 +3766,46 @@ def _produce_variant_worker(
         _voiceover_script = _real_caption or overlay_text
 
         # For sequence reels the caption is a short social-media post body.
-        # Generate a longer narration for TTS — or reuse the early master_mei script
-        # already built for narrative-to-image B-roll matching.
+        # Generate a longer narration for TTS — or reuse the early narrative
+        # script already built for spoken-beat / image-sync matching.
+        #
+        # Round 7 (Measure-Then-Correct 2026-08-15): if the AK voice track
+        # is already committed (``_ak_voice_ready``), the early script IS
+        # the final script — reuse verbatim without any word-count gate.
+        # The old fallback used to regenerate here whenever the early
+        # draft came in below ``page_ctx.reel_narration_min_words``, but
+        # word count is no longer a correctness criterion; the audio has
+        # already been synthesised and measured, so a new script would
+        # only be wasted API cost without changing the reel one bit.
         if (
             page_ctx is not None
             and page_ctx.enable_sequence_reel
             and caption_engine is not None
             and resolved_subject
         ):
-            _LOG.info(
-                "SEQUENCE_REEL | generating long-form voiceover script for '%s' (voice pref: %s)",
-                resolved_subject, page_ctx.tts_voice_preference or "default",
-            )
             try:
-                if _early_seq_script and (
-                    len(_early_seq_script.split()) >= (
-                        page_ctx.reel_narration_min_words
-                        if page_ctx
-                        else app_config.words_for_duration(80.0)
-                    )
-                ):
+                if locals().get("_ak_voice_ready") and _early_seq_script:
                     _seq_script = _early_seq_script
+                    _voiceover_script = _seq_script
                     _LOG.info(
-                        "SEQUENCE_REEL | reusing early narrative script: %d words",
+                        "SEQUENCE_REEL | reusing AK-committed voice script "
+                        "(%d words) — audio already synthesised.",
+                        len(_seq_script.split()),
+                    )
+                elif _early_seq_script and len(_early_seq_script.split()) >= 40:
+                    _seq_script = _early_seq_script
+                    _voiceover_script = _seq_script
+                    _LOG.info(
+                        "SEQUENCE_REEL | reusing early narrative script "
+                        "(%d words) — no regen needed.",
                         len(_seq_script.split()),
                     )
                 else:
+                    # Fallback: early script missing entirely — synthesise one.
+                    _LOG.info(
+                        "SEQUENCE_REEL | generating long-form voiceover script for '%s' (voice pref: %s)",
+                        resolved_subject, page_ctx.tts_voice_preference or "default",
+                    )
                     _words_tgt = page_ctx.reel_narration_words
                     _n_for_script = max(
                         2,
@@ -3586,32 +3824,19 @@ def _produce_variant_worker(
                         total_words_target=_words_tgt,
                         economic=economic,
                         niche_disclaimer=page_ctx.niche_disclaimer,
-                        cta_line="",   # CTA is generated as a separate audio block and stitched after narration
+                        cta_line="",
                         narrative_mode=page_ctx.narrative_mode,
                         batch_angle_block=_batch_angle_block,
                         previously_generated_hooks=list(generated_hooks_cache or []),
                     )
                     if cost_tracker is not None and _seq_script:
                         cost_tracker.track_text(char_count=len(_seq_script))
-                _min_ok = (
-                    page_ctx.reel_narration_min_words
-                    if page_ctx
-                    else app_config.words_for_duration(80.0)
-                )
-                if _seq_script and len(_seq_script.split()) >= _min_ok:
-                    _voiceover_script = _seq_script
-                    _LOG.info(
-                        "SEQUENCE_REEL | documentary voiceover generated: %d words (min=%d)",
-                        len(_seq_script.split()), _min_ok,
-                    )
-                else:
-                    _LOG.warning(
-                        "SEQUENCE_REEL | voiceover too short (%d words, need ≥%d) — "
-                        "will pad audio to target after TTS if still short.",
-                        len((_seq_script or "").split()), _min_ok,
-                    )
                     if _seq_script and len(_seq_script.split()) >= 40:
                         _voiceover_script = _seq_script
+                        _LOG.info(
+                            "SEQUENCE_REEL | fallback voiceover generated: %d words",
+                            len(_seq_script.split()),
+                        )
             except Exception as _seq_exc:  # noqa: BLE001
                 _LOG.warning("SEQUENCE_REEL | voiceover generation failed: %s — using caption.", _seq_exc)
         _word_timings: list[tuple[str, float, float]] = []
@@ -4118,6 +4343,66 @@ def _produce_variant_worker(
                             "ECONOMIC_REEL legacy hook/body act_durs | %s",
                             _describe_scene_plan(_paced_act_durs),
                         )
+                _compile_act_durs = (
+                    list(locals().get("_ak_act_durs") or [])
+                    if (
+                        page_ctx
+                        and str(getattr(page_ctx, "page_id", "")).lower() == "ancient_knowledge"
+                        and locals().get("_ak_act_durs")
+                    )
+                    else _paced_act_durs
+                )
+                _act_video_paths = None
+                if _is_wan_reel:
+                    from core_engine.wan_reel_production import (
+                        generate_wan_act_videos as _gen_wan_acts,
+                    )
+
+                    _wan_dir = (
+                        (_episode_assets_dir or Path(app_config.ASSETS_DIR))
+                        / "wan_clips"
+                    )
+                    _holds = [float(d) for d in (_compile_act_durs or [])]
+                    _n_imgs = len(_sequence_image_paths)
+                    if not _holds:
+                        _holds = [float(_reel_dur) / max(1, _n_imgs)] * _n_imgs
+                    if len(_holds) > _n_imgs:
+                        _holds = _holds[:_n_imgs]
+                    elif len(_holds) < _n_imgs:
+                        _pad = _holds[-1] if _holds else 5.0
+                        _holds = _holds + [_pad] * (_n_imgs - len(_holds))
+                    _wan_t0 = time.monotonic()
+                    _LOG.info(
+                        "WAN_REEL | parallel Wan img2vid | n=%d holds=%s",
+                        _n_imgs, ",".join(f"{h:.2f}" for h in _holds),
+                    )
+                    print(
+                        f"\n[WAN_REEL] Generating {_n_imgs} Wan clips in parallel "
+                        f"(cap=REMOTE_GPU_MAX_PARALLEL)…"
+                    )
+                    _act_video_paths, _wan_act_status = _gen_wan_acts(
+                        [Path(p) for p in _sequence_image_paths],
+                        list(_spoken_snippets or []),
+                        _holds,
+                        topic=str(resolved_subject or ""),
+                        output_dir=_wan_dir,
+                        stem=stem,
+                        cost_tracker=cost_tracker,
+                    )
+                    _wan_stage_times["wan_video_s"] = round(
+                        time.monotonic() - _wan_t0, 2
+                    )
+                    _n_wan = sum(1 for s in _wan_act_status if s == "wan")
+                    _n_fb = len(_wan_act_status) - _n_wan
+                    print(
+                        f"[WAN_REEL] Video gen {_wan_stage_times['wan_video_s']:.1f}s | "
+                        f"wan={_n_wan} ken_burns_fallback={_n_fb}"
+                    )
+                    _LOG.info(
+                        "WAN_REEL video gen | wall=%.1fs | wan=%d fallback=%d",
+                        _wan_stage_times["wan_video_s"], _n_wan, _n_fb,
+                    )
+                    _compile_t0 = time.monotonic()
                 reel_path = _core_compile_sequence_reel(
                     _sequence_image_paths,
                     overlay_text,
@@ -4126,19 +4411,7 @@ def _produce_variant_worker(
                     output_path=_reel_target,
                     target_duration=_reel_dur,
                     act_duration_s=page_ctx.reel_act_duration if page_ctx else None,
-                    act_durations=(
-                        # AK: bucket-planner durations (hook 3×3s, body 3/5/7s
-                        # by word count, CTA = measured cta+silence). Passed
-                        # strict → compile does no scale-to-fit and no last-
-                        # still slack absorption.
-                        list(locals().get("_ak_act_durs") or [])
-                        if (
-                            page_ctx
-                            and str(getattr(page_ctx, "page_id", "")).lower() == "ancient_knowledge"
-                            and locals().get("_ak_act_durs")
-                        )
-                        else _paced_act_durs
-                    ),
+                    act_durations=_compile_act_durs,
                     strict_act_durations=(
                         bool(
                             page_ctx
@@ -4254,7 +4527,12 @@ def _produce_variant_worker(
                     enable_subtitle_padding=(
                         page_ctx.enable_subtitle_padding if page_ctx else True
                     ),
+                    act_video_paths=_act_video_paths,
                 )
+                if _is_wan_reel and "_compile_t0" in locals():
+                    _wan_stage_times["compile_s"] = round(
+                        time.monotonic() - float(_compile_t0), 2
+                    )
             else:
                 reel_path = compile_dynamic_reel(
                     Path(img_path_display),
@@ -4279,9 +4557,28 @@ def _produce_variant_worker(
                     page_id=page_ctx.page_id if page_ctx else "",
                     sub_text=None,
                 )
-            _LOG.info("ECONOMIC_REEL compiled → %s", reel_path.name)
+            _LOG.info(
+                "%s compiled → %s",
+                "WAN_REEL" if _is_wan_reel else "ECONOMIC_REEL",
+                reel_path.name,
+            )
             video_path_str = str(reel_path)
             print(f"[reel] Video compiled -> {reel_path}")
+            if _is_wan_reel and _wan_stage_times:
+                _fb = [s for s in _wan_act_status if s != "wan"]
+                print(
+                    f"[WAN_REEL] Stages | "
+                    + " | ".join(f"{k}={v:.1f}s" for k, v in _wan_stage_times.items())
+                )
+                if _wan_act_status:
+                    _n_wan = sum(1 for s in _wan_act_status if s == "wan")
+                    print(
+                        f"[WAN_REEL] Acts | wan={_n_wan}/{len(_wan_act_status)} "
+                        f"ken_burns_fallback={len(_wan_act_status) - _n_wan}"
+                    )
+                    for _i, _st in enumerate(_wan_act_status, 1):
+                        if _st != "wan":
+                            print(f"  act {_i}: {_st}")
             _api_imgs = max(0, int(_images_generated_this_variant or 0))
             _batch_so_far = int(_api_imgs)
             _lock = batch_image_lock or write_lock
@@ -4378,7 +4675,7 @@ def _produce_variant_worker(
     # ====================================================================
 
     # ---- SMART_BAIT / ECONOMIC_REEL durable write -----------------------
-    if post_type in ("SMART_BAIT", "ECONOMIC_REEL") and not skip_caption:
+    if post_type in ("SMART_BAIT", "ECONOMIC_REEL", "WAN_REEL") and not skip_caption:
         if caption_mode_tag != "researcher_fallback" and (overlay_text or caption):
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
             durable_fname = f"post_{stamp}_v{variant + 1:02d}.json"
@@ -4418,8 +4715,8 @@ def _produce_variant_worker(
             write_atomic_json(durable_abs, smart_bait_payload)
             try:
                 with write_lock:
-                    _planner_type = "VIDEO" if post_type == "ECONOMIC_REEL" else "IMAGE"
-                    if post_type == "ECONOMIC_REEL" and reel_path:
+                    _planner_type = "VIDEO" if _is_sequence_video_post(post_type) else "IMAGE"
+                    if _is_sequence_video_post(post_type) and reel_path:
                         # Prefer B2 public URL; fall back to local path if upload failed.
                         _planner_media = _b2_video_url or str(reel_path)
                     else:
@@ -4621,6 +4918,13 @@ def _produce_variant_worker(
         # Carousel and image-count metadata
         "carousel_image_paths": _carousel_image_paths,
         "images_generated": _images_generated_this_variant,
+        "wan_act_status": list(_wan_act_status or []),
+        "wan_stage_times": dict(_wan_stage_times or {}),
+        "wan_variant_wall_s": (
+            round(time.monotonic() - _wan_t0_variant, 2)
+            if post_type == "WAN_REEL"
+            else None
+        ),
     }
 
     # ── COST TRACKING: write telemetry + annotate return dict ────────────────
@@ -4914,8 +5218,8 @@ def produce(
     # Resolve avatar_mode and post_format from page context (or safe defaults).
     avatar_mode: str = page_ctx.avatar_mode if page_ctx else "ON"
     post_format: str = page_ctx.post_format if page_ctx else "IMAGE_AVATAR"
-    # ECONOMIC_REEL must not fall back into the IMAGE_AVATAR image-post pipeline.
-    if post_type == "ECONOMIC_REEL":
+    # ECONOMIC_REEL / WAN_REEL must not fall back into the IMAGE_AVATAR image-post pipeline.
+    if post_type in ("ECONOMIC_REEL", "WAN_REEL"):
         post_format = "DYNAMIC_REEL"
     atmosphere_style: str = page_ctx.atmosphere_style if page_ctx else ""
 
@@ -5937,9 +6241,9 @@ def cli() -> None:
             "ink/graphic-novel stills, duotone grade, Ken Burns, channel watermark. "
             "Uses --duration (30–38) and --module (relationship|parenting). "
             "Does NOT share state with ECONOMIC_REEL. "
-            "WAN_REEL: Flux LoRA stills → Wan2.2 img2vid at fixed scene_duration "
-            "(default fixed:7) → concat → F5 narration. Use scripts/run_wan_reel_test.py "
-            "for the first cost/quality test render (no publish). "
+            "WAN_REEL: ancient_knowledge only. Reuses ECONOMIC_REEL script/TTS/"
+            "still pipeline, then Wan2.2 img2vid per act (bucket holds) with "
+            "Ken Burns fallback. Smoke test: core_engine.wan_reel_engine.run_wan_reel_test. "
             "CAROUSEL: generates 3 visually cohesive images (slide_01..03) with distinct "
             "scene viewpoints for a 3-part visual narrative post. "
             "REFERENCE_BASED_REELS: extract a raw-footage clip, overlay an LLM hook text, "
@@ -6467,7 +6771,7 @@ def cli() -> None:
     _active_post_type = args.post_type.upper() if hasattr(args, "post_type") else ""
     if (
         args.page.lower() == "wonder_feed"
-        and _active_post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "CAROUSEL")
+        and _active_post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "WAN_REEL", "CAROUSEL")
     ):
         args.draw_style = "SKETCH"
 
@@ -6536,51 +6840,20 @@ def cli() -> None:
                     print(f"  Meta  : {_it['meta_path']}")
         return
 
-    # ── WAN_REEL early dispatch (test render — no publish) ────────────────
-    # Flux LoRA stills → Wan2.2 @ fixed scene_duration → concat → F5 VO.
+    # ── WAN_REEL production (registry) — reuses produce() / variant worker ──
+    # Smoke test remains core_engine.wan_reel_engine.run_wan_reel_test (not CLI).
     if _active_post_type == "WAN_REEL":
-        try:
-            from core_engine.wan_reel_engine import run_wan_reel_test
+        import core_engine.wan_reel_production  # noqa: F401 — registers runner
+        from core_engine.post_type_registry import get_post_type_runner
+        from core_engine.wan_reel_production import assert_wan_reel_page
 
-            _wan_len = float(
-                getattr(args, "video_length", None)
-                or page_ctx.page_cfg.get("WAN_REEL_DURATION", 70)
-                or 70
-            )
-            _wan_scene = str(
-                getattr(args, "scene_duration", None)
-                or page_ctx.page_cfg.get("WAN_SCENE_DURATION", "fixed:7")
-                or "fixed:7"
-            ).strip()
-            if not _wan_scene.lower().startswith("fixed:"):
-                raise SystemExit(
-                    "WAN_REEL requires --scene-duration fixed:N "
-                    f"(got {_wan_scene!r}). Progressive is ECONOMIC_REEL-only."
-                )
-            _wan_topic = (topic_raw or "").strip() or (
-                "Göbekli Tepe — the 12,000-year-old temple that rewrote human history"
-            )
-            _wan_report = run_wan_reel_test(
-                _wan_topic,
-                page_id=page_id,
-                video_length_s=_wan_len,
-                scene_duration=_wan_scene,
-                max_scenes=None,
-            )
-            print(f"\n[WAN_REEL] Output : {_wan_report.output_mp4}")
-            print(
-                f"[WAN_REEL] GPU    : {_wan_report.total_gpu_seconds:.1f}s "
-                f"(≈ ${_wan_report.total_gpu_usd:.4f}) | "
-                f"Together Wan2.7 ref @ $0.10/s × {_wan_report.video_length_s:.0f}s "
-                f"= ${_wan_report.together_wan27_usd_at_0_10_per_s:.2f}"
-            )
-        except Exception as wan_exc:  # noqa: BLE001
-            if isinstance(wan_exc, KeyboardInterrupt):
-                raise
-            _LOG.error("WAN_REEL failed: %s", wan_exc, exc_info=True)
-            print(f"[WAN_REEL] ERROR: {type(wan_exc).__name__}: {wan_exc}")
-            sys.exit(1)
-        return
+        assert_wan_reel_page(page_id)
+        if get_post_type_runner("WAN_REEL") is None:
+            raise SystemExit("WAN_REEL runner missing from POST_TYPE_REGISTRY")
+        print(
+            f"[WAN_REEL] Production path | page={page_id} | "
+            "script/TTS/stills via ECONOMIC_REEL worker, Wan img2vid at compile."
+        )
 
     # ── REFERENCE_BASED_REELS early dispatch ──────────────────────────────
     # Bypasses the full Gemini-image produce() pipeline — uses raw footage clips.

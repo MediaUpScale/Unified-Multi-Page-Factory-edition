@@ -1,0 +1,108 @@
+[
+  {
+    "id": "tender_comfort",
+    "category": "tender_comfort",
+    "label": "tender/comfort",
+    "emotional_beats": [
+      "trust",
+      "secure_love",
+      "healing",
+      "tenderness",
+      "warmth",
+      "presence"
+    ],
+    "preferred_mood_palette": "golden_dusk",
+    "scene_block": "two people sitting close together on a porch step at dusk, shoulders touching, warm house light glowing behind them, melancholic golden-hour mood",
+    "structure": "interaction + secondary warm light + melancholic golden-hour mood",
+    "status": "active"
+  },
+  {
+    "id": "tension_distance",
+    "category": "tension_distance",
+    "label": "tension/distance",
+    "emotional_beats": [
+      "distance",
+      "attachment",
+      "silence",
+      "conflict",
+      "boundaries"
+    ],
+    "preferred_mood_palette": "amber_teal",
+    "scene_block": "two people sitting apart at opposite ends of a kitchen table, dim warm lamp light, long shadows, quiet tension, muted amber and deep teal palette, melancholic mood",
+    "structure": "apart/interaction + lamp light + palette cue + melancholic mood",
+    "status": "active"
+  },
+  {
+    "id": "solitude",
+    "category": "solitude",
+    "label": "solitude",
+    "emotional_beats": [
+      "solitude",
+      "reflection",
+      "night",
+      "vulnerability",
+      "patience"
+    ],
+    "preferred_mood_palette": "indigo_violet_night",
+    "scene_block": "a lone figure sitting on a park bench under a streetlamp at night, back turned to camera, empty path stretching into the distance, cool indigo and violet tones, melancholic quiet mood",
+    "structure": "lone figure + streetlamp + cool palette + melancholic quiet mood",
+    "status": "active"
+  },
+  {
+    "id": "bittersweet_parting",
+    "category": "bittersweet_parting",
+    "label": "bittersweet parting",
+    "emotional_beats": [
+      "parting",
+      "closure",
+      "distance",
+      "grief",
+      "goodbye"
+    ],
+    "preferred_mood_palette": "muted_dawn",
+    "scene_block": "two people standing apart on a rainy street corner, umbrellas overlapping briefly, reflections on wet pavement, muted blue-grey and warm streetlight amber, bittersweet mood",
+    "structure": "parting interaction + streetlight + muted palette + bittersweet mood",
+    "status": "active"
+  },
+  {
+    "id": "hopeful_bittersweet",
+    "category": "hopeful_bittersweet",
+    "label": "hopeful bittersweet",
+    "emotional_beats": [
+      "hope",
+      "dawn",
+      "departure",
+      "healing",
+      "new_beginning"
+    ],
+    "preferred_mood_palette": "muted_dawn",
+    "scene_block": "a lone figure standing at a train platform at dawn, back turned to camera, suitcase beside them, soft pink and amber morning light, hopeful bittersweet mood",
+    "structure": "lone figure + dawn light + soft palette + hopeful bittersweet mood",
+    "status": "active"
+  },
+  {
+    "id": "joyful_positive",
+    "category": "joyful_positive",
+    "label": "joyful/positive",
+    "emotional_beats": [
+      "connection",
+      "communication",
+      "play",
+      "repair",
+      "joy",
+      "celebration"
+    ],
+    "preferred_mood_palette": "coral_day",
+    "scene_block": "two people sitting close together on a porch step at dusk, shoulders touching, calm closed-mouth soft expressions, warm house light glowing behind them, hopeful warm mood",
+    "structure": "[quiet togetherness on porch/doorway — NO laughing, NO open-mouth smiles, closed mouths], [warm house light glowing behind them — same backlight as tender_comfort 20260816_002910], [mood] mood",
+    "status": "active",
+    "notes": "Presence together is enough — never describe laughing, giggles, or open-mouth smiles. Prefer faces unseen or calm closed mouths. Lighting reference: 20260816_002910.png. APPROVED stills: cand1 seed=1509973072 (20260816_031228.png), cand3 seed=1300483183 (20260816_031246.png).",
+    "reference_still": "outputs/wonder_feed/clips/economic_reels_tests/20260816_002910.png",
+    "reference_scene_block": "two people sitting close together on a porch step at dusk, shoulders touching, warm house light glowing behind them, melancholic golden-hour mood",
+    "alt_scene_blocks": [
+      "two people sitting close together on a porch step at dusk, shoulders touching, calm closed-mouth soft expressions, warm house light glowing behind them, hopeful warm mood",
+      "two people leaning gently into each other on a porch step at dusk, faces calm closed mouths, warm house light glowing behind them casting hard long shadows toward the viewer, coral and cream accents, hopeful warm mood",
+      "two people standing close on porch steps at dusk, foreheads nearly touching, calm closed mouths, warm house light glowing from the doorway behind them, hopeful warm mood"
+    ]
+  }
+]

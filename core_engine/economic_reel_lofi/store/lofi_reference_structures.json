@@ -6,13 +6,13 @@
     "scene_count": 8,
     "lines": [
       "Trust is not a feeling.",
-      "It is a pattern you notice over time.",
-      "Not the promise they made once.",
-      "The quiet consistency after.",
-      "When words match the follow-through.",
-      "When absence does not rewrite the story.",
-      "That is where safety begins.",
-      "Choose the pattern, not the performance."
+      "Watch what they repeat.",
+      "Not the grand promise.",
+      "The quiet follow-through.",
+      "Words mean less than patterns.",
+      "Absence rewrites everything.",
+      "Safety starts in silence.",
+      "Choose the pattern."
     ],
     "rhyme_pattern": "anaphora",
     "theme": "trust",
@@ -21,20 +21,20 @@
   {
     "id": "ref_002",
     "module": "relationship",
-    "hook_type": "rhetorical_question",
+    "hook_type": "definition",
     "scene_count": 8,
     "lines": [
-      "What if love is not intensity?",
-      "What if it is steadiness?",
-      "The text that arrives without chase.",
-      "The apology that lands without theater.",
-      "The space that still feels close.",
-      "Intensity fades. Character stays.",
-      "Look for the calm, not the spike.",
-      "That is the love that lasts."
+      "Let people lose you.",
+      "Stop explaining your peace.",
+      "Never ask a liar why.",
+      "Don't rush to fix them.",
+      "Silence teaches them everything.",
+      "You carried it alone.",
+      "Change always costs something.",
+      "Walk away clean."
     ],
-    "rhyme_pattern": "anaphora",
-    "theme": "secure_love",
+    "rhyme_pattern": "imperative",
+    "theme": "self_respect",
     "has_authority_quote": false
   },
   {
@@ -44,13 +44,13 @@
     "scene_count": 8,
     "lines": [
       "\"Don't bend; don't water it down.\" — Franz Kafka",
-      "People who ask you to shrink are not home.",
-      "Your softness is not a flaw to edit.",
-      "Your boundaries are not a rejection of love.",
-      "The right connection makes room for both.",
-      "You do not owe anyone a smaller self.",
-      "Stand in the version that feels true.",
-      "Love that asks you to disappear is not love."
+      "People who shrink you aren't home.",
+      "Your softness is not a flaw.",
+      "Boundaries are not cruelty.",
+      "The right ones make room.",
+      "You owe no one a smaller self.",
+      "Stand where you feel true.",
+      "Love that erases you isn't love."
     ],
     "rhyme_pattern": "none",
     "theme": "self_respect",
@@ -63,13 +63,13 @@
     "scene_count": 8,
     "lines": [
       "Patience is not silence.",
-      "It is staying soft while they melt down.",
-      "Not fixing every feeling in five seconds.",
-      "Not measuring the day by perfect behavior.",
-      "It is presence when nothing is tidy.",
-      "They borrow your calm before they own theirs.",
-      "That borrowed calm becomes their nervous system.",
-      "You are building safety, not performance."
+      "Stay soft in the storm.",
+      "Don't rush every feeling.",
+      "Perfect days aren't the point.",
+      "Be there when it's messy.",
+      "They borrow your calm.",
+      "That calm becomes theirs.",
+      "Build safety, not performance."
     ],
     "rhyme_pattern": "anaphora",
     "theme": "patience",
@@ -77,21 +77,21 @@
   },
   {
     "id": "ref_005",
-    "module": "parenting",
-    "hook_type": "rhetorical_question",
+    "module": "relationship",
+    "hook_type": "definition",
     "scene_count": 8,
     "lines": [
-      "What if the mess is the memory?",
-      "The sticky hands. The unfinished lunch.",
-      "The bedtime that took too long.",
-      "You will miss this chaos one day.",
-      "Not because it was easy.",
-      "Because it was theirs — and yours.",
-      "Slow down for one ordinary minute.",
-      "This season does not come twice."
+      "Some nights teach you who you are.",
+      "What you carry stays quiet.",
+      "Time takes what you won't release.",
+      "Solitude is not emptiness.",
+      "Let the misunderstanding stand.",
+      "The lie becomes the story.",
+      "Stop chasing soft answers.",
+      "Keep what still feels honest."
     ],
-    "rhyme_pattern": "none",
-    "theme": "fleeting_season",
+    "rhyme_pattern": "existential",
+    "theme": "solitude",
     "has_authority_quote": false
   }
 ]

@@ -4,41 +4,53 @@
     "subtheme": "staying_soft_in_meltdowns",
     "status": "unused",
     "last_used_date": null,
-    "performance_score": null
+    "performance_score": null,
+    "preferred_mood_palette": "muted_dawn",
+    "sample_scene": "parent kneeling beside child on a hallway floor, warm lit window to the side"
   },
   {
     "theme": "fleeting_season",
     "subtheme": "ordinary_minutes_matter",
     "status": "unused",
     "last_used_date": null,
-    "performance_score": null
+    "performance_score": null,
+    "preferred_mood_palette": "golden_dusk",
+    "sample_scene": "parent and child walking hand-in-hand past a porch, amber porch light, mid shot"
   },
   {
     "theme": "presence",
     "subtheme": "phones_down_eye_contact",
     "status": "unused",
     "last_used_date": null,
-    "performance_score": null
+    "performance_score": null,
+    "preferred_mood_palette": "coral_day",
+    "sample_scene": "parent and child forehead-to-forehead on a sofa, solid table lamp, mid shot"
   },
   {
     "theme": "gentle_discipline",
     "subtheme": "limits_with_warmth",
     "status": "unused",
     "last_used_date": null,
-    "performance_score": null
+    "performance_score": null,
+    "preferred_mood_palette": "amber_teal",
+    "sample_scene": "parent sitting with child at a kitchen table talking, warm lit window behind them"
   },
   {
     "theme": "sleep",
     "subtheme": "routines_as_safety",
     "status": "unused",
     "last_used_date": null,
-    "performance_score": null
+    "performance_score": null,
+    "preferred_mood_palette": "indigo_violet_night",
+    "sample_scene": "parent tucking child into bed, solid amber night lamp, mid shot"
   },
   {
     "theme": "self_compassion",
     "subtheme": "good_enough_mother",
     "status": "unused",
     "last_used_date": null,
-    "performance_score": null
+    "performance_score": null,
+    "preferred_mood_palette": "muted_dawn",
+    "sample_scene": "parent resting with coffee at a table, dawn window light flat and solid, mid shot"
   }
 ]

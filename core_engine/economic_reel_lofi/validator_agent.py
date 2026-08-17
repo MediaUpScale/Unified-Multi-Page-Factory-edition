@@ -75,15 +75,46 @@ def validate_script(
             visual = str(row.get("visual_prompt") or "").strip()
             if not text:
                 reasons.append(f"scene {i} has empty text")
-            elif len(text) > lofi_cfg.MAX_CAPTION_CHARS:
-                reasons.append(
-                    f"scene {i} caption exceeds {lofi_cfg.MAX_CAPTION_CHARS} chars "
-                    f"({len(text)})"
-                )
+            else:
+                n_words = len(text.split())
+                max_words = int(getattr(lofi_cfg, "MAX_CAPTION_WORDS", 8))
+                if n_words > max_words:
+                    reasons.append(
+                        f"scene {i} has {n_words} words (max {max_words}) — "
+                        "shorten to one punchy line"
+                    )
+                if len(text) > lofi_cfg.MAX_CAPTION_CHARS:
+                    reasons.append(
+                        f"scene {i} caption exceeds {lofi_cfg.MAX_CAPTION_CHARS} chars "
+                        f"({len(text)})"
+                    )
+                low = text.lower()
+                if re.search(
+                    r"it wasn['’]?t .{1,40} it was\b|"
+                    r"\bis not .{1,30},?\s*it['’]?s\b|"
+                    r"wasn't .{1,30}, it was\b",
+                    low,
+                ):
+                    reasons.append(
+                        f"scene {i} uses banned 'X is not Y, it's Z' template"
+                    )
             if not visual:
                 reasons.append(f"scene {i} missing visual_prompt")
             if visual and text and visual.strip().lower() == text.strip().lower():
                 reasons.append(f"scene {i} visual_prompt must differ from caption text")
+
+        # Split-across-cut version of the same template
+        for i in range(len(lines) - 1):
+            a = str((lines[i].get("text") if isinstance(lines[i], dict) else "") or "").lower()
+            b = str(
+                (lines[i + 1].get("text") if isinstance(lines[i + 1], dict) else "") or ""
+            ).lower()
+            if re.search(r"\b(isn['’]t|is not|wasn['’]t)\b", a) and re.search(
+                r"^(it['’]s|it is)\b", b.strip()
+            ):
+                reasons.append(
+                    f"scenes {i + 1}-{i + 2} split banned 'X isn't Y / it's Z' across the cut"
+                )
 
     # 2) Quote integrity
     if hook == "authority_quote" and not reasons:

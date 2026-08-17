@@ -1716,24 +1716,29 @@ class CaptionEngine:
         )
 
         raw = ""
-        # Hard word-count floor from the single measured rate. No char-count escape.
-        _min_words = int(
-            getattr(app_config, "SEQUENCE_VOICEOVER_MIN_WORDS", 0)
-            or words_for_duration(80.0)
-        )
+        # Duration-proportional word floor (Final Round 2026-08-15).
+        # BUG FIX: the old code hard-coded ``words_for_duration(80.0)`` here,
+        # so ``--video-length 300`` requested 675 words from Gemini but only
+        # required ~180 words to pass the acceptance gate — a 3-minute
+        # narration would silently accept an 80 s script. Now the gate
+        # scales with the actual ``duration_s`` argument that main.py
+        # already threads through this function.
+        _target_words_gate = int(words_for_duration(float(duration_s)))
+        # Max window scales proportionally to duration (25 % headroom, floor 20 words).
+        _max_words_gate = int(_target_words_gate + max(20, float(duration_s) * 0.25))
         if _warrior and _mei_prof:
-            _min_words = int(_mei_prof.get("words_min", words_for_duration(80.0)))
-            _max_words = int(_mei_prof.get("words_max", words_for_duration(80.0) + 20))
+            _min_words = int(_mei_prof.get("words_min", _target_words_gate))
+            _max_words = int(_mei_prof.get("words_max", _max_words_gate))
             _accept_chars_lo = max(700, _min_words * 5)
             _accept_chars_hi = max(_accept_chars_lo + 200, _max_words * 8)
         elif _warrior:
-            _min_words = max(_min_words, words_for_duration(80.0))
-            _max_words = words_for_duration(80.0) + 20
+            _min_words = _target_words_gate
+            _max_words = _max_words_gate
             _accept_chars_lo = 1000
             _accept_chars_hi = 1350
         else:
-            _min_words = words_for_duration(80.0)
-            _max_words = words_for_duration(80.0) + 20
+            _min_words = _target_words_gate
+            _max_words = _max_words_gate
             _accept_chars_lo = 0
             _accept_chars_hi = 0
         _full_prompt = _sys_base + "\n\n" + prompt + cta_instruction
@@ -1852,22 +1857,27 @@ class CaptionEngine:
                 return ""
 
         # ── Gemini ONLY (no Claude / DeepSeek fallbacks) ─────────────────────
+        # Round 7 (Measure-Then-Correct 2026-08-15): the word-floor retry
+        # loop below has been REMOVED for non-warrior channels. Word count
+        # from a single Gemini call is now a seed hint (main.py's
+        # _synthesize_sequence_voice_track measures the ACTUAL TTS
+        # duration and does one corrective regen with observed WPS if it
+        # falls outside tolerance). Warrior mode (Master Mei) keeps its
+        # strict length gate because MEI has structural act-length
+        # requirements that are NOT duration-derived.
         raw = _try_gemini(attempt=1)
         _chars = len(_metrics_script(raw))
         _first_wc = _word_count(raw)
         _first_pass = _passes_length(raw)
         logger.info(
-            "generate_sequence_voiceover | first_draft words=%d passed_gate=%s min_words=%d",
-            _first_wc, _first_pass, _min_words,
+            "generate_sequence_voiceover | first_draft words=%d target=%d "
+            "(seed only for non-warrior; downstream measures actual WPS)",
+            _first_wc, int(total_words_target or _min_words),
         )
-        if _first_pass:
-            logger.info(
-                "generate_sequence_voiceover | Gemini PRIMARY OK (%d chars, %d words)",
-                _chars, _first_wc,
-            )
-        else:
+        if _warrior and not _first_pass:
+            # Warrior/Master-Mei only: strict length gate + one deficit retry.
             logger.warning(
-                "generate_sequence_voiceover | Gemini draft below word floor "
+                "generate_sequence_voiceover | WARRIOR draft below word floor "
                 "(%d words; need ≥%d) — one retry with deficit.",
                 _first_wc, _min_words,
             )
@@ -1946,7 +1956,7 @@ class CaptionEngine:
           visual_subject— scene description for graphite image generation
         """
         persona = _persona_block(self._channel)
-        _is_reel = (post_type.upper() == "ECONOMIC_REEL")
+        _is_reel = (post_type.upper() in ("ECONOMIC_REEL", "WAN_REEL"))
 
         if _is_reel:
             # Use the dedicated reel prompt so the user-side instruction and the

@@ -1,0 +1,152 @@
+{
+  "style_base": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, vintage poster illustration style, no photography, vertical 9:16 composition",
+  "emotion_taxonomy": [
+    "quiet_sorrowful",
+    "melancholic_quiet",
+    "melancholic_quiet_tension",
+    "bittersweet",
+    "hopeful_bittersweet",
+    "lonely_melancholic",
+    "romantic_majestic",
+    "melancholic_romantic",
+    "whimsical_tender",
+    "lonely_beautiful",
+    "longing",
+    "doubt",
+    "realization",
+    "acceptance",
+    "opening_hook",
+    "resolution_warmth"
+  ],
+  "prompts": [
+    {
+      "id": "riso_001",
+      "scene_type": "lone_figure_walking",
+      "mood": "quiet_sorrowful",
+      "emotion_tags": ["quiet_sorrowful", "longing", "opening_hook"],
+      "arc_position": ["opening", "build"],
+      "palette": "misty lavender, pale seafoam green, soft slate grey (low-saturation pastel)",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful, very sad woman with dark hair and sad expression on her face walks along a foggy, deserted beach at dawn. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Low-saturation pastel color palette dominated by misty lavender, pale seafoam green, and soft slate grey. Evoking a quiet, sorrowful mood. No photography, just illustration."
+    },
+    {
+      "id": "riso_002",
+      "scene_type": "lone_figure_bench",
+      "mood": "melancholic_quiet",
+      "emotion_tags": ["melancholic_quiet", "lonely_melancholic", "longing"],
+      "arc_position": ["opening", "build"],
+      "palette": "cool indigo and violet tones",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, a lone figure sitting on a park bench under a streetlamp at night, back turned to camera, empty path stretching into the distance, cool indigo and violet tones, melancholic quiet mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_003_template",
+      "scene_type": "TEMPLATE — action/interaction scene",
+      "mood": "[mood]",
+      "emotion_tags": ["melancholic_quiet_tension", "doubt", "longing"],
+      "arc_position": ["build", "turn"],
+      "palette": "variable per scene",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, [SCENE WITH ACTION/INTERACTION — not a static figure staring at the horizon], [SECONDARY/AMBIENT LIGHT SOURCE — streetlamp, window, lamp, NOT a giant sun disc], [mood] mood, vintage poster illustration style, vertical 9:16 composition",
+      "notes": "Fill-in template for the RAG engine to generate new scene variants. Must always include an action/interaction element and a specific ambient light source — never a static staring pose or an oversized sun."
+    },
+    {
+      "id": "riso_004",
+      "scene_type": "two_people_table_tension",
+      "mood": "melancholic_quiet_tension",
+      "emotion_tags": ["melancholic_quiet_tension", "doubt", "longing"],
+      "arc_position": ["build", "turn"],
+      "palette": "muted amber and deep teal",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, two people sitting apart at opposite ends of a kitchen table, dim warm lamp light, long shadows, quiet tension, muted amber and deep teal palette, melancholic mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_005",
+      "scene_type": "two_people_rainy_street",
+      "mood": "bittersweet",
+      "emotion_tags": ["bittersweet", "longing", "doubt"],
+      "arc_position": ["build", "turn"],
+      "palette": "muted blue-grey and warm streetlight amber",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, two people standing apart on a rainy street corner, umbrellas overlapping briefly, reflections on wet pavement, muted blue-grey and warm streetlight amber, bittersweet mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_006",
+      "scene_type": "lone_figure_train_platform",
+      "mood": "hopeful_bittersweet",
+      "emotion_tags": ["hopeful_bittersweet", "acceptance", "resolution_warmth"],
+      "arc_position": ["turn", "resolution"],
+      "palette": "soft pink and amber morning light",
+      "prompt": "riso print illustration, rich saturated nostalgic color palette, bold flat color blocks with fine hand-inked linework, grainy halftone texture, no smooth gradient, hard-edged color shading, a lone figure standing at a train platform at dawn, back turned to camera, suitcase beside them, soft pink and amber morning light, hopeful bittersweet mood, vintage poster illustration style, vertical 9:16 composition"
+    },
+    {
+      "id": "riso_007",
+      "scene_type": "portrait_closeup_sad_woman_rain",
+      "mood": "bittersweet",
+      "emotion_tags": ["bittersweet", "quiet_sorrowful", "opening_hook"],
+      "arc_position": ["opening", "build"],
+      "palette": "muted blue-grey with warm streetlight amber reflections",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful, very sad woman with dark curly hair and tears on her face stands on a rainy street corner at night, holding an umbrella. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Rich saturated nostalgic color palette dominated by muted blue-grey tones and warm streetlight amber reflecting on the wet pavement. Evoking a bittersweet mood, vertical 9:16 composition."
+    },
+    {
+      "id": "riso_008",
+      "scene_type": "portrait_closeup_sad_woman_manga",
+      "mood": "lonely_melancholic",
+      "emotion_tags": ["lonely_melancholic", "longing", "quiet_sorrowful"],
+      "arc_position": ["opening", "build"],
+      "palette": "muted blue-grey with warm low-key amber glow",
+      "prompt": "A close-up illustration of a beautiful, deeply sad woman with tears on her face, in the style of classic manga comic book art. Fine hand-inked linework, bold flat color blocks, and a grainy halftone dots texture. Hard-edged comic book shading with no smooth gradients, creating a lonely and melancholic atmosphere. Saturated yet nostalgic color palette with muted blue-grey tones and a warm, low-key amber glow. Retro pop-art print aesthetic, bittersweet, cinematic, and solitary mood."
+    },
+    {
+      "id": "riso_010",
+      "scene_type": "portrait_closeup_sad_woman_balcony",
+      "mood": "quiet_sorrowful",
+      "emotion_tags": ["quiet_sorrowful", "lonely_melancholic", "longing"],
+      "arc_position": ["opening", "build"],
+      "palette": "pale silver, moody charcoal grey, soft ash white (cold, desaturated)",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful, very sad woman with dark hair and a sad expression on her face stands on a foggy concrete balcony or courtyard at dawn, looking into the misty distance. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition."
+    },
+    {
+      "id": "riso_011",
+      "scene_type": "portrait_closeup_sad_woman_greenhouse",
+      "mood": "quiet_sorrowful",
+      "emotion_tags": ["quiet_sorrowful", "melancholic_romantic", "realization"],
+      "arc_position": ["build", "turn"],
+      "palette": "dusty rose, warm amber highlights, soft olive green shadows (nostalgic warm)",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful, very sad woman with dark hair and a sad expression on her face stands among withered plants in an old glass greenhouse during sunset. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition."
+    },
+    {
+      "id": "riso_012",
+      "scene_type": "couple_embrace_mountain_peak",
+      "mood": "romantic_majestic",
+      "emotion_tags": ["romantic_majestic", "resolution_warmth", "acceptance"],
+      "arc_position": ["turn", "resolution"],
+      "palette": "deep indigo shadows, vibrant magenta highlights, soft dusty purple (dreamy twilight)",
+      "prompt": "A risograph print close up illustration in vintage poster style. A beautiful couple in a loving embrace, standing together on a dramatic mountain peak at twilight, looking out at a vast sea of clouds. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Dreamy twilight color palette dominated by deep indigo shadows, vibrant magenta highlights, and soft dusty purple. Evoking a romantic, majestic, and awe-inspiring mood. No photography, just illustration, vertical 9:16 composition."
+    },
+    {
+      "id": "riso_013",
+      "scene_type": "couple_embrace_beach_sunset",
+      "mood": "melancholic_romantic",
+      "emotion_tags": ["melancholic_romantic", "doubt", "longing"],
+      "arc_position": ["build", "turn"],
+      "palette": "dusty rose, warm sand cream, deep navy blue",
+      "prompt": "A minimal lofi illustration in vintage poster style. A couple embracing on a flat sandy beach, looking at a giant geometric pink sun setting over a dark blue sea. Simple clean lines, zero gradients, grainy paper texture. Palette of dusty rose, warm sand cream, and deep navy blue. Melancholic yet romantic indie art, vertical 9:16.",
+      "notes": "Split from a combined submission that merged two scenes — kept as the beach/sunset half. Must render as its own distinct scene, never composited with riso_014."
+    },
+    {
+      "id": "riso_014",
+      "scene_type": "couple_hilltop_starry_night",
+      "mood": "whimsical_tender",
+      "emotion_tags": ["whimsical_tender", "resolution_warmth", "acceptance"],
+      "arc_position": ["resolution"],
+      "palette": "muted vintage tones, glowing yellow accent, pink cloud highlights",
+      "prompt": "A loving couple stands together holding hands on top of a grassy hill under a dark starry night sky. Above them, flat whimsical pink clouds with sharp triangle shadows float in the air. A glowing yellow heart shape floats gently near them. Granular noise texture, vintage muted color palette, simple shapes, hand-drawn indie aesthetic, 4k, vertical 9:16.",
+      "notes": "Split from a combined submission that merged two scenes — kept as the hilltop/heart half. Must render as its own distinct scene, never composited with riso_013."
+    },
+    {
+      "id": "riso_015",
+      "scene_type": "couple_cliff_night_sky",
+      "mood": "lonely_beautiful",
+      "emotion_tags": ["lonely_beautiful", "melancholic_romantic", "acceptance"],
+      "arc_position": ["build", "resolution"],
+      "palette": "muted nostalgic color blocks",
+      "prompt": "A flat vector art illustration with grainy texture. A man and a woman sitting close together on a cliff edge, looking at a massive night sky filled with simple white dot stars. Whimsical pink surreal floating clouds above. Muted nostalgic color blocks, indie comic book aesthetic, lonely and beautiful mood, vertical 9:16."
+    }
+  ]
+}

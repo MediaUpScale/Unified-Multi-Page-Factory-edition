@@ -1,0 +1,16 @@
+[
+  {
+    "id": "standard",
+    "suffix": "",
+    "probability": 0.775,
+    "status": "active",
+    "notes": "Canonical riso/comic-ink STYLE_PREFIX only — default for most reels"
+  },
+  {
+    "id": "shoujo_atmosphere",
+    "suffix": "with soft shoujo-manga atmospheric quality, delicate linework accents",
+    "probability": 0.225,
+    "status": "active",
+    "notes": "Optional per-reel accent (~20-25%). Drawn once per video; never mixed mid-reel."
+  }
+]

@@ -111,6 +111,42 @@
       "oopart": "Antikythera, crystal skulls, vimana — artefact as visual hero",
       "lost_city": "Yonaguni, Dwarka, El Dorado — submerged or jungle-swallowed ruins"
     },
-    "critic_profile": "ancient_mystery"
+    "critic_profile": "ancient_mystery",
+    "script_rules": {
+      "voice": "Investigative documentary narration for Ancient Knowledge. Delivered by a calm, curious researcher voice, present tense, second-person only when directly addressing the viewer. Grounded in the material record — cite the site, the artefact, the measurement, the date. Never fantasy, never ancient-aliens cosplay. State what is verified, then state what remains unexplained and let the viewer feel the gap.",
+      "word_budget": "Derive from the requested reel duration via ``config.words_for_duration(target_duration_s)`` — NEVER a fixed word count. Default target_duration_s is 80-90 s when no override is passed; a longer or shorter duration passed via the CLI ``--video-length`` parameter scales the word budget by the same 2.25 wps rate. Exact duration match is not required — aim to land at or near the requested target (a 5-minute request produces ~5 minutes of narration, not default-length narration padded or cut to fit).",
+      "structural_pacing": "Structure scales with act count, which itself scales with target duration via the two-tier planner (``core_engine.reel_sequence_engine.compute_two_tier_act_count``): Tier 1 = first ~90 s @ ~4.5 s / still, capped at 20 acts (fast-cut opening rhythm); Tier 2 = remaining narration @ ~10 s / still (8-12 s clamp band, slower body). Same shape regardless of length — Act 1 = anchor hook (identify the real site), Act 2-3 = introduce the anomaly, middle acts = expand each layer of the mystery, final 2 acts = pose the unanswered question then CTA. Longer durations produce more acts of the same shape, NOT the same act count stretched with longer per-act holds.",
+      "hook_rule": "First 3 acts (~9 s) are the anchor hook: name the specific site or artefact, drop the anomaly in one line, and set the question. Never open with a rhetorical filler or a generic 'ancient civilizations...' preamble. The hook must survive as a standalone Shorts opener even if the viewer bounces at act 4.",
+      "cta": "CTA is a dedicated final act, generated as a separate audio block with a mandatory 1.0 s silence gap before it (see video-pipeline rule 2). Fixed text for ancient_knowledge: 'Follow Ancient Knowledge for more hidden mysteries.' NEVER embed the CTA phrase inside the narration script itself — the compile step stitches it after the narration so the final still can never be visually clipped.",
+      "forbidden_phrases": [
+        "welcome back",
+        "let's dive in",
+        "what if I told you",
+        "smash the like button",
+        "you won't believe",
+        "one weird trick",
+        "ancient civilizations were more advanced than we thought"
+      ]
+    },
+    "motion_rules": {
+      "motion_cadence": "Every act cycles through 4 motion profiles indexed by ``act_index % 4``: (0) Rapid Push-In 1.00→1.42 zoom, 1.65× pan; (1) Wide Pull-Out Reveal 1.48→1.02, 1.00× pan reversed; (2) Sweeping Lateral Parallax 1.10→1.32, 4.60× pan; (3) Overhead Crane Sweep 1.18→1.40, 2.30× pan reversed. Base pan amplitudes: X=60 px, Y=42 px. No static slow-zooms — every still moves.",
+      "parallax_depth_directive": "Every image prompt MUST specify one foreground element (dust particles, stone arch fragment, human observer silhouette) AND one background element (temple silhouette, starfield, distant horizon line) so camera motion produces visible parallax separation between the two planes.",
+      "shot_variety_rule": "No two consecutive acts repeat the same shot type OR lighting setup OR subject category. The per-act shot pool (wide establishing, extreme close-up, low-angle, high-angle, three-quarter side, over-the-shoulder / through-foreground, medium off-center) is drawn round-robin with a no-adjacent-repeat guard. Same rule applies across BOTH tiers of the two-tier pacing model — long-video Tier 2 acts still need the same variety, just held longer.",
+      "post_fx_toggles": "ancient_knowledge defaults: ENABLE_FLICKER=True (torch brightness oscillation), ENABLE_LIGHT_RAYS=True (volumetric warm-gold beam), ENABLE_DUST_PARTICLES=True (55-particle upward drift), ENABLE_LIGHT_REFRACTION=False (only enabled per crystal-subject topic). Sub-bass transition boom (65 Hz, 400 ms, 0.15 amplitude) at every scene cut."
+    },
+    "music_rules": {
+      "mood": "Dark, slow, cinematic mystery — under-the-surface tension that supports investigative narration without competing with it. Never triumphant, never celebratory, never lofi chillhop. Think 'documentary about a missing artefact', not 'trailer for a blockbuster'.",
+      "sound_palette": "Sub-bass drone (30-80 Hz), sparse mid-range percussion (no drum kits, no hi-hats), occasional string swells at act transitions, warm analog tape hiss floor. Ancient instrument colour welcome (bone flute, sub-Saharan kora, distant temple bell) as long as it stays background.",
+      "mix_levels": "Background music volume = 0.70 (~-3 dB relative to voiceover); narration playback rate = 1.05× (``_NARRATION_SPEED`` in avatar_engine/audio_engine.py). Sub-bass transition boom (65 Hz, 400 ms, 0.15 amplitude) at every scene cut, synthesised with NumPy — not a sampled kick drum.",
+      "generation": "Ambient track sourced from ElevenLabs SFX API (``/v1/sound-generation``), 20 s loop, ``prompt_influence=0.7``. Prompt seeds derived from the episode's topic keyword (megalith / oopart / lost_city / pre_flood) so the music aligns with the visual concept.",
+      "forbidden": [
+        "upbeat pop",
+        "chillhop lofi",
+        "generic royalty-free corporate",
+        "orchestral triumph",
+        "EDM drop",
+        "meditation bell loop"
+      ]
+    }
   }
 }
