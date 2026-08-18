@@ -435,8 +435,8 @@
   {
     "theme": "perseverance",
     "subtheme": "getting_up_anyway",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-17",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "person tying shoes on a stoop at dawn, flat warm light, mid shot",

@@ -144,9 +144,13 @@ CAPTION_FILM_MULTIPLY_OPACITY: float = 0.18
 ENABLE_DUST_OVERLAY: bool = True
 DUST_OVERLAY_REL: str = "channels_config/wonder_feed/overlays/overlay film grain.mp4"
 DUST_OVERLAY_PREFER_NPZ: bool = False
-DUST_OVERLAY_OPACITY: float = 0.40  # keep; overlay/soft-light (not normal alpha)
-DUST_OVERLAY_BLEND: str = "overlay"
-DUST_OVERLAY_OPACITY_CAP: float = 0.60
+DUST_OVERLAY_OPACITY: float = 1.0  # single-pass screen
+DUST_OVERLAY_BLEND: str = "screen"
+DUST_OVERLAY_OPACITY_CAP: float = 1.0
+DUST_OVERLAY_GAIN: float = 2.0  # multiply overlay pixels before blend, clip 255
+# Two-pass chroma restore — OFF
+DUST_OVERLAY_COLOR_OPACITY: float = 0.0
+DUST_OVERLAY_CHROMA_GAIN: float = 0.0
 # Dark vintage vignette (independent of particles)
 ENABLE_VIGNETTE: bool = True
 VIGNETTE_STRENGTH: float = 0.18  # ~15–20% corner darken
