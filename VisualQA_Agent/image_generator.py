@@ -211,11 +211,6 @@ def generate_image(
         data = path.read_bytes()
         return path.resolve(), data, 0.0, "remote_gpu/flux_dev"
 
-    if not config.TOGETHER_API_KEY:
-        raise RuntimeError(
-            "TOGETHER_API_KEY missing — set env or factory .env before generation."
-        )
-
     model_id = model or config.FLUX_MODEL
     if steps is None:
         steps = 28 if "dev" in model_id.lower() else 4
@@ -246,15 +241,17 @@ def generate_image(
     }
 
     word_count = len(clean.split())
+    use_deepinfra_schnell = "schnell" in (model_id or "").lower()
+    backend_label = "DeepInfra" if use_deepinfra_schnell else "Together AI"
     _console.print(
-        f"[magenta]FLUX[/magenta] model={model_id} steps={steps} "
+        f"[magenta]FLUX[/magenta] backend={backend_label} model={model_id} steps={steps} "
         f"size={width}x{height} words={word_count} → {out}"
     )
     if log_full_prompt:
         _console.print(
             Panel(
                 clean,
-                title=f"[bold]SANITIZED PROMPT → Together AI[/bold] ({word_count} words)",
+                title=f"[bold]SANITIZED PROMPT → {backend_label}[/bold] ({word_count} words)",
                 border_style="magenta",
                 expand=False,
             )
@@ -262,35 +259,132 @@ def generate_image(
         _console.print(f"[dim]NEGATIVE[/dim] {MANDATORY_NEGATIVE_PROMPT[:140]}")
 
     t0 = time.perf_counter()
-    resp = requests.post(
-        TOGETHER_IMAGES_URL, headers=headers, json=payload, timeout=180,
-    )
-    if resp.status_code >= 400 and "negative" in (resp.text or "").lower():
-        payload.pop("negative_prompt", None)
+    if use_deepinfra_schnell:
+        # --- ORIGINAL Together.ai flux-schnell HTTP request (preserved) ---
+        # if not config.TOGETHER_API_KEY:
+        #     raise RuntimeError(
+        #         "TOGETHER_API_KEY missing — set env or factory .env before generation."
+        #     )
+        # resp = requests.post(
+        #     TOGETHER_IMAGES_URL, headers=headers, json=payload, timeout=180,
+        # )
+        # if resp.status_code >= 400 and "negative" in (resp.text or "").lower():
+        #     payload.pop("negative_prompt", None)
+        #     resp = requests.post(
+        #         TOGETHER_IMAGES_URL, headers=headers, json=payload, timeout=180,
+        #     )
+        # elapsed = time.perf_counter() - t0
+        # if resp.status_code >= 400:
+        #     raise RuntimeError(
+        #         f"Together AI error {resp.status_code}: {resp.text[:500]}"
+        #     )
+        # data = resp.json()
+        # items = data.get("data") or []
+        # if not items:
+        #     raise RuntimeError(f"Together AI returned no image data: {data!r}")
+        # item = items[0]
+        # if item.get("b64_json"):
+        #     image_bytes = base64.b64decode(item["b64_json"])
+        # elif item.get("url"):
+        #     img_resp = requests.get(item["url"], timeout=120)
+        #     img_resp.raise_for_status()
+        #     image_bytes = img_resp.content
+        # else:
+        #     raise RuntimeError(f"Unexpected Together image payload: {item!r}")
+
+        di_key = (
+            getattr(config, "DEEPINFRA_API_KEY", None) or os.getenv("DEEPINFRA_API_KEY") or ""
+        ).strip()
+        if not di_key:
+            raise RuntimeError(
+                "DEEPINFRA_API_KEY missing — set env or factory .env before generation."
+            )
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=di_key,
+            base_url=getattr(
+                config, "DEEPINFRA_OPENAI_BASE_URL", "https://api.deepinfra.com/v1/openai"
+            ),
+        )
+        extra_body: dict[str, Any] = {
+            "num_inference_steps": int(steps),
+            "width": int(width),
+            "height": int(height),
+            "negative_prompt": MANDATORY_NEGATIVE_PROMPT,
+        }
+        if seed is not None:
+            extra_body["seed"] = int(seed)
+        gen_args: dict[str, Any] = {
+            "model": getattr(
+                config,
+                "DEEPINFRA_FLUX_SCHNELL_MODEL",
+                "black-forest-labs/FLUX-1-schnell",
+            ),
+            "prompt": clean,
+            "size": f"{int(width)}x{int(height)}",
+            "n": 1,
+            "response_format": "b64_json",
+            "extra_body": extra_body,
+        }
+        try:
+            response = client.images.generate(**gen_args)
+        except TypeError:
+            gen_args.pop("extra_body", None)
+            try:
+                response = client.images.generate(**gen_args)
+            except TypeError:
+                gen_args.pop("response_format", None)
+                response = client.images.generate(**gen_args)
+        elapsed = time.perf_counter() - t0
+        items = getattr(response, "data", None) or []
+        if not items:
+            raise RuntimeError(f"DeepInfra returned no image data: {response!r}")
+        item = items[0]
+        b64_json = getattr(item, "b64_json", None)
+        if isinstance(item, dict):
+            b64_json = b64_json or item.get("b64_json")
+        if not (isinstance(b64_json, str) and b64_json.strip()):
+            raise RuntimeError(f"Unexpected DeepInfra image payload: {item!r}")
+        raw_b64 = b64_json.strip()
+        if raw_b64.lower().startswith("data:") and "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        image_bytes = base64.b64decode(raw_b64)
+        model_id = str(gen_args["model"])
+    else:
+        if not config.TOGETHER_API_KEY:
+            raise RuntimeError(
+                "TOGETHER_API_KEY missing — set env or factory .env before generation."
+            )
         resp = requests.post(
             TOGETHER_IMAGES_URL, headers=headers, json=payload, timeout=180,
         )
-    elapsed = time.perf_counter() - t0
+        if resp.status_code >= 400 and "negative" in (resp.text or "").lower():
+            payload.pop("negative_prompt", None)
+            resp = requests.post(
+                TOGETHER_IMAGES_URL, headers=headers, json=payload, timeout=180,
+            )
+        elapsed = time.perf_counter() - t0
 
-    if resp.status_code >= 400:
-        raise RuntimeError(
-            f"Together AI error {resp.status_code}: {resp.text[:500]}"
-        )
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"Together AI error {resp.status_code}: {resp.text[:500]}"
+            )
 
-    data = resp.json()
-    items = data.get("data") or []
-    if not items:
-        raise RuntimeError(f"Together AI returned no image data: {data!r}")
+        data = resp.json()
+        items = data.get("data") or []
+        if not items:
+            raise RuntimeError(f"Together AI returned no image data: {data!r}")
 
-    item = items[0]
-    if item.get("b64_json"):
-        image_bytes = base64.b64decode(item["b64_json"])
-    elif item.get("url"):
-        img_resp = requests.get(item["url"], timeout=120)
-        img_resp.raise_for_status()
-        image_bytes = img_resp.content
-    else:
-        raise RuntimeError(f"Unexpected Together image payload: {item!r}")
+        item = items[0]
+        if item.get("b64_json"):
+            image_bytes = base64.b64decode(item["b64_json"])
+        elif item.get("url"):
+            img_resp = requests.get(item["url"], timeout=120)
+            img_resp.raise_for_status()
+            image_bytes = img_resp.content
+        else:
+            raise RuntimeError(f"Unexpected Together image payload: {item!r}")
 
     out.write_bytes(image_bytes)
     cost = config.estimate_flux_cost(model_id)

@@ -217,15 +217,15 @@ def _fallback_script(
     theme_s = theme.replace("_", " ")
     pool = setting_object_pairs or [dict(p) for p in DEFAULT_SETTING_OBJECT_PAIRS]
     beats = [
-        ("I believed the loudest promise.", "opening_hook"),
-        ("So I waited for grand words.", "longing"),
-        ("The words kept coming.", "quiet_sorrowful"),
-        ("Nothing underneath them moved.", "doubt"),
-        ("Years later I saw it.", "realization"),
-        ("The vow was never the point.", "realization"),
-        ("He just showed up Tuesday.", "acceptance"),
-        ("Same door, every day.", "hopeful_bittersweet"),
-        ("Now I watch what happens.", "resolution_warmth"),
+        ("I set two unmatched cups.", "opening_hook"),
+        ("I waited by the same door.", "longing"),
+        ("The keys stayed in the bowl.", "quiet_sorrowful"),
+        ("The list stayed on the fridge.", "doubt"),
+        ("I opened the envelope later.", "realization"),
+        ("The vow never left the table.", "realization"),
+        ("He put the kettle on Tuesday.", "acceptance"),
+        ("Same shoes wait on the stoop.", "hopeful_bittersweet"),
+        ("I watch the door happen.", "resolution_warmth"),
     ]
     monologue = " ".join(b[0] for b in beats)
     lines = []
@@ -247,12 +247,20 @@ def _fallback_script(
                 "time_of_day": _FALLBACK_TOD[i % len(_FALLBACK_TOD)],
             }
         )
+    first_pair = pool[0] if pool else {"setting": "kitchen at dawn", "key_object": "two unmatched coffee cups"}
     return {
         "hook_type": hook_type if hook_type in _HOOK_TYPES else "definition",
         "theme": theme,
         "module": module,
         "monologue": monologue,
         "lines": lines,
+        "anchor_object": {
+            "name": first_pair.get("key_object") or "coffee cups",
+            "initial_state": "set out and waiting",
+            "final_state": "used, still on the counter",
+        },
+        "arc_template": "setup_ache_acceptance",
+        "retrieved_details": [],
     }
 
 
@@ -286,6 +294,12 @@ def generate_script(
         f'  - setting="{p["setting"]}" | key_object="{p["key_object"]}"'
         for p in pool
     )
+    retrieved = rag.select_concrete_details(theme_row)
+    arc = rag.select_arc_template(module, theme, subtheme)
+    detail_block = "\n".join(
+        f'  - ({d.get("sensory_type") or "object"}) {d.get("detail")}'
+        for d in retrieved
+    ) or "  - (none — invent from SETTING_OBJECT_POOL only)"
     act_guide = ", ".join(
         f"{i+1}:{act_for_index(i, scene_count)}" for i in range(scene_count)
     )
@@ -297,25 +311,33 @@ THEME: {theme}
 SUBTHEME: {subtheme or "(none)"}
 SCENE_COUNT: {scene_count}
 ARC PER SCENE (act1=scenes 1-3, act2=4-6, act3=7-9): {act_guide}
+ARC SHAPE (follow this emotional sequence, LRU-rotated — do not copy old formula blindly):
+  id={arc.get("id")}
+  {arc.get("label")}
+  act1: {arc.get("act1")}
+  act2: {arc.get("act2")}
+  act3: {arc.get("act3")}
+
+CONCRETE DETAIL BANK (inspiration only — do NOT quote verbatim; metabolize into original spoken lines):
+{detail_block}
 
 SETTING_OBJECT_POOL (pick setting + key_object from this list only — do not invent new locations):
 {pool_block}
 {feedback_block}
 
-This is ONE continuous first-person voice moving through a single small emotional arc:
-setup → turn → insight → landing.
+This is ONE continuous first-person voice moving through the ARC SHAPE above.
 Not a list of standalone statements. Not maxims. Not advice.
 
 SHAPE (illustrative — do not copy; match the causal chain):
-I believed the loudest promise.
-So I waited for grand words.
-The words kept coming.
-Nothing underneath them moved.
-Years later I saw it.
-The vow was never the point.
-He just showed up Tuesday.
-Same door, every day.
-Now I watch what happens.
+I set two unmatched cups.
+I waited by the same door.
+The keys stayed in the bowl.
+The list stayed on the fridge.
+I opened the envelope later.
+The vow never left the table.
+He put the kettle on Tuesday.
+Same shoes wait on the stoop.
+I watch the door happen.
 
 RULES:
 1) Write "monologue" first as one continuous spoken piece. Then split THAT SAME text
@@ -323,8 +345,10 @@ RULES:
    must reconstruct the monologue.
 2) Each line MUST follow causally/emotionally from the previous one. If you can delete
    a line and the piece still makes sense, rewrite — the throughline is broken.
-3) First person. Plain spoken language. Concrete imagery (a door, a Tuesday, a cup)
-   over abstraction ("trust", "foundations", "declarations").
+3) First person. Plain spoken language. Concrete imagery over abstraction.
+   Every spoken line MUST pair a concrete noun (mug, key, door, coat, plate, phone)
+   with an action (set, wait, hang, leave, open, rinse, tie). No pure-abstract beats
+   like "some mornings I forget you're gone."
 4) Scene 1 is the hook — specific and felt, not a thesis statement.
 5) Last 2–3 scenes land in comfort / quiet resolution, not bleakness.
 6) Line length: 3–6 words preferred, HARD MAX {lofi_cfg.MAX_CAPTION_WORDS} words
@@ -335,6 +359,7 @@ RULES:
    - Isolated punchlines / removable aphorisms
    - Generic "he/she always…" relationship commentary
    - Advice ("you should", "remember", "X comes from Y")
+   - Named authors, quotes, attributions
 8) emotion per line from: opening_hook, quiet_sorrowful, melancholic_quiet, bittersweet,
    longing, doubt, realization, acceptance, hopeful_bittersweet, resolution_warmth,
    melancholic_romantic
@@ -346,16 +371,24 @@ RULES:
     - setting + key_object: copy from SETTING_OBJECT_POOL (pair any listed setting
       with any listed key_object). Do not invent a new environment.
       Every beat MUST have a concrete setting and key_object even if the spoken
-      line is abstract ("I forget you're gone" still needs a room + object).
-      Do not reuse the exact same setting+object on consecutive beats.
+      line is abstract. Do not reuse the exact same setting+object on consecutive beats.
     - time_of_day: dawn | morning | afternoon | dusk | night | evening
     - beat_text: same as text
+11) Mandatory anchor_object: one physical thing drawn from the DETAIL BANK or
+    SETTING_OBJECT_POOL. It must appear (or be felt) near the opening and transform
+    by the end. name / initial_state / final_state are required.
 
 Output STRICT JSON only, no markdown:
 {{
   "hook_type": "{hook_type}",
   "theme": "{theme}",
   "module": "{module}",
+  "arc_template": "{arc.get("id")}",
+  "anchor_object": {{
+    "name": "<object from the detail bank or pool>",
+    "initial_state": "<how it starts>",
+    "final_state": "<how it has changed by the last scenes>"
+  }},
   "monologue": "<full continuous spoken-word story>",
   "lines": [
     {{
@@ -406,6 +439,14 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
     data["hook_type"] = hook_type
     data["theme"] = theme
     data["module"] = module
+    data["retrieved_details"] = retrieved
+    data["arc_template"] = str(data.get("arc_template") or arc.get("id") or "")
+    ao = data.get("anchor_object") if isinstance(data.get("anchor_object"), dict) else {}
+    data["anchor_object"] = {
+        "name": str(ao.get("name") or "").strip(),
+        "initial_state": str(ao.get("initial_state") or "").strip(),
+        "final_state": str(ao.get("final_state") or "").strip(),
+    }
     lines = data.get("lines") or []
     if not isinstance(lines, list):
         lines = []
@@ -430,4 +471,6 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
         )
     print("[LOFI script] monologue:", data.get("monologue"))
     print("[LOFI script] hook:", (lines[0].get("text") if lines else ""))
+    print("[LOFI script] arc:", data.get("arc_template"))
+    print("[LOFI script] anchor:", data.get("anchor_object"))
     return data

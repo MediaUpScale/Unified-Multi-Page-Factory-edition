@@ -551,6 +551,9 @@ def _produce_one(
         "subtheme": script.get("subtheme"),
         "hook_type": script.get("hook_type"),
         "quote_id": script.get("quote_id"),
+        "anchor_object": script.get("anchor_object"),
+        "arc_template": script.get("arc_template"),
+        "retrieved_details": script.get("retrieved_details"),
         "script": script,
         "riso_ids": [str(r.get("riso_id") or "") for r in lines],
         "visual_identity": "v2"
@@ -569,6 +572,18 @@ def _produce_one(
     }
     meta_path = clips_dir / f"{out_mp4.stem}.json"
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    ao = script.get("anchor_object") if isinstance(script.get("anchor_object"), dict) else {}
+    rag.record_video_performance(
+        module,
+        theme=str(script.get("theme") or ""),
+        subtheme=str(script.get("subtheme") or ""),
+        views=None,
+        completion_rate=None,
+        anchor_object=str(ao.get("name") or "") or None,
+        video_path=str(out_mp4),
+        retrieved_details=list(script.get("retrieved_details") or []),
+    )
 
     return LofiItemResult(
         ok=True,

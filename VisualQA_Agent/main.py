@@ -104,7 +104,12 @@ def main(argv: list[str] | None = None) -> int:
     if not config.GEMINI_API_KEY:
         _console.print("[red]ERROR[/red] GEMINI_API_KEY missing")
         return 2
-    if not config.TOGETHER_API_KEY:
+    flux_model = args.model or config.FLUX_MODEL
+    if "schnell" in (flux_model or "").lower():
+        if not config.DEEPINFRA_API_KEY:
+            _console.print("[red]ERROR[/red] DEEPINFRA_API_KEY missing")
+            return 2
+    elif not config.TOGETHER_API_KEY:
         _console.print("[red]ERROR[/red] TOGETHER_API_KEY missing")
         return 2
 

@@ -93,6 +93,8 @@ def ensure_seeded() -> None:
         else:
             _write_json(dest, [])
 
+    _merge_concrete_details_sidecar()
+
     for module in ("relationship", "parenting"):
         hist = _store_path(f"lofi_generated_history_{module}")
         if not hist.is_file():
@@ -173,7 +175,12 @@ def _theme_bank_name(module: str) -> str:
     return f"lofi_theme_bank_{module}"
 
 
-_THEME_FIELD_COPY = ("setting_object_pairs", "preferred_mood_palette", "sample_scene")
+_THEME_FIELD_COPY = (
+    "setting_object_pairs",
+    "preferred_mood_palette",
+    "sample_scene",
+    "concrete_details",
+)
 
 
 def _merge_new_seed_rows(dest: Path, src: Path) -> None:
@@ -217,6 +224,31 @@ def _merge_new_seed_rows(dest: Path, src: Path) -> None:
                         have_p.add(pk)
                         filled += 1
                     live_row[field] = live_pairs
+                    continue
+                if field == "concrete_details" and isinstance(incoming_val, list):
+                    live_details = list(live_row.get(field) or [])
+                    have_d = {
+                        str(d.get("detail") or "").strip().lower()
+                        for d in live_details
+                        if isinstance(d, dict)
+                    }
+                    for d in incoming_val:
+                        if not isinstance(d, dict):
+                            continue
+                        dk = str(d.get("detail") or "").strip().lower()
+                        if not dk or dk in have_d:
+                            continue
+                        live_details.append(
+                            {
+                                "detail": str(d.get("detail") or "").strip(),
+                                "sensory_type": str(d.get("sensory_type") or "object"),
+                                "last_used_date": d.get("last_used_date"),
+                                "performance_score": d.get("performance_score"),
+                            }
+                        )
+                        have_d.add(dk)
+                        filled += 1
+                    live_row[field] = live_details
                     continue
                 if incoming_val and not live_row.get(field):
                     live_row[field] = incoming_val
@@ -335,4 +367,297 @@ def append_history(module: str, script_text: str, meta: dict[str, Any] | None = 
 
 
 def chroma_enabled() -> bool:
+    """Optional Chroma mirror — never used for Core Mode (a) retrieval."""
     return os.getenv("LOFI_USE_CHROMA", "0").strip() in {"1", "true", "True", "yes"}
+
+
+# ── Core Mode (a) concrete-detail retrieval (not quote mode b) ───────────────
+
+ARC_TEMPLATES: tuple[dict[str, str], ...] = (
+    {
+        "id": "setup_ache_acceptance",
+        "label": "setup/normalcy → absence/ache → quiet acceptance",
+        "act1": "ordinary setup / what used to be true",
+        "act2": "absence and ache in the room",
+        "act3": "quiet acceptance, still concrete",
+    },
+    {
+        "id": "loss_anger_acceptance",
+        "label": "loss → anger → acceptance",
+        "act1": "the leaving is already real",
+        "act2": "heat, clenched objects, unfinished motion",
+        "act3": "hands loosen; the object is set down",
+    },
+    {
+        "id": "loss_memory_gratitude",
+        "label": "loss → fond memory → gratitude",
+        "act1": "what is missing now",
+        "act2": "a small remembered ordinary minute",
+        "act3": "thanks without asking it back",
+    },
+)
+
+
+def _merge_concrete_details_sidecar() -> None:
+    """Union curated details onto live relationship theme rows by subtheme."""
+    src = lofi_cfg.DATA_DIR / "seed_concrete_details_relationship.json"
+    dest = _store_path("lofi_theme_bank_relationship")
+    if not src.is_file() or not dest.is_file():
+        return
+    sidecar = _read_json(src, [])
+    live = _read_json(dest, [])
+    if not isinstance(sidecar, list) or not isinstance(live, list):
+        return
+    by_sub = {
+        str(r.get("subtheme") or ""): r.get("concrete_details")
+        for r in sidecar
+        if isinstance(r, dict) and r.get("subtheme")
+    }
+    filled = 0
+    for row in live:
+        if not isinstance(row, dict):
+            continue
+        incoming = by_sub.get(str(row.get("subtheme") or ""))
+        if not isinstance(incoming, list) or not incoming:
+            continue
+        live_details = list(row.get("concrete_details") or [])
+        have = {
+            str(d.get("detail") or "").strip().lower()
+            for d in live_details
+            if isinstance(d, dict)
+        }
+        for d in incoming:
+            if not isinstance(d, dict):
+                continue
+            dk = str(d.get("detail") or "").strip().lower()
+            if not dk or dk in have:
+                continue
+            live_details.append(
+                {
+                    "detail": str(d.get("detail") or "").strip(),
+                    "sensory_type": str(d.get("sensory_type") or "object"),
+                    "last_used_date": None,
+                    "performance_score": None,
+                }
+            )
+            have.add(dk)
+            filled += 1
+        row["concrete_details"] = live_details
+    if filled:
+        _write_json(dest, live)
+        print(f"[LOFI rag] merged {filled} concrete_details into theme bank")
+
+
+def _detail_lru_key(detail: dict[str, Any]) -> tuple[str, float]:
+    used = str(detail.get("last_used_date") or "").strip() or "0000-01-01"
+    score = detail.get("performance_score")
+    try:
+        sc = float(score) if score is not None else 0.0
+    except (TypeError, ValueError):
+        sc = 0.0
+    return (used, -sc)
+
+
+def select_concrete_details(
+    theme_row: dict[str, Any] | None,
+    *,
+    n: int | None = None,
+) -> list[dict[str, str]]:
+    """Pick 2–3 ownerless sensory details as writer inspiration (not verbatim lines)."""
+    ensure_seeded()
+    count = int(n if n is not None else getattr(lofi_cfg, "CORE_DETAIL_COUNT", 3))
+    count = max(2, min(3, count))
+    raw = list((theme_row or {}).get("concrete_details") or [])
+    details = [d for d in raw if isinstance(d, dict) and str(d.get("detail") or "").strip()]
+    if not details:
+        sub = str((theme_row or {}).get("subtheme") or "")
+        if sub:
+            live = _read_json(_store_path("lofi_theme_bank_relationship"), [])
+            for row in live if isinstance(live, list) else []:
+                if str(row.get("subtheme") or "") == sub:
+                    details = [
+                        d
+                        for d in (row.get("concrete_details") or [])
+                        if isinstance(d, dict) and str(d.get("detail") or "").strip()
+                    ]
+                    break
+    if not details:
+        return []
+    ranked = sorted(details, key=_detail_lru_key)
+    picked = ranked[:count]
+    out = [
+        {
+            "detail": str(d.get("detail") or "").strip(),
+            "sensory_type": str(d.get("sensory_type") or "object"),
+        }
+        for d in picked
+    ]
+    print(
+        f"[LOFI rag] details n={len(out)} subtheme={(theme_row or {}).get('subtheme')} "
+        + " | ".join(d["detail"] for d in out)
+    )
+    return out
+
+
+def select_arc_template(
+    module: str,
+    theme: str,
+    subtheme: str = "",
+) -> dict[str, str]:
+    """LRU arc shape per theme — same unused/oldest-date pattern as theme pick."""
+    ensure_seeded()
+    path = _store_path(_theme_bank_name(module))
+    rows = _read_json(path, [])
+    dates: dict[str, str] = {}
+    for r in rows if isinstance(rows, list) else []:
+        if str(r.get("theme")) != theme:
+            continue
+        if subtheme and str(r.get("subtheme") or "") != subtheme:
+            continue
+        raw = r.get("arc_template_dates") or {}
+        if isinstance(raw, dict):
+            dates = {str(k): str(v or "") for k, v in raw.items()}
+        break
+    ranked = sorted(
+        ARC_TEMPLATES,
+        key=lambda t: str(dates.get(t["id"]) or "0000-01-01"),
+    )
+    chosen = dict(ranked[0])
+    print(f"[LOFI rag] arc={chosen['id']} theme={theme} subtheme={subtheme}")
+    return chosen
+
+
+def mark_core_rag_used(module: str, script: dict[str, Any]) -> None:
+    """Stamp retrieved details + arc template on the live theme row after a pass."""
+    ensure_seeded()
+    theme = str(script.get("theme") or "")
+    subtheme = str(script.get("subtheme") or "")
+    if not theme:
+        return
+    path = _store_path(_theme_bank_name(module))
+    rows = _read_json(path, [])
+    if not isinstance(rows, list):
+        return
+    today = date.today().isoformat()
+    used_details = {
+        str(d.get("detail") or "").strip().lower()
+        for d in (script.get("retrieved_details") or [])
+        if isinstance(d, dict)
+    }
+    arc_id = str(script.get("arc_template") or "")
+    for r in rows:
+        if str(r.get("theme")) != theme:
+            continue
+        if subtheme and str(r.get("subtheme") or "") != subtheme:
+            continue
+        if used_details:
+            details = list(r.get("concrete_details") or [])
+            for d in details:
+                if not isinstance(d, dict):
+                    continue
+                if str(d.get("detail") or "").strip().lower() in used_details:
+                    d["last_used_date"] = today
+            r["concrete_details"] = details
+        if arc_id:
+            dates = dict(r.get("arc_template_dates") or {})
+            dates[arc_id] = today
+            r["arc_template_dates"] = dates
+        break
+    _write_json(path, rows)
+
+
+def record_video_performance(
+    module: str,
+    *,
+    theme: str,
+    subtheme: str = "",
+    views: float | int | None = None,
+    completion_rate: float | None = None,
+    anchor_object: str | None = None,
+    video_path: str | None = None,
+    retrieved_details: list[dict[str, Any]] | None = None,
+) -> None:
+    """
+    Map a published video back onto theme+subtheme+anchor_object.
+
+    `performance_score` was stored as null and never read. This writes an event
+    and, when views/completion_rate are present, updates the theme row score:
+
+        score = 0.4 * min(views/10000, 1) + 0.6 * completion_rate
+
+    Pipeline records a stub event (views=None) at assemble time so later
+    analytics can fill the same row. Does not block Core Mode generation.
+    """
+    ensure_seeded()
+    events_path = _store_path("lofi_performance_events")
+    events = _read_json(events_path, [])
+    if not isinstance(events, list):
+        events = []
+    score = None
+    if views is not None and completion_rate is not None:
+        try:
+            score = round(
+                0.4 * min(float(views) / 10000.0, 1.0)
+                + 0.6 * max(0.0, min(1.0, float(completion_rate))),
+                4,
+            )
+        except (TypeError, ValueError):
+            score = None
+    events.append(
+        {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "module": module,
+            "theme": theme,
+            "subtheme": subtheme,
+            "anchor_object": anchor_object,
+            "views": views,
+            "completion_rate": completion_rate,
+            "performance_score": score,
+            "video_path": video_path,
+            "retrieved_details": [
+                str(d.get("detail") or d) if isinstance(d, dict) else str(d)
+                for d in (retrieved_details or [])
+            ],
+        }
+    )
+    if len(events) > 2000:
+        events = events[-2000:]
+    _write_json(events_path, events)
+
+    if score is None:
+        return
+    path = _store_path(_theme_bank_name(module))
+    rows = _read_json(path, [])
+    if not isinstance(rows, list):
+        return
+    used = {
+        str(d.get("detail") or d).strip().lower()
+        if not isinstance(d, dict)
+        else str(d.get("detail") or "").strip().lower()
+        for d in (retrieved_details or [])
+    }
+    for r in rows:
+        if str(r.get("theme")) != theme:
+            continue
+        if subtheme and str(r.get("subtheme") or "") != subtheme:
+            continue
+        prev = r.get("performance_score")
+        try:
+            prev_f = float(prev) if prev is not None else score
+        except (TypeError, ValueError):
+            prev_f = score
+        r["performance_score"] = round((prev_f + score) / 2.0, 4)
+        if used:
+            for d in r.get("concrete_details") or []:
+                if not isinstance(d, dict):
+                    continue
+                if str(d.get("detail") or "").strip().lower() not in used:
+                    continue
+                dprev = d.get("performance_score")
+                try:
+                    dprev_f = float(dprev) if dprev is not None else score
+                except (TypeError, ValueError):
+                    dprev_f = score
+                d["performance_score"] = round((dprev_f + score) / 2.0, 4)
+        break
+    _write_json(path, rows)

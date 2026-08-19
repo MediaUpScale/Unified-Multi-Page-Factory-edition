@@ -31,12 +31,35 @@ DEFAULT_SETTING_OBJECT_PAIRS: tuple[dict[str, str], ...] = (
 )
 
 _CONCRETE_NOUN_RE = re.compile(
-    r"\b(mug|cup|coat|door|bed|chair|phone|letter|table|sink|window|bench|"
-    r"shoe|key|lamp|kitchen|bedroom|hallway|street|bag|photo|photograph|"
-    r"sweater|fridge|umbrella|suitcase|ticket|clock|tea|journal|mirror|"
-    r"stoop|porch|bus|pillow|hook|drawer|closet|faucet|counter|sofa|"
-    r"blanket|envelope|list|radio|ashtray|kettle|notebook|calendar|"
-    r"paper|plant|stone|box|drink|pass|seat|hanger|sleeve|hand)\b",
+    r"\b("
+    r"mugs?|cups?|coats?|doors?|beds?|chairs?|phones?|letters?|tables?|"
+    r"sinks?|windows?|benches?|shoes?|keys?|lamps?|kitchen|bedrooms?|"
+    r"hallways?|streets?|bags?|photos?|photographs?|sweaters?|fridges?|"
+    r"umbrellas?|suitcases?|tickets?|clocks?|tea|journals?|mirrors?|"
+    r"stoops?|porch(?:es)?|buses|bus|pillows?|hooks?|drawers?|closets?|"
+    r"faucets?|counters?|sofas?|blankets?|envelopes?|lists?|radios?|"
+    r"ashtrays?|kettles?|notebooks?|calendars?|papers?|plants?|stones?|"
+    r"boxes|box|drinks?|pass(?:es)?|seats?|hangers?|sleeves?|hands?|"
+    r"laces?|plates?|face|faces|water|numbers?|voicemails?|towels?|"
+    r"bills?|locks?|bowls?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_CONCRETE_ACTION_RE = re.compile(
+    r"\b(wait|waits|waited|waiting|sit|sits|sat|sitting|leave|leaves|left|"
+    r"set|sets|hang|hangs|hung|hold|holds|held|open|opens|opened|close|"
+    r"closes|closed|pour|pours|poured|rinse|rinses|rinsed|walk|walks|walked|"
+    r"tie|ties|tied|grab|grabs|grabbed|splash|splashes|splashed|put|puts|"
+    r"pick|picks|picked|fold|folds|folded|refill|refilled|drop|drops|dropped|"
+    r"collect|collected|save|saved|call|calls|called|stand|stands|stood|"
+    r"stay|stays|stayed|turn|turns|turned|look|looks|looked|reach|reaches|"
+    r"reached|keep|keeps|kept|show|showed|come|came|go|went|bring|brought|"
+    r"carry|carried|touch|touched|wash|washed|fill|filled|empty|emptied|"
+    r"lock|locked|unlock|unlocked|press|pressed|lift|lifted|place|placed|"
+    r"wear|wore|worn|pull|pulled|start|started|switch|switched|click|"
+    r"clicked|watch|watched|slide|slid|spread|spreaded|drape|draped|"
+    r"pouring|tying|holding|leaving|opening|closing)\b",
     re.IGNORECASE,
 )
 
@@ -136,6 +159,14 @@ def normalize_beat_visuals(
 def text_lacks_concrete_anchor(text: str) -> bool:
     """True when narration has no place/object noun to hang an illustration on."""
     return not bool(_CONCRETE_NOUN_RE.search(text or ""))
+
+
+def beat_lacks_noun_and_action(text: str) -> bool:
+    """True when a spoken beat has no concrete noun + action pairing."""
+    blob = text or ""
+    has_noun = bool(_CONCRETE_NOUN_RE.search(blob))
+    has_action = bool(_CONCRETE_ACTION_RE.search(blob))
+    return not (has_noun and has_action)
 
 
 def setting_is_concrete(setting: str, key_object: str) -> bool:

@@ -117,12 +117,20 @@ IMAGE_API_TIMEOUT_S: float = float(os.getenv("IMAGE_API_TIMEOUT_S") or "25")
 # API keys & versioning
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-# Together AI — primary image backend (FLUX.1-schnell)
+# Together AI — FLUX.1-dev / LoRA image backend (Schnell moved to DeepInfra)
 TOGETHER_API_KEY: str | None = os.getenv("TOGETHER_API_KEY") or None
 TOGETHER_IMAGE_MODEL: str = (
     os.getenv("TOGETHER_IMAGE_MODEL") or "black-forest-labs/FLUX.1-schnell"
 ).strip()
 TOGETHER_IMAGE_STEPS: int = int(os.getenv("TOGETHER_IMAGE_STEPS") or "4")
+# DeepInfra — FLUX.1-schnell via OpenAI-compatible images API
+DEEPINFRA_API_KEY: str | None = os.getenv("DEEPINFRA_API_KEY") or None
+DEEPINFRA_OPENAI_BASE_URL: str = (
+    os.getenv("DEEPINFRA_OPENAI_BASE_URL") or "https://api.deepinfra.com/v1/openai"
+).strip()
+DEEPINFRA_FLUX_SCHNELL_MODEL: str = (
+    os.getenv("DEEPINFRA_FLUX_SCHNELL_MODEL") or "black-forest-labs/FLUX-1-schnell"
+).strip()
 # Estimated USD — dynamic per model via together_image.estimate_together_image_cost()
 # Schnell default; override model with TOGETHER_IMAGE_MODEL without changing this floor.
 TOGETHER_IMAGE_COST_USD: float = float(os.getenv("TOGETHER_IMAGE_COST_USD") or "0.003")

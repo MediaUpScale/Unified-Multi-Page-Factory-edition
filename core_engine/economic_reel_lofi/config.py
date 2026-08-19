@@ -22,6 +22,10 @@ AUTHORITY_QUOTE_PROBABILITY: float = 0.0  # story monologue, not quote-maxims
 SCRIPT_MAX_RETRIES: int = 3
 DEDUP_SIMILARITY_THRESHOLD: float = 0.85
 IMAGE_MAX_RETRIES_PER_SCENE: int = 2
+# Core Mode (a) retrieval — not quote/philosopher mode (b)
+CORE_DETAIL_COUNT: int = 3
+REQUIRE_ANCHOR_OBJECT: bool = True
+REQUIRE_BEAT_CONCRETENESS: bool = True
 
 VALID_MODULES: frozenset[str] = frozenset({"relationship", "parenting"})
 MODULE_PAGE_GATES: dict[str, frozenset[str]] = {

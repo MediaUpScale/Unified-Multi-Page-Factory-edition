@@ -45,6 +45,7 @@ try:
 
     _FACTORY_GEMINI = getattr(_factory_cfg, "GEMINI_API_KEY", None)
     _FACTORY_TOGETHER = getattr(_factory_cfg, "TOGETHER_API_KEY", None)
+    _FACTORY_DEEPINFRA = getattr(_factory_cfg, "DEEPINFRA_API_KEY", None)
     _FACTORY_FLUX = getattr(_factory_cfg, "TOGETHER_IMAGE_MODEL", None)
     _FACTORY_REMOTE_GPU = bool(
         getattr(_factory_cfg, "ENABLE_REMOTE_GPU_WORKFLOWS", False)
@@ -52,6 +53,7 @@ try:
 except Exception:  # noqa: BLE001
     _FACTORY_GEMINI = None
     _FACTORY_TOGETHER = None
+    _FACTORY_DEEPINFRA = None
     _FACTORY_FLUX = None
     _FACTORY_REMOTE_GPU = False
 
@@ -66,6 +68,15 @@ GEMINI_API_KEY: str | None = (
 TOGETHER_API_KEY: str | None = (
     os.getenv("TOGETHER_API_KEY") or _FACTORY_TOGETHER
 )
+DEEPINFRA_API_KEY: str | None = (
+    os.getenv("DEEPINFRA_API_KEY") or _FACTORY_DEEPINFRA
+)
+DEEPINFRA_OPENAI_BASE_URL: str = (
+    os.getenv("DEEPINFRA_OPENAI_BASE_URL") or "https://api.deepinfra.com/v1/openai"
+).strip()
+DEEPINFRA_FLUX_SCHNELL_MODEL: str = (
+    os.getenv("DEEPINFRA_FLUX_SCHNELL_MODEL") or "black-forest-labs/FLUX-1-schnell"
+).strip()
 
 GEMINI_CRITIC_MODEL: str = os.getenv(
     "VISUALQA_GEMINI_MODEL", "models/gemini-2.5-flash"

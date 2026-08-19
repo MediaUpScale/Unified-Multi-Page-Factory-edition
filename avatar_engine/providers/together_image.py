@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Together AI image generation — dynamic model selection within Together.
+Image generation — Together AI (FLUX.1-dev / LoRA) + DeepInfra (FLUX.1-schnell).
 
-Hard default: ``black-forest-labs/FLUX.1-schnell`` (ultra cost-efficient).
-Override via ``TOGETHER_IMAGE_MODEL`` env or per-call ``model_name=``.
+Schnell default is served via DeepInfra's OpenAI-compatible API
+(``black-forest-labs/FLUX-1-schnell``). Together.ai remains the backend for
+FLUX.1-dev LoRA calls. Override via ``TOGETHER_IMAGE_MODEL`` or per-call
+``model_name=``.
 """
 from __future__ import annotations
 
@@ -25,6 +27,10 @@ FLUX_DEV_MODEL: str = "black-forest-labs/FLUX.1-dev"
 FLUX_DEFAULT_STEPS: int = 4
 FLUX_DEV_DEFAULT_STEPS: int = 28
 SDXL_DEFAULT_STEPS: int = 20
+
+# DeepInfra OpenAI-compatible images API (FLUX Schnell only)
+DEEPINFRA_OPENAI_BASE_URL: str = "https://api.deepinfra.com/v1/openai"
+DEEPINFRA_FLUX_SCHNELL_MODEL: str = "black-forest-labs/FLUX-1-schnell"
 
 # Estimated USD per image (Together AI approximate mid-2026 rates)
 FLUX_COST_USD: float = 0.003  # Schnell default (back-compat alias)
@@ -156,6 +162,11 @@ def normalize_together_model_id(raw: str | None) -> str:
     if "/" not in name and name.lower().startswith("flux"):
         return f"black-forest-labs/{name}"
     return name
+
+
+def _is_flux_schnell_model(model_id: str | None) -> bool:
+    """True when the active image model is FLUX Schnell (Together or DeepInfra id)."""
+    return "schnell" in (model_id or "").strip().lower()
 
 
 def default_together_image_model() -> str:
@@ -669,9 +680,10 @@ def _next_429_backoff(attempt: int, hinted_s: "float | None") -> float:
 
 class TogetherImageGenerator:
     """
-    Thin Together SDK wrapper with dynamic model selection.
+    Image generator with dynamic model selection.
 
-    Default model: FLUX.1-schnell (or ``TOGETHER_IMAGE_MODEL``).
+    FLUX Schnell → DeepInfra OpenAI-compatible API.
+    FLUX Dev / LoRA → Together.ai SDK (original structure preserved).
     Per-call override: ``generate_image(..., model_name=...)``.
     """
 
@@ -681,7 +693,29 @@ class TogetherImageGenerator:
         model: str | None = None,
     ) -> None:
         self.api_key = (api_key or os.getenv("TOGETHER_API_KEY") or "").strip()
-        if not self.api_key:
+        self._deepinfra_api_key = (os.getenv("DEEPINFRA_API_KEY") or "").strip()
+        try:
+            import config as app_config
+
+            if not self._deepinfra_api_key:
+                self._deepinfra_api_key = (
+                    getattr(app_config, "DEEPINFRA_API_KEY", None) or ""
+                ).strip()
+        except Exception:  # noqa: BLE001
+            pass
+        self.model = normalize_together_model_id(model or default_together_image_model())
+        self.client = None
+        self._deepinfra_client = None
+        if _is_flux_schnell_model(self.model):
+            self._deepinfra_client = self._build_deepinfra_client()
+            if self.api_key:
+                self.client = self._build_together_client()
+        else:
+            self.client = self._build_together_client()
+
+    def _build_together_client(self) -> Any:
+        key = (self.api_key or os.getenv("TOGETHER_API_KEY") or "").strip()
+        if not key:
             raise ValueError("TOGETHER_API_KEY missing from environment.")
         try:
             from together import Together  # type: ignore[import]
@@ -689,8 +723,66 @@ class TogetherImageGenerator:
             raise ImportError(
                 "together package not installed. Run: pip install together"
             ) from exc
-        self.client = Together(api_key=self.api_key)
-        self.model = normalize_together_model_id(model or default_together_image_model())
+        self.api_key = key
+        return Together(api_key=key)
+
+    def _build_deepinfra_client(self) -> Any:
+        key = (self._deepinfra_api_key or os.getenv("DEEPINFRA_API_KEY") or "").strip()
+        if not key:
+            raise ValueError("DEEPINFRA_API_KEY missing from environment.")
+        from openai import OpenAI
+
+        self._deepinfra_api_key = key
+        return OpenAI(
+            api_key=key,
+            base_url=DEEPINFRA_OPENAI_BASE_URL,
+        )
+
+    def _ensure_together_client(self) -> Any:
+        if self.client is None:
+            self.client = self._build_together_client()
+        return self.client
+
+    def _ensure_deepinfra_client(self) -> Any:
+        if self._deepinfra_client is None:
+            self._deepinfra_client = self._build_deepinfra_client()
+        return self._deepinfra_client
+
+    def _generate_schnell_via_deepinfra(
+        self,
+        prompt: str,
+        width: int,
+        height: int,
+        steps: int,
+        negative_prompt: str | None,
+    ) -> Any:
+        """FLUX Schnell via DeepInfra OpenAI-compatible ``images.generate``."""
+        client = self._ensure_deepinfra_client()
+        extra_body: dict[str, Any] = {
+            "num_inference_steps": int(steps),
+            "width": int(width),
+            "height": int(height),
+        }
+        merged_neg = merge_negative_prompt(negative_prompt)
+        if merged_neg:
+            extra_body["negative_prompt"] = merged_neg
+        gen_args: dict[str, Any] = {
+            "model": DEEPINFRA_FLUX_SCHNELL_MODEL,
+            "prompt": prompt,
+            "size": f"{int(width)}x{int(height)}",
+            "n": 1,
+            "response_format": "b64_json",
+            "extra_body": extra_body,
+        }
+        try:
+            return client.images.generate(**gen_args)
+        except TypeError:
+            gen_args.pop("extra_body", None)
+            try:
+                return client.images.generate(**gen_args)
+            except TypeError:
+                gen_args.pop("response_format", None)
+                return client.images.generate(**gen_args)
 
     def generate_image(
         self,
@@ -748,8 +840,10 @@ class TogetherImageGenerator:
                 flush=True,
             )
         logger.debug(
-            "Together image | model=%s | est_cost=$%.3f | %dx%d steps=%d",
-            active_model, est_cost, width, height, steps,
+            "%s image | model=%s | est_cost=$%.3f | %dx%d steps=%d",
+            "DeepInfra" if _is_flux_schnell_model(active_model) else "Together",
+            DEEPINFRA_FLUX_SCHNELL_MODEL if _is_flux_schnell_model(active_model) else active_model,
+            est_cost, width, height, steps,
         )
 
         out = Path(output_path)
@@ -776,7 +870,7 @@ class TogetherImageGenerator:
                     }
                     # Optional Together LoRA (Dev-tier URL path — never Schnell).
                     # LOFI / economic callers pass allow_lora=False to hard-bypass.
-                    if allow_lora:
+                    if allow_lora and not _is_flux_schnell_model(active_model):
                         try:
                             from model_api_flows import (  # noqa: PLC0415
                                 resolve_effective_lora,
@@ -803,30 +897,59 @@ class TogetherImageGenerator:
                                     gen_kwargs["model"] = active_model
                         except Exception as _lora_exc:  # noqa: BLE001
                             logger.debug("Together LoRA inject skipped: %s", _lora_exc)
-                    # FLUX.1-schnell supports negative_prompt on Together
-                    if "schnell" in active_model.lower() or "flux.1" in active_model.lower():
-                        gen_kwargs["negative_prompt"] = merge_negative_prompt(
-                            negative_prompt
+                    if _is_flux_schnell_model(active_model):
+                        # --- ORIGINAL Together.ai flux-schnell request (preserved) ---
+                        # Together.ai structure is still used below for FLUX.1-dev LoRA.
+                        # if "schnell" in active_model.lower() or "flux.1" in active_model.lower():
+                        #     gen_kwargs["negative_prompt"] = merge_negative_prompt(
+                        #         negative_prompt
+                        #     )
+                        # try:
+                        #     response = self.client.images.generate(**gen_kwargs)
+                        # except TypeError:
+                        #     # SDK/model may reject negative_prompt / image_loras — strip & retry
+                        #     gen_kwargs.pop("negative_prompt", None)
+                        #     gen_kwargs.pop("image_loras", None)
+                        #     response = self.client.images.generate(**gen_kwargs)
+                        response = self._generate_schnell_via_deepinfra(
+                            prompt=gen_kwargs["prompt"],
+                            width=int(width),
+                            height=int(height),
+                            steps=int(steps),
+                            negative_prompt=negative_prompt,
                         )
-                    try:
-                        response = self.client.images.generate(**gen_kwargs)
-                    except TypeError:
-                        # SDK/model may reject negative_prompt / image_loras — strip & retry
-                        gen_kwargs.pop("negative_prompt", None)
-                        gen_kwargs.pop("image_loras", None)
-                        response = self.client.images.generate(**gen_kwargs)
+                        logged_model = DEEPINFRA_FLUX_SCHNELL_MODEL
+                    else:
+                        # Together.ai FLUX.1-dev / LoRA (unchanged request structure)
+                        if "flux.1" in active_model.lower() or "flux-dev" in active_model.lower():
+                            gen_kwargs["negative_prompt"] = merge_negative_prompt(
+                                negative_prompt
+                            )
+                        try:
+                            response = self._ensure_together_client().images.generate(
+                                **gen_kwargs
+                            )
+                        except TypeError:
+                            # SDK/model may reject negative_prompt / image_loras — strip & retry
+                            gen_kwargs.pop("negative_prompt", None)
+                            gen_kwargs.pop("image_loras", None)
+                            response = self._ensure_together_client().images.generate(
+                                **gen_kwargs
+                            )
+                        logged_model = active_model
                     b64 = self._extract_b64(response)
                     image_bytes = base64.b64decode(b64)
                     with open(out, "wb") as f:
                         f.write(image_bytes)
                     if not out.is_file() or out.stat().st_size <= 0:
-                        raise RuntimeError(f"Together image write produced empty file: {out}")
+                        raise RuntimeError(f"Image write produced empty file: {out}")
                     logger.info(
-                        "Together image saved | model=%s | $%.3f | %dx%d steps=%d | %s",
-                        active_model, est_cost, width, height, steps, out.name,
+                        "%s image saved | model=%s | $%.3f | %dx%d steps=%d | %s",
+                        "DeepInfra" if _is_flux_schnell_model(active_model) else "Together",
+                        logged_model, est_cost, width, height, steps, out.name,
                     )
                     # Stash last-used metadata for adapters / cost tracker
-                    self.last_model_used = active_model
+                    self.last_model_used = logged_model
                     self.last_estimated_cost_usd = est_cost
                     return str(out.resolve())
                 except Exception as exc:  # noqa: BLE001
@@ -854,25 +977,39 @@ class TogetherImageGenerator:
             if retry_wait is not None:
                 time.sleep(retry_wait)
         raise RuntimeError(
-            f"Together image generation failed ({active_model}): {last_exc}"
+            f"{'DeepInfra' if _is_flux_schnell_model(active_model) else 'Together'} "
+            f"image generation failed ({active_model}): {last_exc}"
         ) from last_exc
 
     @staticmethod
+    def _strip_b64_payload(val: str) -> str:
+        text = val.strip()
+        if text.lower().startswith("data:") and "," in text:
+            text = text.split(",", 1)[1]
+        return text.strip()
+
+    @staticmethod
     def _extract_b64(response: Any) -> str:
-        data = getattr(response, "data", None) or []
+        """OpenAI-compatible: ``response.data[0].b64_json`` (also dict / Together attrs)."""
+        data = getattr(response, "data", None)
+        if data is None and isinstance(response, dict):
+            data = response.get("data")
+        if data is not None and not isinstance(data, (list, tuple)):
+            data = [data]
+        data = data or []
         if not data:
-            raise RuntimeError("Together response contained no image data.")
+            raise RuntimeError("Image response contained no image data.")
         item = data[0]
         for attr in ("b64_json", "b64", "base64"):
             val = getattr(item, attr, None)
             if isinstance(val, str) and val.strip():
-                return val.strip()
+                return TogetherImageGenerator._strip_b64_payload(val)
         if isinstance(item, dict):
             for key in ("b64_json", "b64", "base64"):
                 val = item.get(key)
                 if isinstance(val, str) and val.strip():
-                    return val.strip()
-        raise RuntimeError("Together response missing base64 image payload.")
+                    return TogetherImageGenerator._strip_b64_payload(val)
+        raise RuntimeError("Image response missing base64 image payload.")
 
 
 class TogetherImageAdapter:

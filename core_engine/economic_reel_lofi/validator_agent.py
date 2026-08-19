@@ -9,6 +9,7 @@ from typing import Any
 
 from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi import lofi_collections as rag
+from core_engine.economic_reel_lofi.visual_identity import beat_lacks_noun_and_action
 
 _LOG = logging.getLogger(__name__)
 
@@ -89,6 +90,12 @@ def validate_script(
                         f"scene {i} caption exceeds {lofi_cfg.MAX_CAPTION_CHARS} chars "
                         f"({len(text)})"
                     )
+                if bool(getattr(lofi_cfg, "REQUIRE_BEAT_CONCRETENESS", True)):
+                    if beat_lacks_noun_and_action(text):
+                        reasons.append(
+                            f"scene {i} has no concrete noun+action pairing "
+                            f"({text!r}) — rewrite around an object doing something"
+                        )
                 low = text.lower()
                 if re.search(
                     r"it wasn['’]?t .{1,40} it was\b|"
@@ -133,6 +140,15 @@ def validate_script(
                 reasons.append(
                     f"scenes {i + 1}-{i + 2} split banned 'X isn't Y / it's Z' across the cut"
                 )
+
+    if bool(getattr(lofi_cfg, "REQUIRE_ANCHOR_OBJECT", True)):
+        ao = script.get("anchor_object")
+        if not isinstance(ao, dict):
+            reasons.append("missing anchor_object (need name, initial_state, final_state)")
+        else:
+            for key in ("name", "initial_state", "final_state"):
+                if not str(ao.get(key) or "").strip():
+                    reasons.append(f"anchor_object missing {key}")
 
     # 2) Quote integrity
     if hook == "authority_quote" and not reasons:
@@ -192,12 +208,16 @@ def validate_script(
                 "theme": script.get("theme"),
                 "hook_type": hook,
                 "quote_id": script.get("quote_id"),
+                "anchor_object": script.get("anchor_object"),
+                "arc_template": script.get("arc_template"),
+                "retrieved_details": script.get("retrieved_details"),
             },
         )
         theme = str(script.get("theme") or "")
         sub = str(script.get("subtheme") or "")
         if theme:
             rag.mark_theme_used(module, theme, sub or None)
+            rag.mark_core_rag_used(module, script)
 
     _LOG.info("ValidatorAgent PASS | hook=%s theme=%s scenes=%s", hook, script.get("theme"), scene_count)
     return ValidationResult(True, [], script=script)
