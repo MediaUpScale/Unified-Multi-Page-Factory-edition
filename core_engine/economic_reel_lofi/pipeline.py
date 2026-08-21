@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -434,6 +435,166 @@ def _qa_scene_image(
     return (struct_ok and critic_ok and not flaws), flaws, fix
 
 
+def apply_ad_hoc_guidance(visual_prompt: str, reason: str) -> str:
+    """Append one-off prompt guidance. Not persisted to the RAG / object bank."""
+    extra = " ".join((reason or "").split())
+    base = " ".join((visual_prompt or "").split())
+    if not extra:
+        return base
+    if extra.lower() in base.lower():
+        return base
+    return f"{base} {extra}"
+
+
+def generate_and_qa_scene(
+    row: dict[str, Any],
+    out_img: Path,
+    *,
+    attempt_budget: int | None = None,
+    extra_prompt: str = "",
+    mood: dict[str, Any] | None = None,
+) -> tuple[bool, dict[str, Any], int, int]:
+    """
+    Generate one beat still and run critic + uniq16 style_gate + INTRUDER.
+
+    Writes pixels to ``out_img`` (last attempt kept on failure). Returns
+    ``(ok, last_gate, n_image_calls, n_critic_calls)``.
+    """
+    scene_i = int(row.get("scene") or 1)
+    visual = str(row.get("visual_prompt") or "")
+    extra = " ".join((extra_prompt or "").split())
+    subject_type = str(row.get("subject_type") or "").strip()
+    key_object = str(row.get("key_object") or "").strip()
+    st_l = subject_type.strip().lower().replace(" ", "_")
+    mood_meta = dict(mood or {
+        "id": str(row.get("riso_id") or f"scene_{scene_i}"),
+        "lighting": "from_riso_prompt",
+        "palette": row.get("riso_palette"),
+        "shadow": lofi_cfg.DUOTONE_SHADOW,
+        "highlight": lofi_cfg.DUOTONE_HIGHLIGHT,
+    })
+    if attempt_budget is None:
+        n_attempts = int(lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE) + 1
+    else:
+        n_attempts = max(1, int(attempt_budget))
+
+    ok_img = False
+    last_flaws: list[str] = []
+    last_fix = ""
+    last_gate: dict[str, Any] = {
+        "scene": scene_i,
+        "subject_type": subject_type,
+        "key_object": key_object,
+        "passed": True,
+        "skipped": True,
+    }
+    last_intruder = False
+    focus_step = 0
+    scene_attempts: list[dict[str, Any]] = []
+    n_image_calls = 0
+    n_critic_calls = 0
+
+    for attempt in range(1, n_attempts + 1):
+        prompt_i = apply_ad_hoc_guidance(visual, extra)
+        if st_l in {"object_focus", "silhouette"}:
+            if last_intruder:
+                focus_step = min(focus_step + 1, 2)
+            from core_engine.economic_reel_lofi.visual_identity import (
+                assemble_v2_prompt,
+            )
+
+            rebuilt = assemble_v2_prompt(row, focus_step=focus_step)
+            row["visual_prompt"] = rebuilt
+            prompt_i = apply_ad_hoc_guidance(rebuilt, extra)
+            print(
+                f"[LOFI framing] scene={scene_i} attempt={attempt} "
+                f"step={focus_step} kind={row.get('object_focus_framing')} "
+                f"escalate_intruder={int(last_intruder)}"
+            )
+            if attempt > 1 and last_fix:
+                guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
+                extras = [p for p in (guard, last_fix) if p]
+                if extras:
+                    prompt_i = f"{prompt_i} {' '.join(extras)}"
+        elif attempt > 1:
+            guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
+            extras = [p for p in (guard, last_fix) if p]
+            if extras:
+                prompt_i = f"{apply_ad_hoc_guidance(visual, extra)} {' '.join(extras)}"
+        try:
+            _, mood_meta = generate_scene_image(
+                prompt_i,
+                out_img,
+                mood=mood_meta,
+                verbatim=True,
+            )
+            n_image_calls += 1
+        except Exception as exc:  # noqa: BLE001
+            last_flaws = [f"image gen failed: {exc}"]
+            _LOG.warning("scene %s gen attempt %s failed: %s", scene_i, attempt, exc)
+            continue
+        n_critic_calls += 1
+        passed, flaws, last_fix = _qa_scene_image(
+            out_img, visual,
+            subject_type=subject_type,
+            key_object=key_object,
+        )
+        gate_ok, gate_flaws, gate_meta = assess_default_object_intrusion(
+            out_img,
+            subject_type=subject_type,
+            key_object=key_object,
+        )
+        style_ok, style_flaws, style_meta = assess_photoreal_style(
+            out_img,
+            subject_type=subject_type,
+        )
+        del gate_ok, style_ok
+        gate_meta = dict(gate_meta)
+        gate_meta["scene"] = scene_i
+        gate_meta["attempt"] = attempt
+        gate_meta["focus_step"] = focus_step
+        gate_meta["framing"] = row.get("object_focus_framing") or ""
+        gate_meta["style_gate"] = style_meta
+        last_gate = gate_meta
+        last_intruder = bool(gate_flaws)
+        if gate_flaws:
+            flaws = list(flaws) + gate_flaws
+            passed = False
+            extra_fix = str(gate_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        if style_flaws:
+            flaws = list(flaws) + style_flaws
+            passed = False
+            extra_fix = str(style_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        gate_meta["qa_passed"] = bool(passed)
+        gate_meta["qa_flaws"] = list(flaws)
+        if passed:
+            ok_img = True
+            scene_attempts.append(dict(last_gate))
+            break
+        last_flaws = flaws
+        scene_attempts.append(dict(last_gate))
+        _LOG.info(
+            "VisualQA reject scene %s attempt %s subject=%s: %s",
+            scene_i,
+            attempt,
+            subject_type or "?",
+            "; ".join(flaws),
+        )
+
+    last_gate["image_ok"] = ok_img
+    last_gate["attempts"] = scene_attempts
+    last_gate["attempts_used"] = n_image_calls
+    last_gate["focus_step"] = focus_step
+    last_gate["qa_flaws"] = list(last_gate.get("qa_flaws") or last_flaws)
+    last_gate["qa_passed"] = bool(ok_img)
+    last_gate["mood"] = mood_meta
+    return ok_img, last_gate, n_image_calls, n_critic_calls
+
+
 def _generate_validated_script(
     *,
     module: str,
@@ -532,6 +693,7 @@ def _resolve_page_dirs(page_id: str, outputs_dir: Path | str | None) -> tuple[Pa
 def _load_locked_script(path: Path | str) -> dict[str, Any]:
     p = Path(path)
     raw = json.loads(p.read_text(encoding="utf-8"))
+    envelope: dict[str, Any] = raw if isinstance(raw, dict) else {}
     if isinstance(raw, dict) and isinstance(raw.get("script"), dict):
         script = dict(raw["script"])
     elif isinstance(raw, dict):
@@ -540,6 +702,15 @@ def _load_locked_script(path: Path | str) -> dict[str, Any]:
         raise ValueError(f"locked script is not a JSON object: {p}")
     if not (script.get("lines") or script.get("monologue")):
         raise ValueError(f"locked script has no lines/monologue: {p}")
+    extras = {
+        "scene_images": list(envelope.get("scene_images") or []),
+        "work_dir": envelope.get("work_dir"),
+        "manual_accept_scenes": [
+            int(x) for x in (envelope.get("manual_accept_scenes") or [])
+        ],
+        "source": str(p),
+    }
+    script["_locked_sidecar_assets"] = extras
     print(f"[LOFI pipeline] loaded locked script → {p}")
     return script
 
@@ -698,6 +869,7 @@ def _produce_one(
             lines,
             theme_row=theme_row,
             vary_imagery=lofi_cfg.is_thematic_arc(str(script.get("arc_template") or "")),
+            lock_visuals=bool(locked_script),
         )
         if lines and isinstance(lines[0], dict):
             raw_var = lines[0].pop("episode_variety", None)
@@ -760,6 +932,12 @@ def _produce_one(
             f"013={'riso_013' in ids} 014={'riso_014' in ids}"
         )
 
+    locked_assets = script.pop("_locked_sidecar_assets", None) or {}
+    accept_scenes = {int(x) for x in (locked_assets.get("manual_accept_scenes") or [])}
+    reuse_images = [Path(p) for p in (locked_assets.get("scene_images") or []) if str(p).strip()]
+    if accept_scenes:
+        print(f"[LOFI pipeline] manual_accept_scenes={sorted(accept_scenes)}")
+
     scene_paths: list[Path] = []
     captions: list[str] = []
     scene_moods: list[dict] = []
@@ -796,7 +974,6 @@ def _produce_one(
     for row in lines:
         scene_i = int(row.get("scene") or len(scene_paths) + 1)
         out_img = run_dir / f"scene_{scene_i:02d}.png"
-        visual = str(row.get("visual_prompt") or "")
         caption = _sanitize_caption_typos(str(row.get("text") or ""))
         mood_meta = {
             "id": str(row.get("riso_id") or f"scene_{scene_i}"),
@@ -807,7 +984,6 @@ def _produce_one(
         }
         ok_img = False
         last_flaws: list[str] = []
-        last_fix = ""
         subject_type = str(row.get("subject_type") or "").strip()
         key_object = str(row.get("key_object") or "").strip()
         last_gate: dict[str, Any] = {
@@ -817,101 +993,35 @@ def _produce_one(
             "passed": True,
             "skipped": True,
         }
-        last_intruder = False
-        focus_step = 0
-        scene_attempts: list[dict[str, Any]] = []
-        st_l = subject_type.strip().lower().replace(" ", "_")
-        for attempt in range(1, lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE + 2):
-            prompt_i = visual
-            if st_l in {"object_focus", "silhouette"}:
-                if last_intruder:
-                    focus_step = min(focus_step + 1, 2)
-                from core_engine.economic_reel_lofi.visual_identity import (
-                    assemble_v2_prompt,
-                )
-
-                prompt_i = assemble_v2_prompt(row, focus_step=focus_step)
-                row["visual_prompt"] = prompt_i
-                print(
-                    f"[LOFI framing] scene={scene_i} attempt={attempt} "
-                    f"step={focus_step} kind={row.get('object_focus_framing')} "
-                    f"escalate_intruder={int(last_intruder)}"
-                )
-                if attempt > 1 and last_fix:
-                    guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
-                    extras = [p for p in (guard, last_fix) if p]
-                    if extras:
-                        prompt_i = f"{prompt_i} {' '.join(extras)}"
-            elif attempt > 1:
-                guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
-                extras = [p for p in (guard, last_fix) if p]
-                if extras:
-                    prompt_i = f"{visual} {' '.join(extras)}"
-            try:
-                _, mood_meta = generate_scene_image(
-                    prompt_i,
-                    out_img,
-                    mood=mood_meta,
-                    verbatim=True,
-                )
-                n_image_calls += 1
-            except Exception as exc:  # noqa: BLE001
-                last_flaws = [f"image gen failed: {exc}"]
-                _LOG.warning("scene %s gen attempt %s failed: %s", scene_i, attempt, exc)
-                continue
-            n_critic_calls += 1
-            passed, flaws, last_fix = _qa_scene_image(
-                out_img, visual,
-                subject_type=subject_type,
-                key_object=key_object,
+        reuse_src = reuse_images[scene_i - 1] if 0 < scene_i <= len(reuse_images) else None
+        prev_ok = bool((row.get("default_object_gate") or {}).get("image_ok"))
+        reuse_ok = bool(
+            reuse_src
+            and reuse_src.is_file()
+            and (prev_ok or scene_i in accept_scenes)
+        )
+        if reuse_ok:
+            if Path(reuse_src) != out_img:
+                shutil.copy2(reuse_src, out_img)
+            ok_img = True
+            last_gate = dict(row.get("default_object_gate") or last_gate)
+            last_gate["image_ok"] = True
+            last_gate["reused"] = True
+            last_gate["manual_accept"] = scene_i in accept_scenes
+            print(
+                f"[LOFI reuse] scene={scene_i} "
+                f"{'manual_accept' if scene_i in accept_scenes else 'prior_pass'} "
+                f"← {reuse_src.name}"
             )
-            gate_ok, gate_flaws, gate_meta = assess_default_object_intrusion(
-                out_img,
-                subject_type=subject_type,
-                key_object=key_object,
+        else:
+            ok_img, last_gate, n_i, n_c = generate_and_qa_scene(
+                row, out_img, mood=mood_meta,
             )
-            style_ok, style_flaws, style_meta = assess_photoreal_style(
-                out_img,
-                subject_type=subject_type,
-            )
-            gate_meta = dict(gate_meta)
-            gate_meta["scene"] = scene_i
-            gate_meta["attempt"] = attempt
-            gate_meta["focus_step"] = focus_step
-            gate_meta["framing"] = row.get("object_focus_framing") or ""
-            gate_meta["style_gate"] = style_meta
-            last_gate = gate_meta
-            last_intruder = bool(gate_flaws)
-            if gate_flaws:
-                flaws = list(flaws) + gate_flaws
-                passed = False
-                extra_fix = str(gate_meta.get("fix_instructions") or "").strip()
-                if extra_fix:
-                    last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
-            if style_flaws:
-                flaws = list(flaws) + style_flaws
-                passed = False
-                extra_fix = str(style_meta.get("fix_instructions") or "").strip()
-                if extra_fix:
-                    last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
-            gate_meta["qa_passed"] = bool(passed)
-            gate_meta["qa_flaws"] = list(flaws)
-            if passed:
-                ok_img = True
-                scene_attempts.append(dict(last_gate))
-                break
-            last_flaws = flaws
-            scene_attempts.append(dict(last_gate))
-            _LOG.info(
-                "VisualQA reject scene %s attempt %s subject=%s: %s",
-                scene_i,
-                attempt,
-                subject_type or "?",
-                "; ".join(flaws),
-            )
-        last_gate["image_ok"] = ok_img
-        last_gate["attempts"] = scene_attempts
-        last_gate["focus_step"] = focus_step
+            n_image_calls += n_i
+            n_critic_calls += n_c
+            last_flaws = list(last_gate.get("qa_flaws") or [])
+            if isinstance(last_gate.get("mood"), dict):
+                mood_meta = last_gate["mood"]
         object_gate_by_scene.append(last_gate)
         row["default_object_gate"] = last_gate
         if not ok_img:

@@ -19,6 +19,7 @@ from core_engine.economic_reel_lofi.visual_identity import (
     last_concrete_noun,
     preferred_concrete_noun,
     setting_object_pool,
+    _BANNED_OBJECT_RE,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -55,6 +56,9 @@ def _log_script_llm_call(*, provider: str, model: str, prompt: str, output: str)
             in_tok * _CLAUDE_SONNET_INPUT_USD_PER_TOKEN
             + out_tok * _CLAUDE_SONNET_OUTPUT_USD_PER_TOKEN
         )
+    elif provider == "deepseek":
+        # Rough V4 Flash blend; not account billing.
+        cost = (in_tok + out_tok) * 0.28 / 1_000_000.0
     else:
         from core_engine.cost_tracker import GEMINI_FLASH_USD_PER_1M_TOKENS
 
@@ -523,13 +527,58 @@ def _call_gemini(prompt: str) -> str:
     return text
 
 
+def _call_deepseek(prompt: str) -> str:
+    """Primary script writer — DeepSeek V4 Flash (OpenAI-compatible)."""
+    import config as app_config
+
+    api_key = getattr(app_config, "DEEPSEEK_API_KEY", None)
+    if not api_key or not str(api_key).strip():
+        raise RuntimeError("DEEPSEEK_API_KEY missing — cannot run DeepSeek script writer")
+    from openai import OpenAI
+
+    base_url = str(
+        getattr(app_config, "DEEPSEEK_BASE_URL", None) or "https://api.deepseek.com/v1"
+    ).strip()
+    model = str(
+        getattr(app_config, "DEEPSEEK_FLASH_MODEL", None)
+        or getattr(app_config, "DEEPSEEK_MODEL", None)
+        or "deepseek-v4-flash"
+    ).strip()
+    if model.lower() in {"deepseek-chat", "deepseek-coder", "deepseek-chat-v3"}:
+        model = "deepseek-v4-flash"
+    print(f"[LOFI script] writer=deepseek model={model}")
+    client = OpenAI(api_key=str(api_key), base_url=base_url)
+    system = (
+        "You write continuous first-person spoken-word scripts for short vertical reels. "
+        "Every line must follow causally from the previous one. Output STRICT JSON only."
+    )
+    resp = client.chat.completions.create(
+        model=model,
+        max_tokens=8192,
+        temperature=0.82,
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    choice = resp.choices[0]
+    text = str((choice.message.content or "")).strip()
+    _log_script_llm_call(provider="deepseek", model=model, prompt=prompt, output=text)
+    if not text:
+        raise RuntimeError(
+            f"DeepSeek returned empty script (finish_reason={choice.finish_reason!r})"
+        )
+    return text
+
+
 def _call_llm(prompt: str) -> str:
-    """Claude Sonnet first; Gemini only if Claude is unavailable."""
+    """DeepSeek V4 Flash first; Gemini only if DeepSeek is unavailable. Not Claude."""
     try:
-        return _call_claude(prompt)
+        return _call_deepseek(prompt)
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("Claude script writer failed (%s) — falling back to Gemini", exc)
-        print(f"[LOFI script] WARN Claude failed ({exc}); Gemini fallback")
+        _LOG.warning("DeepSeek script writer failed (%s) — falling back to Gemini", exc)
+        print(f"[LOFI script] WARN DeepSeek failed ({exc}); Gemini fallback")
         return _call_gemini(prompt)
 
 
@@ -571,17 +620,17 @@ _FALLBACK_TOD: tuple[str, ...] = (
 _FALLBACK_LINE_SHAPES: tuple[tuple[str, str], ...] = (
     ("I set the {obj}.", "opening_hook"),
     ("I wait by the {obj}.", "longing"),
-    ("I hold the {obj}.", "quiet_sorrowful"),
+    ("I watch the {obj}.", "quiet_sorrowful"),
     ("I leave the {obj}.", "doubt"),
-    ("I pick the {obj} up.", "realization"),
+    ("I wait by the {obj}.", "realization"),
     ("I keep the {obj}.", "realization"),
-    ("I put the {obj} down.", "acceptance"),
+    ("I look at the {obj}.", "acceptance"),
     ("I watch the {obj}.", "hopeful_bittersweet"),
-    ("I hold the {obj} still.", "resolution_warmth"),
+    ("I leave the {obj} still.", "resolution_warmth"),
 )
 
 _GENERIC_FALLBACK_BEATS: tuple[tuple[str, str], ...] = (
-    ("I set two unmatched cups.", "opening_hook"),
+    ("I wait by the same door.", "opening_hook"),
     ("I waited by the same door.", "longing"),
     ("The keys stayed in the bowl.", "quiet_sorrowful"),
     ("The list stayed on the fridge.", "doubt"),
@@ -624,7 +673,7 @@ def _pool_pair_for_detail(
     index: int,
 ) -> dict[str, str]:
     if not pool:
-        return {"setting": "kitchen at dawn", "key_object": "two unmatched coffee cups"}
+        return {"setting": "hallway near an open door", "key_object": "open doorway"}
     noun = preferred_concrete_noun(source)
     if noun:
         for p in pool:
@@ -649,7 +698,7 @@ def _metabolize_fallback_beats(
     Build (text, emotion, source_detail) from retrieved details.
 
     Spoken lines metabolize the RAG objects (noun + action) instead of the
-    generic cups/keys copy. If the bank is empty, keep the old generic beats.
+    generic object diary. If the bank is empty, keep the old generic beats.
     """
     if not retrieved:
         out: list[tuple[str, str, str]] = []
@@ -770,10 +819,10 @@ def _fallback_script(
             row["source_detail"] = source
         lines.append(row)
     first_pair = pool[0] if pool else {
-        "setting": "kitchen at dawn",
-        "key_object": "two unmatched coffee cups",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
     }
-    anchor_name = str(first_pair.get("key_object") or "coffee cups")
+    anchor_name = str(first_pair.get("key_object") or "open doorway")
     if retrieved:
         d0 = str(retrieved[0].get("detail") or "")
         noun = preferred_concrete_noun(d0) or last_concrete_noun(d0)
@@ -982,7 +1031,7 @@ SETTING_OBJECT_POOL (visual fields only — pick setting + key_object from this 
 {feedback_block}
 
 This is ONE argument about a single theme that builds, costs, and pays off.
-Not object-anchored micro-scenes. Not "I set the cup / I wait by the door."
+Not object-anchored micro-scenes. Not "I wait by the door / I watch the rain."
 Not a list of removable maxims. Not a book-plug outro.
 Do NOT force one shared physical object across all beats. Varied imagery is the default.
 A recurring object is allowed only when this theme naturally wants one.
@@ -1009,7 +1058,7 @@ RULES:
 6) Second person ("you"/"they") or close third is preferred over object diary.
 7) Details from the bank may color a line; they must not become the plot.
 8) FORBIDDEN:
-   - object-skeleton ("I set the cup", "the keys stayed in the bowl")
+   - object-skeleton ("I wait by the door", "the keys stayed in the bowl")
    - advice lists ("you should", "remember to")
    - named authors, quotes, attributions, book plugs
    - stretching toward a 50–60s / 20-line format
@@ -1026,12 +1075,13 @@ RULES:
       specific object. Use couple on at most 3 beats (emotional peaks).
     - subject_expression: 1–3 words
     - setting + key_object MUST trace to THIS beat's idea: the noun in
-      the line, or a meaning stand-in (chaos→scattered papers / overturned
-      chair; walking from a fight→open door, figure mid-step; winning/cost
-      →empty glass or worn shoes; peace/quiet→open window or kettle).
-      Never default every abstract line to a chair or mug.
+      the line, or a meaning stand-in (chaos→unmade empty bed / suitcase on
+      the floor; walking from a fight→open doorway; cost→empty platform;
+      peace/quiet→rain on the window or kettle).
+      Never default every abstract line to a chair.
       Copy from SETTING_OBJECT_POOL when a pair matches the idea; otherwise
-      name the stand-in. Do not reuse the same key_object on 3+ beats.
+      name the stand-in. Do not reuse the same key_object more than once.
+      Never pick a small object meant to be held near the face.
     - time_of_day: dawn | morning | afternoon | dusk | night | evening
     - beat_text: same as text
 12) anchor_object is OPTIONAL. Omit it unless this theme naturally wants one
@@ -1120,6 +1170,11 @@ def generate_script(
             retrieved_details=retrieved,
             arc_template=str(arc.get("id") or ""),
         )
+    retrieved = [
+        d for d in retrieved
+        if isinstance(d, dict)
+        and not _BANNED_OBJECT_RE.search(str(d.get("detail") or ""))
+    ]
     detail_block = "\n".join(
         f'  - ({d.get("sensory_type") or "object"}) {d.get("detail")}'
         for d in retrieved
@@ -1182,7 +1237,7 @@ This is ONE continuous first-person voice moving through the ARC SHAPE above.
 Not a list of standalone statements. Not maxims. Not advice.
 
 SHAPE (illustrative — do not copy; match the causal chain):
-I set two unmatched cups.
+I wait by the same door.
 I waited by the same door.
 The keys stayed in the bowl.
 The list stayed on the fridge.
@@ -1199,8 +1254,8 @@ RULES:
 2) Each line MUST follow causally/emotionally from the previous one. If you can delete
    a line and the piece still makes sense, rewrite — the throughline is broken.
 3) First person. Plain spoken language. Concrete imagery over abstraction.
-   Every spoken line MUST pair a concrete noun (mug, key, door, coat, plate, phone)
-   with an action (set, wait, hang, leave, open, rinse, tie). No pure-abstract beats
+   Every spoken line MUST pair a concrete noun (door, coat, bed, window, suitcase)
+   with an action (wait, hang, leave, open, look). No pure-abstract beats
    like "some mornings I forget you're gone."
 4) Scene 1 is the hook — specific and felt, not a thesis statement.
 5) Last 2–3 scenes land in comfort / quiet resolution, not bleakness.

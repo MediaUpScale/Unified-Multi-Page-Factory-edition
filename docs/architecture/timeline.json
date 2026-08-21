@@ -4,7 +4,9 @@
   "purpose": "Architecture decision log for a later scrollytelling portfolio. Not a website. JSON keyed by pipeline node.",
   "notes": {
     "docs_architecture_at_start": "empty — the earlier documentation-module instruction never landed because Part 0 blocked it. This file is the first artifact in docs/architecture/.",
-    "json_vs_chroma": "Small curated Core Mode corpora (concrete_details, arc_templates, theme banks) stay JSON. Chroma is reserved for larger/fuzzier retrieval (asset library, cross-niche search) and is not used in Part 0. See chroma node when Part 2 lands."
+    "json_vs_chroma": "Small curated Core Mode corpora (concrete_details, arc_templates, theme banks) stay JSON. Chroma is reserved for larger/fuzzier retrieval (asset library, cross-niche search) and is not used in Part 0. See chroma node when Part 2 lands.",
+    "portfolio_filter": "Write only module_close / root_cause_fix / architecture_decision / milestone. Never log QA attempts, regenerate_scene calls, or routine pipeline runs. Writer: docs/architecture/portfolio_log.py — not hooked to the reel pipeline.",
+    "last_backfill": "2026-08-21 ECONOMIC_REEL_LOFI Schnell module close"
   },
   "pipeline_nodes": {
     "core_mode_rag": {
@@ -186,6 +188,21 @@
             "core_engine/economic_reel_lofi/pipeline.py"
           ],
           "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-21",
+          "kind": "module_close",
+          "what": "Closed ECONOMIC_REEL_LOFI (Schnell). Problem: the visual critic had no explicit hand-anatomy check, and person-shot QA crops were corner-only, so hand/torso fusion (a hand appearing to merge into the chest) shipped with qa_passed=true. Fix: critic hard-fails fused/incorrect hands (wrong finger count, merge into torso/face/object, twisted or duplicated fingers) as 'deformed or anatomically incorrect hand' with deformed_hand_present=true; person shots now send a torso/mid-frame crop; regenerate_scene() replaces one still in a finished episode via the shared generate_and_qa_scene() loop without re-running script, voice, captions, or the other scenes. Upstream, the object/scene bank is restricted to silhouette, empty-handed characters, and pure backdrop (no handheld small objects), with a per-episode stem cap of 1. Outcome: scene 1 of lofi_reel_distance_20260821_211202_v01 regenerated and passed QA on attempt 1; reassembled video kept the original 9 VO files and captions; module closed.",
+          "why": "Corner crops could not see chest-level fusion, so a real anatomy fail never became a flaw. A full-episode rerun was the only recovery path. The writer also kept suggesting cup/mug because that lived in the suggestion bank, not only the negative ban list.",
+          "files": [
+            "VisualQA_Agent/visual_critic.py",
+            "core_engine/economic_reel_lofi/pipeline.py",
+            "core_engine/economic_reel_lofi/regen.py",
+            "core_engine/economic_reel_lofi/visual_identity.py",
+            "docs/architecture/portfolio_log.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_distance_20260821_211202_v01_regen.mp4",
           "needs_media": false
         }
       ]

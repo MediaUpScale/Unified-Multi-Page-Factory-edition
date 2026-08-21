@@ -36,6 +36,20 @@ _CLEAN_MODEL_FLAW_RE = re.compile(
     re.IGNORECASE,
 )
 
+DEFORMED_HAND_FLAW = "deformed or anatomically incorrect hand"
+_DEFORMED_HAND_RE = re.compile(
+    r"("
+    r"too many fingers|too few fingers|extra fingers?|six fingers|seven fingers|"
+    r"missing fingers?|duplicated fingers?|twisted fingers?|"
+    r"hand.{0,48}(merg\w*|enter\w*|sink\w*|disappear\w*|fused?).{0,24}"
+    r"(torso|chest|sternum|body|face|breast)|"
+    r"(torso|chest|sternum|body|face).{0,24}(merg\w*|swallow\w*|absorb\w*).{0,24}hand|"
+    r"fingers?.{0,24}(into|inside).{0,16}(chest|torso|body)|"
+    r"anatomically incorrect hand|deformed.{0,16}hand"
+    r")",
+    re.IGNORECASE,
+)
+
 
 class CriticVerdict(BaseModel):
     """Structured Art Director evaluation (Gemini response_schema)."""
@@ -72,6 +86,14 @@ class CriticVerdict(BaseModel):
             "True if a hand or grip is visible with no wrist AND no forearm "
             "continuing off-frame. Center-of-frame floating grips count. "
             "Must be set even when the dominant object is also wrong."
+        ),
+    )
+    deformed_hand_present: bool = Field(
+        default=False,
+        description=(
+            "True if a visible hand has wrong finger count, fused/merged into "
+            "torso/face/object, twisted/duplicated fingers, or impossible "
+            "proportion relative to the body."
         ),
     )
 
@@ -141,6 +163,25 @@ def _lofi_edge_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
             (name, types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png"))
         )
     return out
+
+
+def _lofi_torso_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
+    """Zoom the chest/mid-frame so a hand fused into the torso is large enough to judge."""
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    im = PILImage.open(image_path).convert("RGB")
+    w, h = im.size
+    box = (int(w * 0.12), int(h * 0.28), int(w * 0.88), int(h * 0.88))
+    buf = BytesIO()
+    im.crop(box).save(buf, format="PNG")
+    return [
+        (
+            "torso/mid-frame",
+            types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png"),
+        )
+    ]
 
 
 _NEGATED_HAND = re.compile(
@@ -246,6 +287,17 @@ fix_instructions MUST tell Flux how to match {st}.
    Prefix a flaw with "LIMB:" (e.g. "LIMB: floating grip, no wrist or forearm").
    fix_instructions MUST say to remove the extra fragment / ungrounded hand
    and keep only the object (object_focus) or attached limbs (person shots).
+
+7) HAND ANATOMY (HARD FAIL — attached hands that are still wrong).
+   LIMB INTEGRITY above catches disconnected / ungrounded hands. This check
+   catches a hand that IS attached to a body but is anatomically impossible:
+   - Incorrect finger count (too many or too few).
+   - Hand merging into, entering, or fused with the torso, chest, face,
+     or another object (e.g. fingers disappearing into the sternum).
+   - Twisted or duplicated fingers, or a hand whose scale does not match the body.
+   If any of these occur: set deformed_hand_present=true, passed=false, and
+   report the flaw exactly as: "deformed or anatomically incorrect hand".
+   An empty-handed pose with a correctly formed, separate hand is a PASS.
 """.strip()
 
 
@@ -281,6 +333,14 @@ EVALUATE:
    (skip face-detail requirements for object_focus and silhouette, but still
    FAIL ungrounded/disconnected hands on those beats).
    Also FAIL disconnected/orphaned limb fragments, even small ones at frame edges.
+   HAND ANATOMY (HARD FAIL on person shots; also FAIL on object_focus/silhouette
+   if a hand is visible). Specifically check for:
+   - Hands with an incorrect number of fingers (too many or too few).
+   - A hand merging/entering the torso, face, or another object in an
+     anatomically impossible way (e.g. a hand appearing to sink into the chest).
+   - Twisted or duplicated fingers, or hand proportion inconsistent with the body.
+   If ANY of these occur: set deformed_hand_present=true, passed=false, and
+   add the exact flaw string "deformed or anatomically incorrect hand".
 3) Text artifacts — no embedded/garbled letters, logos, or UI burned into the image.
 4) Framing — vertical/portrait-friendly composition suitable for 9:16 reels; subject readable.
 {semantic}
@@ -304,7 +364,9 @@ Return JSON fields exactly:
   fix_instructions (string — actionable FLUX rewrite directives; empty if passed),
   corner_scan (string — TL / TR / BL / BR contents),
   limb_fragment_present (boolean — true if any disconnected limb piece exists),
-  ungrounded_hand_present (boolean — true if a hand has no wrist/forearm; center grips count).
+  ungrounded_hand_present (boolean — true if a hand has no wrist/forearm; center grips count),
+  deformed_hand_present (boolean — true if finger count is wrong, a hand merges
+    into torso/face/object, or fingers are twisted/duplicated / mis-scaled).
 """.strip()
 
 
@@ -547,6 +609,16 @@ def evaluate_image(
                     "flesh-colored hand/finger/arm fragments."
                 )
                 contents.append(part)
+            st_req = (requested_subject or "").strip().lower().replace(" ", "_")
+            if st_req in {"woman", "man", "couple", "silhouette"}:
+                for name, part in _lofi_torso_crop_parts(Path(generated_image)):
+                    contents.append(
+                        f"TORSO CROP of IMAGE 1 — {name}. Inspect hands vs chest/"
+                        "torso. A finger, palm, or wrist merging into the body "
+                        "is a HARD FAIL (deformed or anatomically incorrect hand), "
+                        "even if the face looks fine."
+                    )
+                    contents.append(part)
         except Exception as exc:  # noqa: BLE001
             _LOG.warning("CRITIC | edge crops skipped (%s)", exc)
     for i, ref in enumerate(refs, start=1):
@@ -664,6 +736,33 @@ def evaluate_image(
         if verdict.score >= threshold:
             verdict.score = round(min(float(verdict.score), threshold - 0.5), 2)
 
+    if is_lofi:
+        blob = " ".join(
+            [
+                " ".join(verdict.flaws or []),
+                str(verdict.fix_instructions or ""),
+                str(getattr(verdict, "corner_scan", "") or ""),
+            ]
+        )
+        deformed = bool(getattr(verdict, "deformed_hand_present", False)) or bool(
+            _DEFORMED_HAND_RE.search(blob)
+        )
+        if deformed:
+            verdict.deformed_hand_present = True
+            verdict.passed = False
+            if not any(
+                DEFORMED_HAND_FLAW.lower() in str(f).lower()
+                for f in (verdict.flaws or [])
+            ):
+                verdict.flaws.append(DEFORMED_HAND_FLAW)
+            if not str(verdict.fix_instructions or "").strip():
+                verdict.fix_instructions = (
+                    "Keep every hand fully outside the torso and face, "
+                    "correct finger count, no fused or overlapping anatomy."
+                )
+            if verdict.score >= threshold:
+                verdict.score = round(min(float(verdict.score), threshold - 0.5), 2)
+
     # Terminal: exact raw critique score
     table = Table(title="Gemini Vision Critic — Raw Verdict", show_header=True)
     table.add_column("Field", style="cyan")
@@ -680,6 +779,10 @@ def evaluate_image(
         table.add_row(
             "ungrounded_hand_present",
             str(bool(getattr(verdict, "ungrounded_hand_present", False))),
+        )
+        table.add_row(
+            "deformed_hand_present",
+            str(bool(getattr(verdict, "deformed_hand_present", False))),
         )
         table.add_row(
             "corner_scan",

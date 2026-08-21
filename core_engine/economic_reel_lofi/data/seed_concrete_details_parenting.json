@@ -2,73 +2,199 @@
   {
     "subtheme": "staying_soft_in_meltdowns",
     "concrete_details": [
-      {"detail": "a sippy cup rolling under the kitchen table", "sensory_type": "object"},
-      {"detail": "tiny shoes kicked off in the hallway", "sensory_type": "object"},
-      {"detail": "a stuffed bear face-down on the rug", "sensory_type": "object"},
-      {"detail": "the bedroom door left a few inches open", "sensory_type": "object"},
-      {"detail": "a damp washcloth on the kitchen counter", "sensory_type": "object"},
-      {"detail": "crayons scattered across the floor", "sensory_type": "object"},
-      {"detail": "the rocking chair still moving after", "sensory_type": "object"}
+      {
+        "detail": "two coats hanging on one hook",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "tiny shoes kicked off in the hallway",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a stuffed bear face-down on the rug",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the bedroom door left a few inches open",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a damp washcloth on the kitchen counter",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "crayons scattered across the floor",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the rocking chair still moving after",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "ordinary_minutes_matter",
     "concrete_details": [
-      {"detail": "a tiny coat on the hook by the door", "sensory_type": "object"},
-      {"detail": "snack crumbs on the afternoon table", "sensory_type": "object"},
-      {"detail": "a sippy cup left on the porch step", "sensory_type": "object"},
-      {"detail": "small handprints on the kitchen window", "sensory_type": "object"},
-      {"detail": "a folded blanket on the sofa", "sensory_type": "object"},
-      {"detail": "shoes by the door that won't stay this size", "sensory_type": "object"},
-      {"detail": "the kitchen clock and a cooling cup of tea", "sensory_type": "object"}
+      {
+        "detail": "a tiny coat on the hook by the door",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "snack crumbs on the afternoon table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a streetlamp on a quiet corner",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "small handprints on the kitchen window",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a folded blanket on the sofa",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "shoes by the door that won't stay this size",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an empty passenger seat watched from the curb",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "phones_down_eye_contact",
     "concrete_details": [
-      {"detail": "a phone laid face-down on the coffee table", "sensory_type": "object"},
-      {"detail": "two mugs waiting on the kitchen table", "sensory_type": "object"},
-      {"detail": "a child's drawing held up to the lamp", "sensory_type": "object"},
-      {"detail": "the sofa cushion pulled close", "sensory_type": "object"},
-      {"detail": "socks on the living room rug", "sensory_type": "object"},
-      {"detail": "the TV remote left untouched", "sensory_type": "object"},
-      {"detail": "a shared blanket across both laps", "sensory_type": "object"}
+      {
+        "detail": "a kettle that just clicked off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a folded blanket on the sofa",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a child's drawing held up to the lamp",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the sofa cushion pulled close",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "socks on the living room rug",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the TV remote left untouched",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a shared blanket across both laps",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "limits_with_warmth",
     "concrete_details": [
-      {"detail": "two chairs pulled in at the kitchen table", "sensory_type": "object"},
-      {"detail": "a timer sitting beside the plate", "sensory_type": "object"},
-      {"detail": "crayons put back in the tin", "sensory_type": "object"},
-      {"detail": "the hallway lamp left on", "sensory_type": "object"},
-      {"detail": "a small backpack by the door", "sensory_type": "object"},
-      {"detail": "a towel folded on the bathroom sink", "sensory_type": "object"},
-      {"detail": "the same storybook set on the bed", "sensory_type": "object"}
+      {
+        "detail": "two chairs pulled in at the kitchen table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a timer sitting beside the plate",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "crayons put back in the tin",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the hallway lamp left on",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a small backpack by the door",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a towel folded on the bathroom sink",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same storybook set on the bed",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "routines_as_safety",
     "concrete_details": [
-      {"detail": "a night lamp on the bedside table", "sensory_type": "object"},
-      {"detail": "a stuffed bear tucked under the blanket", "sensory_type": "object"},
-      {"detail": "small shoes lined up by the bed", "sensory_type": "object"},
-      {"detail": "the hallway lamp dimmed", "sensory_type": "object"},
-      {"detail": "a sippy cup of water on the nightstand", "sensory_type": "object"},
-      {"detail": "the same storybook on the pillow", "sensory_type": "object"},
-      {"detail": "curtains pulled against the street", "sensory_type": "object"}
+      {
+        "detail": "a night lamp on the bedside table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a stuffed bear tucked under the blanket",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "small shoes lined up by the bed",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the hallway lamp dimmed",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an open doorway with no one in it",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same storybook on the pillow",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "curtains pulled against the street",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "good_enough_mother",
     "concrete_details": [
-      {"detail": "a cold cup of coffee on the kitchen table", "sensory_type": "object"},
-      {"detail": "dishes left in the sink till morning", "sensory_type": "object"},
-      {"detail": "a folded towel on the bathroom counter", "sensory_type": "object"},
-      {"detail": "the same chair pulled out at dawn", "sensory_type": "object"},
-      {"detail": "an unopened letter on the fridge", "sensory_type": "object"},
-      {"detail": "socks on the bedroom floor", "sensory_type": "object"},
-      {"detail": "the kettle clicking off unwatched", "sensory_type": "object"}
+      {
+        "detail": "rain streaking an empty window",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "dishes left in the sink till morning",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a folded towel on the bathroom counter",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same chair pulled out at dawn",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an unopened letter on the fridge",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "socks on the bedroom floor",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the kettle clicking off unwatched",
+        "sensory_type": "object"
+      }
     ]
   }
 ]

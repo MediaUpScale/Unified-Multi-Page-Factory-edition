@@ -7,12 +7,12 @@
     "performance_score": null,
     "setting_object_pairs": [
       {
-        "setting": "kitchen at dawn",
-        "key_object": "two unmatched coffee cups"
+        "setting": "bedroom, unmade empty bed",
+        "key_object": "unmade empty bed"
       },
       {
-        "setting": "hallway by the front door",
-        "key_object": "set of house keys on a hook"
+        "setting": "rain-streaked window at dusk",
+        "key_object": "rain on the window"
       },
       {
         "setting": "small table by a window",
@@ -35,8 +35,8 @@
         "key_object": "same scuffed shoes"
       },
       {
-        "setting": "hallway hook by the door",
-        "key_object": "keys dropped in a bowl"
+        "setting": "empty train platform at night",
+        "key_object": "empty platform"
       }
     ]
   },
@@ -64,16 +64,16 @@
         "key_object": "two umbrellas"
       },
       {
-        "setting": "bedside table",
-        "key_object": "glass of water refilled"
+        "setting": "hallway with a closed suitcase on the floor",
+        "key_object": "closed suitcase on the floor"
       },
       {
-        "setting": "shared sofa at night",
-        "key_object": "two mugs on one tray"
+        "setting": "empty park path at dusk",
+        "key_object": "distant horizon"
       },
       {
-        "setting": "bedside in low lamp light",
-        "key_object": "refilled water glass"
+        "setting": "coat hook by the door",
+        "key_object": "two coats hanging"
       },
       {
         "setting": "porch swing at dusk",
@@ -97,8 +97,8 @@
         "key_object": "half-written reply"
       },
       {
-        "setting": "bathroom mirror at night",
-        "key_object": "phone face-down"
+        "setting": "window overlooking a quiet street",
+        "key_object": "empty chair"
       },
       {
         "setting": "porch steps",
@@ -109,8 +109,8 @@
         "key_object": "unpaid bill for one"
       },
       {
-        "setting": "apartment hallway at night",
-        "key_object": "phone left face-down"
+        "setting": "hallway near an open door",
+        "key_object": "open doorway"
       },
       {
         "setting": "kitchen table after a call",
@@ -130,8 +130,8 @@
     "performance_score": null,
     "setting_object_pairs": [
       {
-        "setting": "bed at 2am",
-        "key_object": "glowing unanswered phone"
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp"
       },
       {
         "setting": "window overlooking the street",
@@ -142,16 +142,16 @@
         "key_object": "coat still on the chair"
       },
       {
-        "setting": "kitchen at night",
-        "key_object": "cold cup of coffee"
+        "setting": "curb at evening",
+        "key_object": "empty passenger seat"
       },
       {
         "setting": "bus stop after dark",
         "key_object": "missed-bus bench"
       },
       {
-        "setting": "bedroom window at 2am",
-        "key_object": "glowing unanswered phone"
+        "setting": "kitchen at dawn",
+        "key_object": "kettle just clicked off"
       },
       {
         "setting": "empty bus stop bench",
@@ -167,8 +167,8 @@
     "performance_score": null,
     "setting_object_pairs": [
       {
-        "setting": "kitchen table after dinner",
-        "key_object": "two mugs still full"
+        "setting": "sofa in evening light",
+        "key_object": "folded blanket"
       },
       {
         "setting": "car parked at night",
@@ -191,8 +191,8 @@
         "key_object": "silent radio"
       },
       {
-        "setting": "kitchen after dishes",
-        "key_object": "two mugs still full"
+        "setting": "bedroom, unmade empty bed",
+        "key_object": "unmade empty bed"
       }
     ]
   },
@@ -253,16 +253,16 @@
         "key_object": "record left spinning"
       },
       {
-        "setting": "hallway mirror",
-        "key_object": "unsent text on a phone"
+        "setting": "rain-streaked window at dusk",
+        "key_object": "rain on the window"
       },
       {
-        "setting": "rain-streaked cafe window",
-        "key_object": "two cups between them"
+        "setting": "empty train platform at night",
+        "key_object": "empty platform"
       },
       {
-        "setting": "hallway mirror at night",
-        "key_object": "unsent text on a phone"
+        "setting": "hallway with a closed suitcase on the floor",
+        "key_object": "closed suitcase on the floor"
       }
     ]
   },
@@ -325,8 +325,8 @@
         "key_object": "door that never opens"
       },
       {
-        "setting": "window seat facing the street",
-        "key_object": "cold cup of coffee"
+        "setting": "empty park path at dusk",
+        "key_object": "distant horizon"
       },
       {
         "setting": "stairwell inside the house",
@@ -352,8 +352,8 @@
         "key_object": "folded sweater"
       },
       {
-        "setting": "kitchen sink",
-        "key_object": "second unused mug"
+        "setting": "coat hook by the door",
+        "key_object": "two coats hanging"
       },
       {
         "setting": "park path in grey light",
@@ -364,8 +364,8 @@
         "key_object": "photograph face-down"
       },
       {
-        "setting": "kitchen sink at a tiled window",
-        "key_object": "second unused mug on the rack"
+        "setting": "window overlooking a quiet street",
+        "key_object": "empty chair"
       },
       {
         "setting": "closed front door in grey morning",
@@ -399,8 +399,8 @@
         "key_object": "gap where clothes were"
       },
       {
-        "setting": "kitchen drawer",
-        "key_object": "spare key left behind"
+        "setting": "hallway near an open door",
+        "key_object": "open doorway"
       },
       {
         "setting": "train platform at dusk",
@@ -489,11 +489,11 @@
     "last_used_date": null,
     "performance_score": null,
     "preferred_mood_palette": "amber_teal",
-    "sample_scene": "hand hovering over a phone that never gets picked up, lamp light, close mid shot",
+    "sample_scene": "kitchen at dawn, kettle just clicked off, mid shot",
     "setting_object_pairs": [
       {
-        "setting": "lamp-lit kitchen table",
-        "key_object": "unanswered phone"
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp"
       },
       {
         "setting": "desk at night",
@@ -504,8 +504,8 @@
         "key_object": "hand still on the frame"
       },
       {
-        "setting": "cafe table for two",
-        "key_object": "cold cup of coffee"
+        "setting": "curb at evening",
+        "key_object": "empty passenger seat"
       },
       {
         "setting": "train window",
@@ -574,8 +574,8 @@
         "key_object": "same daily route"
       },
       {
-        "setting": "sink at dusk",
-        "key_object": "unwashed cup from morning"
+        "setting": "sofa in evening light",
+        "key_object": "folded blanket"
       }
     ]
   },
@@ -651,20 +651,20 @@
     "sample_scene": "unread texts lighting a dark kitchen, mid shot",
     "setting_object_pairs": [
       {
-        "setting": "kitchen at night",
-        "key_object": "phone face-down on the table"
+        "setting": "bedroom, unmade empty bed",
+        "key_object": "unmade empty bed"
       },
       {
-        "setting": "hallway by the front door",
-        "key_object": "two sets of keys"
+        "setting": "rain-streaked window at dusk",
+        "key_object": "rain on the window"
       },
       {
         "setting": "bedroom, edge of the bed",
         "key_object": "a photo turned to the wall"
       },
       {
-        "setting": "bathroom mirror at night",
-        "key_object": "an extra toothbrush still in the cup"
+        "setting": "empty train platform at night",
+        "key_object": "empty platform"
       },
       {
         "setting": "small table by a window",

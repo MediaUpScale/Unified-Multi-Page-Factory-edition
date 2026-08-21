@@ -9,8 +9,8 @@
     "sample_scene": "parent kneeling beside child on a hallway floor, warm lit window to the side",
     "setting_object_pairs": [
       {
-        "setting": "kitchen table after a cry",
-        "key_object": "sippy cup on its side"
+        "setting": "empty train platform at night",
+        "key_object": "empty platform"
       },
       {
         "setting": "hallway by the bedroom door",
@@ -31,47 +31,43 @@
       {
         "setting": "corner by the window",
         "key_object": "rocking chair still moving"
+      },
+      {
+        "setting": "hallway with a closed suitcase on the floor",
+        "key_object": "closed suitcase on the floor"
       }
     ],
     "concrete_details": [
       {
-        "detail": "a sippy cup rolling under the kitchen table",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "detail": "a streetlamp on a quiet corner",
+        "sensory_type": "object"
       },
       {
         "detail": "tiny shoes kicked off in the hallway",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a stuffed bear face-down on the rug",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the bedroom door left a few inches open",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a damp washcloth on the kitchen counter",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "crayons scattered across the floor",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the rocking chair still moving after",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "two coats hanging on one hook",
         "sensory_type": "object",
         "last_used_date": null,
         "performance_score": null
@@ -116,12 +112,12 @@
         "key_object": "snack crumbs on a plate"
       },
       {
-        "setting": "porch step at golden hour",
-        "key_object": "sippy cup left behind"
+        "setting": "hallway with a closed suitcase on the floor",
+        "key_object": "closed suitcase on the floor"
       },
       {
-        "setting": "kitchen window at dusk",
-        "key_object": "small handprints on glass"
+        "setting": "empty park path at dusk",
+        "key_object": "distant horizon"
       },
       {
         "setting": "sofa in late sun",
@@ -130,47 +126,43 @@
       {
         "setting": "front door at evening",
         "key_object": "shoes that won't stay this size"
+      },
+      {
+        "setting": "coat hook by the door",
+        "key_object": "two coats hanging"
       }
     ],
     "concrete_details": [
       {
         "detail": "a tiny coat on the hook by the door",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "snack crumbs on the afternoon table",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
-        "detail": "a sippy cup left on the porch step",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "detail": "an empty passenger seat watched from the curb",
+        "sensory_type": "object"
       },
       {
         "detail": "small handprints on the kitchen window",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a folded blanket on the sofa",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "shoes by the door that won't stay this size",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
-        "detail": "the kitchen clock and a cooling cup of tea",
+        "detail": "a kettle that just clicked off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a streetlamp on a quiet corner",
         "sensory_type": "object",
         "last_used_date": null,
         "performance_score": null
@@ -207,12 +199,12 @@
     "sample_scene": "parent and child forehead-to-forehead on a sofa, solid table lamp, mid shot",
     "setting_object_pairs": [
       {
-        "setting": "coffee table in the living room",
-        "key_object": "phone laid face-down"
+        "setting": "coat hook by the door",
+        "key_object": "two coats hanging"
       },
       {
-        "setting": "kitchen table in morning light",
-        "key_object": "two mugs waiting"
+        "setting": "window overlooking a quiet street",
+        "key_object": "empty chair"
       },
       {
         "setting": "sofa under a table lamp",
@@ -229,47 +221,43 @@
       {
         "setting": "TV stand left dark",
         "key_object": "remote left untouched"
+      },
+      {
+        "setting": "hallway near an open door",
+        "key_object": "open doorway"
       }
     ],
     "concrete_details": [
       {
-        "detail": "a phone laid face-down on the coffee table",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "detail": "a folded blanket on the sofa",
+        "sensory_type": "object"
       },
       {
-        "detail": "two mugs waiting on the kitchen table",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "detail": "an open doorway with no one in it",
+        "sensory_type": "object"
       },
       {
         "detail": "a child's drawing held up to the lamp",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the sofa cushion pulled close",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "socks on the living room rug",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the TV remote left untouched",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a shared blanket across both laps",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a kettle that just clicked off",
         "sensory_type": "object",
         "last_used_date": null,
         "performance_score": null
@@ -330,45 +318,31 @@
     "concrete_details": [
       {
         "detail": "two chairs pulled in at the kitchen table",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a timer sitting beside the plate",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "crayons put back in the tin",
-        "sensory_type": "object",
-        "last_used_date": "2026-08-19",
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the hallway lamp left on",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a small backpack by the door",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a towel folded on the bathroom sink",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the same storybook set on the bed",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       }
     ],
     "hooks": [
@@ -418,53 +392,49 @@
         "key_object": "lamp dimmed"
       },
       {
-        "setting": "nightstand by the crib",
-        "key_object": "sippy cup of water"
+        "setting": "hallway near an open door",
+        "key_object": "open doorway"
       },
       {
         "setting": "pillow in low lamp light",
         "key_object": "same storybook"
+      },
+      {
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp"
       }
     ],
     "concrete_details": [
       {
         "detail": "a night lamp on the bedside table",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a stuffed bear tucked under the blanket",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "small shoes lined up by the bed",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the hallway lamp dimmed",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
-        "detail": "a sippy cup of water on the nightstand",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "detail": "rain streaking an empty window",
+        "sensory_type": "object"
       },
       {
         "detail": "the same storybook on the pillow",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "curtains pulled against the street",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an open doorway with no one in it",
         "sensory_type": "object",
         "last_used_date": null,
         "performance_score": null
@@ -495,11 +465,11 @@
     "last_used_date": null,
     "performance_score": null,
     "preferred_mood_palette": "muted_dawn",
-    "sample_scene": "parent resting with coffee at a table, dawn window light flat and solid, mid shot",
+    "sample_scene": "curb at evening, empty passenger seat, mid shot",
     "setting_object_pairs": [
       {
-        "setting": "kitchen table at dawn",
-        "key_object": "cold cup of coffee"
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp"
       },
       {
         "setting": "kitchen sink in morning light",
@@ -520,47 +490,43 @@
       {
         "setting": "stove at pale morning",
         "key_object": "kettle clicking off"
+      },
+      {
+        "setting": "curb at evening",
+        "key_object": "empty passenger seat"
       }
     ],
     "concrete_details": [
       {
-        "detail": "a cold cup of coffee on the kitchen table",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "detail": "an unmade bed left empty",
+        "sensory_type": "object"
       },
       {
         "detail": "dishes left in the sink till morning",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "a folded towel on the bathroom counter",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the same chair pulled out at dawn",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "an unopened letter on the fridge",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "socks on the bedroom floor",
-        "sensory_type": "object",
-        "last_used_date": null,
-        "performance_score": null
+        "sensory_type": "object"
       },
       {
         "detail": "the kettle clicking off unwatched",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "rain streaking an empty window",
         "sensory_type": "object",
         "last_used_date": null,
         "performance_score": null

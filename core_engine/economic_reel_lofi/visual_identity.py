@@ -19,15 +19,21 @@ SUBJECT_TYPES: frozenset[str] = frozenset(
 )
 ARC_ACTS: tuple[str, ...] = ("act1", "act2", "act3")
 
+# Hands-free Schnell bank: no small object in a hand near the face.
+# Distinct stems (cap = 1 per episode). Scenery / empty-handed figures only.
 DEFAULT_SETTING_OBJECT_PAIRS: tuple[dict[str, str], ...] = (
-    {"setting": "bedroom, edge of a neatly made bed", "key_object": "untouched pillow"},
-    {"setting": "kitchen table at night", "key_object": "cold cup of coffee"},
-    {"setting": "hallway by a closed front door", "key_object": "unanswered phone"},
-    {"setting": "empty park path at dusk", "key_object": "park bench"},
-    {"setting": "desk under a small lamp", "key_object": "folded letter"},
-    {"setting": "window seat facing the street", "key_object": "empty chair"},
-    {"setting": "stoop at evening", "key_object": "same worn shoes"},
-    {"setting": "bathroom mirror at night", "key_object": "phone face-down"},
+    {"setting": "bedroom, unmade empty bed", "key_object": "unmade empty bed"},
+    {"setting": "rain-streaked window at dusk", "key_object": "rain on the window"},
+    {"setting": "empty train platform at night", "key_object": "empty platform"},
+    {"setting": "hallway with a closed suitcase on the floor", "key_object": "closed suitcase on the floor"},
+    {"setting": "empty park path at dusk", "key_object": "distant horizon"},
+    {"setting": "coat hook by the door", "key_object": "two coats hanging"},
+    {"setting": "window overlooking a quiet street", "key_object": "empty chair"},
+    {"setting": "hallway near an open door", "key_object": "open doorway"},
+    {"setting": "street corner under a streetlamp", "key_object": "streetlamp"},
+    {"setting": "curb at evening", "key_object": "empty passenger seat"},
+    {"setting": "kitchen at dawn", "key_object": "kettle just clicked off"},
+    {"setting": "sofa in evening light", "key_object": "folded blanket"},
 )
 
 _CONCRETE_NOUN_RE = re.compile(
@@ -100,6 +106,39 @@ def load_visual_identity_v2(path: Path | None = None) -> dict[str, Any]:
     return data
 
 
+_BANNED_OBJECT_RE = re.compile(
+    r"\b(mugs?|cups?|coffee|glasses?|glass|sippy)\b",
+    re.IGNORECASE,
+)
+_HANDHELD_OBJECT_RE = re.compile(
+    r"\b(phones?|keys?|in hand|between fingers)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_banned_key_object(key_object: str) -> bool:
+    blob = key_object or ""
+    return bool(_BANNED_OBJECT_RE.search(blob) or _HANDHELD_OBJECT_RE.search(blob))
+
+
+def _hands_free_pairs(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        setting = str(row.get("setting") or "").strip()
+        obj = str(row.get("key_object") or "").strip()
+        if not setting or not obj:
+            continue
+        if _is_banned_key_object(obj) or _BANNED_OBJECT_RE.search(setting):
+            continue
+        key = _pair_key(setting, obj)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"setting": setting, "key_object": obj})
+    return out
+
+
 def setting_object_pool(theme_row: dict[str, Any] | None) -> list[dict[str, str]]:
     raw = (theme_row or {}).get("setting_object_pairs") if theme_row else None
     out: list[dict[str, str]] = []
@@ -111,8 +150,9 @@ def setting_object_pool(theme_row: dict[str, Any] | None) -> list[dict[str, str]
             obj = str(row.get("key_object") or "").strip()
             if setting and obj:
                 out.append({"setting": setting, "key_object": obj})
-    if out:
-        return out
+    cleaned = _hands_free_pairs(out)
+    if cleaned:
+        return cleaned
     return [dict(p) for p in DEFAULT_SETTING_OBJECT_PAIRS]
 
 
@@ -251,6 +291,37 @@ def silhouette_scene_text(
         scene = (
             f"{char}, {obj} only, featureless background, no named room. "
             f"Hands empty. {only}"
+        )
+    return " ".join(scene.split()), kind
+
+
+def couple_wide_silhouette_scene_text(
+    setting: str,
+    tod: str,
+    *,
+    step: int = 0,
+) -> tuple[str, str]:
+    """Wide melancholic two-figure silhouette in open landscape — not a close-up."""
+    setting = _sanitize_visual_phrase(setting) or "an open landscape"
+    step = max(0, min(int(step), 2))
+    kinds = ("wide_place", "wide_empty", "wide_horizon")
+    kind = kinds[step]
+    if step <= 0:
+        scene = (
+            f"A wide melancholic silhouette of two figures, a man and a woman "
+            f"standing apart in {setting}, {tod}. Open plane, small in the frame, "
+            f"not a close portrait. Hands empty at their sides, not holding anything. "
+            f"No small objects near the faces."
+        )
+    elif step == 1:
+        scene = (
+            f"Two distant silhouettes of a man and a woman on an open plane, {tod}. "
+            f"Wide landscape, empty hands, no objects held. Featureless sky."
+        )
+    else:
+        scene = (
+            f"Two small featureless figures on a wide horizon line, {tod}. "
+            f"Hands empty. No furniture, no held objects."
         )
     return " ".join(scene.split()), kind
 
@@ -435,32 +506,32 @@ _STOP_VISUAL = frozenset(
 # Caption noun → objects that count as a literal or metaphorical match.
 # Prefer distinctive props over mug/chair — those two over-index in Flux Schnell.
 _CAPTION_OBJECT_ALIASES: dict[str, tuple[str, ...]] = {
-    "seat": ("chair", "chairs"),
+    "seat": ("chair", "chairs", "empty passenger seat"),
     "seats": ("chair", "chairs"),
     "clap": ("hands", "chair"),
-    "apology": ("letter", "envelope", "unsent letter", "doorway"),
-    "room": ("doorway", "door", "lamp"),
-    "name": ("place setting", "two plates"),
-    "proof": ("untouched drink", "empty glass"),
-    "verdict": ("place setting", "two plates"),
-    "doorway": ("door", "doors"),
-    "belonging": ("empty extra chair", "two coats"),
-    "silence": ("lamp", "open window"),
+    "apology": ("open doorway", "closed suitcase on the floor"),
+    "room": ("doorway", "door", "unmade empty bed"),
+    "name": ("two coats hanging", "folded blanket"),
+    "proof": ("rain on the window", "empty platform"),
+    "verdict": ("two coats hanging", "open doorway"),
+    "doorway": ("door", "doors", "open doorway"),
+    "belonging": ("empty chair", "two coats hanging"),
+    "silence": ("rain on the window", "open doorway"),
     "hurt": ("door", "coat"),
-    "love": ("two coats", "shared blanket", "two plates"),
-    "steadiness": ("two coats", "shared blanket"),
-    "feeling": ("lamp", "window"),
-    "chaos": ("scattered papers", "overturned chair"),
-    "noise": ("scattered papers", "kitchen radio"),
-    "fight": ("open door", "unlatched door"),
-    "war": ("slammed door",),
-    "peace": ("open window", "folded blanket", "kettle"),
-    "cost": ("empty glass", "worn shoes"),
-    "winning": ("empty glass", "faded photograph"),
-    "connection": ("two coats", "shared blanket"),
-    "choice": ("open door", "packed bag"),
-    "walking": ("open door", "shoes by the door"),
-    "prize": ("empty glass", "faded photograph"),
+    "love": ("two coats hanging", "folded blanket"),
+    "steadiness": ("two coats hanging", "folded blanket"),
+    "feeling": ("rain on the window", "distant horizon"),
+    "chaos": ("unmade empty bed", "closed suitcase on the floor"),
+    "noise": ("empty platform", "streetlamp"),
+    "fight": ("open doorway", "open door"),
+    "war": ("open doorway",),
+    "peace": ("rain on the window", "folded blanket", "kettle"),
+    "cost": ("closed suitcase on the floor", "empty platform"),
+    "winning": ("distant horizon", "rain on the window"),
+    "connection": ("two coats hanging", "folded blanket"),
+    "choice": ("open doorway", "closed suitcase on the floor"),
+    "walking": ("open doorway", "empty platform"),
+    "prize": ("distant horizon", "folded blanket"),
 }
 
 # Abstract/emotional lines → meaning-specific stand-ins (not a generic chair).
@@ -473,9 +544,9 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "chased", "chase", "storm", "frantic", "scattered", "clutter",
         }),
         "pairs": (
-            {"setting": "cluttered kitchen table", "key_object": "scattered papers"},
-            {"setting": "desk after a long night", "key_object": "unopened mail pile"},
-            {"setting": "dining room after an argument", "key_object": "overturned chair"},
+            {"setting": "bedroom, unmade empty bed", "key_object": "unmade empty bed"},
+            {"setting": "hallway with a closed suitcase on the floor", "key_object": "closed suitcase on the floor"},
+            {"setting": "empty train platform at night", "key_object": "empty platform"},
         ),
         "expression": "restless, searching",
     },
@@ -487,12 +558,12 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "turning", "turn", "away", "exit", "go", "going",
         }),
         "pairs": (
-            {"setting": "hallway near an open door", "key_object": "open door"},
-            {"setting": "apartment threshold", "key_object": "coat in hand"},
-            {"setting": "front steps at dusk", "key_object": "shoes by the door"},
+            {"setting": "hallway near an open door", "key_object": "open doorway"},
+            {"setting": "empty train platform at night", "key_object": "empty platform"},
+            {"setting": "hallway with a closed suitcase on the floor", "key_object": "closed suitcase on the floor"},
         ),
         "expression": "turning away",
-        "pose": "body turned mid-step toward the door, not seated",
+        "pose": "body turned mid-step toward the door, hands empty, not seated",
     },
     {
         "id": "conflict",
@@ -502,8 +573,8 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "yelling", "yell", "battle",
         }),
         "pairs": (
-            {"setting": "hallway near a closed door", "key_object": "unlatched door"},
-            {"setting": "bedroom doorway after a fight", "key_object": "slammed door"},
+            {"setting": "hallway near an open door", "key_object": "open doorway"},
+            {"setting": "empty park path at dusk", "key_object": "distant horizon"},
         ),
     },
     {
@@ -514,9 +585,9 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "nothing", "leftover", "remain", "winning", "won",
         }),
         "pairs": (
-            {"setting": "kitchen counter at night", "key_object": "empty glass"},
-            {"setting": "stoop at evening", "key_object": "same worn shoes"},
-            {"setting": "desk under a small lamp", "key_object": "faded photograph"},
+            {"setting": "empty train platform at night", "key_object": "empty platform"},
+            {"setting": "curb at evening", "key_object": "empty passenger seat"},
+            {"setting": "rain-streaked window at dusk", "key_object": "rain on the window"},
         ),
         "expression": "hollow, aware",
     },
@@ -525,8 +596,8 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
         "weight": 2,
         "tokens": frozenset({"proof", "prove", "someone", "missed", "stayed"}),
         "pairs": (
-            {"setting": "hallway by a closed front door", "key_object": "unanswered phone"},
-            {"setting": "kitchen table at night", "key_object": "untouched drink"},
+            {"setting": "street corner under a streetlamp", "key_object": "streetlamp"},
+            {"setting": "coat hook by the door", "key_object": "two coats hanging"},
         ),
     },
     {
@@ -537,8 +608,8 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "understood", "realize", "realized", "score", "keeping",
         }),
         "pairs": (
-            {"setting": "sunlit kitchen window", "key_object": "open notebook"},
-            {"setting": "desk under a small lamp", "key_object": "closed journal"},
+            {"setting": "rain-streaked window at dusk", "key_object": "rain on the window"},
+            {"setting": "window overlooking a quiet street", "key_object": "empty chair"},
         ),
     },
     {
@@ -546,8 +617,8 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
         "weight": 1,
         "tokens": frozenset({"choice", "choose", "choosing", "instead"}),
         "pairs": (
-            {"setting": "hallway split", "key_object": "two doorways"},
-            {"setting": "bedroom, edge of the bed", "key_object": "packed bag unopened"},
+            {"setting": "hallway near an open door", "key_object": "open doorway"},
+            {"setting": "hallway with a closed suitcase on the floor", "key_object": "closed suitcase on the floor"},
         ),
     },
     {
@@ -558,9 +629,9 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "caring", "care",
         }),
         "pairs": (
-            {"setting": "coat hook by the door", "key_object": "two coats"},
-            {"setting": "sofa in evening light", "key_object": "shared blanket"},
-            {"setting": "kitchen table at morning", "key_object": "two plates"},
+            {"setting": "coat hook by the door", "key_object": "two coats hanging"},
+            {"setting": "sofa in evening light", "key_object": "folded blanket"},
+            {"setting": "empty park path at dusk", "key_object": "distant horizon"},
         ),
         "expression": "soft, unguarded",
     },
@@ -572,36 +643,27 @@ _MEANING_CLUSTERS: tuple[dict[str, Any], ...] = (
             "boring", "safety", "healed", "healing", "home",
         }),
         "pairs": (
-            {"setting": "sunlit kitchen", "key_object": "open window"},
-            {"setting": "made bed in morning light", "key_object": "folded blanket"},
+            {"setting": "rain-streaked window at dusk", "key_object": "rain on the window"},
+            {"setting": "bedroom, unmade empty bed", "key_object": "unmade empty bed"},
             {"setting": "kitchen at dawn", "key_object": "kettle just clicked off"},
         ),
         "expression": "steady, calm",
     },
 )
 
-# Rotation when a line has no cluster match — skip mug/empty-chair as first picks.
-_VARIETY_PAIRS: tuple[dict[str, str], ...] = (
-    {"setting": "cluttered kitchen table", "key_object": "scattered papers"},
-    {"setting": "hallway near an open door", "key_object": "open door"},
-    {"setting": "kitchen counter at night", "key_object": "empty glass"},
-    {"setting": "stoop at evening", "key_object": "same worn shoes"},
-    {"setting": "desk under a small lamp", "key_object": "folded letter"},
-    {"setting": "bedroom, edge of a neatly made bed", "key_object": "untouched pillow"},
-    {"setting": "coat hook by the door", "key_object": "two coats"},
-    {"setting": "window seat facing the street", "key_object": "rain on the glass"},
-    {"setting": "bathroom sink", "key_object": "cleared counter"},
-    {"setting": "park bench at dusk", "key_object": "closed journal"},
-    {"setting": "kitchen at dawn", "key_object": "kettle just clicked off"},
-    {"setting": "sofa in evening light", "key_object": "shared blanket"},
+_VARIETY_PAIRS: tuple[dict[str, str], ...] = tuple(
+    dict(p) for p in DEFAULT_SETTING_OBJECT_PAIRS
 )
 
-_MAX_OBJECT_STEM_HITS = 2  # 3rd use of the same stem in one episode must rotate
+_MAX_OBJECT_STEM_HITS = 1  # same stem may appear at most once per episode
 _OBJECT_STEM_WORDS: tuple[str, ...] = (
-    "paper", "mug", "cup", "chair", "door", "window", "letter", "envelope",
-    "phone", "glass", "blanket", "notebook", "journal", "coat", "shoe",
+    "rain", "platform", "suitcase", "horizon", "streetlamp",
+    "paper", "chair", "door", "window", "letter", "envelope",
+    "phone", "blanket", "notebook", "journal", "coat", "shoe",
     "pillow", "lamp", "kettle", "photo", "plate", "bag", "radio", "mail",
+    "bed", "seat", "bench",
 )
+
 _EXPECTED_PALETTE_BY_ACT: dict[str, str] = {
     "act1": "WARM",
     "act2": "COLD",
@@ -610,7 +672,7 @@ _EXPECTED_PALETTE_BY_ACT: dict[str, str] = {
 _SETTING_PLACE_STEMS: tuple[str, ...] = (
     "hallway", "bedroom", "kitchen", "bathroom", "dining", "living",
     "desk", "porch", "stoop", "street", "window", "park", "sofa",
-    "bed", "sink", "counter", "table", "coat",
+    "bed", "sink", "counter", "table", "coat", "platform", "station",
 )
 
 _PREFERRED_SUBJECTS: tuple[str, ...] = ("woman", "man", "couple")
@@ -636,9 +698,12 @@ _CLOSE_PORTRAIT = (
     "not a wide establishing shot."
 )
 _HAND_POSE = (
-    "Hands simple and secondary: resting in the lap or at the side, "
-    "or mostly out of frame. Do not wrap fingers around a mug or glass "
-    "close to the face. If an object is shown, keep it away from the face."
+    "Hands empty and away from the face: at the sides, in the lap, or out of frame. "
+    "Not holding any small object. Not raising anything toward the face."
+)
+_WIDE_COUPLE_PLACE_RE = re.compile(
+    r"\b(platform|station|park|landscape|horizon|street|field|corner|curb)\b",
+    re.IGNORECASE,
 )
 _SATURATION_GUARD = (
     "Keep colors saturated and printed, not monochrome, not grayscale."
@@ -1086,7 +1151,7 @@ def _object_from_caption(
     for p in _VARIETY_PAIRS:
         if _object_stem(p["key_object"]) not in avoid_stems:
             return p["key_object"]
-    return "empty glass"
+    return "rain on the window"
 
 
 def pick_caption_anchored_pair(
@@ -1108,6 +1173,8 @@ def pick_caption_anchored_pair(
     cluster = _best_meaning_cluster(text)
     scored: list[tuple[int, dict[str, str]]] = []
     for p in pairs:
+        if _is_banned_key_object(p["key_object"]) or _BANNED_OBJECT_RE.search(p["setting"]):
+            continue
         score = _score_pair_for_caption(text, p["setting"], p["key_object"])
         key = _pair_key(p["setting"], p["key_object"])
         stem = _object_stem(p["key_object"])
@@ -1139,6 +1206,11 @@ def pick_caption_anchored_pair(
             continue
         return dict(p)
     obj = _object_from_caption(text, avoid_stems=avoid)
+    if _is_banned_key_object(obj):
+        for p in DEFAULT_SETTING_OBJECT_PAIRS:
+            if _object_stem(p["key_object"]) not in avoid:
+                return dict(p)
+        return dict(DEFAULT_SETTING_OBJECT_PAIRS[0])
     needle = obj.lower()
     for p in pairs:
         blob = f"{p['setting']} {p['key_object']}".lower()
@@ -1152,10 +1224,8 @@ def pick_caption_anchored_pair(
         setting = "quiet indoor doorway"
     elif "paper" in needle or "mail" in needle:
         setting = "cluttered kitchen table"
-    elif "glass" in needle or "worn" in needle:
-        setting = "kitchen counter at night"
     elif "chair" in needle or "seat" in needle:
-        setting = "quiet indoor room with a chair"
+        setting = "window overlooking a quiet street"
     return {"setting": setting, "key_object": obj}
 
 
@@ -1176,14 +1246,15 @@ def enforce_concrete_beat_visuals(
     *,
     pool: list[dict[str, str]] | None = None,
     vary_imagery: bool = False,
+    lock_visuals: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Every beat must carry a setting + key_object that traces to that beat's
     caption (literal noun, mapped stand-in, or emotion-tied object).
     Keep writer object_focus / silhouette when valid; fill a 3–4 variety mix
     if the episode is all portraits. Cap couple at 3.
-    The same object stem (mug, chair, door, …) may appear at most twice
-    in one episode; a third hit rotates to a different stand-in.
+    The same object stem may appear at most once in an episode; a repeat
+    rotates to a different stand-in.
     """
     del vary_imagery
     pairs = pool or [dict(p) for p in DEFAULT_SETTING_OBJECT_PAIRS]
@@ -1201,8 +1272,9 @@ def enforce_concrete_beat_visuals(
         concrete = setting_is_concrete(setting, key_object)
         stem = _object_stem(key_object)
         overused = used_stems.get(stem, 0) >= _MAX_OBJECT_STEM_HITS
+        handheld = _is_banned_key_object(key_object)
         _apply_cluster_pose(row, text)
-        if not tied or not concrete or overused:
+        if (not lock_visuals) and (not tied or not concrete or overused or handheld):
             pick = pick_caption_anchored_pair(
                 text, pairs, used=used, index=i, used_stems=used_stems,
             )
@@ -1217,16 +1289,32 @@ def enforce_concrete_beat_visuals(
                 f"setting={row['setting']!r} object={row['key_object']!r} "
                 f"text={text!r}"
             )
+        elif lock_visuals and (not tied or not concrete or overused):
+            print(
+                f"[LOFI identity v2] lock-visuals keep scene={i + 1} "
+                f"tied={int(tied)} concrete={int(concrete)} overused={int(overused)} "
+                f"setting={setting!r} object={key_object!r}"
+            )
         _prefer_character_subject(row, i)
         row["setting"] = _expand_thin_setting(
             _sanitize_visual_phrase(str(row.get("setting") or "")),
             pairs,
         )
         row["key_object"] = _sanitize_visual_phrase(str(row.get("key_object") or ""))
+        if (not lock_visuals) and _is_banned_key_object(str(row.get("key_object") or "")):
+            for p in DEFAULT_SETTING_OBJECT_PAIRS:
+                stem_p = _object_stem(p["key_object"])
+                if used_stems.get(stem_p, 0) >= _MAX_OBJECT_STEM_HITS:
+                    continue
+                row["setting"] = p["setting"]
+                row["key_object"] = p["key_object"]
+                row["visual_fallback"] = "hands_free_bank"
+                break
         used.add(_pair_key(str(row.get("setting") or ""), str(row.get("key_object") or "")))
         final_stem = _object_stem(str(row.get("key_object") or ""))
         used_stems[final_stem] = used_stems.get(final_stem, 0) + 1
-    _apply_framing_variety(lines)
+    if not lock_visuals:
+        _apply_framing_variety(lines)
     return lines
 
 
@@ -1261,10 +1349,15 @@ def assemble_v2_prompt(
             key_object,
             step=focus_step,
             setting=setting,
-            hand_interaction=bool(beat.get("hand_interaction")),
+            hand_interaction=False,
         )
         if scene:
             scene = scene[0].upper() + scene[1:]
+    elif st == "couple" and _WIDE_COUPLE_PLACE_RE.search(f"{setting} {key_object}"):
+        scene, framing_kind = couple_wide_silhouette_scene_text(
+            setting, tod, step=focus_step
+        )
+        beat["silhouette_framing"] = "wide_couple"
     elif st == "silhouette":
         chars = ident.get("characters") or {}
         tmpl = str(chars.get("silhouette") or "")
@@ -1273,14 +1366,19 @@ def assemble_v2_prompt(
             char = char[0].upper() + char[1:]
         pose = str(beat.get("pose_hint") or "").strip()
         pose_bit = f" {pose}." if pose else ""
-        scene, framing_kind = silhouette_scene_text(
-            char,
-            key_object,
-            setting,
-            tod,
-            step=focus_step,
-            pose_bit=pose_bit,
-        )
+        if str(beat.get("silhouette_framing") or "") == "wide_couple":
+            scene, framing_kind = couple_wide_silhouette_scene_text(
+                setting, tod, step=focus_step
+            )
+        else:
+            scene, framing_kind = silhouette_scene_text(
+                char,
+                key_object,
+                setting,
+                tod,
+                step=focus_step,
+                pose_bit=pose_bit,
+            )
     else:
         chars = ident.get("characters") or {}
         tmpl = str(chars.get(st) or chars.get("woman") or "")
@@ -1290,10 +1388,18 @@ def assemble_v2_prompt(
         pose = str(beat.get("pose_hint") or "").strip()
         pose_bit = f" {pose}." if pose else ""
         couple_bit = f" {_COUPLE_SEPARATION}" if st == "couple" else ""
+        env_stem = _object_stem(key_object)
+        if env_stem in {"rain", "window", "horizon", "platform"}:
+            framing = (
+                "Half-length or seen from behind, looking out into the space, "
+                "not touching the window or any object."
+            )
+        else:
+            framing = _CLOSE_PORTRAIT
         scene = (
-            f"{char}, close portrait in {setting}, {key_object} clearly visible "
-            f"beside them but away from the face, {tod}.{pose_bit}{couple_bit} "
-            f"{_CLOSE_PORTRAIT} {_HAND_POSE}"
+            f"{char} in {setting}, {tod}.{pose_bit}{couple_bit} "
+            f"{key_object} is part of the environment, not held in any hand. "
+            f"{framing} {_HAND_POSE}"
         ).strip()
 
     if framing_kind:
@@ -1319,15 +1425,19 @@ def apply_v2_prompts_to_lines(
     theme_row: dict[str, Any] | None = None,
     bank: dict[str, Any] | None = None,
     vary_imagery: bool = False,
+    lock_visuals: bool = False,
 ) -> list[dict[str, Any]]:
     ident = bank or load_visual_identity_v2()
     pool = setting_object_pool(theme_row)
     n = len(lines)
     print(
         "[LOFI identity v2] assemble_v2_prompt | painterly=OFF | "
-        f"vary_imagery={int(vary_imagery)} | bank=visual_identity_bank_v2.json"
+        f"vary_imagery={int(vary_imagery)} | lock_visuals={int(lock_visuals)} | "
+        "bank=visual_identity_bank_v2.json"
     )
-    enforce_concrete_beat_visuals(lines, pool=pool, vary_imagery=vary_imagery)
+    enforce_concrete_beat_visuals(
+        lines, pool=pool, vary_imagery=vary_imagery, lock_visuals=lock_visuals
+    )
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue

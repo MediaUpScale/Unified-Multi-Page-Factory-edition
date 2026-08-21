@@ -2,230 +2,632 @@
   {
     "subtheme": "consistency_over_promises",
     "concrete_details": [
-      {"detail": "two unmatched coffee cups on the same counter", "sensory_type": "object"},
-      {"detail": "house keys dropped in the bowl every night", "sensory_type": "object"},
-      {"detail": "the same scuffed shoes on the stoop after work", "sensory_type": "object"},
-      {"detail": "an unopened envelope left on the windowsill", "sensory_type": "object"},
-      {"detail": "a grocery list still stuck to the fridge", "sensory_type": "object"},
-      {"detail": "the kettle started without being asked", "sensory_type": "gesture"},
-      {"detail": "a receipt taped at eye level, never thrown away", "sensory_type": "object"}
+      {
+        "detail": "rain streaking an empty window",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an unmade bed left empty",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same scuffed shoes on the stoop after work",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an unopened envelope left on the windowsill",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a grocery list still stuck to the fridge",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the kettle started without being asked",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "a receipt taped at eye level, never thrown away",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "steadiness_vs_intensity",
     "concrete_details": [
-      {"detail": "two coats sharing one hook by the door", "sensory_type": "object"},
-      {"detail": "a shared blanket folded over the sofa arm", "sensory_type": "object"},
-      {"detail": "two mugs left on one tray overnight", "sensory_type": "object"},
-      {"detail": "a water glass refilled on the bedside table", "sensory_type": "object"},
-      {"detail": "a single lamp left on in the kitchen", "sensory_type": "object"},
-      {"detail": "two umbrellas dripping in the same stand", "sensory_type": "object"},
-      {"detail": "the porch swing still moving after someone stood up", "sensory_type": "place"}
+      {
+        "detail": "two coats sharing one hook by the door",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a shared blanket folded over the sofa arm",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a closed suitcase resting on the floor",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an empty train platform at night",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a single lamp left on in the kitchen",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "two umbrellas dripping in the same stand",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the porch swing still moving after someone stood up",
+        "sensory_type": "place"
+      }
     ]
   },
   {
     "subtheme": "boundaries_without_guilt",
     "concrete_details": [
-      {"detail": "the door closed from the inside and left that way", "sensory_type": "object"},
-      {"detail": "a phone laid face-down by the bathroom sink", "sensory_type": "object"},
-      {"detail": "a half-written reply never sent from the table", "sensory_type": "object"},
-      {"detail": "a suitcase packed and left on the porch steps", "sensory_type": "object"},
-      {"detail": "a bill for one still sitting in the cafe booth", "sensory_type": "object"},
-      {"detail": "the chain lock slid across after midnight", "sensory_type": "gesture"},
-      {"detail": "a second chair pushed back under the table", "sensory_type": "object"}
+      {
+        "detail": "the door closed from the inside and left that way",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "two coats hanging on one hook",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a half-written reply never sent from the table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a suitcase packed and left on the porch steps",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a bill for one still sitting in the cafe booth",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the chain lock slid across after midnight",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "a second chair pushed back under the table",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "anxious_pursuit_cycles",
     "concrete_details": [
-      {"detail": "a phone picked up and put down without calling", "sensory_type": "gesture"},
-      {"detail": "read receipts checked on a dark screen", "sensory_type": "object"},
-      {"detail": "shoes left on in the hallway, ready to go back", "sensory_type": "object"},
-      {"detail": "the same street corner waited under a streetlamp", "sensory_type": "place"},
-      {"detail": "a doorbell pressed once, then again", "sensory_type": "gesture"},
-      {"detail": "an empty passenger seat watched from the curb", "sensory_type": "object"},
-      {"detail": "a jacket grabbed, then hung back on the hook", "sensory_type": "object"}
+      {
+        "detail": "a streetlamp on a quiet corner",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "read receipts checked on a dark screen",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "shoes left on in the hallway, ready to go back",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same street corner waited under a streetlamp",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "a doorbell pressed once, then again",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "an empty passenger seat watched from the curb",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a jacket grabbed, then hung back on the hook",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "repair_after_conflict",
     "concrete_details": [
-      {"detail": "two plates left in the sink after the argument", "sensory_type": "object"},
-      {"detail": "a towel held out without a speech", "sensory_type": "gesture"},
-      {"detail": "the bedroom lamp turned back on after the dark", "sensory_type": "object"},
-      {"detail": "a mug placed beside the one already there", "sensory_type": "object"},
-      {"detail": "the door opened a few inches and left open", "sensory_type": "object"},
-      {"detail": "a chair pulled back to the table", "sensory_type": "object"},
-      {"detail": "the same blanket spread over both laps again", "sensory_type": "object"}
+      {
+        "detail": "two plates left in the sink after the argument",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a towel held out without a speech",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "the bedroom lamp turned back on after the dark",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an empty passenger seat watched from the curb",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the door opened a few inches and left open",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a chair pulled back to the table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same blanket spread over both laps again",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "choosing_peace_over_chaos",
     "concrete_details": [
-      {"detail": "the volume turned down on the kitchen radio", "sensory_type": "sound"},
-      {"detail": "curtains drawn against the street noise", "sensory_type": "object"},
-      {"detail": "a single place set, not two", "sensory_type": "object"},
-      {"detail": "the phone left in another room on purpose", "sensory_type": "object"},
-      {"detail": "shoes aligned by the door, not kicked off", "sensory_type": "object"},
-      {"detail": "the kettle watched until it clicked off", "sensory_type": "object"},
-      {"detail": "a window cracked just enough for air", "sensory_type": "place"}
+      {
+        "detail": "the volume turned down on the kitchen radio",
+        "sensory_type": "sound"
+      },
+      {
+        "detail": "curtains drawn against the street noise",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a single place set, not two",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a kettle that just clicked off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "shoes aligned by the door, not kicked off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the kettle watched until it clicked off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a window cracked just enough for air",
+        "sensory_type": "place"
+      }
     ]
   },
   {
     "subtheme": "softness_as_strength",
     "concrete_details": [
-      {"detail": "a sweater draped over a chair without folding it tight", "sensory_type": "object"},
-      {"detail": "tea poured slowly into a chipped mug", "sensory_type": "gesture"},
-      {"detail": "the lamp dimmed instead of switched off", "sensory_type": "object"},
-      {"detail": "a hand resting on the table, palm open", "sensory_type": "gesture"},
-      {"detail": "the front door unlocked for someone expected", "sensory_type": "object"},
-      {"detail": "a blanket left unfolded at the end of the bed", "sensory_type": "object"},
-      {"detail": "wet dishes left to air instead of slammed away", "sensory_type": "object"}
+      {
+        "detail": "a sweater draped over a chair without folding it tight",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a folded blanket on the sofa",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "the lamp dimmed instead of switched off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a hand resting on the table, palm open",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "the front door unlocked for someone expected",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a blanket left unfolded at the end of the bed",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "wet dishes left to air instead of slammed away",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "silence_that_speaks",
     "concrete_details": [
-      {"detail": "two umbrellas on a corner, not touching", "sensory_type": "object"},
-      {"detail": "a suitcase standing alone on the platform", "sensory_type": "object"},
-      {"detail": "an unused place setting at the long table", "sensory_type": "object"},
-      {"detail": "a closed bedroom door in the apartment hallway", "sensory_type": "object"},
-      {"detail": "the radio playing to an empty room", "sensory_type": "sound"},
-      {"detail": "steam rising from a cup no one drinks", "sensory_type": "object"},
-      {"detail": "keys left on the counter without a hello", "sensory_type": "object"}
+      {
+        "detail": "two umbrellas on a corner, not touching",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a suitcase standing alone on the platform",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an unused place setting at the long table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a closed bedroom door in the apartment hallway",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the radio playing to an empty room",
+        "sensory_type": "sound"
+      },
+      {
+        "detail": "an open doorway with no one in it",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "rain streaking an empty window",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "the_room_that_stays_empty",
     "concrete_details": [
-      {"detail": "an extra plate still set at dinner", "sensory_type": "object"},
-      {"detail": "a chair pulled out but never sat in", "sensory_type": "object"},
-      {"detail": "an untouched pillow on a neatly made bed", "sensory_type": "object"},
-      {"detail": "a spare room with the lamp left on", "sensory_type": "place"},
-      {"detail": "a cold cup of coffee on the window seat", "sensory_type": "object"},
-      {"detail": "shoes with no pair in the stairwell", "sensory_type": "object"},
-      {"detail": "the door that never opens at dusk", "sensory_type": "object"},
-      {"detail": "a second mug still in the cupboard, unused", "sensory_type": "object"}
+      {
+        "detail": "an extra plate still set at dinner",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a chair pulled out but never sat in",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an untouched pillow on a neatly made bed",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a spare room with the lamp left on",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "an unmade bed left empty",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "shoes with no pair in the stairwell",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the door that never opens at dusk",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a closed suitcase resting on the floor",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "learning_to_carry_it",
     "concrete_details": [
-      {"detail": "a coat still on the hook by the door", "sensory_type": "object"},
-      {"detail": "a second unused mug on the kitchen rack", "sensory_type": "object"},
-      {"detail": "a folded sweater left in the bedroom chair", "sensory_type": "object"},
-      {"detail": "a photograph turned face-down on the sill", "sensory_type": "object"},
-      {"detail": "an empty bench on the park path", "sensory_type": "place"},
-      {"detail": "the worn coat lifted, then put back", "sensory_type": "gesture"},
-      {"detail": "tea cooling beside the unturned photo", "sensory_type": "object"}
+      {
+        "detail": "a coat still on the hook by the door",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an empty train platform at night",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a folded sweater left in the bedroom chair",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a photograph turned face-down on the sill",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an empty bench on the park path",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "the worn coat lifted, then put back",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "tea cooling beside the unturned photo",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "what_the_leaving_took",
     "concrete_details": [
-      {"detail": "a spare key never collected", "sensory_type": "object"},
-      {"detail": "a gap in the closet where clothes were", "sensory_type": "place"},
-      {"detail": "the empty bus seat by a rain-streaked window", "sensory_type": "place"},
-      {"detail": "a half-packed box left on the floor", "sensory_type": "object"},
-      {"detail": "an abandoned ticket on the platform", "sensory_type": "object"},
-      {"detail": "the drawer that still holds one leftover key", "sensory_type": "object"},
-      {"detail": "a hanger swinging in the open closet", "sensory_type": "object"}
+      {
+        "detail": "two coats hanging on one hook",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a gap in the closet where clothes were",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "the empty bus seat by a rain-streaked window",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "a half-packed box left on the floor",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an abandoned ticket on the platform",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a streetlamp on a quiet corner",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a hanger swinging in the open closet",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "getting_up_anyway",
     "concrete_details": [
-      {"detail": "untied shoes waiting on the stoop at dawn", "sensory_type": "object"},
-      {"detail": "the kettle just starting before sunrise", "sensory_type": "object"},
-      {"detail": "a work bag still by the door", "sensory_type": "object"},
-      {"detail": "cold water splashed on a face at the sink", "sensory_type": "gesture"},
-      {"detail": "the same weekly pass taken from the coat", "sensory_type": "object"},
-      {"detail": "laces pulled tight with both hands", "sensory_type": "gesture"},
-      {"detail": "the front door opened onto early light", "sensory_type": "place"}
+      {
+        "detail": "untied shoes waiting on the stoop at dawn",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the kettle just starting before sunrise",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a work bag still by the door",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "cold water splashed on a face at the sink",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "the same weekly pass taken from the coat",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "laces pulled tight with both hands",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "the front door opened onto early light",
+        "sensory_type": "place"
+      }
     ]
   },
   {
     "subtheme": "a_light_that_is_yours",
     "concrete_details": [
-      {"detail": "a strip of late sky between two buildings", "sensory_type": "place"},
-      {"detail": "an open notebook under a small desk lamp", "sensory_type": "object"},
-      {"detail": "one lit window across the street at dusk", "sensory_type": "place"},
-      {"detail": "an unfinished drawing left on the studio floor", "sensory_type": "object"},
-      {"detail": "a plant turned toward the kitchen window", "sensory_type": "object"},
-      {"detail": "the lamp switched on before the room is dark", "sensory_type": "gesture"},
-      {"detail": "a pencil still warm from the last line", "sensory_type": "object"}
+      {
+        "detail": "a strip of late sky between two buildings",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "an open notebook under a small desk lamp",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "one lit window across the street at dusk",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "an unfinished drawing left on the studio floor",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a plant turned toward the kitchen window",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the lamp switched on before the room is dark",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "a pencil still warm from the last line",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "the_sentence_never_said",
     "concrete_details": [
-      {"detail": "a phone number still saved under a name", "sensory_type": "object"},
-      {"detail": "a folded letter never sent from the night desk", "sensory_type": "object"},
-      {"detail": "a hand still on the doorframe after someone left", "sensory_type": "gesture"},
-      {"detail": "a cold cup of coffee at a table for two", "sensory_type": "object"},
-      {"detail": "an empty seat pulling away in the train window", "sensory_type": "place"},
-      {"detail": "the call screen opened, then locked again", "sensory_type": "object"},
-      {"detail": "a voicemail never pressed play", "sensory_type": "sound"}
+      {
+        "detail": "an empty passenger seat watched from the curb",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a folded letter never sent from the night desk",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a hand still on the doorframe after someone left",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "a kettle that just clicked off",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an empty seat pulling away in the train window",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "the call screen opened, then locked again",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a voicemail never pressed play",
+        "sensory_type": "sound"
+      }
     ]
   },
   {
     "subtheme": "looking_for_a_place",
     "concrete_details": [
-      {"detail": "an empty extra chair at the edge of the porch", "sensory_type": "object"},
-      {"detail": "an untouched drink left in the party kitchen", "sensory_type": "object"},
-      {"detail": "a place setting not claimed at the long table", "sensory_type": "object"},
-      {"detail": "neighbors' closed doors in the stairwell", "sensory_type": "place"},
-      {"detail": "a picnic blanket with a gap at the edge", "sensory_type": "object"},
-      {"detail": "a coat kept on indoors", "sensory_type": "object"},
-      {"detail": "shoes never kicked off at the gathering", "sensory_type": "object"}
+      {
+        "detail": "an empty extra chair at the edge of the porch",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an untouched drink left in the party kitchen",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a place setting not claimed at the long table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "neighbors' closed doors in the stairwell",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "a picnic blanket with a gap at the edge",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a coat kept on indoors",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "shoes never kicked off at the gathering",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "ordinary_minutes_leaving",
     "concrete_details": [
-      {"detail": "clock and cooling tea on the afternoon sill", "sensory_type": "object"},
-      {"detail": "sun moving off the kitchen floor", "sensory_type": "place"},
-      {"detail": "a calendar with days already crossed", "sensory_type": "object"},
-      {"detail": "the same daily route in the bus window", "sensory_type": "place"},
-      {"detail": "an unwashed cup from morning still in the sink", "sensory_type": "object"},
-      {"detail": "the lamp clicked on earlier than yesterday", "sensory_type": "object"},
-      {"detail": "steam gone from the mug before anyone sat", "sensory_type": "object"}
+      {
+        "detail": "clock and cooling tea on the afternoon sill",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "sun moving off the kitchen floor",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "a calendar with days already crossed",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the same daily route in the bus window",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "a folded blanket on the sofa",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the lamp clicked on earlier than yesterday",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an open doorway with no one in it",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "putting_the_weight_down",
     "concrete_details": [
-      {"detail": "a heavy bag set down on an open bench", "sensory_type": "object"},
-      {"detail": "a stone placed on the river wall and left", "sensory_type": "object"},
-      {"detail": "a letter finally opened on the kitchen table", "sensory_type": "object"},
-      {"detail": "hands unclenched on the church steps", "sensory_type": "gesture"},
-      {"detail": "an old box closed on the bedroom floor", "sensory_type": "object"},
-      {"detail": "the bag strap slid off the shoulder", "sensory_type": "gesture"},
-      {"detail": "a chair taken after standing too long", "sensory_type": "object"}
+      {
+        "detail": "a heavy bag set down on an open bench",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a stone placed on the river wall and left",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a letter finally opened on the kitchen table",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "hands unclenched on the church steps",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "an old box closed on the bedroom floor",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the bag strap slid off the shoulder",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "a chair taken after standing too long",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "after_the_worst_night",
     "concrete_details": [
-      {"detail": "one window still lit on a quiet street", "sensory_type": "place"},
-      {"detail": "the kettle beginning to steam at pale dawn", "sensory_type": "object"},
-      {"detail": "first stripe of sun on the bedroom curtains", "sensory_type": "place"},
-      {"detail": "a clearing sky over the bus stop after rain", "sensory_type": "place"},
-      {"detail": "an unopened morning paper on the front steps", "sensory_type": "object"},
-      {"detail": "the porch light switched off in daylight", "sensory_type": "object"},
-      {"detail": "a mug rinsed and set out for later", "sensory_type": "object"}
+      {
+        "detail": "one window still lit on a quiet street",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "the kettle beginning to steam at pale dawn",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "first stripe of sun on the bedroom curtains",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "a clearing sky over the bus stop after rain",
+        "sensory_type": "place"
+      },
+      {
+        "detail": "an unopened morning paper on the front steps",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the porch light switched off in daylight",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "rain streaking an empty window",
+        "sensory_type": "object"
+      }
     ]
   },
   {
     "subtheme": "the_second_story",
     "concrete_details": [
-      {"detail": "unread texts lighting a dark kitchen", "sensory_type": "object"},
-      {"detail": "a photo turned to face the wall", "sensory_type": "object"},
-      {"detail": "two keys hanging on the same hook", "sensory_type": "object"},
-      {"detail": "a phone flipped face-down mid-sentence", "sensory_type": "gesture"},
-      {"detail": "an extra toothbrush still in the cup", "sensory_type": "object"},
-      {"detail": "a voicemail they never play back", "sensory_type": "sound"},
-      {"detail": "a name crossed out on a paper", "sensory_type": "object"}
+      {
+        "detail": "unread texts lighting a dark kitchen",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a photo turned to face the wall",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "an unmade bed left empty",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a closed suitcase resting on the floor",
+        "sensory_type": "gesture"
+      },
+      {
+        "detail": "an empty train platform at night",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a voicemail they never play back",
+        "sensory_type": "sound"
+      },
+      {
+        "detail": "a name crossed out on a paper",
+        "sensory_type": "object"
+      }
     ]
   }
 ]
