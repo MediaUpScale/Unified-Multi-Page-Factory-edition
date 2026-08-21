@@ -174,6 +174,7 @@ def object_focus_scene_text(
     obj = _sanitize_visual_phrase(key_object) or "the requested object"
     extra = _OBJECT_FOCUS_HAND_OK if hand_interaction else _OBJECT_FOCUS_GUARD
     only = only_object_clause(obj)
+    text_clause = _TEXT_SURFACE_CLAUSE if _object_stem(obj) in _TEXT_BEARING_STEMS else ""
     step = max(0, min(int(step), 2))
     kind = _OBJECT_FOCUS_FRAMING[step]
     if step <= 0:
@@ -183,19 +184,19 @@ def object_focus_scene_text(
             f"Tight macro crop of {obj} filling the frame. "
             f"Printed flat color field behind the object, no camera bokeh, "
             f"no lens blur, no named room, no furniture, no other objects. "
-            f"{extra} {only}"
+            f"{extra} {only} {text_clause}"
         )
     elif step == 1:
         scene = (
             f"Extreme close-up of {obj} alone, the object occupies most of the frame. "
             f"Flat featureless background, no furniture, no room, no other objects. "
-            f"{extra} {only}"
+            f"{extra} {only} {text_clause}"
         )
     else:
         place = _off_workspace_place(obj)
         scene = (
             f"Close focus on {obj} {place}, the only object in frame. "
-            f"Tight crop, soft empty background. {extra} {only}"
+            f"Tight crop, soft empty background. {extra} {only} {text_clause}"
         )
     return " ".join(scene.split()), kind
 
@@ -630,6 +631,28 @@ _HAND_POSE = (
 )
 _SATURATION_GUARD = (
     "Keep colors saturated and printed, not monochrome, not grayscale."
+)
+# Schnell renders "papers"/"mail"/"signs" the same way it renders a mug on a
+# desk: the noun's learned prior includes printed lettering. Negative prompts
+# do not work at guidance_scale=0 (confirmed on the mug fix), so this is a
+# positive-prompt guard, universal across subject_type (portraits can have a
+# background sign/paper too, not just object_focus).
+_TEXT_LEGIBILITY_GUARD = (
+    "Any paper, page, envelope, sign, screen, or lettered surface in frame "
+    "shows only abstract ink mark-making, blank space, or dense illegible "
+    "scribble-texture — never a coherent word, never legible letters, no "
+    "readable typography, postage, or signage anywhere in the image."
+)
+# Same stem family _object_stem() already collapses for repetition-cap
+# purposes, extended to sibling text-bearing nouns from this file's own noun
+# regex (letters, envelopes, lists, notebooks, calendars, bills).
+_TEXT_BEARING_STEMS = frozenset(
+    {"paper", "mail", "letter", "envelope", "notebook", "journal", "calendar", "list", "bills"}
+)
+_TEXT_SURFACE_CLAUSE = (
+    "The visible surface shows only abstract ink texture, creases, and blank "
+    "or smudged space — no legible words, no coherent letters, no readable "
+    "postage or printed address."
 )
 
 
@@ -1253,7 +1276,16 @@ def assemble_v2_prompt(
         beat["object_focus_step"] = max(0, min(int(focus_step), 2))
         beat["object_focus_framing"] = framing_kind
 
-    parts = [open_b, scene, tech_b, palette_sentence, _SATURATION_GUARD, mood_b, fmt_b]
+    parts = [
+        open_b,
+        scene,
+        tech_b,
+        palette_sentence,
+        _SATURATION_GUARD,
+        _TEXT_LEGIBILITY_GUARD,
+        mood_b,
+        fmt_b,
+    ]
     return " ".join(p for p in parts if p)
 
 
