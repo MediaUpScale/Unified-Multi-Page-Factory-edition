@@ -648,11 +648,24 @@ _SATURATION_GUARD = (
 # do not work at guidance_scale=0 (confirmed on the mug fix), so this is a
 # positive-prompt guard, universal across subject_type (portraits can have a
 # background sign/paper too, not just object_focus).
+#
+# 2026-08-21 full 9-beat run: garbled text still surfaced on scene 8 — a
+# portrait beat with no paper/sign/screen object at all — as marks on the
+# woman's forearm and a stray corner watermark ("17/19"). The original
+# surface-type wording ("any paper, sign, screen...") never covered skin,
+# clothing, background, or frame corners, so it missed this class entirely.
+# Rewritten to a true whole-canvas statement instead of an object-type list —
+# corner/signature-style artifacts are a known FLUX failure mode (the
+# critic's own corner_scan field exists to catch exactly this), described
+# positively rather than negated (same lesson as every prior fix here).
 _TEXT_LEGIBILITY_GUARD = (
-    "Any paper, page, envelope, sign, screen, or lettered surface in frame "
-    "shows only abstract ink mark-making, blank space, or dense illegible "
-    "scribble-texture — never a coherent word, never legible letters, no "
-    "readable typography, postage, or signage anywhere in the image."
+    "Every mark anywhere in this image is either ink linework, halftone "
+    "texture, or flat printed color — never a legible letter, number, or "
+    "word, anywhere in the frame. This includes skin, clothing, hair, "
+    "background, paper, signs, screens, and all four corners of the frame. "
+    "No watermark, no signature, no caption, no logo, no small stamped text "
+    "tucked in a corner — the illustration fills the frame edge to edge with "
+    "scene content only, nothing else."
 )
 # Same stem family _object_stem() already collapses for repetition-cap
 # purposes, extended to sibling text-bearing nouns from this file's own noun
