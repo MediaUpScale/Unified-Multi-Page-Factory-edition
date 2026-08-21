@@ -178,12 +178,17 @@ def object_focus_scene_text(
     step = max(0, min(int(step), 2))
     kind = _OBJECT_FOCUS_FRAMING[step]
     if step <= 0:
-        # Do not say "shallow depth of field" / camera bokeh — Schnell
-        # treats that as photoreal lens blur (Priority 5b).
+        # "macro crop" / "camera bokeh" / "lens blur" are camera vocabulary —
+        # even negated ("no camera bokeh"), naming a photography concept at
+        # all still anchors Schnell toward a photographic render (same lesson
+        # as the mug/text fixes: describe the illustration positively, don't
+        # negate a photo concept). This step carried nearly every photoreal-
+        # drift critic flaw observed in the 2026-08-21 combined probe.
         scene = (
-            f"Tight macro crop of {obj} filling the frame. "
-            f"Printed flat color field behind the object, no camera bokeh, "
-            f"no lens blur, no named room, no furniture, no other objects. "
+            f"A bold hand-inked illustration of {obj} filling the frame, "
+            f"drawn flat with visible ink outlines, not photographed. "
+            f"Printed halftone background, no named room, no furniture, "
+            f"no other objects. "
             f"{extra} {only} {text_clause}"
         )
     elif step == 1:
@@ -191,17 +196,22 @@ def object_focus_scene_text(
         # the grainy halftone print texture the style block asks for
         # everywhere else, which is what collapsed uniq16 below the linework
         # floor. Keep every INTRUDER-safe exclusion; only add texture back.
+        # "Extreme close-up" is also camera vocabulary — replaced for the same
+        # reason as step 0.
         scene = (
-            f"Extreme close-up of {obj} alone, the object occupies most of the frame. "
+            f"An illustrated close study of {obj} alone, drawn to occupy most "
+            f"of the frame, not photographed. "
             f"Background keeps the same grainy halftone print texture as the object, "
             f"muted flat color with visible ink-dot grain, no gradient, no furniture, "
             f"no room, no other objects, no distinct background shapes. "
             f"{extra} {only} {text_clause}"
         )
     else:
+        # "Close focus" is the same camera-vocabulary pattern as steps 0/1.
         place = _off_workspace_place(obj)
         scene = (
-            f"Close focus on {obj} {place}, the only object in frame. "
+            f"An illustrated view of {obj} {place}, drawn as the only object "
+            f"in frame, not photographed. "
             f"Tight crop, background keeps the grainy halftone print texture, "
             f"muted color but not flat or blank, no furniture, no room clutter. "
             f"{extra} {only} {text_clause}"
