@@ -52,6 +52,28 @@ class CriticVerdict(BaseModel):
         default="",
         description="Precise rewrite instructions for the next prompt attempt.",
     )
+    corner_scan: str = Field(
+        default="",
+        description=(
+            "LOFI: what is visible in each corner (TL / TR / BL / BR), "
+            "including any flesh-colored fragments. Empty for other profiles."
+        ),
+    )
+    limb_fragment_present: bool = Field(
+        default=False,
+        description=(
+            "True if any disconnected flesh-colored hand/finger/arm fragment "
+            "exists anywhere, including at frame edges."
+        ),
+    )
+    ungrounded_hand_present: bool = Field(
+        default=False,
+        description=(
+            "True if a hand or grip is visible with no wrist AND no forearm "
+            "continuing off-frame. Center-of-frame floating grips count. "
+            "Must be set even when the dominant object is also wrong."
+        ),
+    )
 
     # Back-compat aliases for older agent_loop callers
     @property
@@ -97,6 +119,49 @@ def _load_image_part(path: Path) -> types.Part:
     return types.Part.from_bytes(data=data, mime_type=_mime_for(path))
 
 
+def _lofi_edge_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
+    """Zoom the four corners so orphaned limb fragments are large enough to judge."""
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    im = PILImage.open(image_path).convert("RGB")
+    w, h = im.size
+    boxes = (
+        ("bottom-left", (0, int(h * 0.85), int(w * 0.28), h)),
+        ("bottom-right", (int(w * 0.72), int(h * 0.85), w, h)),
+        ("top-left", (0, 0, int(w * 0.28), int(h * 0.15))),
+        ("top-right", (int(w * 0.72), 0, w, int(h * 0.15))),
+    )
+    out: list[tuple[str, types.Part]] = []
+    for name, box in boxes:
+        buf = BytesIO()
+        im.crop(box).save(buf, format="PNG")
+        out.append(
+            (name, types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png"))
+        )
+    return out
+
+
+_NEGATED_HAND = re.compile(
+    r"\b(?:no|without|zero|not any|neither|avoid|omit)\s+"
+    r"(?:visible\s+)?"
+    r"(?:hands?|fingers?|grips?)"
+    r"(?:\s*,\s*(?:no\s+)?(?:hands?|fingers?|grips?))*"
+    r"(?:\s+or\s+(?:hands?|fingers?|grips?))?"
+    r"|\b(?:hands?|fingers?|grips?)\s+(?:absent|none)\b"
+    r"|\b(?:object alone|alone with)\s+no\s+grip\b",
+    re.I,
+)
+_POS_HAND = re.compile(r"\b(?:hands?|fingers?|grip)\b", re.I)
+
+
+def _blob_claims_visible_hand(blob: str) -> bool:
+    """True only if the critic claims a hand is visible, not that it must be absent."""
+    cleaned = _NEGATED_HAND.sub(" ", blob or "")
+    return bool(_POS_HAND.search(cleaned))
+
+
 def list_reference_images(style_folder: Path | str) -> list[Path]:
     """Load ALL image files from the channel style_reference folder."""
     folder = Path(style_folder)
@@ -108,16 +173,95 @@ def list_reference_images(style_folder: Path | str) -> list[Path]:
     ]
 
 
+def _semantic_fidelity_block(
+    requested_subject: str | None,
+    requested_object: str | None = None,
+) -> str:
+    st = (requested_subject or "").strip().lower().replace(" ", "_")
+    key_obj = " ".join(str(requested_object or "").strip().split())
+    if st not in {"woman", "man", "couple", "silhouette", "object_focus"}:
+        subject_block = (
+            "5) SEMANTIC FIDELITY — requested subject_type was not provided; "
+            "skip the person-count check."
+        )
+    else:
+        object_match = ""
+        if st == "object_focus" and key_obj:
+            object_match = f"""
+   - object_focus OBJECT MATCH (HARD FAIL): the dominant object in the pixels must
+     match this description: "{key_obj}". Supporting clutter around it is OK.
+     FAIL if a different unrelated object dominates instead — especially a mug,
+     cup, glass, or coffee vessel when that is not what was requested.
+     Prefix a flaw with "OBJECT:" (e.g. "OBJECT: mug dominates, requested {key_obj}").
+     fix_instructions MUST name "{key_obj}" as the thing to draw, centered, filling the frame.
+"""
+        subject_block = f"""
+5) SEMANTIC FIDELITY TO REQUEST (HARD FAIL if pixels mismatch) — requested subject_type={st}:
+   - woman: exactly ONE adult woman as the dominant subject; one head, one body, correctly formed.
+     FAIL if two people, a man-only shot, a fused androgynous figure, phantom extra limbs, or object-only with no person.
+   - man: exactly ONE adult man as the dominant subject; one head, one body, correctly formed.
+     FAIL if two people, a woman-only shot, a fused figure, phantom limbs, or object-only.
+   - couple: TWO distinct people (a man and a woman), two distinct faces, two distinct bodies,
+     standing separately (side by side or one slightly behind). FAIL if only one person,
+     if bodies/faces are fused into one figure, or if extra phantom hands/limbs appear.
+   - object_focus: the object sits ALONE and dominates the frame.
+     No dominant face or full-body figure. Default: zero hands.
+     FAIL if a close portrait of a person fills the frame. Do not require facial anatomy.
+{object_match}   - silhouette: a featureless or near-featureless figure against light.
+     FAIL if a fully detailed close-portrait face dominates. Do not require facial detail.
+
+If this check fails, set passed=false even when style/anatomy otherwise look fine.
+Prefix a person-count flaw with "SEMANTIC:" (e.g. "SEMANTIC: couple requested, only one fused figure").
+fix_instructions MUST tell Flux how to match {st}.
+""".strip()
+
+    return f"""
+{subject_block}
+
+6) LIMB INTEGRITY (HARD FAIL on every beat, including object_focus / silhouette).
+   This check is NEVER skipped or weakened for object_focus.
+   First LIST every distinct hand, finger, wrist, or arm piece you can see —
+   including tiny fragments at frame edges AND a full hand in the center of frame.
+   Then judge:
+   - woman / man / silhouette: one attached body only. Any extra disconnected
+     flesh blob, extra finger, floating hand, or orphaned limb piece = FAIL,
+     even if it is small or cropped by the frame edge.
+   - couple: two attached bodies only. Extra fragments = FAIL.
+   - object_focus: the preferred pass is NO HANDS AT ALL.
+     If a hand appears, it is a HARD FAIL unless a plausible wrist AND forearm
+     continue off-frame in a natural direction (not a top-down floating grip).
+     A hand with no wrist, no forearm, and no body connection anywhere in the
+     frame is a hard fail — not acceptable "close framing" of the object.
+     Set limb_fragment_present=true AND ungrounded_hand_present=true for that
+     ungrounded grip, even if the object is also wrong (report OBJECT: AND LIMB:).
+   Cropping a correctly attached limb at the edge is OK only when the wrist
+     is visible heading off-frame. A second, unattached skin-colored shape is NOT OK.
+   If you are unsure whether a skin-colored shape is a limb fragment, FAIL.
+   Report ALL hard fails in flaws, not only the first (e.g. both OBJECT: and LIMB:).
+   EDGE CROPS are tight outer corners of IMAGE 1 only (not the main subject).
+   A correctly attached hand that is merely cropped by the frame will mostly
+   sit outside these tiny corners. If a crop shows isolated fingers, a flesh
+   blob, or a hand piece with no connecting wrist in that crop, that is an
+   orphaned fragment — set limb_fragment_present=true and FAIL.
+   Prefix a flaw with "LIMB:" (e.g. "LIMB: floating grip, no wrist or forearm").
+   fix_instructions MUST say to remove the extra fragment / ungrounded hand
+   and keep only the object (object_focus) or attached limbs (person shots).
+""".strip()
+
+
 def _build_lofi_critic_instruction(
     channel_name: str,
     rules: dict[str, Any],
     quality_threshold: float,
     n_refs: int,
+    requested_subject: str | None = None,
+    requested_object: str | None = None,
 ) -> str:
     forbidden = ", ".join(rules.get("forbidden_tokens") or [])
     mandatory = ", ".join(rules.get("mandatory_elements") or [])
     lighting = rules.get("lighting_style") or ""
     audience = rules.get("target_audience_rules") or ""
+    semantic = _semantic_fidelity_block(requested_subject, requested_object)
     return f"""
 You are an Art Director for LOFI economic illustration reels ("{channel_name}").
 
@@ -131,27 +275,36 @@ CHANNEL RULES:
 - LIGHTING: {lighting}
 - AUDIENCE: {audience}
 
-EVALUATE ONLY:
+EVALUATE:
 1) Illustration style consistency — ink/graphic-novel look; FAIL if photorealistic drift.
-2) Anatomy — malformed hands/faces beyond acceptable illustration threshold.
+2) Anatomy — malformed hands/faces beyond acceptable illustration threshold
+   (skip face-detail requirements for object_focus and silhouette, but still
+   FAIL ungrounded/disconnected hands on those beats).
+   Also FAIL disconnected/orphaned limb fragments, even small ones at frame edges.
 3) Text artifacts — no embedded/garbled letters, logos, or UI burned into the image.
 4) Framing — vertical/portrait-friendly composition suitable for 9:16 reels; subject readable.
+{semantic}
 
 Do NOT apply Master Mei dystopian / body-horror criteria.
 Do NOT require fitness-model hard caps.
+Do NOT fail solely for palette/color temperature (warm vs charcoal-teal duotone).
+Palettes are assigned per act and are not a critic hard-fail.
 
 SCORING GUIDE:
-- 9.0–10.0: clean LOFI illustration, on-style, no text artifacts
-- {quality_threshold}–8.9: minor issues, still approvable
-- Below {quality_threshold}: FAIL (photoreal drift, bad anatomy, text artifacts, wrong framing)
+- 9.0–10.0: clean LOFI illustration, on-style, request-faithful, no text artifacts, no orphan limbs
+- {quality_threshold}–8.9: minor issues, still approvable, request type and object match
+- Below {quality_threshold}: FAIL (photoreal drift, bad anatomy, orphan limb, text artifacts, wrong framing, semantic mismatch, OR wrong dominant object)
 
-Set passed=true ONLY if score >= {quality_threshold} AND no hard flaws above.
+Set passed=true ONLY if score >= {quality_threshold} AND no hard flaws above AND semantic fidelity AND limb integrity pass.
 
 Return JSON fields exactly:
   score (float 0–10),
   passed (boolean),
   flaws (list of strings),
-  fix_instructions (string — actionable FLUX rewrite directives; empty if passed).
+  fix_instructions (string — actionable FLUX rewrite directives; empty if passed),
+  corner_scan (string — TL / TR / BL / BR contents),
+  limb_fragment_present (boolean — true if any disconnected limb piece exists),
+  ungrounded_hand_present (boolean — true if a hand has no wrist/forearm; center grips count).
 """.strip()
 
 
@@ -216,11 +369,15 @@ def _build_critic_instruction(
     quality_threshold: float,
     hard_cap: float,
     n_refs: int,
+    requested_subject: str | None = None,
+    requested_object: str | None = None,
 ) -> str:
     profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
     if profile == "lofi_economic" or channel_name == "lofi_economic":
         return _build_lofi_critic_instruction(
             channel_name, rules, quality_threshold, n_refs,
+            requested_subject=requested_subject,
+            requested_object=requested_object,
         )
     if profile in ("ancient_mystery", "ancient_knowledge") or channel_name == "ancient_knowledge":
         return _build_ancient_mystery_critic_instruction(
@@ -333,6 +490,8 @@ def evaluate_image(
     style_folder: Path | str | None = None,
     reference_paths: Sequence[Path | str] | None = None,
     quality_threshold: float | None = None,
+    requested_subject: str | None = None,
+    requested_object: str | None = None,
 ) -> CriticVerdict:
     """
     Judge a generated image with Gemini Vision against ALL style refs + rules.
@@ -369,10 +528,27 @@ def evaluate_image(
         )
         refs = list_reference_images(folder)
 
+    profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
+    is_lofi = profile == "lofi_economic" or channel_name == "lofi_economic"
+    is_ancient = (
+        profile in ("ancient_mystery", "ancient_knowledge")
+        or channel_name == "ancient_knowledge"
+    )
+
     contents: list[Any] = [
         "IMAGE 1 — NEW CANDIDATE TO JUDGE (inspect pixels):",
         candidate_part,
     ]
+    if is_lofi and not isinstance(generated_image, (bytes, bytearray)):
+        try:
+            for name, part in _lofi_edge_crop_parts(Path(generated_image)):
+                contents.append(
+                    f"EDGE CROP of IMAGE 1 — {name}. Inspect for orphaned "
+                    "flesh-colored hand/finger/arm fragments."
+                )
+                contents.append(part)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("CRITIC | edge crops skipped (%s)", exc)
     for i, ref in enumerate(refs, start=1):
         try:
             contents.append(f"REFERENCE STYLE IMAGE {i}: {ref.name}")
@@ -389,6 +565,8 @@ def evaluate_image(
     contents.append(
         _build_critic_instruction(
             channel_name, rules, threshold, hard_cap, n_refs=len(refs),
+            requested_subject=requested_subject,
+            requested_object=requested_object,
         )
     )
 
@@ -397,18 +575,13 @@ def evaluate_image(
     if not model_id.startswith("models/"):
         model_id = f"models/{model_id}"
 
-    profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
-    is_lofi = profile == "lofi_economic" or channel_name == "lofi_economic"
-    is_ancient = (
-        profile in ("ancient_mystery", "ancient_knowledge")
-        or channel_name == "ancient_knowledge"
-    )
-
     _console.print(
         f"[cyan]CRITIC[/cyan] Gemini Vision | candidate={candidate_label} | "
         f"refs={len(refs)} (ALL loaded) | channel={channel_name} | model={model_id}"
         + (" | profile=lofi_economic" if is_lofi else "")
         + (" | profile=ancient_mystery" if is_ancient else "")
+        + (f" | subject={requested_subject}" if requested_subject else "")
+        + (f" | object={requested_object}" if requested_object else "")
     )
 
     response = client.models.generate_content(
@@ -448,6 +621,49 @@ def evaluate_image(
     elif verdict.passed and verdict.score >= threshold:
         verdict.passed = True
 
+    st_req = (requested_subject or "").strip().lower().replace(" ", "_")
+    if is_lofi and st_req == "object_focus":
+        blob = " ".join(
+            [
+                " ".join(verdict.flaws or []),
+                str(verdict.fix_instructions or ""),
+                str(getattr(verdict, "corner_scan", "") or ""),
+            ]
+        )
+        # "no hands" / "without fingers" in a fix line is a prohibition, not a
+        # detection. Matching the bare word used to force LIMB on object_focus
+        # whenever Gemini restated the no-hand rule (table-corner false positive).
+        mentions_hand = _blob_claims_visible_hand(blob)
+        grounded = bool(
+            re.search(r"wrist.{0,24}forearm|forearm.{0,24}wrist", blob, re.I)
+        )
+        if mentions_hand and not grounded:
+            verdict.ungrounded_hand_present = True
+
+    if is_lofi and (
+        bool(getattr(verdict, "limb_fragment_present", False))
+        or bool(getattr(verdict, "ungrounded_hand_present", False))
+    ):
+        verdict.passed = False
+        if bool(getattr(verdict, "ungrounded_hand_present", False)):
+            verdict.limb_fragment_present = True
+        scan = str(getattr(verdict, "corner_scan", "") or "").strip()
+        limb_msg = "LIMB: disconnected limb fragment"
+        if bool(getattr(verdict, "ungrounded_hand_present", False)):
+            limb_msg = "LIMB: ungrounded hand, no wrist or forearm"
+        if scan:
+            limb_msg = f"{limb_msg} ({scan})"
+        if not any(str(f).upper().startswith("LIMB:") for f in (verdict.flaws or [])):
+            verdict.flaws.append(limb_msg)
+        if not str(verdict.fix_instructions or "").strip():
+            verdict.fix_instructions = (
+                "Remove extra disconnected hands, fingers, or limb fragments. "
+                "On object_focus, draw the object alone with no grip. "
+                "On person shots, keep only limbs attached to the visible body."
+            )
+        if verdict.score >= threshold:
+            verdict.score = round(min(float(verdict.score), threshold - 0.5), 2)
+
     # Terminal: exact raw critique score
     table = Table(title="Gemini Vision Critic — Raw Verdict", show_header=True)
     table.add_column("Field", style="cyan")
@@ -456,6 +672,19 @@ def evaluate_image(
     table.add_row("passed", str(verdict.passed))
     table.add_row("flaws", "; ".join(verdict.flaws) or "(none)")
     table.add_row("fix_instructions", verdict.fix_instructions or "(none)")
+    if is_lofi:
+        table.add_row(
+            "limb_fragment_present",
+            str(bool(getattr(verdict, "limb_fragment_present", False))),
+        )
+        table.add_row(
+            "ungrounded_hand_present",
+            str(bool(getattr(verdict, "ungrounded_hand_present", False))),
+        )
+        table.add_row(
+            "corner_scan",
+            str(getattr(verdict, "corner_scan", "") or "(none)"),
+        )
     _console.print(table)
     _console.print(
         Panel(

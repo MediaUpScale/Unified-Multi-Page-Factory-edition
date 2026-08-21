@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -22,7 +23,12 @@ from core_engine.economic_reel_lofi.assembler import (
     assemble_lofi_reel,
     compute_caption_scene_duration_s,
 )
-from core_engine.economic_reel_lofi.image_gen import generate_scene_image
+from core_engine.economic_reel_lofi.image_gen import (
+    LOFI_IMAGE_HEIGHT,
+    LOFI_IMAGE_STEPS,
+    LOFI_IMAGE_WIDTH,
+    generate_scene_image,
+)
 from core_engine.economic_reel_lofi.riso_prompt_bank import (
     assign_riso_prompts_for_scenes,
     export_active_library_diff,
@@ -30,6 +36,11 @@ from core_engine.economic_reel_lofi.riso_prompt_bank import (
 from core_engine.economic_reel_lofi.script_agent import (
     _sanitize_caption_typos,
     generate_script,
+    get_script_llm_call_log,
+    note_batch_structure_id,
+    repair_script_captions,
+    reset_batch_structure_ids,
+    reset_script_llm_call_log,
 )
 from core_engine.economic_reel_lofi.validator_agent import validate_script
 
@@ -60,6 +71,8 @@ class LofiItemResult:
     manual_review: bool = False
     errors: list[str] = field(default_factory=list)
     script: dict[str, Any] | None = None
+    work_dir: str | None = None
+    stills_only: bool = False
 
 
 def _utc_stamp() -> str:
@@ -70,30 +83,49 @@ def _engine_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _load_lofi_thumb_gray(
+    image_path: Path, size: int = 512
+) -> tuple[np.ndarray, np.ndarray]:
+    from PIL import Image as PILImage
+
+    im = PILImage.open(image_path).convert("RGB")
+    im.thumbnail((size, size))
+    arr = np.array(im, dtype=np.float32)
+    gray = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+    return arr, gray
+
+
+def _linework_stats(image_path: Path, size: int = 512) -> dict[str, float]:
+    """Color/edge stats already used by the linework guard (512 thumb)."""
+    arr, gray = _load_lofi_thumb_gray(image_path, size=size)
+    lap = (
+        gray[1:-1, 1:-1] * 4
+        - gray[:-2, 1:-1]
+        - gray[2:, 1:-1]
+        - gray[1:-1, :-2]
+        - gray[1:-1, 2:]
+    )
+    q = (arr.astype(np.uint8) // 16).reshape(-1, 3)
+    return {
+        "uniq16": float(np.unique(q, axis=0).shape[0]),
+        "lap_var": float(lap.var()),
+        "edge": float(
+            np.abs(gray[:, 1:] - gray[:, :-1]).mean()
+            + np.abs(gray[1:, :] - gray[:-1, :]).mean()
+        ),
+        "std": float(gray.std()),
+        "hard": float((np.abs(lap) > 40).mean()),
+    }
+
+
 def _assess_linework_complexity(image_path: Path) -> tuple[bool, list[str]]:
     """Reject near-flat graphics with no inked structure (grief scene-3 failure)."""
     try:
-        from PIL import Image as PILImage
-
-        im = PILImage.open(image_path).convert("RGB")
-        im.thumbnail((512, 512))
-        arr = np.array(im, dtype=np.float32)
-        gray = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
-        lap = (
-            gray[1:-1, 1:-1] * 4
-            - gray[:-2, 1:-1]
-            - gray[2:, 1:-1]
-            - gray[1:-1, :-2]
-            - gray[1:-1, 2:]
-        )
-        lap_var = float(lap.var())
-        q = (arr.astype(np.uint8) // 16).reshape(-1, 3)
-        uniq = int(np.unique(q, axis=0).shape[0])
-        edge = float(
-            np.abs(gray[:, 1:] - gray[:, :-1]).mean()
-            + np.abs(gray[1:, :] - gray[:-1, :]).mean()
-        )
-        std = float(gray.std())
+        st = _linework_stats(image_path, size=512)
+        uniq = int(st["uniq16"])
+        lap_var = float(st["lap_var"])
+        edge = float(st["edge"])
+        std = float(st["std"])
         flaws: list[str] = []
         if uniq < 90:
             flaws.append(f"low color structure uniq16={uniq}")
@@ -113,14 +145,255 @@ def _assess_linework_complexity(image_path: Path) -> tuple[bool, list[str]]:
         return True, []
 
 
-def _qa_scene_image(image_path: Path, visual_prompt: str) -> tuple[bool, list[str]]:
+_INTRUDER_SUBJECTS = frozenset({"object_focus", "silhouette"})
+_INTRUDER_SELF = re.compile(
+    r"\b(mugs?|cups?|coffee|glasses?|laptops?|computers?|keyboards?)\b",
+    re.I,
+)
+
+
+def _uniform_gray(gray: np.ndarray, k: int) -> np.ndarray:
+    try:
+        from scipy.ndimage import uniform_filter
+
+        return uniform_filter(gray, size=k, mode="nearest")
+    except Exception:  # noqa: BLE001
+        kernel = np.ones((k,), dtype=np.float32) / k
+        tmp = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode="same"), 1, gray)
+        return np.apply_along_axis(lambda m: np.convolve(m, kernel, mode="same"), 0, tmp)
+
+
+def _connected_components(mask: np.ndarray, min_area: int) -> list[dict[str, float]]:
+    h, w = mask.shape
+    n = h * w
+    seen = np.zeros((h, w), dtype=np.uint8)
+    out: list[dict[str, float]] = []
+    for y in range(h):
+        for x in range(w):
+            if not mask[y, x] or seen[y, x]:
+                continue
+            stack = [(y, x)]
+            seen[y, x] = 1
+            ys: list[int] = []
+            xs: list[int] = []
+            while stack:
+                cy, cx = stack.pop()
+                ys.append(cy)
+                xs.append(cx)
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    ny, nx = cy + dy, cx + dx
+                    if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not seen[ny, nx]:
+                        seen[ny, nx] = 1
+                        stack.append((ny, nx))
+            area = len(ys)
+            if area < min_area:
+                continue
+            y0, y1 = min(ys), max(ys)
+            x0, x1 = min(xs), max(xs)
+            bw, bh = x1 - x0 + 1, y1 - y0 + 1
+            out.append(
+                {
+                    "frac": area / n,
+                    "bbox_frac": (bw * bh) / n,
+                    "fill": area / max(bw * bh, 1),
+                    "aspect": bh / max(bw, 1),
+                    "cy": float(np.mean(ys)) / h,
+                    "cx": float(np.mean(xs)) / w,
+                }
+            )
+    out.sort(key=lambda d: d["bbox_frac"], reverse=True)
+    return out
+
+
+def assess_default_object_intrusion(
+    image_path: Path,
+    *,
+    subject_type: str = "",
+    key_object: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """
+    Cheap non-LLM gate for mug/laptop desk-still-life substitution.
+
+    Uses the same PIL+numpy gray thumb as linework. Finds locally-darker
+    compact blobs (mug/laptop silhouettes) and compares their bbox footprint
+    to the rest of the frame. Scoped to object_focus / silhouette when those
+    defaults are not the requested key_object. Does not judge photoreal/style.
+    """
+    st = (subject_type or "").strip().lower().replace(" ", "_")
+    obj = (key_object or "").strip()
+    meta: dict[str, Any] = {
+        "subject_type": st,
+        "key_object": obj,
+        "passed": True,
+        "skipped": False,
+        "intruder_bbox_frac": 0.0,
+        "intruder_area_frac": 0.0,
+        "intended_bbox_frac": 0.0,
+        "ratio": 0.0,
+        "n_intruders": 0,
+    }
+    if st not in _INTRUDER_SUBJECTS:
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_object_focus_or_silhouette"
+        return True, [], meta
+    if obj and _INTRUDER_SELF.search(obj):
+        meta["skipped"] = True
+        meta["skip_reason"] = "key_object_is_default_intruder"
+        return True, [], meta
+    try:
+        _, gray = _load_lofi_thumb_gray(image_path, size=192)
+        local = _uniform_gray(gray, 21)
+        mask = gray < (local - 16.0)
+        blobs = _connected_components(mask, min_area=50)
+        intruders = [
+            b
+            for b in blobs
+            if b["cy"] >= 0.48
+            and 0.35 <= b["aspect"] <= 1.65
+            and b["fill"] >= 0.22
+            and b["bbox_frac"] >= 0.03
+            and b["frac"] >= 0.012
+        ]
+        intended = blobs[0] if blobs else None
+        top = intruders[0] if intruders else None
+        intended_bbox = float((intended or {}).get("bbox_frac") or 0.0)
+        intr_bbox = float((top or {}).get("bbox_frac") or 0.0)
+        intr_frac = float((top or {}).get("frac") or 0.0)
+        ratio = intr_bbox / max(intended_bbox, 1e-6) if intended_bbox else 0.0
+        meta.update(
+            {
+                "n_intruders": len(intruders),
+                "intruder_bbox_frac": round(intr_bbox, 4),
+                "intruder_area_frac": round(intr_frac, 4),
+                "intended_bbox_frac": round(intended_bbox, 4),
+                "ratio": round(ratio, 3),
+            }
+        )
+        # Fail when a compact lower/mid dark object has a large footprint of
+        # its own, or when it is a large fraction of the biggest dark region.
+        fail = bool(top) and (
+            intr_bbox >= 0.08 or intr_frac >= 0.04 or (ratio >= 0.45 and intr_bbox >= 0.03)
+        )
+        if fail and top is not None:
+            meta["passed"] = False
+            flaw = (
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac="
+                f"{intr_bbox:.3f} area_frac={intr_frac:.3f} ratio={ratio:.2f} "
+                f"vs requested {obj or 'key_object'!r}"
+            )
+            fix = (
+                f"Draw only {obj or 'the requested object'} filling the frame. "
+                "Empty surface: no mug, no cup, no coffee cup, no glass, no laptop."
+            )
+            meta["fix_instructions"] = fix
+            print(
+                f"[LOFI object-gate] REJECT {image_path.name} {flaw}"
+            )
+            return False, [flaw], meta
+        print(
+            f"[LOFI object-gate] PASS {image_path.name} "
+            f"n_intruders={len(intruders)} bbox={intr_bbox:.3f} ratio={ratio:.2f}"
+        )
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("object-gate failed for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_photoreal_style(
+    image_path: Path,
+    *,
+    subject_type: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """
+    Cheap non-LLM photoreal gate for macro object_focus stills.
+
+    Independent of Gemini. Uses the same uniq16/lap_var/edge/std thumb as
+    the linework guard. Photographic bokeh has high luminance contrast
+    (std) with weak ink edges (edge, lap_var). Illustration-safe stills
+    from the DoF A/B sit well above the ink-edge floor.
+
+    Scoped to object_focus. Does not change INTRUDER thresholds or escalate
+    the framing ladder. Fail-open on read errors (same as INTRUDER).
+    """
+    st = (subject_type or "").strip().lower().replace(" ", "_")
+    meta: dict[str, Any] = {
+        "subject_type": st,
+        "passed": True,
+        "skipped": False,
+        "uniq16": 0,
+        "lap_var": 0.0,
+        "edge": 0.0,
+        "std": 0.0,
+        "hard": 0.0,
+    }
+    if st != "object_focus":
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_object_focus"
+        return True, [], meta
+    try:
+        stats = _linework_stats(image_path, size=512)
+        uniq = int(stats["uniq16"])
+        lap_var = float(stats["lap_var"])
+        edge = float(stats["edge"])
+        std = float(stats["std"])
+        hard = float(stats["hard"])
+        meta.update(
+            {
+                "uniq16": uniq,
+                "lap_var": round(lap_var, 1),
+                "edge": round(edge, 2),
+                "std": round(std, 1),
+                "hard": round(hard, 4),
+            }
+        )
+        # Calibrated on locked-attachment beat 4:
+        # photoreal+DoF (225455 s4): std=86.4 edge=9.78 lap_var=459.7 → FAIL
+        # no-DoF illustration (3/3 probe): std 51–75, edge 15–21, lap_var 2174–3889 → PASS
+        photographic = std >= 80.0 and edge < 12.0 and lap_var < 900.0
+        if photographic:
+            meta["passed"] = False
+            flaw = (
+                "PHOTOREAL: photographic smoothness "
+                f"std={std:.1f} edge={edge:.2f} lap_var={lap_var:.1f} "
+                f"uniq16={uniq} (want ink-hard edges, not camera bokeh)"
+            )
+            meta["fix_instructions"] = (
+                "Redraw as a risograph illustration: hard-edged color blocks, "
+                "halftone grain, no camera bokeh, no lens blur, no photography."
+            )
+            print(f"[LOFI style-gate] REJECT {image_path.name} {flaw}")
+            return False, [flaw], meta
+        print(
+            f"[LOFI style-gate] PASS {image_path.name} "
+            f"std={std:.1f} edge={edge:.2f} lap_var={lap_var:.1f} uniq16={uniq}"
+        )
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("style-gate failed for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def _qa_scene_image(
+    image_path: Path,
+    visual_prompt: str,
+    *,
+    subject_type: str = "",
+    key_object: str = "",
+) -> tuple[bool, list[str], str]:
     """
     Run VisualQA lofi_economic profile when available.
     Soft-fail open if Gemini/critic unavailable (log + accept).
     Always run local linework/complexity check (rejects flat graphics).
+    Returns (passed, flaws, critic_fix_instructions).
     """
     del visual_prompt
     struct_ok, struct_flaws = _assess_linework_complexity(image_path)
+    fix = ""
     try:
         from VisualQA_Agent.channel_rag import get_channel_rules, set_channel_context
         from VisualQA_Agent.visual_critic import evaluate_image
@@ -132,9 +405,12 @@ def _qa_scene_image(image_path: Path, visual_prompt: str) -> tuple[bool, list[st
             channel_name="lofi_economic",
             rules=rules,
             quality_threshold=6.0,
+            requested_subject=subject_type or None,
+            requested_object=key_object or None,
         )
         critic_ok = bool(verdict.passed)
         critic_flaws = list(verdict.flaws or [])
+        fix = str(verdict.fix_instructions or "").strip()
     except Exception as exc:  # noqa: BLE001
         _LOG.warning("VisualQA skipped for %s (%s)", image_path.name, exc)
         critic_ok = True
@@ -155,7 +431,7 @@ def _qa_scene_image(image_path: Path, visual_prompt: str) -> tuple[bool, list[st
     flaws = list(struct_flaws)
     if not critic_ok:
         flaws.extend(critic_flaws)
-    return (struct_ok and critic_ok and not flaws), flaws
+    return (struct_ok and critic_ok and not flaws), flaws, fix
 
 
 def _generate_validated_script(
@@ -163,10 +439,12 @@ def _generate_validated_script(
     module: str,
     theme_row: dict[str, Any],
     scene_count: int,
+    persist_on_pass: bool = True,
 ) -> tuple[dict[str, Any] | None, list[str], bool]:
     """Returns (script|None, errors, needs_manual_review)."""
     feedback: str | None = None
     last_errors: list[str] = []
+    last_script: dict[str, Any] | None = None
     for attempt in range(1, lofi_cfg.SCRIPT_MAX_RETRIES + 1):
         script = generate_script(
             module=module,
@@ -177,16 +455,19 @@ def _generate_validated_script(
             theme_row=theme_row,
         )
         script["subtheme"] = theme_row.get("subtheme")
+        last_script = script
         result = validate_script(
             script,
             module=module,
             scene_count=scene_count,
-            persist_on_pass=True,
+            persist_on_pass=persist_on_pass,
         )
         if result.ok and result.script:
+            note_batch_structure_id(str(result.script.get("structure_id") or ""))
             return result.script, [], False
         last_errors = list(result.reasons)
         feedback = result.feedback()
+        print(f"[LOFI script] attempt {attempt}/{lofi_cfg.SCRIPT_MAX_RETRIES} rejected: {feedback}")
         _LOG.info(
             "Script attempt %d/%d rejected: %s",
             attempt,
@@ -196,6 +477,9 @@ def _generate_validated_script(
     # Last resort: deterministic short-line fallback so a test still renders
     from core_engine.economic_reel_lofi.script_agent import _fallback_script
 
+    last_details = list((last_script or {}).get("retrieved_details") or [])
+    if not last_details:
+        last_details = rag.select_concrete_details(theme_row, module=module)
     fallback = _fallback_script(
         module=module,
         theme=str(theme_row.get("theme") or "connection"),
@@ -205,18 +489,22 @@ def _generate_validated_script(
         setting_object_pairs=theme_row.get("setting_object_pairs")
         if isinstance(theme_row.get("setting_object_pairs"), list)
         else None,
+        retrieved_details=last_details,
+        arc_template=str((last_script or {}).get("arc_template") or ""),
     )
     fallback["subtheme"] = theme_row.get("subtheme")
     result = validate_script(
         fallback,
         module=module,
         scene_count=scene_count,
-        persist_on_pass=True,
+        persist_on_pass=persist_on_pass,
     )
     if result.ok and result.script:
         print("[LOFI script] using fallback after validator retries")
         return result.script, [], False
-    return None, last_errors or ["script validation failed"], True
+    fallback_reasons = list(result.reasons)
+    print(f"[LOFI validator] last-resort REJECT: {result.feedback()}")
+    return None, fallback_reasons or last_errors or ["script validation failed"], True
 
 
 def _resolve_page_dirs(page_id: str, outputs_dir: Path | str | None) -> tuple[Path, Path, Path]:
@@ -241,6 +529,45 @@ def _resolve_page_dirs(page_id: str, outputs_dir: Path | str | None) -> tuple[Pa
     return page_outputs, clips_dir, assets_dir
 
 
+def _load_locked_script(path: Path | str) -> dict[str, Any]:
+    p = Path(path)
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(raw, dict) and isinstance(raw.get("script"), dict):
+        script = dict(raw["script"])
+    elif isinstance(raw, dict):
+        script = dict(raw)
+    else:
+        raise ValueError(f"locked script is not a JSON object: {p}")
+    if not (script.get("lines") or script.get("monologue")):
+        raise ValueError(f"locked script has no lines/monologue: {p}")
+    print(f"[LOFI pipeline] loaded locked script → {p}")
+    return script
+
+
+def _print_script_report(script: dict[str, Any], *, index: int, qty: int) -> None:
+    theme = str(script.get("theme") or "")
+    sub = str(script.get("subtheme") or "")
+    hook = str(script.get("hook_type") or "")
+    arc = str(script.get("arc_template") or "")
+    lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+    print("")
+    print("=" * 72)
+    print(f"SCRIPT {index}/{qty}  theme={theme}  subtheme={sub}")
+    print(f"hook={hook}  arc={arc}  beats={len(lines)}")
+    print("-" * 72)
+    print("MONOLOGUE:")
+    print(str(script.get("monologue") or " ".join(str(r.get("text") or "") for r in lines)))
+    print("-" * 72)
+    print(f"{'#':<3} {'text':<56} {'setting':<28} {'object'}")
+    for row in lines:
+        n = int(row.get("scene") or 0)
+        text = str(row.get("text") or "")[:54]
+        setting = str(row.get("setting") or "")[:26]
+        obj = str(row.get("key_object") or "")[:22]
+        print(f"{n:<3} {text:<56} {setting:<28} {obj}")
+    print("=" * 72)
+
+
 def _produce_one(
     *,
     page_id: str,
@@ -248,23 +575,47 @@ def _produce_one(
     duration_s: int,
     clips_dir: Path,
     assets_dir: Path,
+    force_theme: str | None = None,
+    force_subtheme: str | None = None,
     index: int,
+    script_only: bool = False,
+    stills_only: bool = False,
+    batch_qty: int = 1,
+    locked_script: dict[str, Any] | None = None,
 ) -> LofiItemResult:
-    scene_count = lofi_cfg.scene_count_for_duration(duration_s)
-    theme_row = rag.select_theme(module)
+    scene_count = lofi_cfg.scene_count_for_duration(duration_s, thematic=True)
     stamp = _utc_stamp()
-    # Working stills live under assets/; final deliverables go to clips/.
-    run_dir = assets_dir / f"lofi_run_{stamp}_{index:02d}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    persist_on_pass = not script_only and not stills_only
 
-    script, errs, manual = _generate_validated_script(
-        module=module, theme_row=theme_row, scene_count=scene_count,
-    )
+    reset_script_llm_call_log()
+    if isinstance(locked_script, dict) and (locked_script.get("lines") or locked_script.get("monologue")):
+        script = dict(locked_script)
+        repair_script_captions(script, keep_extra_scenes=True)
+        theme_row = rag.select_theme(
+            module,
+            theme=str(script.get("theme") or force_theme or ""),
+            subtheme=str(script.get("subtheme") or force_subtheme or ""),
+        )
+        print(
+            "[LOFI pipeline] LOCKED script — skipping writer/validator "
+            f"theme={script.get('theme')} subtheme={script.get('subtheme')} "
+            f"beats={len(script.get('lines') or [])}"
+        )
+        _print_script_report(script, index=index, qty=batch_qty)
+        errs: list[str] = []
+    else:
+        theme_row = rag.select_theme(module, theme=force_theme, subtheme=force_subtheme)
+        script, errs, manual = _generate_validated_script(
+            module=module,
+            theme_row=theme_row,
+            scene_count=scene_count,
+            persist_on_pass=persist_on_pass,
+        )
     if script is None:
         review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
         review_path.write_text(
             json.dumps(
-                {"errors": errs, "theme": theme_row, "module": module},
+                {"errors": errs, "theme": theme_row, "module": module, "script_only": script_only},
                 indent=2,
                 ensure_ascii=False,
             ),
@@ -281,12 +632,79 @@ def _produce_one(
             meta_path=str(review_path),
         )
 
+    script_llm_log = get_script_llm_call_log()
+    script_llm_calls = len(script_llm_log)
+    script_llm_cost_usd = round(sum(c.get("cost_usd_est", 0.0) for c in script_llm_log), 6)
+
+    if script_only:
+        theme = str(script.get("theme") or theme_row.get("theme") or "")
+        sub = str(script.get("subtheme") or theme_row.get("subtheme") or "")
+        if theme:
+            rag.mark_theme_used(module, theme, sub or None)
+        _print_script_report(script, index=index, qty=batch_qty)
+        theme_slug = "".join(
+            c if c.isalnum() else "_"
+            for c in theme.lower()
+        ).strip("_")[:32] or "lofi"
+        meta_path = clips_dir / f"lofi_script_{theme_slug}_{stamp}_v{index:02d}.json"
+        meta = {
+            "post_type": "ECONOMIC_REEL_LOFI",
+            "mode": "script_only",
+            "page": page_id,
+            "module": module,
+            "duration_requested_s": duration_s,
+            "scene_count": len(script.get("lines") or []),
+            "scene_duration_s": lofi_cfg.beat_duration_s(),
+            "duration_expected_s": lofi_cfg.duration_for_beat_count(
+                len(script.get("lines") or [])
+            ),
+            "subtheme": script.get("subtheme"),
+            "hook_type": script.get("hook_type"),
+            "arc_template": script.get("arc_template"),
+            "retrieved_details": script.get("retrieved_details"),
+            "script": script,
+            "script_llm_calls": script_llm_calls,
+            "script_llm_cost_usd": script_llm_cost_usd,
+            "est_cost_usd": round(script_llm_cost_usd, 5),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        lines = list(script.get("lines") or [])
+        return LofiItemResult(
+            ok=True,
+            video_path=None,
+            meta_path=str(meta_path),
+            module=module,
+            theme=theme,
+            hook_type=str(script.get("hook_type") or ""),
+            scene_count=len(lines),
+            duration_s=lofi_cfg.duration_for_beat_count(len(lines)),
+            manual_review=False,
+            errors=[],
+            script=script,
+        )
+
+    # Working stills live under assets/; final deliverables go to clips/.
+    run_dir = assets_dir / f"lofi_run_{stamp}_{index:02d}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     lines = list(script.get("lines") or [])
+    episode_variety: dict[str, Any] = {}
     # V2 identity bank assembles prompts from beat fields (live riso JSON untouched).
     if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
         from core_engine.economic_reel_lofi.visual_identity import apply_v2_prompts_to_lines
 
-        apply_v2_prompts_to_lines(lines, theme_row=theme_row)
+        apply_v2_prompts_to_lines(
+            lines,
+            theme_row=theme_row,
+            vary_imagery=lofi_cfg.is_thematic_arc(str(script.get("arc_template") or "")),
+        )
+        if lines and isinstance(lines[0], dict):
+            raw_var = lines[0].pop("episode_variety", None)
+            if isinstance(raw_var, dict):
+                episode_variety = raw_var
+        if episode_variety:
+            script["episode_variety"] = episode_variety
         for row in lines:
             if not isinstance(row, dict):
                 continue
@@ -349,8 +767,11 @@ def _produce_one(
     voice_paths: list[Path | None] = []
     word_timings_per_scene: list[list[tuple[str, float, float]] | None] = []
     voice_settings_result: dict[str, Any] | None = None
+    n_image_calls = 0
+    n_critic_calls = 0
+    object_gate_by_scene: list[dict[str, Any]] = []
 
-    if bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
+    if (not stills_only) and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
         try:
             from avatar_engine.audio_engine import apply_elevenlabs_voice_settings
 
@@ -368,8 +789,9 @@ def _produce_one(
             msg = f"ElevenLabs voice settings/edit failed: {exc}"
             _LOG.warning(msg)
             print(f"[LOFI VO] WARN {msg}")
-            if bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True)):
-                qa_flags.append(msg)
+            # Best-effort persist of voice defaults. Do not hold the episode:
+            # TTS still sends per-call voice_settings, and a shadowed `config`
+            # module must not block a reel whose images already passed QA.
 
     for row in lines:
         scene_i = int(row.get("scene") or len(scene_paths) + 1)
@@ -385,12 +807,46 @@ def _produce_one(
         }
         ok_img = False
         last_flaws: list[str] = []
+        last_fix = ""
+        subject_type = str(row.get("subject_type") or "").strip()
+        key_object = str(row.get("key_object") or "").strip()
+        last_gate: dict[str, Any] = {
+            "scene": scene_i,
+            "subject_type": subject_type,
+            "key_object": key_object,
+            "passed": True,
+            "skipped": True,
+        }
+        last_intruder = False
+        focus_step = 0
+        scene_attempts: list[dict[str, Any]] = []
+        st_l = subject_type.strip().lower().replace(" ", "_")
         for attempt in range(1, lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE + 2):
             prompt_i = visual
-            if attempt > 1:
+            if st_l in {"object_focus", "silhouette"}:
+                if last_intruder:
+                    focus_step = min(focus_step + 1, 2)
+                from core_engine.economic_reel_lofi.visual_identity import (
+                    assemble_v2_prompt,
+                )
+
+                prompt_i = assemble_v2_prompt(row, focus_step=focus_step)
+                row["visual_prompt"] = prompt_i
+                print(
+                    f"[LOFI framing] scene={scene_i} attempt={attempt} "
+                    f"step={focus_step} kind={row.get('object_focus_framing')} "
+                    f"escalate_intruder={int(last_intruder)}"
+                )
+                if attempt > 1 and last_fix:
+                    guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
+                    extras = [p for p in (guard, last_fix) if p]
+                    if extras:
+                        prompt_i = f"{prompt_i} {' '.join(extras)}"
+            elif attempt > 1:
                 guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
-                if guard:
-                    prompt_i = f"{visual} {guard}"
+                extras = [p for p in (guard, last_fix) if p]
+                if extras:
+                    prompt_i = f"{visual} {' '.join(extras)}"
             try:
                 _, mood_meta = generate_scene_image(
                     prompt_i,
@@ -398,22 +854,66 @@ def _produce_one(
                     mood=mood_meta,
                     verbatim=True,
                 )
+                n_image_calls += 1
             except Exception as exc:  # noqa: BLE001
                 last_flaws = [f"image gen failed: {exc}"]
                 _LOG.warning("scene %s gen attempt %s failed: %s", scene_i, attempt, exc)
                 continue
-            passed, flaws = _qa_scene_image(out_img, visual)
+            n_critic_calls += 1
+            passed, flaws, last_fix = _qa_scene_image(
+                out_img, visual,
+                subject_type=subject_type,
+                key_object=key_object,
+            )
+            gate_ok, gate_flaws, gate_meta = assess_default_object_intrusion(
+                out_img,
+                subject_type=subject_type,
+                key_object=key_object,
+            )
+            style_ok, style_flaws, style_meta = assess_photoreal_style(
+                out_img,
+                subject_type=subject_type,
+            )
+            gate_meta = dict(gate_meta)
+            gate_meta["scene"] = scene_i
+            gate_meta["attempt"] = attempt
+            gate_meta["focus_step"] = focus_step
+            gate_meta["framing"] = row.get("object_focus_framing") or ""
+            gate_meta["style_gate"] = style_meta
+            last_gate = gate_meta
+            last_intruder = bool(gate_flaws)
+            if gate_flaws:
+                flaws = list(flaws) + gate_flaws
+                passed = False
+                extra_fix = str(gate_meta.get("fix_instructions") or "").strip()
+                if extra_fix:
+                    last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+            if style_flaws:
+                flaws = list(flaws) + style_flaws
+                passed = False
+                extra_fix = str(style_meta.get("fix_instructions") or "").strip()
+                if extra_fix:
+                    last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+            gate_meta["qa_passed"] = bool(passed)
+            gate_meta["qa_flaws"] = list(flaws)
             if passed:
                 ok_img = True
+                scene_attempts.append(dict(last_gate))
                 break
             last_flaws = flaws
+            scene_attempts.append(dict(last_gate))
             _LOG.info(
-                "VisualQA reject scene %s attempt %s: %s",
+                "VisualQA reject scene %s attempt %s subject=%s: %s",
                 scene_i,
                 attempt,
+                subject_type or "?",
                 "; ".join(flaws),
             )
-            # Retry same verbatim prompt (do not expand/hallucinate)
+        last_gate["image_ok"] = ok_img
+        last_gate["attempts"] = scene_attempts
+        last_gate["focus_step"] = focus_step
+        object_gate_by_scene.append(last_gate)
+        row["default_object_gate"] = last_gate
         if not ok_img:
             qa_flags.append(f"scene_{scene_i}: {'; '.join(last_flaws) or 'qa failed'}")
             if not out_img.is_file():
@@ -425,10 +925,15 @@ def _produce_one(
         captions.append(caption)
         scene_moods.append(mood_meta)
 
-        # Per-scene VO + word timestamps (test voice until approved)
+        # Per-scene VO + word timestamps (skipped in stills-only preview)
         vo_path: Path | None = None
         timings: list[tuple[str, float, float]] | None = None
-        if bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)) and caption.strip():
+        if (
+            (not stills_only)
+            and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True))
+            and caption.strip()
+            and not qa_flags
+        ):
             try:
                 from avatar_engine.audio_engine import generate_voiceover_with_timestamps
 
@@ -478,16 +983,232 @@ def _produce_one(
         c if c.isalnum() else "_"
         for c in str(script.get("theme") or "lofi").lower()
     ).strip("_")[:32] or "lofi"
+
+    print("[LOFI object-gate] per-beat")
+    for g in object_gate_by_scene:
+        attempts = list(g.get("attempts") or [g])
+        status = "SKIP" if g.get("skipped") else ("PASS" if g.get("passed") else "FAIL")
+        print(
+            f"[LOFI object-gate] scene={g.get('scene')} {status} "
+            f"type={g.get('subject_type')} object={g.get('key_object')!r} "
+            f"bbox={g.get('intruder_bbox_frac')} ratio={g.get('ratio')} "
+            f"n={g.get('n_intruders')} step={g.get('focus_step')}"
+        )
+        if len(attempts) > 1 or (attempts and attempts[0].get("attempt")):
+            for a in attempts:
+                a_st = "SKIP" if a.get("skipped") else ("PASS" if a.get("passed") else "FAIL")
+                print(
+                    f"[LOFI object-gate]   attempt={a.get('attempt')} {a_st} "
+                    f"step={a.get('focus_step')} framing={a.get('framing')!r} "
+                    f"bbox={a.get('intruder_bbox_frac')} ratio={a.get('ratio')}"
+                )
+                sg = a.get("style_gate") if isinstance(a.get("style_gate"), dict) else {}
+                if sg and not sg.get("skipped"):
+                    sg_st = "PASS" if sg.get("passed") else "FAIL"
+                    print(
+                        f"[LOFI style-gate]   attempt={a.get('attempt')} {sg_st} "
+                        f"std={sg.get('std')} edge={sg.get('edge')} "
+                        f"lap_var={sg.get('lap_var')} uniq16={sg.get('uniq16')}"
+                    )
+
+    # Single source of truth for the FLUX-schnell $/image estimate: the real
+    # DeepInfra formula, called with the actual width/height/steps this
+    # pipeline requests (no more separately-hardcoded per-call guesses).
+    # Computed here (not inside `if stills_only`) so cost is visible on every
+    # exit path, including the full production render.
+    from VisualQA_Agent.config import COST_GEMINI_FLASH_USD
+    from avatar_engine.providers.together_image import estimate_deepinfra_schnell_cost_usd
+
+    img_cost_per_call = estimate_deepinfra_schnell_cost_usd(
+        LOFI_IMAGE_WIDTH, LOFI_IMAGE_HEIGHT, LOFI_IMAGE_STEPS
+    )
+    img_cost = img_cost_per_call * n_image_calls
+    critic_cost = COST_GEMINI_FLASH_USD * n_critic_calls
+    media_cost = img_cost + critic_cost
+    total_est_cost = round(media_cost + script_llm_cost_usd, 5)
+    print(
+        f"[LOFI cost] script_llm_calls={script_llm_calls} "
+        f"script_cost=${script_llm_cost_usd:.4f} | images={n_image_calls} "
+        f"image_cost=${img_cost:.4f} | critic={n_critic_calls} "
+        f"critic_cost=${critic_cost:.4f} | total_est_cost=${total_est_cost:.4f}"
+    )
+
+    if stills_only:
+        n_beats = max(1, len(captions) or len(lines))
+        stills_cost = media_cost
+        # Full render pays the same image+critic, plus 9 TTS calls and MoviePy encode.
+        # ElevenLabs eleven_v3 is ~$0.12–0.30 / 1k chars; 9 short captions ≈ $0.03–0.08.
+        # Encode on the last full reel was ~8 min after stills were done.
+        print(
+            f"[LOFI stills-only] beats={n_beats} images={n_image_calls} "
+            f"critic={n_critic_calls} est_cost=${stills_cost:.4f} "
+            f"(image ${img_cost:.4f} + critic ${critic_cost:.4f}) | "
+            f"skipped TTS + video assemble"
+        )
+        print(
+            "[LOFI stills-only] vs full render: same image+critic cost; "
+            "saves ~9 ElevenLabs TTS calls (~$0.03–0.08) and ~5–8 min MoviePy encode. "
+            "Typical full 9-beat wall time ~12 min; stills-only is image+QA only."
+        )
+        mix: dict[str, int] = {}
+        for row in lines:
+            st = str(row.get("subject_type") or "?").strip().lower() or "?"
+            mix[st] = mix.get(st, 0) + 1
+        print(f"[LOFI stills-only] subject_type mix={mix}")
+        for row in lines:
+            print(
+                f"[LOFI stills-only] scene={row.get('scene')} "
+                f"type={row.get('subject_type')} object={row.get('key_object')!r} "
+                f"text={str(row.get('text') or '')[:56]!r}"
+            )
+        meta = {
+            "post_type": "ECONOMIC_REEL_LOFI",
+            "mode": "stills_only",
+            "page": page_id,
+            "module": module,
+            "duration_requested_s": duration_s,
+            "scene_count": n_beats,
+            "scene_duration_s": lofi_cfg.beat_duration_s(),
+            "duration_expected_s": lofi_cfg.duration_for_beat_count(n_beats),
+            "subtheme": script.get("subtheme"),
+            "hook_type": script.get("hook_type"),
+            "quote_id": script.get("quote_id"),
+            "anchor_object": script.get("anchor_object"),
+            "arc_template": script.get("arc_template"),
+            "retrieved_details": script.get("retrieved_details"),
+            "script": script,
+            "riso_ids": [str(r.get("riso_id") or "") for r in lines],
+            "visual_identity": "v2"
+            if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
+            else "riso_library",
+            "scene_images": [str(p) for p in scene_paths],
+            "work_dir": str(run_dir),
+            "visual_qa_flags": qa_flags,
+            "manual_review": bool(qa_flags),
+            "episode_variety": episode_variety,
+            "object_gate_by_scene": object_gate_by_scene,
+            "image_calls": n_image_calls,
+            "critic_calls": n_critic_calls,
+            "script_llm_calls": script_llm_calls,
+            "script_llm_cost_usd": script_llm_cost_usd,
+            "est_cost_usd": total_est_cost,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        meta_path = clips_dir / f"lofi_stills_{theme_slug}_{stamp}_v{index:02d}.json"
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"[LOFI stills-only] wrote {meta_path}")
+        print(f"[LOFI stills-only] stills {run_dir}")
+        if qa_flags:
+            print(
+                "[LOFI HOLD] QA exhausted — stills kept for review, episode NOT "
+                f"cleared for render/post. flags={qa_flags}"
+            )
+        return LofiItemResult(
+            ok=not bool(qa_flags),
+            video_path=None,
+            meta_path=str(meta_path),
+            module=module,
+            theme=str(script.get("theme") or ""),
+            hook_type=str(script.get("hook_type") or ""),
+            scene_count=n_beats,
+            duration_s=lofi_cfg.duration_for_beat_count(n_beats),
+            manual_review=bool(qa_flags),
+            errors=qa_flags,
+            script=script,
+            work_dir=str(run_dir),
+            stills_only=True,
+        )
+
+    if qa_flags:
+        n_beats = max(1, len(captions) or len(lines))
+        print(
+            "[LOFI HOLD] QA exhausted — NOT assembling MP4, not postable. "
+            f"flags={qa_flags}"
+        )
+        print(f"[LOFI HOLD] stills kept at {run_dir}")
+        hold_meta = {
+            "post_type": "ECONOMIC_REEL_LOFI",
+            "mode": "qa_hold",
+            "page": page_id,
+            "module": module,
+            "duration_requested_s": duration_s,
+            "scene_count": n_beats,
+            "subtheme": script.get("subtheme"),
+            "hook_type": script.get("hook_type"),
+            "arc_template": script.get("arc_template"),
+            "script": script,
+            "scene_images": [str(p) for p in scene_paths],
+            "work_dir": str(run_dir),
+            "visual_qa_flags": qa_flags,
+            "manual_review": True,
+            "episode_variety": episode_variety,
+            "object_gate_by_scene": object_gate_by_scene,
+            "video_path": None,
+            "image_calls": n_image_calls,
+            "critic_calls": n_critic_calls,
+            "script_llm_calls": script_llm_calls,
+            "script_llm_cost_usd": script_llm_cost_usd,
+            "est_cost_usd": total_est_cost,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        hold_path = clips_dir / f"lofi_hold_{theme_slug}_{stamp}_v{index:02d}.json"
+        hold_path.write_text(
+            json.dumps(hold_meta, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"[LOFI HOLD] meta {hold_path}")
+        return LofiItemResult(
+            ok=False,
+            video_path=None,
+            meta_path=str(hold_path),
+            module=module,
+            theme=str(script.get("theme") or ""),
+            hook_type=str(script.get("hook_type") or ""),
+            scene_count=n_beats,
+            duration_s=0.0,
+            manual_review=True,
+            errors=qa_flags,
+            script=script,
+            work_dir=str(run_dir),
+        )
+
     out_mp4 = clips_dir / f"lofi_reel_{theme_slug}_{stamp}_v{index:02d}.mp4"
+    n_beats = max(1, len(captions) or len(lines))
+    lock_beat = bool(getattr(lofi_cfg, "LOCK_FIXED_BEAT_DURATION", True))
+    beat_s = float(lofi_cfg.beat_duration_s())
     scene_durations: list[float] = []
     scene_timing_flags: list[dict[str, Any]] = []
     for i, cap in enumerate(captions):
         timings_i = word_timings_per_scene[i] if i < len(word_timings_per_scene) else None
         vp_i = voice_paths[i] if i < len(voice_paths) else None
-        dur_i, extended_i, dur_meta = compute_caption_scene_duration_s(
-            timings_i,
-            Path(vp_i) if vp_i else None,
-        )
+        if lock_beat:
+            vo_dur = 0.0
+            if vp_i and Path(vp_i).is_file():
+                try:
+                    from avatar_engine.audio_engine import _audio_file_duration_s
+
+                    vo_dur = float(_audio_file_duration_s(Path(vp_i)))
+                except Exception:  # noqa: BLE001
+                    vo_dur = 0.0
+            dur_i, extended_i = lofi_cfg.slot_duration_for_vo(vo_dur, base_s=beat_s)
+            dur_meta = {
+                "base_s": beat_s,
+                "vo_dur": round(vo_dur, 3),
+                "needed_s": dur_i,
+                "duration_s": dur_i,
+                "locked": True,
+                "vo_trimmed": False,
+            }
+            if extended_i:
+                print(
+                    f"[LOFI caption-timing] scene {i + 1} VO {vo_dur:.2f}s > "
+                    f"{beat_s:.1f}s base — extending slot to {dur_i:.2f}s "
+                    f"(never trim VO) | text={cap!r}"
+                )
+        else:
+            dur_i, extended_i, dur_meta = compute_caption_scene_duration_s(
+                timings_i,
+                Path(vp_i) if vp_i else None,
+            )
         scene_durations.append(dur_i)
         scene_timing_flags.append(
             {
@@ -504,6 +1225,11 @@ def _produce_one(
                 f"display + hold | text={cap!r}"
             )
     actual_dur = float(sum(scene_durations))
+    print(
+        f"[LOFI timing] beats={n_beats} beat_s={beat_s:.1f} "
+        f"total={actual_dur:.1f}s locked={int(lock_beat)} "
+        f"(requested_writer_target={duration_s}s)"
+    )
     try:
         assemble_lofi_reel(
             scene_paths,
@@ -538,8 +1264,10 @@ def _produce_one(
         "module": module,
         "duration_requested_s": duration_s,
         "duration_actual_s": actual_dur,
-        "scene_count": scene_count,
-        "scene_duration_s": lofi_cfg.SCENE_DURATION_S,
+        "duration_expected_s": lofi_cfg.duration_for_beat_count(n_beats),
+        "scene_count": n_beats,
+        "scene_duration_s": beat_s,
+        "pacing": "locked_3s_per_beat" if lock_beat else "vo_extend",
         "scene_durations": scene_durations,
         "caption_timing": scene_timing_flags,
         "voice_settings_api": voice_settings_result,
@@ -567,7 +1295,14 @@ def _produce_one(
         "voice_paths": [str(p) if p else None for p in voice_paths],
         "work_dir": str(run_dir),
         "visual_qa_flags": qa_flags,
-        "manual_review": bool(qa_flags),
+        "manual_review": False,
+        "episode_variety": episode_variety,
+        "object_gate_by_scene": object_gate_by_scene,
+        "image_calls": n_image_calls,
+        "critic_calls": n_critic_calls,
+        "script_llm_calls": script_llm_calls,
+        "script_llm_cost_usd": script_llm_cost_usd,
+        "est_cost_usd": total_est_cost,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     meta_path = clips_dir / f"{out_mp4.stem}.json"
@@ -592,9 +1327,9 @@ def _produce_one(
         module=module,
         theme=str(script.get("theme") or ""),
         hook_type=str(script.get("hook_type") or ""),
-        scene_count=scene_count,
+        scene_count=n_beats,
         duration_s=actual_dur,
-        manual_review=bool(qa_flags),
+        manual_review=False,
         errors=qa_flags,
         script=script,
     )
@@ -607,6 +1342,11 @@ def run_economic_reel_lofi(
     duration: int | None = None,
     module: str | None = None,
     outputs_dir: Path | str | None = None,
+    theme: str | None = None,
+    subtheme: str | None = None,
+    script_only: bool = False,
+    stills_only: bool = False,
+    locked_scripts: list[str] | None = None,
     **_: Any,
 ) -> dict[str, Any]:
     """
@@ -621,6 +1361,15 @@ def run_economic_reel_lofi(
     qty = max(1, int(quantity))
 
     rag.ensure_seeded()
+    reset_batch_structure_ids()
+    force_theme = str(theme or os.getenv("LOFI_FORCE_THEME") or "").strip() or None
+    force_subtheme = str(subtheme or os.getenv("LOFI_FORCE_SUBTHEME") or "").strip() or None
+    locked_rows: list[dict[str, Any]] = []
+    for raw_path in locked_scripts or []:
+        if str(raw_path).strip():
+            locked_rows.append(_load_locked_script(raw_path))
+    if locked_rows:
+        qty = len(locked_rows)
 
     page_outputs, clips_dir, assets_dir = _resolve_page_dirs(page, outputs_dir)
 
@@ -630,6 +1379,9 @@ def run_economic_reel_lofi(
         print(
             f"[ECONOMIC_REEL_LOFI] ({i}/{qty}) page={page} module={mod} "
             f"duration={dur}s scenes={lofi_cfg.scene_count_for_duration(dur)} "
+            f"theme={force_theme or 'auto'} "
+            f"{'STILLS-ONLY ' if stills_only else ''}"
+            f"{'SCRIPT-ONLY ' if script_only and not stills_only else ''}"
             f"→ {clips_dir}"
         )
         result = _produce_one(
@@ -638,13 +1390,22 @@ def run_economic_reel_lofi(
             duration_s=dur,
             clips_dir=clips_dir,
             assets_dir=assets_dir,
+            force_theme=force_theme,
+            force_subtheme=force_subtheme,
             index=i,
+            script_only=script_only and not stills_only,
+            stills_only=stills_only,
+            batch_qty=qty,
+            locked_script=locked_rows[i - 1] if i <= len(locked_rows) else None,
         )
         item = asdict(result)
         items.append(item)
         if result.ok:
             ok_n += 1
-            print(f"  Video : {result.video_path}")
+            if result.video_path:
+                print(f"  Video : {result.video_path}")
+            if result.work_dir:
+                print(f"  Stills: {result.work_dir}")
             print(f"  Meta  : {result.meta_path}")
             if result.manual_review:
                 print(f"  WARN  : flagged for manual review ({'; '.join(result.errors)})")
@@ -660,6 +1421,8 @@ def run_economic_reel_lofi(
         "duration_s": dur,
         "quantity": qty,
         "successful": ok_n,
+        "script_only": bool(script_only) and not stills_only,
+        "stills_only": bool(stills_only),
         "items": items,
         "outputs_dir": str(page_outputs),
         "clips_dir": str(clips_dir),

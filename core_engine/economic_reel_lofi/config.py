@@ -8,24 +8,59 @@ from typing import Any
 
 # ── Scene timing ────────────────────────────────────────────────────────────
 SCENE_DURATION_S: float = 3.0
-DEFAULT_DURATION_S: int = 27  # 9 scenes × 3 s
-MIN_DURATION_S: int = 27
-MAX_DURATION_S: int = 27
-MIN_SCENES: int = 9
-MAX_SCENES: int = 9
+# Thematic default: 9 beats × 3.0s = 27.0s (loss baseline). Writer may emit 8–9;
+# anything above 9 is clamped unless --duration is explicitly longer than 27s.
+LOCK_FIXED_BEAT_DURATION: bool = True
+# Never hard-trim finished VO. If a beat's VO exceeds 3.0s, that slot extends
+# (small variance, typically 3.0–3.4s). Do not add CAPTION_HOLD_S on top.
+NEVER_TRIM_VOICEOVER: bool = True
+VO_SLOT_PAD_S: float = 0.05
+DEFAULT_DURATION_S: int = 27  # thematic default total; writer target = 9 scenes
+MIN_DURATION_S: int = 15
+MAX_DURATION_S: int = 30
+MIN_SCENES: int = 8
+MAX_SCENES: int = 12
+THEMATIC_DEFAULT_SCENES: int = 9
+THEMATIC_MAX_SCENES: int = 9
 
 # ── Script / validation ─────────────────────────────────────────────────────
-MAX_CAPTION_CHARS: int = 42  # one line at ~65px; ~3–6 words
+MAX_CAPTION_CHARS: int = 42  # object-arc one-liner
 MAX_CAPTION_WORDS: int = 7
+# Thematic beats stay short (4–9 words) but may be sentence fragments.
+THEMATIC_MAX_CAPTION_CHARS: int = 56
+THEMATIC_MAX_CAPTION_WORDS: int = 9
+THEMATIC_ARC_ID: str = "thematic_arc"
+# Wonder Feed + Momma Circle production default (object arcs remain in the bank).
+DEFAULT_ARC_BY_MODULE: dict[str, str] = {
+    "relationship": "thematic_arc",
+    "parenting": "thematic_arc",
+}
 CAPTION_HOLD_S: float = 0.55  # breath after the last word before a cut
 AUTHORITY_QUOTE_PROBABILITY: float = 0.0  # story monologue, not quote-maxims
 SCRIPT_MAX_RETRIES: int = 3
 DEDUP_SIMILARITY_THRESHOLD: float = 0.85
+# Auto-reject if a script copies stored wf1–4 / mc1–3 transcripts.
+REFERENCE_OVERLAP_THRESHOLD: float = 0.80
 IMAGE_MAX_RETRIES_PER_SCENE: int = 2
 # Core Mode (a) retrieval — not quote/philosopher mode (b)
 CORE_DETAIL_COUNT: int = 3
 REQUIRE_ANCHOR_OBJECT: bool = True
 REQUIRE_BEAT_CONCRETENESS: bool = True
+THEMATIC_HOOK_TYPES: frozenset[str] = frozenset(
+    {"bold_claim", "question", "statistic", "definition", "rhetorical_question"}
+)
+
+
+def is_thematic_arc(arc_id: str | None) -> bool:
+    return str(arc_id or "").strip() == THEMATIC_ARC_ID
+
+
+def caption_limits(arc_id: str | None = None) -> tuple[int, int]:
+    """Return (max_words, max_chars) for this arc."""
+    if is_thematic_arc(arc_id):
+        return THEMATIC_MAX_CAPTION_WORDS, THEMATIC_MAX_CAPTION_CHARS
+    return MAX_CAPTION_WORDS, MAX_CAPTION_CHARS
+
 
 VALID_MODULES: frozenset[str] = frozenset({"relationship", "parenting"})
 MODULE_PAGE_GATES: dict[str, frozenset[str]] = {
@@ -274,11 +309,57 @@ def build_style_prefix(mood: dict[str, Any] | None = None) -> str:
     return LOFI_STYLE_BASE
 
 
-def scene_count_for_duration(duration_s: int | float) -> int:
-    """Scene count = round(duration / SCENE_DURATION_S), clamped to min/max."""
+def thematic_max_scenes(duration_s: int | float | None = None) -> int:
+    """Hard cap for thematic_arc. Default 9; only rises if duration > 27s."""
+    cap = int(THEMATIC_MAX_SCENES)
+    if duration_s is None:
+        return cap
+    d = float(duration_s)
+    if d > float(THEMATIC_DEFAULT_SCENES) * float(SCENE_DURATION_S) + 0.05:
+        n = int(round(d / SCENE_DURATION_S))
+        return max(cap, min(MAX_SCENES, n))
+    return cap
+
+
+def scene_count_for_duration(
+    duration_s: int | float,
+    *,
+    thematic: bool = True,
+) -> int:
+    """Writer target scene count. Thematic default is 9, not round(24/3)=8."""
+    if thematic:
+        d = float(duration_s)
+        if d > float(THEMATIC_DEFAULT_SCENES) * float(SCENE_DURATION_S) + 0.05:
+            n = int(round(d / SCENE_DURATION_S))
+            return max(THEMATIC_DEFAULT_SCENES, min(MAX_SCENES, n))
+        return int(THEMATIC_DEFAULT_SCENES)
     d = float(duration_s)
     n = int(round(d / SCENE_DURATION_S))
     return max(MIN_SCENES, min(MAX_SCENES, n))
+
+
+def slot_duration_for_vo(
+    vo_dur: float,
+    *,
+    base_s: float | None = None,
+) -> tuple[float, bool]:
+    """Return (slot_s, extended). Slot is at least 3.0s; grows to fit VO, never shrinks VO."""
+    base = float(base_s if base_s is not None else SCENE_DURATION_S)
+    vo = max(0.0, float(vo_dur or 0.0))
+    pad = float(VO_SLOT_PAD_S)
+    if vo > base + 0.05:
+        return round(vo + pad, 3), True
+    return base, False
+
+
+def duration_for_beat_count(n_beats: int) -> float:
+    """Nominal total if every beat is exactly SCENE_DURATION_S (VO-extend can add a little)."""
+    n = max(1, int(n_beats))
+    return round(float(n) * float(SCENE_DURATION_S), 3)
+
+
+def beat_duration_s() -> float:
+    return float(SCENE_DURATION_S)
 
 
 def validate_duration(duration_s: int | float) -> int:

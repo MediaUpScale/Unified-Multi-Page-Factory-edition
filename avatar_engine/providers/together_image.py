@@ -31,6 +31,16 @@ SDXL_DEFAULT_STEPS: int = 20
 # DeepInfra OpenAI-compatible images API (FLUX Schnell only)
 DEEPINFRA_OPENAI_BASE_URL: str = "https://api.deepinfra.com/v1/openai"
 DEEPINFRA_FLUX_SCHNELL_MODEL: str = "black-forest-labs/FLUX-1-schnell"
+DEEPINFRA_INFERENCE_URL: str = (
+    f"https://api.deepinfra.com/v1/inference/{DEEPINFRA_FLUX_SCHNELL_MODEL}"
+)
+DEEPINFRA_OPENAI_IMAGES_URL: str = (
+    "https://api.deepinfra.com/v1/openai/images/generations"
+)
+# Dashboard formula: $0.0005 × (width/1024) × (height/1024) × iters
+DEEPINFRA_SCHNELL_USD_PER_MEGAPIXEL_STEP: float = 0.0005
+# Native playground default if num_inference_steps is omitted: 1 (NOT 4).
+DEEPINFRA_SCHNELL_DEFAULT_STEPS_IF_OMITTED: int = 1
 
 # Estimated USD per image (Together AI approximate mid-2026 rates)
 FLUX_COST_USD: float = 0.003  # Schnell default (back-compat alias)
@@ -211,6 +221,151 @@ def cost_key_for_together_model(model_id: str | None) -> str:
     if "stable-diffusion" in low:
         return "image_sdxl"
     return "image_flux_schnell"
+
+
+def estimate_deepinfra_schnell_cost_usd(
+    width: int, height: int, steps: int
+) -> float:
+    """DeepInfra dashboard: $0.0005 × (w/1024) × (h/1024) × iters."""
+    return round(
+        DEEPINFRA_SCHNELL_USD_PER_MEGAPIXEL_STEP
+        * (float(width) / 1024.0)
+        * (float(height) / 1024.0)
+        * float(max(1, int(steps))),
+        6,
+    )
+
+
+def _b64_from_deepinfra_inference(data: Any) -> str:
+    """Parse native DeepInfra inference JSON into a raw base64 string."""
+    if not isinstance(data, dict):
+        raise RuntimeError(f"DeepInfra inference returned non-object: {type(data)}")
+    images = data.get("images") or data.get("image")
+    if isinstance(images, str):
+        images = [images]
+    if isinstance(images, list) and images:
+        first = images[0]
+        if isinstance(first, str) and first.strip():
+            if first.startswith("http://") or first.startswith("https://"):
+                import requests as _req
+
+                img_resp = _req.get(first, timeout=120)
+                img_resp.raise_for_status()
+                return base64.b64encode(img_resp.content).decode("ascii")
+            return TogetherImageGenerator._strip_b64_payload(first)
+        if isinstance(first, dict):
+            for key in ("b64_json", "b64", "base64", "data"):
+                val = first.get(key)
+                if isinstance(val, str) and val.strip():
+                    return TogetherImageGenerator._strip_b64_payload(val)
+    items = data.get("data") or []
+    if items:
+        item = items[0]
+        if isinstance(item, dict):
+            for key in ("b64_json", "b64", "base64"):
+                val = item.get(key)
+                if isinstance(val, str) and val.strip():
+                    return TogetherImageGenerator._strip_b64_payload(val)
+    raise RuntimeError(f"DeepInfra inference missing image payload: {list(data)[:12]}")
+
+
+def post_deepinfra_flux_schnell(
+    *,
+    prompt: str,
+    width: int,
+    height: int,
+    steps: int = FLUX_DEFAULT_STEPS,
+    negative_prompt: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """
+    POST DeepInfra FLUX-1-schnell with ``num_inference_steps`` in the JSON body.
+
+    Never omit steps — DeepInfra's native default is 1, not 4.
+    Uses the native inference endpoint so Pydantic OpenAI-compat schemas
+    cannot strip the field.
+    """
+    import requests as _req
+
+    steps_i = max(1, int(steps))
+    width_i = int(width)
+    height_i = int(height)
+    key = (api_key or os.getenv("DEEPINFRA_API_KEY") or "").strip()
+    if not key:
+        try:
+            import config as app_config
+
+            key = (getattr(app_config, "DEEPINFRA_API_KEY", None) or "").strip()
+        except Exception:  # noqa: BLE001
+            pass
+    if not key:
+        raise ValueError("DEEPINFRA_API_KEY missing from environment.")
+
+    payload: dict[str, Any] = {
+        "prompt": prompt,
+        "width": width_i,
+        "height": height_i,
+        "num_inference_steps": steps_i,
+        "num_images": 1,
+        "guidance_scale": 0.0,
+    }
+    merged_neg = merge_negative_prompt(negative_prompt)
+    if merged_neg:
+        payload["negative_prompt"] = merged_neg
+    cost = estimate_deepinfra_schnell_cost_usd(width_i, height_i, steps_i)
+    sent = {k: v for k, v in payload.items() if k not in {"prompt", "negative_prompt"}}
+    print(
+        f"[DeepInfra Schnell] POST {DEEPINFRA_INFERENCE_URL} | "
+        f"payload={sent} | est_cost=${cost:.5f} "
+        f"(dashboard $0.0005*(w/1024)*(h/1024)*iters)"
+    )
+    logger.info("DeepInfra Schnell request body (sans prompt)=%s cost=$%.5f", sent, cost)
+
+    resp = _req.post(
+        DEEPINFRA_INFERENCE_URL,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=180,
+    )
+    if resp.status_code >= 400:
+        # Fallback: OpenAI-compat URL with steps as a TOP-LEVEL field (not extra_body).
+        openai_payload: dict[str, Any] = {
+            "model": DEEPINFRA_FLUX_SCHNELL_MODEL,
+            "prompt": prompt,
+            "size": f"{width_i}x{height_i}",
+            "n": 1,
+            "response_format": "b64_json",
+            "num_inference_steps": steps_i,
+            "width": width_i,
+            "height": height_i,
+        }
+        if merged_neg:
+            openai_payload["negative_prompt"] = merged_neg
+        print(
+            f"[DeepInfra Schnell] native inference HTTP {resp.status_code} — "
+            f"retry OpenAI-compat with top-level num_inference_steps={steps_i} | "
+            f"body={resp.text[:400]!r}"
+        )
+        resp2 = _req.post(
+            DEEPINFRA_OPENAI_IMAGES_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json=openai_payload,
+            timeout=180,
+        )
+        if resp2.status_code >= 400:
+            raise RuntimeError(
+                f"DeepInfra Schnell failed native={resp.status_code} "
+                f"openai={resp2.status_code}: {resp2.text[:800]}"
+            )
+        data = resp2.json()
+        b64 = _b64_from_deepinfra_inference(data)
+        return {"data": [{"b64_json": b64}]}
+    data = resp.json()
+    b64 = _b64_from_deepinfra_inference(data)
+    return {"data": [{"b64_json": b64}]}
 
 
 def default_steps_for_model(model_id: str | None) -> int:
@@ -756,33 +911,15 @@ class TogetherImageGenerator:
         steps: int,
         negative_prompt: str | None,
     ) -> Any:
-        """FLUX Schnell via DeepInfra OpenAI-compatible ``images.generate``."""
-        client = self._ensure_deepinfra_client()
-        extra_body: dict[str, Any] = {
-            "num_inference_steps": int(steps),
-            "width": int(width),
-            "height": int(height),
-        }
-        merged_neg = merge_negative_prompt(negative_prompt)
-        if merged_neg:
-            extra_body["negative_prompt"] = merged_neg
-        gen_args: dict[str, Any] = {
-            "model": DEEPINFRA_FLUX_SCHNELL_MODEL,
-            "prompt": prompt,
-            "size": f"{int(width)}x{int(height)}",
-            "n": 1,
-            "response_format": "b64_json",
-            "extra_body": extra_body,
-        }
-        try:
-            return client.images.generate(**gen_args)
-        except TypeError:
-            gen_args.pop("extra_body", None)
-            try:
-                return client.images.generate(**gen_args)
-            except TypeError:
-                gen_args.pop("response_format", None)
-                return client.images.generate(**gen_args)
+        """FLUX Schnell via DeepInfra native inference — steps always in JSON body."""
+        return post_deepinfra_flux_schnell(
+            prompt=prompt,
+            width=int(width),
+            height=int(height),
+            steps=int(steps),
+            negative_prompt=negative_prompt,
+            api_key=self._deepinfra_api_key,
+        )
 
     def generate_image(
         self,
@@ -828,7 +965,10 @@ class TogetherImageGenerator:
             )
             steps = FLUX_DEFAULT_STEPS
 
-        est_cost = estimate_together_image_cost(active_model)
+        if _is_flux_schnell_model(active_model):
+            est_cost = estimate_deepinfra_schnell_cost_usd(int(width), int(height), int(steps))
+        else:
+            est_cost = estimate_together_image_cost(active_model)
         # Quiet by default — batch loops must not spam console; summary prints once.
         _verbose = (os.getenv("MODEL_ROUTER_VERBOSE") or "").strip().lower() in (
             "1", "true", "yes", "on",

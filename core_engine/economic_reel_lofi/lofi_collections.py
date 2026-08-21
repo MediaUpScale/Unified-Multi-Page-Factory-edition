@@ -93,7 +93,9 @@ def ensure_seeded() -> None:
         else:
             _write_json(dest, [])
 
-    _merge_concrete_details_sidecar()
+    _merge_concrete_details_sidecars()
+    _merge_thematic_hooks_sidecars()
+    _purge_banned_hooks_from_theme_banks()
 
     for module in ("relationship", "parenting"):
         hist = _store_path(f"lofi_generated_history_{module}")
@@ -180,7 +182,26 @@ _THEME_FIELD_COPY = (
     "preferred_mood_palette",
     "sample_scene",
     "concrete_details",
+    "hooks",
 )
+
+
+def _normalize_hook(item: Any) -> dict[str, Any] | None:
+    if isinstance(item, str):
+        text = item.strip()
+        if not text:
+            return None
+        return {"text": text, "last_used_date": None, "performance_score": None}
+    if not isinstance(item, dict):
+        return None
+    text = str(item.get("text") or "").strip()
+    if not text:
+        return None
+    return {
+        "text": text,
+        "last_used_date": item.get("last_used_date"),
+        "performance_score": item.get("performance_score"),
+    }
 
 
 def _merge_new_seed_rows(dest: Path, src: Path) -> None:
@@ -250,6 +271,19 @@ def _merge_new_seed_rows(dest: Path, src: Path) -> None:
                         filled += 1
                     live_row[field] = live_details
                     continue
+                if field == "hooks" and isinstance(incoming_val, list):
+                    live_hooks = [_normalize_hook(h) for h in (live_row.get(field) or [])]
+                    live_hooks = [h for h in live_hooks if h]
+                    have_h = {h["text"].lower() for h in live_hooks}
+                    for h in incoming_val:
+                        nh = _normalize_hook(h)
+                        if not nh or nh["text"].lower() in have_h:
+                            continue
+                        live_hooks.append(nh)
+                        have_h.add(nh["text"].lower())
+                        filled += 1
+                    live_row[field] = live_hooks
+                    continue
                 if incoming_val and not live_row.get(field):
                     live_row[field] = incoming_val
                     filled += 1
@@ -278,13 +312,42 @@ def _theme_lru_key(row: dict[str, Any]) -> str:
     return raw if raw else "0000-01-01"
 
 
-def select_theme(module: str) -> dict[str, Any]:
+def select_theme(
+    module: str,
+    theme: str | None = None,
+    subtheme: str | None = None,
+) -> dict[str, Any]:
     """Next unused theme, else least-recently-used — never collapse to rows[0]."""
     ensure_seeded()
     path = _store_path(_theme_bank_name(module))
     rows = _read_json(path, [])
     if not isinstance(rows, list) or not rows:
         return {"theme": "connection", "subtheme": "general", "status": "unused"}
+
+    want = str(theme or "").strip().lower()
+    want_sub = str(subtheme or "").strip().lower()
+    if want:
+        matches = [
+            r
+            for r in rows
+            if isinstance(r, dict) and str(r.get("theme") or "").strip().lower() == want
+        ]
+        if want_sub:
+            sub_hits = [
+                r
+                for r in matches
+                if str(r.get("subtheme") or "").strip().lower() == want_sub
+            ]
+            if sub_hits:
+                matches = sub_hits
+        if matches:
+            chosen = dict(matches[0])
+            print(
+                f"[LOFI theme] forced theme={chosen.get('theme')} "
+                f"subtheme={chosen.get('subtheme')}"
+            )
+            return chosen
+        print(f"[LOFI theme] WARN forced theme={theme!r} not found — falling through")
 
     unused = [r for r in rows if isinstance(r, dict) and str(r.get("status", "unused")) == "unused"]
     if unused:
@@ -375,6 +438,13 @@ def chroma_enabled() -> bool:
 
 ARC_TEMPLATES: tuple[dict[str, str], ...] = (
     {
+        "id": "thematic_arc",
+        "label": "hook → build → tension → insight → close",
+        "act1": "hook + opening build of one theme",
+        "act2": "complication / cost of the same theme",
+        "act3": "insight and closing payoff",
+    },
+    {
         "id": "setup_ache_acceptance",
         "label": "setup/normalcy → absence/ache → quiet acceptance",
         "act1": "ordinary setup / what used to be true",
@@ -398,10 +468,15 @@ ARC_TEMPLATES: tuple[dict[str, str], ...] = (
 )
 
 
-def _merge_concrete_details_sidecar() -> None:
-    """Union curated details onto live relationship theme rows by subtheme."""
-    src = lofi_cfg.DATA_DIR / "seed_concrete_details_relationship.json"
-    dest = _store_path("lofi_theme_bank_relationship")
+def _merge_concrete_details_sidecars() -> None:
+    """Union curated sidecar details onto live theme banks (relationship + parenting)."""
+    for module in ("relationship", "parenting"):
+        _merge_concrete_details_for_module(module)
+
+
+def _merge_concrete_details_for_module(module: str) -> None:
+    src = lofi_cfg.DATA_DIR / f"seed_concrete_details_{module}.json"
+    dest = _store_path(_theme_bank_name(module))
     if not src.is_file() or not dest.is_file():
         return
     sidecar = _read_json(src, [])
@@ -445,7 +520,82 @@ def _merge_concrete_details_sidecar() -> None:
         row["concrete_details"] = live_details
     if filled:
         _write_json(dest, live)
-        print(f"[LOFI rag] merged {filled} concrete_details into theme bank")
+        print(
+            f"[LOFI rag] merged {filled} concrete_details into "
+            f"lofi_theme_bank_{module}"
+        )
+
+
+def _merge_thematic_hooks_sidecars() -> None:
+    """Union curated hook lists onto live theme banks."""
+    for module in ("relationship", "parenting"):
+        src = lofi_cfg.DATA_DIR / f"seed_thematic_hooks_{module}.json"
+        dest = _store_path(_theme_bank_name(module))
+        if not src.is_file() or not dest.is_file():
+            continue
+        sidecar = _read_json(src, [])
+        live = _read_json(dest, [])
+        if not isinstance(sidecar, list) or not isinstance(live, list):
+            continue
+        by_sub = {
+            str(r.get("subtheme") or ""): r.get("hooks")
+            for r in sidecar
+            if isinstance(r, dict) and r.get("subtheme")
+        }
+        filled = 0
+        for row in live:
+            if not isinstance(row, dict):
+                continue
+            incoming = by_sub.get(str(row.get("subtheme") or ""))
+            if not isinstance(incoming, list) or not incoming:
+                continue
+            live_hooks = [_normalize_hook(h) for h in (row.get("hooks") or [])]
+            live_hooks = [h for h in live_hooks if h]
+            have = {h["text"].lower() for h in live_hooks}
+            for h in incoming:
+                nh = _normalize_hook(h)
+                if not nh or nh["text"].lower() in have:
+                    continue
+                live_hooks.append(nh)
+                have.add(nh["text"].lower())
+                filled += 1
+            row["hooks"] = live_hooks
+        if filled:
+            _write_json(dest, live)
+            print(
+                f"[LOFI rag] merged {filled} hooks into lofi_theme_bank_{module}"
+            )
+
+
+def _purge_banned_hooks_from_theme_banks() -> None:
+    """Strip verbatim/near-verbatim reference lines from live hook lists."""
+    from core_engine.economic_reel_lofi.reference_guard import banned_hook_text
+
+    for module in ("relationship", "parenting"):
+        path = _store_path(_theme_bank_name(module))
+        live = _read_json(path, [])
+        if not isinstance(live, list):
+            continue
+        removed = 0
+        for row in live:
+            if not isinstance(row, dict):
+                continue
+            kept: list[dict[str, Any]] = []
+            for h in row.get("hooks") or []:
+                nh = _normalize_hook(h)
+                if not nh:
+                    continue
+                if banned_hook_text(nh["text"]):
+                    removed += 1
+                    continue
+                kept.append(nh)
+            row["hooks"] = kept
+        if removed:
+            _write_json(path, live)
+            print(
+                f"[LOFI rag] purged {removed} reference-copied hooks from "
+                f"lofi_theme_bank_{module}"
+            )
 
 
 def _detail_lru_key(detail: dict[str, Any]) -> tuple[str, float]:
@@ -458,29 +608,88 @@ def _detail_lru_key(detail: dict[str, Any]) -> tuple[str, float]:
     return (used, -sc)
 
 
+def _resolve_theme_module(theme_row: dict[str, Any] | None, module: str | None) -> str:
+    mod = str(module or (theme_row or {}).get("module") or "").strip().lower()
+    if mod in getattr(lofi_cfg, "VALID_MODULES", {"relationship", "parenting"}):
+        return mod
+    return "relationship"
+
+
+def _stamp_details_retrieved(
+    module: str,
+    theme: str,
+    subtheme: str,
+    picked: list[dict[str, Any]],
+) -> None:
+    """Mark retrieved details as used so LRU rotation actually moves."""
+    if not theme or not picked:
+        return
+    path = _store_path(_theme_bank_name(module))
+    rows = _read_json(path, [])
+    if not isinstance(rows, list):
+        return
+    today = date.today().isoformat()
+    needles = {
+        str(d.get("detail") or "").strip().lower()
+        for d in picked
+        if str(d.get("detail") or "").strip()
+    }
+    if not needles:
+        return
+    stamped = 0
+    for r in rows:
+        if str(r.get("theme")) != theme:
+            continue
+        if subtheme and str(r.get("subtheme") or "") != subtheme:
+            continue
+        details = list(r.get("concrete_details") or [])
+        for d in details:
+            if not isinstance(d, dict):
+                continue
+            if str(d.get("detail") or "").strip().lower() in needles:
+                d["last_used_date"] = today
+                stamped += 1
+        r["concrete_details"] = details
+        break
+    if stamped:
+        _write_json(path, rows)
+        print(
+            f"[LOFI rag] stamped last_used_date={today} n={stamped} "
+            f"theme={theme} subtheme={subtheme}"
+        )
+
+
 def select_concrete_details(
     theme_row: dict[str, Any] | None,
     *,
     n: int | None = None,
+    module: str | None = None,
 ) -> list[dict[str, str]]:
     """Pick 2–3 ownerless sensory details as writer inspiration (not verbatim lines)."""
     ensure_seeded()
     count = int(n if n is not None else getattr(lofi_cfg, "CORE_DETAIL_COUNT", 3))
     count = max(2, min(3, count))
-    raw = list((theme_row or {}).get("concrete_details") or [])
-    details = [d for d in raw if isinstance(d, dict) and str(d.get("detail") or "").strip()]
+    mod = _resolve_theme_module(theme_row, module)
+    theme = str((theme_row or {}).get("theme") or "")
+    sub = str((theme_row or {}).get("subtheme") or "")
+    details: list[dict[str, Any]] = []
+    live = _read_json(_store_path(_theme_bank_name(mod)), [])
+    for row in live if isinstance(live, list) else []:
+        if theme and str(row.get("theme")) != theme:
+            continue
+        if sub and str(row.get("subtheme") or "") != sub:
+            continue
+        details = [
+            d
+            for d in (row.get("concrete_details") or [])
+            if isinstance(d, dict) and str(d.get("detail") or "").strip()
+        ]
+        break
     if not details:
-        sub = str((theme_row or {}).get("subtheme") or "")
-        if sub:
-            live = _read_json(_store_path("lofi_theme_bank_relationship"), [])
-            for row in live if isinstance(live, list) else []:
-                if str(row.get("subtheme") or "") == sub:
-                    details = [
-                        d
-                        for d in (row.get("concrete_details") or [])
-                        if isinstance(d, dict) and str(d.get("detail") or "").strip()
-                    ]
-                    break
+        raw = list((theme_row or {}).get("concrete_details") or [])
+        details = [
+            d for d in raw if isinstance(d, dict) and str(d.get("detail") or "").strip()
+        ]
     if not details:
         return []
     ranked = sorted(details, key=_detail_lru_key)
@@ -492,11 +701,114 @@ def select_concrete_details(
         }
         for d in picked
     ]
+    _stamp_details_retrieved(
+        mod,
+        str((theme_row or {}).get("theme") or ""),
+        str((theme_row or {}).get("subtheme") or ""),
+        out,
+    )
     print(
-        f"[LOFI rag] details n={len(out)} subtheme={(theme_row or {}).get('subtheme')} "
+        f"[LOFI rag] details n={len(out)} module={mod} "
+        f"subtheme={(theme_row or {}).get('subtheme')} "
         + " | ".join(d["detail"] for d in out)
     )
     return out
+
+
+def _stamp_hooks_retrieved(
+    module: str,
+    theme: str,
+    subtheme: str,
+    picked: list[dict[str, Any]],
+) -> None:
+    if not theme or not picked:
+        return
+    path = _store_path(_theme_bank_name(module))
+    rows = _read_json(path, [])
+    if not isinstance(rows, list):
+        return
+    today = date.today().isoformat()
+    needles = {
+        str(h.get("text") or "").strip().lower()
+        for h in picked
+        if str(h.get("text") or "").strip()
+    }
+    if not needles:
+        return
+    stamped = 0
+    for r in rows:
+        if str(r.get("theme")) != theme:
+            continue
+        if subtheme and str(r.get("subtheme") or "") != subtheme:
+            continue
+        hooks = [_normalize_hook(h) for h in (r.get("hooks") or [])]
+        hooks = [h for h in hooks if h]
+        for h in hooks:
+            if h["text"].lower() in needles:
+                h["last_used_date"] = today
+                stamped += 1
+        r["hooks"] = hooks
+        break
+    if stamped:
+        _write_json(path, rows)
+        print(
+            f"[LOFI rag] stamped hook last_used_date={today} n={stamped} "
+            f"theme={theme} subtheme={subtheme}"
+        )
+
+
+def select_thematic_seed(
+    theme_row: dict[str, Any] | None,
+    *,
+    module: str | None = None,
+    n_hooks: int = 2,
+    n_details: int | None = None,
+) -> dict[str, Any]:
+    """Theme-keyed bundle: hooks[] + concrete details + optional quote."""
+    ensure_seeded()
+    mod = _resolve_theme_module(theme_row, module)
+    theme = str((theme_row or {}).get("theme") or "")
+    sub = str((theme_row or {}).get("subtheme") or "")
+    details = select_concrete_details(theme_row, n=n_details, module=mod)
+    hooks_raw: list[dict[str, Any]] = []
+    live = _read_json(_store_path(_theme_bank_name(mod)), [])
+    for row in live if isinstance(live, list) else []:
+        if theme and str(row.get("theme")) != theme:
+            continue
+        if sub and str(row.get("subtheme") or "") != sub:
+            continue
+        hooks_raw = [_normalize_hook(h) for h in (row.get("hooks") or [])]
+        hooks_raw = [h for h in hooks_raw if h]
+        break
+    if not hooks_raw:
+        hooks_raw = [
+            h
+            for h in (_normalize_hook(x) for x in ((theme_row or {}).get("hooks") or []))
+            if h
+        ]
+    ranked = sorted(hooks_raw, key=_detail_lru_key)
+    from core_engine.economic_reel_lofi.reference_guard import banned_hook_text
+
+    ranked = [h for h in ranked if not banned_hook_text(str(h.get("text") or ""))]
+    take = max(0, min(int(n_hooks), 3, len(ranked)))
+    picked_hooks = ranked[:take] if ranked else []
+    out_hooks = [{"text": h["text"]} for h in picked_hooks]
+    _stamp_hooks_retrieved(mod, theme, sub, picked_hooks)
+    quote = pick_quote_for_theme(theme, mod) if theme else None
+    # Only attach a quote when it is actually tagged to this theme.
+    if quote:
+        tags = " ".join(str(t) for t in (quote.get("tags") or [])).lower()
+        if theme.lower() not in tags:
+            quote = None
+    print(
+        f"[LOFI rag] thematic_seed hooks={len(out_hooks)} details={len(details)} "
+        f"quote={quote.get('id') if quote else None} theme={theme} subtheme={sub}"
+    )
+    return {
+        "hooks": out_hooks,
+        "details": details,
+        "quote": quote,
+    }
 
 
 def select_arc_template(
@@ -504,8 +816,19 @@ def select_arc_template(
     theme: str,
     subtheme: str = "",
 ) -> dict[str, str]:
-    """LRU arc shape per theme — same unused/oldest-date pattern as theme pick."""
+    """Pick arc shape. Wonder Feed / Momma Circle default to thematic_arc."""
     ensure_seeded()
+    default_id = str(
+        getattr(lofi_cfg, "DEFAULT_ARC_BY_MODULE", {}).get(module) or ""
+    ).strip()
+    if default_id:
+        for t in ARC_TEMPLATES:
+            if t["id"] == default_id:
+                print(
+                    f"[LOFI rag] arc={t['id']} (module default) "
+                    f"theme={theme} subtheme={subtheme}"
+                )
+                return dict(t)
     path = _store_path(_theme_bank_name(module))
     rows = _read_json(path, [])
     dates: dict[str, str] = {}

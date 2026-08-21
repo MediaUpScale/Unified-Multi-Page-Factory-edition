@@ -14,6 +14,11 @@ _LOG = logging.getLogger(__name__)
 LOFI_IMAGE_PROVIDER: str = "together.ai"
 LOFI_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"
 LOFI_IMAGE_STEPS: int = 4
+# Actual per-call resolution — cost accounting (pipeline.py) reads these so the
+# $/image estimate always matches what is really requested, instead of a
+# separately-hardcoded guess.
+LOFI_IMAGE_WIDTH: int = 768
+LOFI_IMAGE_HEIGHT: int = 1344
 
 
 def build_scene_prompt(
@@ -64,8 +69,8 @@ def generate_scene_image(
     visual_prompt: str,
     output_path: Path,
     *,
-    width: int = 768,
-    height: int = 1344,
+    width: int = LOFI_IMAGE_WIDTH,
+    height: int = LOFI_IMAGE_HEIGHT,
     mood: dict[str, Any] | None = None,
     mood_id: str | None = None,
     mood_key: str | int | None = None,

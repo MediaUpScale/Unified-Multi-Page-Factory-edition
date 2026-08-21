@@ -884,6 +884,7 @@ def assemble_lofi_reel(
 
     n_scenes = len(scene_images)
     scene_durs: list[float] = []
+    lock_beat = bool(getattr(lofi_cfg, "LOCK_FIXED_BEAT_DURATION", True))
     for i in range(n_scenes):
         preset = None
         if scene_durations is not None and i < len(scene_durations):
@@ -894,16 +895,42 @@ def assemble_lofi_reel(
         timings_i = None
         if word_timings_per_scene is not None and i < len(word_timings_per_scene):
             timings_i = word_timings_per_scene[i]
-        dur_i, extended_i, dur_meta = compute_caption_scene_duration_s(
-            timings_i,
-            Path(vp) if vp else None,
-            base_s=scene_duration_s,
-        )
-        if preset is not None:
-            dur_i = max(dur_i, preset)
+        if lock_beat:
+            vo_dur = 0.0
+            if vp and Path(vp).is_file():
+                try:
+                    from avatar_engine.audio_engine import _audio_file_duration_s
+
+                    vo_dur = float(_audio_file_duration_s(Path(vp)))
+                except Exception:  # noqa: BLE001
+                    vo_dur = 0.0
+            dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
+                vo_dur, base_s=scene_duration_s,
+            )
+            if preset is not None:
+                dur_i = max(float(preset), dur_i)
+            dur_meta = {
+                "vo_dur": round(vo_dur, 3),
+                "last_word_end": 0.0,
+                "needed_s": dur_i,
+                "duration_s": dur_i,
+            }
+        else:
+            dur_i, extended_i, dur_meta = compute_caption_scene_duration_s(
+                timings_i,
+                Path(vp) if vp else None,
+                base_s=scene_duration_s,
+            )
+            if preset is not None:
+                dur_i = max(dur_i, preset)
         scene_durs.append(dur_i)
         cap_preview = str(captions[i] if i < len(captions) else "")
-        flag = " EXTENDED" if extended_i or (preset is not None and preset > scene_duration_s + 0.04) else ""
+        flag = ""
+        if (not lock_beat) and (
+            extended_i
+            or (preset is not None and preset > scene_duration_s + 0.04)
+        ):
+            flag = " EXTENDED"
         print(
             f"[LOFI caption-timing] scene={i + 1}{flag} dur={dur_i:.2f}s "
             f"vo={dur_meta['vo_dur']:.2f}s last_word_end={dur_meta['last_word_end']:.2f}s "
@@ -1138,11 +1165,18 @@ def assemble_lofi_reel(
             vac = AudioFileClip(str(vp))
             audio_clips_to_close.append(vac)
             vdur = float(vac.duration or 0.0)
+            never_trim = bool(getattr(lofi_cfg, "NEVER_TRIM_VOICEOVER", True))
             if vdur > slot + 0.05:
-                print(
-                    f"[LOFI assemble] WARN scene {idx + 1} VO {vdur:.2f}s > "
-                    f"slot {slot:.2f}s — keeping full VO (no trim)"
-                )
+                if never_trim:
+                    print(
+                        f"[LOFI assemble] scene {idx + 1} VO {vdur:.2f}s > "
+                        f"slot {slot:.2f}s — keeping full VO (never trim)"
+                    )
+                else:
+                    print(
+                        f"[LOFI assemble] WARN scene {idx + 1} VO {vdur:.2f}s > "
+                        f"slot {slot:.2f}s — keeping full VO (no trim)"
+                    )
             elif vdur < slot - 0.05:
                 try:
                     from moviepy import concatenate_audioclips as _cat  # type: ignore
@@ -1203,13 +1237,24 @@ def assemble_lofi_reel(
     try:
         if vo_parts:
             vo_full = concatenate_audioclips(vo_parts)
-            if float(vo_full.duration or 0) > total_dur + 0.05:
-                vo_full = vo_full.subclipped(0, total_dur)
+            vo_len = float(vo_full.duration or 0)
+            mix_dur = float(total_dur)
+            if vo_len > total_dur + 0.05:
+                print(
+                    f"[LOFI assemble] VO concat {vo_len:.2f}s > video {total_dur:.2f}s "
+                    "— keeping full VO and extending mix (never trim)"
+                )
+                mix_dur = vo_len
             audio_clips_to_close.append(vo_full)
             layers = [vo_full]
             if bac is not None:
                 layers.append(bac)
-            mixed = CompositeAudioClip(layers).with_duration(total_dur)
+            mixed = CompositeAudioClip(layers).with_duration(mix_dur)
+            if mix_dur > float(final.duration or 0) + 0.05:
+                try:
+                    final = final.with_duration(mix_dur)
+                except Exception:  # noqa: BLE001
+                    pass
             final = final.with_audio(mixed)
             audio_attached = True
             print(f"[LOFI assemble] VO scenes={len(vo_parts)} + BGM mixed")

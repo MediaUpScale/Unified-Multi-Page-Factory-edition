@@ -73,6 +73,17 @@ _DEFAULT_CAPTION = (
 )
 
 
+def _sidecar_manual_review(path: Path) -> bool:
+    meta = path.with_suffix(".json")
+    if not meta.is_file():
+        return False
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return isinstance(data, dict) and bool(data.get("manual_review"))
+
+
 # ---------------------------------------------------------------------------
 # B2 upload helpers (inline — works without avatar_engine on PATH)
 # ---------------------------------------------------------------------------
@@ -312,7 +323,10 @@ def main(argv: list[str] | None = None) -> None:
 
     clips = sorted(
         p for p in clips_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in _VIDEO_EXTS
+        if p.is_file()
+        and p.suffix.lower() in _VIDEO_EXTS
+        and not any(part.lower() == "reproved" for part in p.parts)
+        and not _sidecar_manual_review(p)
     )
     if not clips:
         print(f"[ERROR] No video files found in: {clips_dir}")

@@ -1,8 +1,92 @@
 [
-  {"theme": "patience", "subtheme": "staying_soft_in_meltdowns", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "fleeting_season", "subtheme": "ordinary_minutes_matter", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "presence", "subtheme": "phones_down_eye_contact", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "gentle_discipline", "subtheme": "limits_with_warmth", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "sleep", "subtheme": "routines_as_safety", "status": "unused", "last_used_date": null, "performance_score": null},
-  {"theme": "self_compassion", "subtheme": "good_enough_mother", "status": "unused", "last_used_date": null, "performance_score": null}
+  {
+    "theme": "patience",
+    "subtheme": "staying_soft_in_meltdowns",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {"setting": "kitchen table after a cry", "key_object": "sippy cup on its side"},
+      {"setting": "hallway by the bedroom door", "key_object": "tiny shoes kicked off"},
+      {"setting": "living room rug at dusk", "key_object": "stuffed bear face-down"},
+      {"setting": "bedroom doorway left ajar", "key_object": "damp washcloth"},
+      {"setting": "kitchen floor in late light", "key_object": "scattered crayons"},
+      {"setting": "corner by the window", "key_object": "rocking chair still moving"}
+    ]
+  },
+  {
+    "theme": "fleeting_season",
+    "subtheme": "ordinary_minutes_matter",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {"setting": "hook by the front door", "key_object": "tiny coat hanging"},
+      {"setting": "afternoon kitchen table", "key_object": "snack crumbs on a plate"},
+      {"setting": "porch step at golden hour", "key_object": "sippy cup left behind"},
+      {"setting": "kitchen window at dusk", "key_object": "small handprints on glass"},
+      {"setting": "sofa in late sun", "key_object": "folded blanket"},
+      {"setting": "front door at evening", "key_object": "shoes that won't stay this size"}
+    ]
+  },
+  {
+    "theme": "presence",
+    "subtheme": "phones_down_eye_contact",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {"setting": "coffee table in the living room", "key_object": "phone laid face-down"},
+      {"setting": "kitchen table in morning light", "key_object": "two mugs waiting"},
+      {"setting": "sofa under a table lamp", "key_object": "child's drawing held up"},
+      {"setting": "living room rug", "key_object": "sofa cushion pulled close"},
+      {"setting": "couch at dusk", "key_object": "shared blanket across both laps"},
+      {"setting": "TV stand left dark", "key_object": "remote left untouched"}
+    ]
+  },
+  {
+    "theme": "gentle_discipline",
+    "subtheme": "limits_with_warmth",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {"setting": "kitchen table after dinner", "key_object": "two chairs pulled in"},
+      {"setting": "table beside a warm window", "key_object": "timer beside the plate"},
+      {"setting": "play table at afternoon", "key_object": "crayons back in the tin"},
+      {"setting": "hallway at evening", "key_object": "lamp left on"},
+      {"setting": "front door at dusk", "key_object": "small backpack"},
+      {"setting": "edge of the bed", "key_object": "same storybook"}
+    ]
+  },
+  {
+    "theme": "sleep",
+    "subtheme": "routines_as_safety",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {"setting": "bedside table at night", "key_object": "night lamp still on"},
+      {"setting": "edge of a child's bed", "key_object": "stuffed bear under the blanket"},
+      {"setting": "bedroom floor at bedtime", "key_object": "small shoes lined up"},
+      {"setting": "hallway outside the room", "key_object": "lamp dimmed"},
+      {"setting": "nightstand by the crib", "key_object": "sippy cup of water"},
+      {"setting": "pillow in low lamp light", "key_object": "same storybook"}
+    ]
+  },
+  {
+    "theme": "self_compassion",
+    "subtheme": "good_enough_mother",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "setting_object_pairs": [
+      {"setting": "kitchen table at dawn", "key_object": "cold cup of coffee"},
+      {"setting": "kitchen sink in morning light", "key_object": "dishes left overnight"},
+      {"setting": "bathroom counter at dawn", "key_object": "folded towel"},
+      {"setting": "kitchen chair pulled out", "key_object": "same chair at dawn"},
+      {"setting": "fridge door in dim light", "key_object": "unopened letter"},
+      {"setting": "stove at pale morning", "key_object": "kettle clicking off"}
+    ]
+  }
 ]

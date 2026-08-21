@@ -1,0 +1,92 @@
+[
+  {
+    "id": "wf1_betrayal",
+    "channel": "wonder_feed",
+    "lines": [
+      "Never ask a liar why they lied.",
+      "they would have to lie again.",
+      "one lie is never born alone",
+      "It always needs another to keep alive to protect the last",
+      "Until even they forget",
+      "And the lie becomes the only story they remember"
+    ]
+  },
+  {
+    "id": "wf2_detachment",
+    "channel": "wonder_feed",
+    "lines": [
+      "Let people lose you",
+      "Let them misunderstand you",
+      "Let them create their own stories",
+      "Don't rush to fix them",
+      "what you never needed to explain",
+      "when the right time comes"
+    ]
+  },
+  {
+    "id": "wf3_beauty_soul",
+    "channel": "wonder_feed",
+    "lines": [
+      "A beautiful face will age",
+      "and a perfect body will change",
+      "will always be a beautiful soul",
+      "faces are just the cover",
+      "souls are the story"
+    ]
+  },
+  {
+    "id": "wf4_genuine_love",
+    "channel": "wonder_feed",
+    "lines": [
+      "If someone values you",
+      "they make time for you",
+      "genuine love is easy to recognize",
+      "because it shows up in simple ways",
+      "it's a text to check in",
+      "a call back when they said they would",
+      "a plan that actually happens",
+      "even on busy days they still show up",
+      "because you matter to them"
+    ]
+  },
+  {
+    "id": "mc1_conditional_love",
+    "channel": "momma_circle",
+    "lines": [
+      "The saddest thing a child can believe is",
+      "I'm only loved when",
+      "So when they mess up they don't just feel guilty.",
+      "They feel the distance more than the lesson.",
+      "That's why repair matters.",
+      "A hug. A calm voice. A second chance.",
+      "They learn: I can make mistakes and still be worthy of love."
+    ]
+  },
+  {
+    "id": "mc2_childhood_short",
+    "channel": "momma_circle",
+    "lines": [
+      "they say by the time your child turns",
+      "and by the time that number rises to around 90%",
+      "a reminder of just how quickly time passes",
+      "the truth is childhood is short",
+      "it's a reason to lean in",
+      "one day these early years will be gone",
+      "almost all your forever memories"
+    ]
+  },
+  {
+    "id": "mc3_first_child",
+    "channel": "momma_circle",
+    "lines": [
+      "the first child you have is the one who makes you a parent",
+      "you grow alongside them",
+      "they're the one who taught you",
+      "you got through the difficult days",
+      "all the times you had to figure things out together",
+      "because they made you a parent, who taught you how strong love can be",
+      "they're your best friend",
+      "and the one who changed you forever"
+    ]
+  }
+]

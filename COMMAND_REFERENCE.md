@@ -173,6 +173,9 @@ Image gen **always** uses Together `FLUX.1-schnell` with LoRA off. `--model-api-
 `python main.py --page momma_circle --post-type ECONOMIC_REEL_LOFI --quantity 2 --duration 38 --module parenting`  
 *// Generates 2 LOFI parenting-theme reels for momma_circle (explicit escape hatch; otherwise this page is forced to REFERENCE_BASED_REELS).*
 
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --stills-only --module relationship`  
+*// Script + 9 stills + VisualQA only (no TTS, no video). Default first step before a full render.*
+
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --test-preview`  
 *// Single-image aesthetic review (Flux Schnell + production grading + LOFI caption typography + watermark). No script, video, publish, or RAG history write.*
 
@@ -460,5 +463,7 @@ Channel context (`--channel`) loads `channels_config/<id>/` and routes inventory
 | `--test` | — | off | Print scaffolds, no APIs |
 | `--test-images N` | — | — | First-N stills debug, then exit |
 | `--test-preview` | — | off | LOFI single-still aesthetic review |
+| `--stills-only` | — | off | LOFI script + 9 stills + QA, no TTS/video |
+| `--script-only` | — | off | LOFI writer+validator only, no images |
 | `--prompt` | — | seed baseline | Custom LOFI `--test-preview` scene |
 | `--render-approval-required` | — | off | Pause after stills, before compile |

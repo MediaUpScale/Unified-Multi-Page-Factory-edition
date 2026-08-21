@@ -6239,7 +6239,7 @@ def cli() -> None:
             "and cinematic Ken Burns zoom-in. Outputs .mp4 + durable JSON. "
             "ECONOMIC_REEL_LOFI: separate LOFI pipeline (Flux Schnell, no LoRA) — multi-scene "
             "ink/graphic-novel stills, duotone grade, Ken Burns, channel watermark. "
-            "Uses --duration (30–38) and --module (relationship|parenting). "
+            "Uses --duration (15–30, default 24) and --module (relationship|parenting). "
             "Does NOT share state with ECONOMIC_REEL. "
             "WAN_REEL: ancient_knowledge only. Reuses ECONOMIC_REEL script/TTS/"
             "still pipeline, then Wan2.2 img2vid per act (bucket holds) with "
@@ -6257,8 +6257,9 @@ def cli() -> None:
         default=None,
         metavar="SECONDS",
         help=(
-            "ECONOMIC_REEL_LOFI only: target reel length in seconds (30–38, default 34). "
-            "Scene count = round(duration / 4)."
+            "ECONOMIC_REEL_LOFI: default 27s / 9 beats (thematic_arc). "
+            "Pass a value above 27 only to allow more beats. "
+            "VO is never trimmed; a long line may extend its own slot slightly."
         ),
     )
     parser.add_argument(
@@ -6271,6 +6272,52 @@ def cli() -> None:
             "ECONOMIC_REEL_LOFI only: RAG theme namespace. "
             "relationship (default) for wonder_feed + momma_circle; "
             "parenting only for momma_circle."
+        ),
+    )
+    parser.add_argument(
+        "--lofi-theme",
+        dest="lofi_theme",
+        default=None,
+        metavar="THEME",
+        help="ECONOMIC_REEL_LOFI only: force a theme id (e.g. betrayal, loneliness).",
+    )
+    parser.add_argument(
+        "--lofi-subtheme",
+        dest="lofi_subtheme",
+        default=None,
+        metavar="SUBTHEME",
+        help="ECONOMIC_REEL_LOFI only: force a subtheme id when using --lofi-theme.",
+    )
+    parser.add_argument(
+        "--lofi-script",
+        dest="lofi_scripts",
+        action="append",
+        default=None,
+        metavar="JSON",
+        help=(
+            "ECONOMIC_REEL_LOFI: render a locked script JSON (skip writer). "
+            "Repeat the flag for multiple locked scripts."
+        ),
+    )
+    parser.add_argument(
+        "--stills-only",
+        dest="stills_only",
+        action="store_true",
+        default=False,
+        help=(
+            "ECONOMIC_REEL_LOFI only: writer + validator + 9 stills + VisualQA, "
+            "then stop (no TTS, no MoviePy, no captions). Cheap episode preview."
+        ),
+    )
+    parser.add_argument(
+        "--script-only",
+        dest="script_only",
+        action="store_true",
+        default=False,
+        help=(
+            "ECONOMIC_REEL_LOFI only: run RAG writer + validator + reference "
+            "similarity check, print the full script and per-beat table, then "
+            "stop before image generation / voiceover / render."
         ),
     )
     parser.add_argument(
@@ -6818,6 +6865,11 @@ def cli() -> None:
                 quantity=args.quantity,
                 duration=_lofi_duration,
                 module=_lofi_module,
+                theme=getattr(args, "lofi_theme", None),
+                subtheme=getattr(args, "lofi_subtheme", None),
+                script_only=bool(getattr(args, "script_only", False)),
+                stills_only=bool(getattr(args, "stills_only", False)),
+                locked_scripts=getattr(args, "lofi_scripts", None),
                 # Reuse existing per-page tree: outputs/<page>/{clips,assets}/
                 outputs_dir=page_ctx.outputs_dir,
             )
@@ -6836,6 +6888,8 @@ def cli() -> None:
             for _it in envelope.get("items") or []:
                 if _it.get("video_path"):
                     print(f"  Video : {_it['video_path']}")
+                if _it.get("work_dir"):
+                    print(f"  Stills: {_it['work_dir']}")
                 if _it.get("meta_path"):
                     print(f"  Meta  : {_it['meta_path']}")
         return

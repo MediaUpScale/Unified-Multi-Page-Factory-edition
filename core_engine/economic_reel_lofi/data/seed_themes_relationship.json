@@ -640,5 +640,36 @@
         "key_object": "unopened morning paper"
       }
     ]
+  },
+  {
+    "theme": "betrayal",
+    "subtheme": "the_second_story",
+    "status": "unused",
+    "last_used_date": null,
+    "performance_score": null,
+    "preferred_mood_palette": "amber_interior",
+    "sample_scene": "unread texts lighting a dark kitchen, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "kitchen at night",
+        "key_object": "phone face-down on the table"
+      },
+      {
+        "setting": "hallway by the front door",
+        "key_object": "two sets of keys"
+      },
+      {
+        "setting": "bedroom, edge of the bed",
+        "key_object": "a photo turned to the wall"
+      },
+      {
+        "setting": "bathroom mirror at night",
+        "key_object": "an extra toothbrush still in the cup"
+      },
+      {
+        "setting": "small table by a window",
+        "key_object": "unread thread still lit"
+      }
+    ]
   }
 ]

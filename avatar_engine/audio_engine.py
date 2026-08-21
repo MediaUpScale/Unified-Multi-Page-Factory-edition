@@ -20,6 +20,25 @@ import config as app_config
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_elevenlabs_api_key() -> str:
+    """Factory config first, then env.
+
+    ``import config`` can bind VisualQA_Agent/config.py or
+    facebook_scheduler/config.py when those dirs shadow the factory root.
+    Those modules have no ``ELEVENLABS_API_KEY``, which raised AttributeError
+    on the LOFI hold probe. getattr + getenv survive that without holding a
+    passing image episode.
+    """
+    key = ""
+    try:
+        key = str(getattr(app_config, "ELEVENLABS_API_KEY", None) or "").strip()
+    except Exception:  # noqa: BLE001
+        key = ""
+    if not key:
+        key = str(os.getenv("ELEVENLABS_API_KEY") or "").strip()
+    return key
+
 # Brian — deep, authoritative, high-engagement narrative tone
 _DEFAULT_VOICE_ID: str = "nPczCjzI2devNBz1zQrb"
 # Master Mei defaults to expressive eleven_v3; other pages may override
@@ -210,7 +229,7 @@ def apply_elevenlabs_voice_settings(
     import urllib.error
     import urllib.request
 
-    api_key = app_config.ELEVENLABS_API_KEY
+    api_key = _resolve_elevenlabs_api_key()
     if not api_key:
         raise ValueError("ELEVENLABS_API_KEY not set. Add it to your .env file.")
     vid = (voice_id or "").strip()
@@ -355,7 +374,7 @@ def generate_voiceover(
             "elevenlabs package not installed. Run: pip install elevenlabs"
         ) from exc
 
-    api_key = app_config.ELEVENLABS_API_KEY
+    api_key = _resolve_elevenlabs_api_key()
     if not api_key:
         raise ValueError("ELEVENLABS_API_KEY not set. Add it to your .env file.")
 
@@ -607,7 +626,7 @@ def generate_voiceover_with_timestamps(
             "elevenlabs package not installed. Run: pip install elevenlabs"
         ) from exc
 
-    api_key = app_config.ELEVENLABS_API_KEY
+    api_key = _resolve_elevenlabs_api_key()
     if not api_key:
         raise ValueError("ELEVENLABS_API_KEY not set. Add it to your .env file.")
 
@@ -862,7 +881,7 @@ def generate_ambient_track(
     """
     import requests as _requests  # type: ignore[import]
 
-    api_key = app_config.ELEVENLABS_API_KEY
+    api_key = _resolve_elevenlabs_api_key()
     if not api_key:
         logger.warning("ELEVENLABS_API_KEY not set — ambient track skipped.")
         return None
@@ -967,7 +986,7 @@ def generate_impact_sfx(
 
     Uses ``client.text_to_sound_effects.convert``. Returns None on failure.
     """
-    api_key = app_config.ELEVENLABS_API_KEY
+    api_key = _resolve_elevenlabs_api_key()
     if not api_key:
         logger.warning("ELEVENLABS_API_KEY not set — impact SFX skipped.")
         return None
@@ -1634,7 +1653,7 @@ def generate_music_v2_bed(
     global LAST_MUSIC_COMPOSE_MODE
     LAST_MUSIC_COMPOSE_MODE = None
 
-    api_key = app_config.ELEVENLABS_API_KEY
+    api_key = _resolve_elevenlabs_api_key()
     if not api_key:
         logger.warning("ELEVENLABS_API_KEY not set — music bed skipped.")
         LAST_MUSIC_COMPOSE_MODE = "local"

@@ -215,5 +215,17 @@
       {"detail": "the porch light switched off in daylight", "sensory_type": "object"},
       {"detail": "a mug rinsed and set out for later", "sensory_type": "object"}
     ]
+  },
+  {
+    "subtheme": "the_second_story",
+    "concrete_details": [
+      {"detail": "unread texts lighting a dark kitchen", "sensory_type": "object"},
+      {"detail": "a photo turned to face the wall", "sensory_type": "object"},
+      {"detail": "two keys hanging on the same hook", "sensory_type": "object"},
+      {"detail": "a phone flipped face-down mid-sentence", "sensory_type": "gesture"},
+      {"detail": "an extra toothbrush still in the cup", "sensory_type": "object"},
+      {"detail": "a voicemail they never play back", "sensory_type": "sound"},
+      {"detail": "a name crossed out on a paper", "sensory_type": "object"}
+    ]
   }
 ]

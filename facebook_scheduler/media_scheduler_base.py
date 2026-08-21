@@ -81,6 +81,26 @@ _DATE_FORMAT = "%m/%d/%Y"
 _HISTORY_DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 
+def path_is_reproved(path: Path | str) -> bool:
+    """True when any path segment is a Reproved/ folder (any channel)."""
+    return any(part.lower() == "reproved" for part in Path(path).parts)
+
+
+def sidecar_blocks_posting(path: Path | str) -> bool:
+    """True when the sibling .json sets manual_review (QA hold)."""
+    p = Path(path)
+    meta = p.with_suffix(".json")
+    if not meta.is_file():
+        return False
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    if not isinstance(data, dict):
+        return False
+    return bool(data.get("manual_review"))
+
+
 def ensure_page_active(page: "Page") -> None:
     """
     Soft page wake without stealing OS window focus.
@@ -836,7 +856,12 @@ class LocalMediaQueue:
         for path in self.media_dir.iterdir():
             if not path.is_file():
                 continue
+            if path_is_reproved(path):
+                continue
             if path.suffix.lower() not in self.extensions:
+                continue
+            if sidecar_blocks_posting(path):
+                _log.info("Skipping %s — sidecar manual_review=true (QA hold).", path.name)
                 continue
             if path.name in posted:
                 continue

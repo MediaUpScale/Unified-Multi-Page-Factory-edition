@@ -84,13 +84,30 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "Trust is not a feeling.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "It is a pattern you notice later.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Watch what they do after the promise.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "secure_love",
     "subtheme": "steadiness_vs_intensity",
     "status": "used",
-    "last_used_date": "2026-08-16",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "partners embracing in a doorway, warm lit window behind them, mid shot",
@@ -132,19 +149,19 @@
       {
         "detail": "two coats sharing one hook by the door",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a shared blanket folded over the sofa arm",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "two mugs left on one tray overnight",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -171,13 +188,30 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "What if love is not intensity?",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Intensity fades. Character stays.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Look for the calm, not the spike.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "self_respect",
     "subtheme": "boundaries_without_guilt",
     "status": "used",
-    "last_used_date": "2026-08-16",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "two people sitting on a porch bench talking, amber porch light, mid shot",
@@ -219,19 +253,19 @@
       {
         "detail": "the door closed from the inside and left that way",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a phone laid face-down by the bathroom sink",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a half-written reply never sent from the table",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -258,13 +292,30 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "Your softness is not a flaw to edit.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Love that asks you to disappear is not love.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "You do not owe anyone a smaller self.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "attachment",
     "subtheme": "anxious_pursuit_cycles",
     "status": "used",
-    "last_used_date": "2026-08-16",
+    "last_used_date": "2026-08-20",
     "performance_score": null,
     "preferred_mood_palette": "indigo_violet_night",
     "sample_scene": "couple holding hands on a sofa, solid amber table lamp, close mid shot",
@@ -302,19 +353,19 @@
       {
         "detail": "a phone picked up and put down without calling",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "read receipts checked on a dark screen",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "shoes left on in the hallway, ready to go back",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
@@ -341,13 +392,33 @@
         "last_used_date": null,
         "performance_score": null
       }
-    ]
+    ],
+    "hooks": [
+      {
+        "text": "Chasing them will not make them stay.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "The more you reach, the further they stand.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "Anxiety is not a proof of love.",
+        "last_used_date": null,
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-20"
+    }
   },
   {
     "theme": "communication",
     "subtheme": "repair_after_conflict",
     "status": "used",
-    "last_used_date": "2026-08-16",
+    "last_used_date": "2026-08-20",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "forehead-to-forehead hug in a hallway, flat warm lamp light, mid shot",
@@ -385,37 +456,37 @@
       {
         "detail": "two plates left in the sink after the argument",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a towel held out without a speech",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the bedroom lamp turned back on after the dark",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a mug placed beside the one already there",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the door opened a few inches and left open",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a chair pulled back to the table",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
@@ -424,13 +495,33 @@
         "last_used_date": null,
         "performance_score": null
       }
-    ]
+    ],
+    "hooks": [
+      {
+        "text": "The fight is not the whole story.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "Repair is what they remember.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "Coming back matters more than being right.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-20"
+    }
   },
   {
     "theme": "healing",
     "subtheme": "choosing_peace_over_chaos",
     "status": "used",
-    "last_used_date": "2026-08-16",
+    "last_used_date": "2026-08-20",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "couple on a porch, sun disc framed through porch opening behind them, mid shot",
@@ -464,52 +555,72 @@
       {
         "detail": "the volume turned down on the kitchen radio",
         "sensory_type": "sound",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "curtains drawn against the street noise",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a single place set, not two",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the phone left in another room on purpose",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "shoes aligned by the door, not kicked off",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the kettle watched until it clicked off",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a window cracked just enough for air",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       }
-    ]
+    ],
+    "hooks": [
+      {
+        "text": "Peace can feel boring after chaos.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "That boredom is often safety arriving.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "Not every quiet room is empty.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-20"
+    }
   },
   {
     "theme": "vulnerability",
     "subtheme": "softness_as_strength",
     "status": "used",
-    "last_used_date": "2026-08-16",
+    "last_used_date": "2026-08-20",
     "performance_score": null,
     "preferred_mood_palette": "muted_dawn",
     "sample_scene": "shared coffee at a kitchen table, warm lit window to the side, mid shot",
@@ -547,46 +658,66 @@
       {
         "detail": "a sweater draped over a chair without folding it tight",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "tea poured slowly into a chipped mug",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the lamp dimmed instead of switched off",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a hand resting on the table, palm open",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the front door unlocked for someone expected",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a blanket left unfolded at the end of the bed",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "wet dishes left to air instead of slammed away",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       }
-    ]
+    ],
+    "hooks": [
+      {
+        "text": "Looks fade. Character doesn't.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "The cover is not the book.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "Stay for what doesn't expire.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-20"
+    }
   },
   {
     "theme": "distance",
@@ -622,43 +753,60 @@
       {
         "detail": "two umbrellas on a corner, not touching",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a suitcase standing alone on the platform",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "an unused place setting at the long table",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "a closed bedroom door in the apartment hallway",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "the radio playing to an empty room",
         "sensory_type": "sound",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "steam rising from a cup no one drinks",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
         "performance_score": null
       },
       {
         "detail": "keys left on the counter without a hello",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      }
+    ],
+    "hooks": [
+      {
+        "text": "Some silences are the whole answer.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "You don't have to narrate your leaving.",
+        "last_used_date": "2026-08-20",
+        "performance_score": null
+      },
+      {
+        "text": "Misunderstanding is not always yours to correct.",
+        "last_used_date": "2026-08-20",
         "performance_score": null
       }
     ]
@@ -667,7 +815,7 @@
     "theme": "loneliness",
     "subtheme": "the_room_that_stays_empty",
     "status": "used",
-    "last_used_date": "2026-08-17",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "indigo_violet_night",
     "sample_scene": "one person at a kitchen table with a second unused chair, cool window light, mid shot",
@@ -705,19 +853,19 @@
       {
         "detail": "an extra plate still set at dinner",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a chair pulled out but never sat in",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "an untouched pillow on a neatly made bed",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -750,7 +898,27 @@
         "last_used_date": null,
         "performance_score": null
       }
-    ]
+    ],
+    "hooks": [
+      {
+        "text": "Some rooms stay empty even when you fill them.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "A second chair can make a louder silence.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Loneliness sits down first.",
+        "last_used_date": null,
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-19"
+    }
   },
   {
     "theme": "grief",
@@ -841,6 +1009,23 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "Grief does not leave. It changes shape.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "You learn to carry it, not to finish it.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Some absences become a way of walking.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
@@ -917,6 +1102,23 @@
       {
         "detail": "a hanger swinging in the open closet",
         "sensory_type": "object",
+        "last_used_date": null,
+        "performance_score": null
+      }
+    ],
+    "hooks": [
+      {
+        "text": "The leaving took more than a person.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "It took the reaching for them.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Some keys stay even after the door is gone.",
         "last_used_date": null,
         "performance_score": null
       }
@@ -999,13 +1201,30 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "Getting up anyway is still a kind of love.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "The day does not wait for you to feel ready.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Small returns still count as returning.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "inspiration",
     "subtheme": "a_light_that_is_yours",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "someone looking up at a small window of sky between buildings, late sun, mid shot",
@@ -1035,37 +1254,37 @@
       {
         "detail": "a strip of late sky between two buildings",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "an open notebook under a small desk lamp",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "one lit window across the street at dusk",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "an unfinished drawing left on the studio floor",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a plant turned toward the kitchen window",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "the lamp switched on before the room is dark",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -1074,13 +1293,33 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "arc_template_dates": {
+      "setup_ache_acceptance": "2026-08-19"
+    },
+    "hooks": [
+      {
+        "text": "You do not have to earn the light that is yours.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Some warmth is not a favor. It is a home.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Keep the part of you that still wants morning.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "regret",
     "subtheme": "the_sentence_never_said",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "amber_teal",
     "sample_scene": "hand hovering over a phone that never gets picked up, lamp light, close mid shot",
@@ -1110,19 +1349,19 @@
       {
         "detail": "a phone number still saved under a name",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a folded letter never sent from the night desk",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a hand still on the doorframe after someone left",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -1149,13 +1388,33 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "arc_template_dates": {
+      "setup_ache_acceptance": "2026-08-19"
+    },
+    "hooks": [
+      {
+        "text": "The sentence you never said still lives in the room.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Silence can be a kind of leaving.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Unspoken words do not stay weightless.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "belonging",
     "subtheme": "looking_for_a_place",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "muted_dawn",
     "sample_scene": "figure at the edge of a gathering, porch light behind them, mid shot",
@@ -1189,42 +1448,59 @@
       {
         "detail": "an empty extra chair at the edge of the porch",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "an untouched drink left in the party kitchen",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a place setting not claimed at the long table",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "neighbors' closed doors in the stairwell",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a picnic blanket with a gap at the edge",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a coat kept on indoors",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "shoes never kicked off at the gathering",
         "sensory_type": "object",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      }
+    ],
+    "hooks": [
+      {
+        "text": "Belonging is not a room you perform into.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Some places only fit if you shrink.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Home should not require a costume.",
         "last_used_date": null,
         "performance_score": null
       }
@@ -1233,8 +1509,8 @@
   {
     "theme": "time",
     "subtheme": "ordinary_minutes_leaving",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "clock and cooling tea on a windowsill, late afternoon, still mid shot",
@@ -1264,19 +1540,19 @@
       {
         "detail": "clock and cooling tea on the afternoon sill",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "sun moving off the kitchen floor",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a calendar with days already crossed",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -1303,13 +1579,30 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "Time does not announce itself when it leaves.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "The ordinary minutes are the ones that vanish first.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "You will miss what felt too small to keep.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "forgiveness",
     "subtheme": "putting_the_weight_down",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "person setting a heavy bag down on a bench, open park path, mid shot",
@@ -1339,19 +1632,19 @@
       {
         "detail": "a heavy bag set down on an open bench",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a stone placed on the river wall and left",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "a letter finally opened on the kitchen table",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -1378,13 +1671,30 @@
         "last_used_date": null,
         "performance_score": null
       }
+    ],
+    "hooks": [
+      {
+        "text": "Forgiveness is not forgetting. It is putting the weight down.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "You can stop carrying what they will not name.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Peace begins when the argument leaves your body.",
+        "last_used_date": null,
+        "performance_score": null
+      }
     ]
   },
   {
     "theme": "hope",
     "subtheme": "after_the_worst_night",
-    "status": "unused",
-    "last_used_date": null,
+    "status": "used",
+    "last_used_date": "2026-08-19",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "first pale light on a quiet street, one window lit, mid shot",
@@ -1414,19 +1724,19 @@
       {
         "detail": "one window still lit on a quiet street",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "the kettle beginning to steam at pale dawn",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
         "detail": "first stripe of sun on the bedroom curtains",
         "sensory_type": "place",
-        "last_used_date": null,
+        "last_used_date": "2026-08-19",
         "performance_score": null
       },
       {
@@ -1453,6 +1763,126 @@
         "last_used_date": null,
         "performance_score": null
       }
-    ]
+    ],
+    "hooks": [
+      {
+        "text": "After the worst night, the kettle still boils.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Hope is often just first light on a quiet street.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "Morning does not ask if you are ready.",
+        "last_used_date": null,
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-19"
+    }
+  },
+  {
+    "theme": "betrayal",
+    "subtheme": "the_second_story",
+    "status": "used",
+    "last_used_date": "2026-08-19",
+    "performance_score": null,
+    "preferred_mood_palette": "amber_interior",
+    "sample_scene": "unread texts lighting a dark kitchen, mid shot",
+    "setting_object_pairs": [
+      {
+        "setting": "kitchen at night",
+        "key_object": "phone face-down on the table"
+      },
+      {
+        "setting": "hallway by the front door",
+        "key_object": "two sets of keys"
+      },
+      {
+        "setting": "bedroom, edge of the bed",
+        "key_object": "a photo turned to the wall"
+      },
+      {
+        "setting": "bathroom mirror at night",
+        "key_object": "an extra toothbrush still in the cup"
+      },
+      {
+        "setting": "small table by a window",
+        "key_object": "unread thread still lit"
+      }
+    ],
+    "concrete_details": [
+      {
+        "detail": "unread texts lighting a dark kitchen",
+        "sensory_type": "object",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "detail": "a photo turned to face the wall",
+        "sensory_type": "object",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "detail": "two keys hanging on the same hook",
+        "sensory_type": "object",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "detail": "a phone flipped face-down mid-sentence",
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "detail": "an extra toothbrush still in the cup",
+        "sensory_type": "object",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "detail": "a voicemail they never play back",
+        "sensory_type": "sound",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "detail": "a name crossed out on a paper",
+        "sensory_type": "object",
+        "last_used_date": null,
+        "performance_score": null
+      }
+    ],
+    "hooks": [
+      {
+        "text": "The second story always costs more.",
+        "last_used_date": "2026-08-19",
+        "performance_score": null
+      },
+      {
+        "text": "The cover story is the one that stays.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "Hiding it always writes a longer night.",
+        "last_used_date": null,
+        "performance_score": null
+      },
+      {
+        "text": "The first break is never the last cost.",
+        "last_used_date": null,
+        "performance_score": null
+      }
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-19"
+    }
   }
 ]

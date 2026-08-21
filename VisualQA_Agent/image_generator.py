@@ -292,65 +292,34 @@ def generate_image(
         # else:
         #     raise RuntimeError(f"Unexpected Together image payload: {item!r}")
 
-        di_key = (
-            getattr(config, "DEEPINFRA_API_KEY", None) or os.getenv("DEEPINFRA_API_KEY") or ""
-        ).strip()
-        if not di_key:
-            raise RuntimeError(
-                "DEEPINFRA_API_KEY missing — set env or factory .env before generation."
-            )
-        from openai import OpenAI
+        from avatar_engine.providers.together_image import post_deepinfra_flux_schnell
 
-        client = OpenAI(
-            api_key=di_key,
-            base_url=getattr(
-                config, "DEEPINFRA_OPENAI_BASE_URL", "https://api.deepinfra.com/v1/openai"
-            ),
+        response = post_deepinfra_flux_schnell(
+            prompt=clean,
+            width=int(width),
+            height=int(height),
+            steps=int(steps),
+            negative_prompt=MANDATORY_NEGATIVE_PROMPT,
         )
-        extra_body: dict[str, Any] = {
-            "num_inference_steps": int(steps),
-            "width": int(width),
-            "height": int(height),
-            "negative_prompt": MANDATORY_NEGATIVE_PROMPT,
-        }
-        if seed is not None:
-            extra_body["seed"] = int(seed)
-        gen_args: dict[str, Any] = {
-            "model": getattr(
-                config,
-                "DEEPINFRA_FLUX_SCHNELL_MODEL",
-                "black-forest-labs/FLUX-1-schnell",
-            ),
-            "prompt": clean,
-            "size": f"{int(width)}x{int(height)}",
-            "n": 1,
-            "response_format": "b64_json",
-            "extra_body": extra_body,
-        }
-        try:
-            response = client.images.generate(**gen_args)
-        except TypeError:
-            gen_args.pop("extra_body", None)
-            try:
-                response = client.images.generate(**gen_args)
-            except TypeError:
-                gen_args.pop("response_format", None)
-                response = client.images.generate(**gen_args)
         elapsed = time.perf_counter() - t0
-        items = getattr(response, "data", None) or []
+        items = (response or {}).get("data") or []
         if not items:
             raise RuntimeError(f"DeepInfra returned no image data: {response!r}")
         item = items[0]
-        b64_json = getattr(item, "b64_json", None)
-        if isinstance(item, dict):
-            b64_json = b64_json or item.get("b64_json")
+        b64_json = item.get("b64_json") if isinstance(item, dict) else None
         if not (isinstance(b64_json, str) and b64_json.strip()):
             raise RuntimeError(f"Unexpected DeepInfra image payload: {item!r}")
         raw_b64 = b64_json.strip()
         if raw_b64.lower().startswith("data:") and "," in raw_b64:
             raw_b64 = raw_b64.split(",", 1)[1]
         image_bytes = base64.b64decode(raw_b64)
-        model_id = str(gen_args["model"])
+        model_id = str(
+            getattr(
+                config,
+                "DEEPINFRA_FLUX_SCHNELL_MODEL",
+                "black-forest-labs/FLUX-1-schnell",
+            )
+        )
     else:
         if not config.TOGETHER_API_KEY:
             raise RuntimeError(
