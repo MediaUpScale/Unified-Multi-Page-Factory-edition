@@ -187,16 +187,24 @@ def object_focus_scene_text(
             f"{extra} {only} {text_clause}"
         )
     elif step == 1:
+        # "Flat featureless background" (prior wording) starved the frame of
+        # the grainy halftone print texture the style block asks for
+        # everywhere else, which is what collapsed uniq16 below the linework
+        # floor. Keep every INTRUDER-safe exclusion; only add texture back.
         scene = (
             f"Extreme close-up of {obj} alone, the object occupies most of the frame. "
-            f"Flat featureless background, no furniture, no room, no other objects. "
+            f"Background keeps the same grainy halftone print texture as the object, "
+            f"muted flat color with visible ink-dot grain, no gradient, no furniture, "
+            f"no room, no other objects, no distinct background shapes. "
             f"{extra} {only} {text_clause}"
         )
     else:
         place = _off_workspace_place(obj)
         scene = (
             f"Close focus on {obj} {place}, the only object in frame. "
-            f"Tight crop, soft empty background. {extra} {only} {text_clause}"
+            f"Tight crop, background keeps the grainy halftone print texture, "
+            f"muted color but not flat or blank, no furniture, no room clutter. "
+            f"{extra} {only} {text_clause}"
         )
     return " ".join(scene.split()), kind
 
