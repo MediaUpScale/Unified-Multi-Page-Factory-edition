@@ -123,24 +123,26 @@ def _fill_slots(template: str, **slots: str) -> str:
     return " ".join(text.split())
 
 
-def _term_requested_in_object(keys: tuple[str, ...], key_object: str) -> bool:
-    blob = (key_object or "").lower()
-    return any(re.search(rf"\b{re.escape(k)}s?\b", blob) for k in keys)
-
-
 def only_object_clause(key_object: str) -> str:
-    """Positive-prompt 'only this object' sentence plus explicit default bans."""
+    """
+    Positive-prompt 'only this object' sentence.
+
+    Earlier versions named specific banned still-life props ("no mug, no cup,
+    no coffee cup, no glass, no laptop") — but naming them, even negated,
+    still primes Schnell to draw them (same guidance_scale=0 negation lesson
+    already confirmed for camera vocabulary and garbled text: mentioning a
+    concept, even to ban it, still anchors the render toward it). The 2026-
+    08-21 combined probe showed the mug/laptop-class INTRUDER still firing on
+    77% of object_focus attempts despite that explicit named ban being
+    present every single time. Describe the isolation positively instead;
+    never name the specific intruder objects.
+    """
     obj = _sanitize_visual_phrase(key_object) or "the requested object"
-    banned = [
-        label
-        for label, keys in _DEFAULT_INTRUDER_TERMS
-        if not _term_requested_in_object(keys, obj)
-    ]
-    lead = f"The only object is {obj}, filling the frame."
-    if not banned:
-        return lead
-    no_list = ", ".join(f"no {label}" for label in banned)
-    return f"{lead} Empty of other still-life props: {no_list}."
+    return (
+        f"Only {obj} is visible in frame, resting alone on a bare surface. "
+        f"Nothing else occupies the frame — no additional items of any kind, "
+        f"no clutter, no extra objects."
+    )
 
 
 _OBJECT_FOCUS_FRAMING = ("macro_no_setting", "tighter_macro", "off_workspace")
@@ -623,15 +625,6 @@ _COUPLE_SEPARATION = (
 _OBJECT_FOCUS_GUARD = (
     "The object sits alone, centered, filling the frame. "
     "No hands, no fingers, no grip, no wrist, no person, no face."
-)
-# Desk/night still-life prior on Schnell. Woven into the positive prompt
-# (not the negative prompt) and omitted when the beat's key_object IS one of these.
-_DEFAULT_INTRUDER_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("mug", ("mug",)),
-    ("cup", ("cup",)),
-    ("coffee cup", ("coffee",)),
-    ("glass", ("glass",)),
-    ("laptop", ("laptop", "computer", "keyboard")),
 )
 _OBJECT_FOCUS_HAND_OK = (
     "One hand may hold the object only if a plausible wrist and forearm "
