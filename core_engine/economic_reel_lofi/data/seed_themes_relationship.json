@@ -118,7 +118,7 @@
       },
       {
         "setting": "front door from inside",
-        "key_object": "chain lock fastened"
+        "key_object": "chain lock fastened on a closed door"
       }
     ]
   },
@@ -142,8 +142,8 @@
         "key_object": "coat still on the chair"
       },
       {
-        "setting": "curb at evening",
-        "key_object": "empty passenger seat"
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car"
       },
       {
         "setting": "bus stop after dark",
@@ -250,7 +250,7 @@
       },
       {
         "setting": "dim living room",
-        "key_object": "record left spinning"
+        "key_object": "record left spinning on a record player"
       },
       {
         "setting": "rain-streaked window at dusk",
@@ -275,7 +275,7 @@
     "setting_object_pairs": [
       {
         "setting": "opposite ends of a sofa",
-        "key_object": "wide empty cushion"
+        "key_object": "wide empty sofa cushion on a sofa"
       },
       {
         "setting": "rainy street corner",
@@ -287,7 +287,7 @@
       },
       {
         "setting": "long kitchen table",
-        "key_object": "unused place setting"
+        "key_object": "unused place setting at a dining table"
       },
       {
         "setting": "apartment hallway",
@@ -392,7 +392,7 @@
     "setting_object_pairs": [
       {
         "setting": "bus seat by a rain-streaked window",
-        "key_object": "empty seat beside"
+        "key_object": "empty seat beside on a bus"
       },
       {
         "setting": "closet with the light on",
@@ -504,12 +504,12 @@
         "key_object": "hand still on the frame"
       },
       {
-        "setting": "curb at evening",
-        "key_object": "empty passenger seat"
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car"
       },
       {
         "setting": "train window",
-        "key_object": "empty seat pulling away"
+        "key_object": "empty seat pulling away in a train car"
       }
     ]
   },
@@ -532,7 +532,7 @@
       },
       {
         "setting": "long dining table",
-        "key_object": "place setting not claimed"
+        "key_object": "place setting not claimed at a dining table"
       },
       {
         "setting": "apartment stairwell",

@@ -71,7 +71,23 @@ def _load_dotenv_file(env_path: Path) -> tuple[Path, bool]:
             pass
 
     loaded = bool(load_dotenv(dotenv_path=resolved, override=True, encoding="utf-8-sig"))
+    _honour_blank_env_values(resolved)
     return resolved, loaded
+
+
+def _honour_blank_env_values(env_path: Path) -> None:
+    """Force KEY= (empty) assignments so a channel env can clear inherited tokens."""
+    try:
+        raw = env_path.read_text(encoding="utf-8-sig")
+    except OSError:
+        return
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, val = stripped.split("=", 1)
+        if val.strip() == "":
+            os.environ[key.strip()] = ""
 
 
 def _resolve_path(value: str | None, default: Path) -> Path:
@@ -148,20 +164,55 @@ def resolve_channel_outputs_dir(channel_id: str) -> Path:
     """
     Inventory/history root for a channel.
 
-    Prefers ``outputs/<channel_id>/`` when that tree already has inventory or
-    history. If the channel exists under ``channels_config/`` but its outputs
-    tree is empty, fall back to the legacy shared ``outputs/`` root so
-    existing scheduled_history.txt / master_inventory.json stay recognized.
-    Fresh unknown channels get an isolated ``outputs/<channel_id>/``.
+    Precedence
+    ----------
+    1. ``outputs_dir`` / ``inventory_dir`` from the channel content pack
+    2. ``outputs/<channel_id>/`` when that tree already has inventory,
+       history, a library, or content_library.json
+    3. ``data/<channel_id>/`` when that tree has inventory/history
+    4. Legacy shared ``outputs/`` only for channels that do **not** have
+       their own library tree (preserves anna_protocol root ledger)
+    5. Fresh isolated ``outputs/<channel_id>/``
     """
     cid = _safe_channel_id(channel_id)
+    pack, _ = load_channel_content_pack(cid)
+    pack_dir = _pack_get(pack, "outputs_dir", "inventory_dir")
+    if pack_dir:
+        resolved = Path(pack_dir)
+        if not resolved.is_absolute():
+            resolved = ENGINE_ROOT / resolved
+        logger.info("Channel '%s': outputs from content pack: %s", cid, resolved)
+        return resolved
+
     outputs_chan = ENGINE_ROOT / "outputs" / cid
+    root_outputs = ENGINE_ROOT / "outputs"
+    # Preserve the original anna_protocol ledger at outputs/ until that
+    # channel gets its own isolated inventory/history files.
+    if cid == "anna_protocol":
+        chan_has_inventory = (
+            (outputs_chan / "master_inventory.json").is_file()
+            or (outputs_chan / "scheduled_history.txt").is_file()
+        )
+        root_has_state = (
+            (root_outputs / "master_inventory.json").is_file()
+            or (root_outputs / "scheduled_history.txt").is_file()
+        )
+        if root_has_state and not chan_has_inventory:
+            logger.info(
+                "Channel 'anna_protocol': using legacy shared outputs/ ledger."
+            )
+            return root_outputs
     data_chan = ENGINE_ROOT / "data" / cid
     root_outputs = ENGINE_ROOT / "outputs"
+    library_dir = outputs_chan / "library"
 
+    chan_has_library = library_dir.is_dir() and any(library_dir.glob("post_*.json"))
+    chan_has_content = (outputs_chan / "content_library.json").is_file()
     chan_has_state = (
         (outputs_chan / "master_inventory.json").is_file()
         or (outputs_chan / "scheduled_history.txt").is_file()
+        or chan_has_library
+        or chan_has_content
     )
     if chan_has_state:
         return outputs_chan
@@ -176,7 +227,7 @@ def resolve_channel_outputs_dir(channel_id: str) -> Path:
         (root_outputs / "master_inventory.json").is_file()
         or (root_outputs / "scheduled_history.txt").is_file()
     )
-    # Only bridge known channels (have a home dir) to legacy root outputs.
+    # Only bridge known channels that have no isolated library of their own.
     if root_has_state and resolve_channel_home_dir(cid) is not None:
         logger.info(
             "Channel '%s': using legacy shared outputs/ "
@@ -259,7 +310,7 @@ def _refresh_channel_content() -> None:
     global TARGET_URL, HASHTAGS, CTA_BUTTON_LABEL, CTA_VARIANTS
     global DEFAULT_TOPIC, AI_SYSTEM_PROMPT, CHANNEL_CONTENT_PATH, DISPLAY_NAME
     global ANTHROPIC_API_KEY, MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS
-    global PINTEREST_PINS_PER_DAY
+    global PINTEREST_PINS_PER_DAY, BOARD_NAME, PIN_THEME
 
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
     MIN_INTERVAL_HOURS = _parse_interval_hours("MIN_INTERVAL_HOURS", 3.0)
@@ -308,6 +359,14 @@ def _refresh_channel_content() -> None:
         pack, "display_name", "channel_name", "name",
         default=CHANNEL_ID or "",
     )
+
+    BOARD_NAME = (
+        os.getenv("PINTEREST_BOARD_NAME")
+        or _pack_get(pack, "board_name", "display_name", default=DISPLAY_NAME)
+    ).strip()
+
+    raw_theme = pack.get("pin_theme") if isinstance(pack.get("pin_theme"), dict) else {}
+    PIN_THEME = {str(k): v for k, v in raw_theme.items()}
 
 
 def _apply_paths(outputs_dir: Path | None = None) -> None:
@@ -362,14 +421,22 @@ def configure(
 
     CHANNEL_ID = _safe_channel_id(channel_id) if channel_id else None
 
+    root_env = ENGINE_ROOT / ".env"
+    # Shared keys (Claude, etc.) always load from workspace .env first.
+    if root_env.is_file():
+        _load_dotenv_file(root_env)
+
     if env_path is not None:
         DOTENV_PATH = Path(env_path).expanduser()
     elif CHANNEL_ID:
         DOTENV_PATH = resolve_channel_env_path(CHANNEL_ID)
     else:
-        DOTENV_PATH = ENGINE_ROOT / ".env"
+        DOTENV_PATH = root_env
 
-    _DOTENV_RESOLVED_PATH, DOTENV_LOADED_FROM_FILE = _load_dotenv_file(DOTENV_PATH)
+    if DOTENV_PATH.resolve() != root_env.resolve():
+        _DOTENV_RESOLVED_PATH, DOTENV_LOADED_FROM_FILE = _load_dotenv_file(DOTENV_PATH)
+    else:
+        _DOTENV_RESOLVED_PATH, DOTENV_LOADED_FROM_FILE = _load_dotenv_file(DOTENV_PATH)
 
     out = Path(inventory_dir).expanduser() if inventory_dir is not None else None
     _apply_paths(out)
@@ -402,6 +469,7 @@ def print_dotenv_bootstrap() -> None:
     if CHANNEL_CONTENT_PATH is not None:
         print(f"[bootstrap] content pack  : {CHANNEL_CONTENT_PATH}")
     print(f"[bootstrap] target_url    : {TARGET_URL or '(none — inventory/metadata only)'}")
+    print(f"[bootstrap] board name    : {BOARD_NAME or '(none)'}")
     print(f"[bootstrap] cta variants  : {len(CTA_VARIANTS)}")
     print(f"[bootstrap] ai prompt     : {'set' if AI_SYSTEM_PROMPT else '(none)'}")
 
@@ -453,5 +521,7 @@ CTA_VARIANTS: list[str]
 DEFAULT_TOPIC: str
 AI_SYSTEM_PROMPT: str
 DISPLAY_NAME: str
+BOARD_NAME: str
+PIN_THEME: dict[str, Any]
 
 _apply_paths()

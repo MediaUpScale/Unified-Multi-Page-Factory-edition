@@ -308,12 +308,67 @@ def _build_lofi_critic_instruction(
     n_refs: int,
     requested_subject: str | None = None,
     requested_object: str | None = None,
+    prior_fail_criteria: Sequence[str] | None = None,
+    style_profile: str | None = None,
 ) -> str:
     forbidden = ", ".join(rules.get("forbidden_tokens") or [])
     mandatory = ", ".join(rules.get("mandatory_elements") or [])
     lighting = rules.get("lighting_style") or ""
     audience = rules.get("target_audience_rules") or ""
     semantic = _semantic_fidelity_block(requested_subject, requested_object)
+    prof = str(style_profile or "").strip().lower()
+    painterly = prof == "lofi_painterly_v1"
+    riso_retro = prof in {
+        "style-riso_painting_retro_vintage",
+        "lofi_risograph_v1",
+    }
+    prior_lines = [
+        " ".join(str(x).split())
+        for x in (prior_fail_criteria or [])
+        if str(x).strip()
+    ]
+    if painterly:
+        style_eval = (
+            "1) Painted illustration is ON STYLE — canvas grain, soft brush, "
+            "muted vintage print. Do NOT fail for painterly softness or "
+            "blended shading. FAIL only if it is a photograph / photoreal camera look.\n"
+            "   For woman/man/couple: FAIL if a frontal or three-quarter close-up "
+            "face is the main subject (eyes/nose/mouth rendered as a portrait). "
+            "Allowed: from behind, deep profile turned away, silhouette, crop "
+            "above the eyes, or a distant figure whose face is only brushstrokes."
+        )
+    elif riso_retro:
+        style_eval = (
+            "1) Vintage risograph-painting print is ON STYLE — grainy print, "
+            "ink line, atmospheric color, canvas/paper texture. Do NOT fail the "
+            "environment for painterly richness, blended dusk color, or canvas "
+            "texture. FAIL only if it is a photograph / photoreal camera look.\n"
+            "   For woman/man/couple: FAIL if any person is a lit, glossy, or "
+            "rendered-skin portrait (glamour, off-shoulder, beauty lighting, "
+            "detailed facial features, cinematic street photography). Each figure "
+            "MUST read as a flat unlit silhouette against a bright light (window, "
+            "sunset, doorway, streetlamp). The environment around them MUST keep "
+            "full painterly detail. Silhouette and object_focus: do not require "
+            "this backlight rule; judge them on overall print look only."
+        )
+    else:
+        style_eval = (
+            "1) Illustration style consistency — ink/graphic-novel look with "
+            "hard-edged flat color, visible ink line, and halftone "
+            "(not blended shading). FAIL if photorealistic, painterly, "
+            "soft-gradient, airbrushed, or glossy/rendered-skin drift."
+        )
+    prior_block = ""
+    if prior_lines:
+        listed = "\n".join(f"  - {x}" for x in prior_lines[:8])
+        prior_block = f"""
+PRIOR FAIL HOLD (this is a retry — same criteria, not a looser bar):
+The previous attempt failed for:
+{listed}
+Inspect THIS image for those same issues. If ANY are still visible,
+set passed=false and include them in flaws again, even if other
+aspects improved. Do not pass a softer read of the same drift.
+"""
     return f"""
 You are an Art Director for LOFI economic illustration reels ("{channel_name}").
 
@@ -326,9 +381,9 @@ CHANNEL RULES:
 - MANDATORY: {mandatory}
 - LIGHTING: {lighting}
 - AUDIENCE: {audience}
-
+{prior_block}
 EVALUATE:
-1) Illustration style consistency — ink/graphic-novel look; FAIL if photorealistic drift.
+{style_eval}
 2) Anatomy — malformed hands/faces beyond acceptable illustration threshold
    (skip face-detail requirements for object_focus and silhouette, but still
    FAIL ungrounded/disconnected hands on those beats).
@@ -433,6 +488,8 @@ def _build_critic_instruction(
     n_refs: int,
     requested_subject: str | None = None,
     requested_object: str | None = None,
+    prior_fail_criteria: Sequence[str] | None = None,
+    style_profile: str | None = None,
 ) -> str:
     profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
     if profile == "lofi_economic" or channel_name == "lofi_economic":
@@ -440,6 +497,8 @@ def _build_critic_instruction(
             channel_name, rules, quality_threshold, n_refs,
             requested_subject=requested_subject,
             requested_object=requested_object,
+            prior_fail_criteria=prior_fail_criteria,
+            style_profile=style_profile,
         )
     if profile in ("ancient_mystery", "ancient_knowledge") or channel_name == "ancient_knowledge":
         return _build_ancient_mystery_critic_instruction(
@@ -554,6 +613,8 @@ def evaluate_image(
     quality_threshold: float | None = None,
     requested_subject: str | None = None,
     requested_object: str | None = None,
+    prior_fail_criteria: Sequence[str] | None = None,
+    style_profile: str | None = None,
 ) -> CriticVerdict:
     """
     Judge a generated image with Gemini Vision against ALL style refs + rules.
@@ -639,6 +700,8 @@ def evaluate_image(
             channel_name, rules, threshold, hard_cap, n_refs=len(refs),
             requested_subject=requested_subject,
             requested_object=requested_object,
+            prior_fail_criteria=prior_fail_criteria,
+            style_profile=style_profile,
         )
     )
 
@@ -799,7 +862,7 @@ def evaluate_image(
 
     if config.LOG_COSTS:
         _console.print(
-            f"[dim]COST[/dim] critic≈${config.COST_GEMINI_FLASH_USD:.5f}"
+            f"[dim]COST[/dim] critic~${config.COST_GEMINI_FLASH_USD:.5f}"
         )
 
     _LOG.info(

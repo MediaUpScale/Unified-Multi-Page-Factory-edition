@@ -6,14 +6,15 @@ One-shot OAuth 2.0 token fetcher for Pinterest API v5.
 
 Usage:
     python pinterest_oauth.py
+    python pinterest_oauth.py --channel ancient_knowledge
 
 What this does:
-  1. Reads PINTEREST_APP_ID and PINTEREST_APP_SECRET from .env
+  1. Reads PINTEREST_APP_ID and PINTEREST_APP_SECRET from the active env
   2. Starts a local HTTP server on port 8080 to auto-capture the redirect code
   3. Opens the Pinterest authorization page in your browser
   4. Catches the code automatically when Pinterest redirects back
   5. Exchanges the code for an access_token + refresh_token
-  6. Writes PINTEREST_ACCESS_TOKEN and PINTEREST_REFRESH_TOKEN to .env
+  6. Writes PINTEREST_ACCESS_TOKEN and PINTEREST_REFRESH_TOKEN to the channel env
   7. Also calls GET /v5/boards and lists your boards so you can pick PINTEREST_BOARD_ID
 
 Prerequisites (one-time setup in Pinterest Developer Portal):
@@ -44,6 +45,8 @@ _ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
+from pinterest_engine import config as cfg
+
 load_dotenv(_ROOT / ".env", override=True)
 
 # ---------------------------------------------------------------------------
@@ -177,7 +180,38 @@ def _list_boards(token: str) -> list[dict]:
 # Main
 # ---------------------------------------------------------------------------
 
+def _apply_channel_context() -> None:
+    """Honour --channel / --env so tokens land in the isolated channel file."""
+    import argparse  # noqa: PLC0415
+
+    global APP_ID, APP_SECRET, ENV_PATH, AUTH_URL
+
+    parser = argparse.ArgumentParser(description="Pinterest OAuth 2.0 token generator.")
+    parser.add_argument("--channel", default=None, help="Channel id (e.g. ancient_knowledge).")
+    parser.add_argument("--env", default=None, help="Explicit .env path.")
+    args, _unknown = parser.parse_known_args()
+
+    env_path = Path(args.env).expanduser() if args.env else None
+    cfg.configure(channel_id=args.channel, env_path=env_path)
+    ENV_PATH = cfg.DOTENV_PATH
+    APP_ID = os.getenv("PINTEREST_APP_ID", APP_ID)
+    APP_SECRET = os.getenv("PINTEREST_APP_SECRET", APP_SECRET)
+
+    AUTH_URL = (
+        f"https://www.pinterest.com/oauth/"
+        f"?client_id={APP_ID}"
+        f"&redirect_uri={urllib.parse.quote(REDIRECT_URI, safe='')}"
+        f"&response_type=code"
+        f"&scope={urllib.parse.quote(SCOPES, safe='')}"
+        f"&state={STATE}"
+    )
+    if args.channel:
+        print(f"Channel : {args.channel}")
+    print(f"Env     : {ENV_PATH}")
+
+
 def main():
+    _apply_channel_context()
     print("\n=== Pinterest OAuth 2.0 Token Generator ===\n")
 
     if not APP_SECRET:
@@ -255,7 +289,12 @@ def main():
         for b in boards:
             name = b.get("name", "?")
             bid  = b.get("id", "?")
-            match = "ancient wisdom" in name.lower() or "longevity" in name.lower()
+            lname = name.lower()
+            match = (
+                "ancient knowledge" in lname
+                or "ancient wisdom" in lname
+                or "longevity" in lname
+            )
             marker = "  <-- MATCH" if match else ""
             print(f"  [{bid}]  {name}{marker}")
             if match:
@@ -266,11 +305,36 @@ def main():
             _update_env("PINTEREST_BOARD_ID", target_id)
             print(f"  .env updated: PINTEREST_BOARD_ID={target_id}")
         else:
-            print("\nCould not auto-detect 'Ancient Wisdom & Longevity'.")
-            print("Copy the ID from the list above and paste it below:")
-            manual_id = input("Board ID: ").strip()
-            if manual_id:
-                _update_env("PINTEREST_BOARD_ID", manual_id)
+            wanted = (
+                os.getenv("PINTEREST_BOARD_NAME")
+                or getattr(cfg, "BOARD_NAME", "")
+                or "Ancient Knowledge"
+            ).strip()
+            print(f"\nNo matching board found. Creating '{wanted}' via POST /v5/boards ...")
+            try:
+                import requests  # noqa: PLC0415
+                created = requests.post(
+                    "https://api.pinterest.com/v5/boards",
+                    headers={"Authorization": f"Bearer {access_token}",
+                             "Content-Type": "application/json"},
+                    json={"name": wanted, "privacy": "PUBLIC"},
+                    timeout=20,
+                )
+                if created.status_code in (200, 201):
+                    target_id = created.json().get("id", "")
+                    if target_id:
+                        _update_env("PINTEREST_BOARD_ID", target_id)
+                        _update_env("PINTEREST_BOARD_NAME", wanted)
+                        print(f"  Created board id={target_id}")
+                else:
+                    print(f"  Create failed HTTP {created.status_code}: {created.text[:200]}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  Create failed: {exc}")
+            if not target_id:
+                print("Copy a board ID from the list above and paste it below:")
+                manual_id = input("Board ID: ").strip()
+                if manual_id:
+                    _update_env("PINTEREST_BOARD_ID", manual_id)
     else:
         print("No boards returned (or token lacks boards:read scope).")
 

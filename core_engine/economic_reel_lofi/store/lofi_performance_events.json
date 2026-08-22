@@ -218,5 +218,101 @@
       "read receipts checked on a dark screen",
       "shoes left on in the hallway, ready to go back"
     ]
+  },
+  {
+    "created_at": "2026-08-21T20:05:12.934818+00:00",
+    "module": "relationship",
+    "theme": "attachment",
+    "subtheme": "anxious_pursuit_cycles",
+    "anchor_object": null,
+    "views": null,
+    "completion_rate": null,
+    "performance_score": null,
+    "video_path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\clips\\lofi_reel_attachment_20260821_195622_v01.mp4",
+    "retrieved_details": [
+      "a phone picked up and put down without calling",
+      "read receipts checked on a dark screen",
+      "shoes left on in the hallway, ready to go back"
+    ]
+  },
+  {
+    "created_at": "2026-08-21T21:24:20.859134+00:00",
+    "module": "relationship",
+    "theme": "distance",
+    "subtheme": "silence_that_speaks",
+    "anchor_object": null,
+    "views": null,
+    "completion_rate": null,
+    "performance_score": null,
+    "video_path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\clips\\lofi_reel_distance_20260821_211202_v01.mp4",
+    "retrieved_details": [
+      "an unmade bed left empty",
+      "an open doorway with no one in it",
+      "two umbrellas on a corner, not touching"
+    ]
+  },
+  {
+    "created_at": "2026-08-22T14:19:28.826974+00:00",
+    "module": "relationship",
+    "theme": "trust",
+    "subtheme": "consistency_over_promises",
+    "anchor_object": null,
+    "views": null,
+    "completion_rate": null,
+    "performance_score": null,
+    "video_path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\clips\\lofi_reel_trust_20260822_140629_v01.mp4",
+    "retrieved_details": [
+      "an unmade bed left empty",
+      "a closed suitcase resting on the floor",
+      "the same scuffed shoes on the stoop after work"
+    ]
+  },
+  {
+    "created_at": "2026-08-22T15:03:07.880791+00:00",
+    "module": "relationship",
+    "theme": "distance",
+    "subtheme": "silence_that_speaks",
+    "anchor_object": null,
+    "views": null,
+    "completion_rate": null,
+    "performance_score": null,
+    "video_path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\clips\\lofi_reel_distance_20260822_145535_v01.mp4",
+    "retrieved_details": [
+      "an unmade bed left empty",
+      "an open doorway with no one in it",
+      "two umbrellas on a corner, not touching"
+    ]
+  },
+  {
+    "created_at": "2026-08-22T15:41:48.400804+00:00",
+    "module": "relationship",
+    "theme": "hope",
+    "subtheme": "after_the_worst_night",
+    "anchor_object": null,
+    "views": null,
+    "completion_rate": null,
+    "performance_score": null,
+    "video_path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\clips\\lofi_reel_hope_20260822_153327_v01.mp4",
+    "retrieved_details": [
+      "one window still lit on a quiet street",
+      "the kettle beginning to steam at pale dawn",
+      "first stripe of sun on the bedroom curtains"
+    ]
+  },
+  {
+    "created_at": "2026-08-22T16:17:56.487267+00:00",
+    "module": "relationship",
+    "theme": "hope",
+    "subtheme": "after_the_worst_night",
+    "anchor_object": null,
+    "views": null,
+    "completion_rate": null,
+    "performance_score": null,
+    "video_path": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\clips\\lofi_reel_hope_20260822_161048_v01.mp4",
+    "retrieved_details": [
+      "an unmade bed left empty",
+      "rain streaking an empty window",
+      "one window still lit on a quiet street"
+    ]
   }
 ]

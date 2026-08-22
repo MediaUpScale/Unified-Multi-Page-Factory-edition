@@ -149,6 +149,10 @@ def get_entry_filename(entry: dict) -> str:
     if local:
         return Path(local).name
 
+    video = entry.get("local_video_path", "")
+    if video:
+        return Path(video).name
+
     imgbb = entry.get("imgbb_url", "")
     if imgbb:
         # Strip query strings and hash fragments before taking the basename
@@ -281,12 +285,19 @@ class PinterestScheduler:
         data = inv.load()
 
         if not data.get("entries"):
-            log.warning(
-                "master_inventory.json is empty or missing. "
-                "Run: python pinterest_main.py sync"
+            log.info(
+                "master_inventory.json is empty — auto-syncing library images "
+                "and clips for recycling (template metadata, no Claude)."
             )
-            return {"published": 0, "skipped": 0, "skipped_by_history": 0,
-                    "errors": 0, "remaining": 0}
+            data = inv.build(use_ai=False)
+            if not data.get("entries"):
+                log.warning(
+                    "No recyclable assets found under %s. "
+                    "Add library/post_*.json or clips/*.mp4 first.",
+                    self.outputs_dir,
+                )
+                return {"published": 0, "skipped": 0, "skipped_by_history": 0,
+                        "errors": 0, "remaining": 0}
 
         # --- Layer 1 guard: inventory posted_on_pinterest flag ---
         unposted = inv.get_unposted(data)

@@ -3,7 +3,7 @@
     "theme": "trust",
     "subtheme": "consistency_over_promises",
     "status": "used",
-    "last_used_date": "2026-08-17",
+    "last_used_date": "2026-08-22",
     "performance_score": null,
     "preferred_mood_palette": "amber_teal",
     "sample_scene": "couple walking hand-in-hand down a quiet street, mid shot, solid streetlamp",
@@ -52,56 +52,66 @@
     "concrete_details": [
       {
         "detail": "an unmade bed left empty",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a closed suitcase resting on the floor",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the same scuffed shoes on the stoop after work",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an unopened envelope left on the windowsill",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a grocery list still stuck to the fridge",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the kettle started without being asked",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a receipt taped at eye level, never thrown away",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "rain streaking an empty window",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Trust is not a feeling.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "It is a pattern you notice later.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Watch what they do after the promise.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
-    ]
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-22"
+    }
   },
   {
     "theme": "secure_love",
@@ -246,7 +256,7 @@
       },
       {
         "setting": "front door from inside",
-        "key_object": "chain lock fastened"
+        "key_object": "chain lock fastened on a closed door"
       },
       {
         "setting": "window overlooking a quiet street",
@@ -349,8 +359,8 @@
         "key_object": "coat left on the seat"
       },
       {
-        "setting": "curb at evening",
-        "key_object": "empty passenger seat"
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car"
       },
       {
         "setting": "kitchen at dawn",
@@ -424,8 +434,8 @@
     "sample_scene": "forehead-to-forehead hug in a hallway, flat warm lamp light, mid shot",
     "setting_object_pairs": [
       {
-        "setting": "curb at evening",
-        "key_object": "empty passenger seat"
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car"
       },
       {
         "setting": "car parked at night",
@@ -554,53 +564,60 @@
     "concrete_details": [
       {
         "detail": "the volume turned down on the kitchen radio",
-        "sensory_type": "sound"
+        "sensory_type": "sound",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "curtains drawn against the street noise",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a single place set, not two",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a folded blanket on the sofa",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "shoes aligned by the door, not kicked off",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the kettle watched until it clicked off",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a window cracked just enough for air",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a kettle that just clicked off",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Peace can feel boring after chaos.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "That boredom is often safety arriving.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Not every quiet room is empty.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
@@ -631,7 +648,7 @@
       },
       {
         "setting": "dim living room",
-        "key_object": "record left spinning"
+        "key_object": "record left spinning on a record player"
       },
       {
         "setting": "sofa in evening light",
@@ -722,7 +739,7 @@
     "setting_object_pairs": [
       {
         "setting": "opposite ends of a sofa",
-        "key_object": "wide empty cushion"
+        "key_object": "wide empty sofa cushion on a sofa"
       },
       {
         "setting": "rainy street corner",
@@ -734,7 +751,7 @@
       },
       {
         "setting": "long kitchen table",
-        "key_object": "unused place setting"
+        "key_object": "unused place setting at a dining table"
       },
       {
         "setting": "apartment hallway",
@@ -745,59 +762,59 @@
       {
         "detail": "two umbrellas on a corner, not touching",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a suitcase standing alone on the platform",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an unused place setting at the long table",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a closed bedroom door in the apartment hallway",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the radio playing to an empty room",
         "sensory_type": "sound",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "rain streaking an empty window",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an unmade bed left empty",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21"
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an open doorway with no one in it",
         "sensory_type": "object",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Some silences are the whole answer.",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "You don't have to narrate your leaving.",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Misunderstanding is not always yours to correct.",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
@@ -1023,7 +1040,7 @@
     "setting_object_pairs": [
       {
         "setting": "bus seat by a rain-streaked window",
-        "key_object": "empty seat beside"
+        "key_object": "empty seat beside on a bus"
       },
       {
         "setting": "closet with the light on",
@@ -1294,11 +1311,11 @@
       },
       {
         "setting": "train window",
-        "key_object": "empty seat pulling away"
+        "key_object": "empty seat pulling away in a train car"
       },
       {
-        "setting": "curb at evening",
-        "key_object": "empty passenger seat"
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car"
       }
     ],
     "concrete_details": [
@@ -1377,7 +1394,7 @@
       },
       {
         "setting": "long dining table",
-        "key_object": "place setting not claimed"
+        "key_object": "place setting not claimed at a dining table"
       },
       {
         "setting": "apartment stairwell",
@@ -1532,7 +1549,7 @@
     "theme": "forgiveness",
     "subtheme": "putting_the_weight_down",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-08-22",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "person setting a heavy bag down on a bench, open park path, mid shot",
@@ -1561,15 +1578,18 @@
     "concrete_details": [
       {
         "detail": "a heavy bag set down on an open bench",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a stone placed on the river wall and left",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a letter finally opened on the kitchen table",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "hands unclenched on the church steps",
@@ -1591,7 +1611,7 @@
     "hooks": [
       {
         "text": "Forgiveness is not forgetting. It is putting the weight down.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
@@ -1601,16 +1621,19 @@
       },
       {
         "text": "Peace begins when the argument leaves your body.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
-    ]
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-22"
+    }
   },
   {
     "theme": "hope",
     "subtheme": "after_the_worst_night",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-08-22",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "first pale light on a quiet street, one window lit, mid shot",
@@ -1639,58 +1662,65 @@
     "concrete_details": [
       {
         "detail": "one window still lit on a quiet street",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the kettle beginning to steam at pale dawn",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "first stripe of sun on the bedroom curtains",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a clearing sky over the bus stop after rain",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an unopened morning paper on the front steps",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the porch light switched off in daylight",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an unmade bed left empty",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "rain streaking an empty window",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "After the worst night, the kettle still boils.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Hope is often just first light on a quiet street.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Morning does not ask if you are ready.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "arc_template_dates": {
-      "thematic_arc": "2026-08-19"
+      "thematic_arc": "2026-08-22"
     }
   },
   {

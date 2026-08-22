@@ -22,6 +22,10 @@ from config import words_for_duration
 PAGE_ID: str = "ancient_knowledge"
 PAGE_DISPLAY_NAME: str = "Ancient Knowledge"
 
+# Pinterest: board is auto-created via API when the id is empty.
+PINTEREST_BOARD_NAME: str = "Ancient Knowledge"
+PINTEREST_BOARD_ID: str = ""
+
 CONTENT_NICHE: str = (
     "ancient history, lost civilisations, unbelievable historical facts, "
     "world conspiracies, ancient mysteries, unexplained archaeological sites, "

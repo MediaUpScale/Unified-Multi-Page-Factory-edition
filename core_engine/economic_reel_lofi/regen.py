@@ -107,7 +107,7 @@ def regenerate_scene(
     episode_json_path: Path | str,
     scene_number: int,
     reason: str | None = None,
-    max_attempts: int = 4,
+    max_attempts: int = 2,
 ) -> dict[str, Any]:
     """
     Regen one scene still, run the same QA stack, replace the image in place,
@@ -145,11 +145,20 @@ def regenerate_scene(
         f"[LOFI regen] scene={scene_number} attempts={max_attempts} "
         f"reason={reason!r} tmp={tmp_img.name}"
     )
+    gen_kw: dict[str, Any] = {
+        "attempt_budget": max_attempts,
+        "extra_prompt": extra,
+    }
+    if lofi_cfg.uses_flux_dev():
+        from core_engine.economic_reel_lofi.image_gen import generate_scene_image_dev
+        from core_engine.economic_reel_lofi.visual_identity import assemble_v2_prompt_dev
+
+        gen_kw["generate_fn"] = generate_scene_image_dev
+        gen_kw["assemble_fn"] = assemble_v2_prompt_dev
     ok_img, new_gate, n_img, n_crit = generate_and_qa_scene(
         row,
         tmp_img,
-        attempt_budget=max_attempts,
-        extra_prompt=extra,
+        **gen_kw,
     )
     new_gate = dict(new_gate)
     new_gate.pop("mood", None)
@@ -228,7 +237,7 @@ def main() -> None:
     parser.add_argument("--episode", required=True, help="Episode sidecar JSON")
     parser.add_argument("--scene", type=int, required=True, help="1-indexed scene number")
     parser.add_argument("--reason", default="", help="One-off prompt guidance")
-    parser.add_argument("--max-attempts", type=int, default=4)
+    parser.add_argument("--max-attempts", type=int, default=2)
     args = parser.parse_args()
     result = regenerate_scene(
         args.episode,

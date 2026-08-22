@@ -6300,6 +6300,17 @@ def cli() -> None:
         ),
     )
     parser.add_argument(
+        "--lofi-allow-mixed-era",
+        dest="lofi_allow_mixed_era",
+        action="store_true",
+        default=False,
+        help=(
+            "ECONOMIC_REEL_LOFI: allow assembling stills from different "
+            "style tags / pipeline runs. Off by default — mixed-era "
+            "videos are refused."
+        ),
+    )
+    parser.add_argument(
         "--stills-only",
         dest="stills_only",
         action="store_true",
@@ -6860,6 +6871,8 @@ def cli() -> None:
                 )
             _lofi_module = getattr(args, "module", None) or "relationship"
             _lofi_duration = getattr(args, "duration", None)
+            if bool(getattr(args, "lofi_allow_mixed_era", False)):
+                os.environ["LOFI_ALLOW_MIXED_ERA"] = "1"
             envelope = _lofi_runner(
                 page_id=page_id,
                 quantity=args.quantity,

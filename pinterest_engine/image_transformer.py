@@ -31,13 +31,31 @@ log = logging.getLogger(__name__)
 PIN_W = 1000
 PIN_H = 1500
 
-# Colour palette (earth-toned, clinical-clean)
-_VIGNETTE_COLOUR = (20, 18, 15, 180)       # dark warm translucent (RGBA)
-_HOOK_TEXT_COLOUR = (255, 251, 245)         # off-white
-_BUTTON_BG_COLOUR = (44, 62, 44, 230)      # deep forest green (RGBA)
-_BUTTON_TEXT_COLOUR = (230, 220, 195)       # warm cream
-_URL_TEXT_COLOUR = (200, 195, 180)          # muted cream
-_DIVIDER_COLOUR = (180, 160, 110, 200)      # warm gold (RGBA)
+# Colour palette (earth-toned, clinical-clean). Channel pin_theme overrides these.
+_DEFAULT_THEME = {
+    "vignette": (20, 18, 15, 180),
+    "hook_text": (255, 251, 245),
+    "button_bg": (44, 62, 44, 230),
+    "button_text": (230, 220, 195),
+    "url_text": (200, 195, 180),
+    "divider": (180, 160, 110, 200),
+}
+
+
+def _theme_color(name: str) -> tuple:
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+    raw = (getattr(cfg, "PIN_THEME", None) or {}).get(name)
+    if isinstance(raw, (list, tuple)) and 3 <= len(raw) <= 4:
+        return tuple(int(v) for v in raw)
+    return _DEFAULT_THEME[name]
+
+
+_VIGNETTE_COLOUR = _DEFAULT_THEME["vignette"]
+_HOOK_TEXT_COLOUR = _DEFAULT_THEME["hook_text"]
+_BUTTON_BG_COLOUR = _DEFAULT_THEME["button_bg"]
+_BUTTON_TEXT_COLOUR = _DEFAULT_THEME["button_text"]
+_URL_TEXT_COLOUR = _DEFAULT_THEME["url_text"]
+_DIVIDER_COLOUR = _DEFAULT_THEME["divider"]
 
 # Layout zones (fractions of PIN_H)
 _HOOK_ZONE_TOP_FRAC = 0.04
@@ -145,13 +163,17 @@ def _draw_hook_zone(
     zone_bot = int(PIN_H * _HOOK_ZONE_BOT_FRAC)
     zone_h = zone_bot - zone_top
 
+    vignette = _theme_color("vignette")
+    hook_text_colour = _theme_color("hook_text")
+    divider = _theme_color("divider")
+
     # Semi-transparent dark panel
-    panel = Image.new("RGBA", (PIN_W, zone_h), _VIGNETTE_COLOUR)
+    panel = Image.new("RGBA", (PIN_W, zone_h), vignette)
     # Fade out at the bottom 60px of the panel
     for row in range(max(0, zone_h - 60), zone_h):
-        fade = int(_VIGNETTE_COLOUR[3] * (1 - (row - (zone_h - 60)) / 60))
+        fade = int(vignette[3] * (1 - (row - (zone_h - 60)) / 60))
         for col in range(PIN_W):
-            panel.putpixel((col, row), (*_VIGNETTE_COLOUR[:3], fade))
+            panel.putpixel((col, row), (*vignette[:3], fade))
 
     canvas.paste(panel, (0, zone_top), panel)
 
@@ -170,12 +192,12 @@ def _draw_hook_zone(
         x = (PIN_W - text_w) // 2
         # Drop shadow
         draw.text((x + 2, cursor_y + 2), line, font=font_large, fill=(0, 0, 0, 180))
-        draw.text((x, cursor_y), line, font=font_large, fill=_HOOK_TEXT_COLOUR)
+        draw.text((x, cursor_y), line, font=font_large, fill=hook_text_colour)
         cursor_y += line_height
 
     # Gold divider line
     div_y = zone_bot - 2
-    draw.line([(60, div_y), (PIN_W - 60, div_y)], fill=_DIVIDER_COLOUR[:3], width=2)
+    draw.line([(60, div_y), (PIN_W - 60, div_y)], fill=divider[:3], width=2)
 
 
 def _draw_button_zone(
@@ -185,15 +207,19 @@ def _draw_button_zone(
     """Overlay the dark CTA button strip at the bottom of the pin."""
     zone_top = int(PIN_H * _BUTTON_ZONE_TOP_FRAC)
     zone_h = PIN_H - zone_top
+    button_bg = _theme_color("button_bg")
+    button_text = _theme_color("button_text")
+    url_text = _theme_color("url_text")
+    divider = _theme_color("divider")
 
-    btn_panel = Image.new("RGBA", (PIN_W, zone_h), _BUTTON_BG_COLOUR)
+    btn_panel = Image.new("RGBA", (PIN_W, zone_h), button_bg)
     canvas.paste(btn_panel, (0, zone_top), btn_panel)
 
     font_btn = _find_font(_SERIF_CANDIDATES, 36)
     font_url = _find_font(_SANS_CANDIDATES, 20)
 
     # Top border line
-    draw.line([(0, zone_top), (PIN_W, zone_top)], fill=_DIVIDER_COLOUR[:3], width=3)
+    draw.line([(0, zone_top), (PIN_W, zone_top)], fill=divider[:3], width=3)
 
     label = _button_label()
     url = _sales_url()
@@ -210,7 +236,7 @@ def _draw_button_zone(
             ((PIN_W - btn_w) // 2, btn_y),
             label,
             font=font_btn,
-            fill=_BUTTON_TEXT_COLOUR,
+            fill=button_text,
         )
 
     if url:
@@ -220,7 +246,7 @@ def _draw_button_zone(
             ((PIN_W - url_w) // 2, btn_y + (52 if label else 28)),
             url,
             font=font_url,
-            fill=_URL_TEXT_COLOUR,
+            fill=url_text,
         )
 
 
@@ -269,7 +295,7 @@ class PinTransformer:
         subject_slug = record.get("subject_slug", "pin")
         variant = record.get("variant_index", 0)
 
-        source = self._load_source(img_path, imgbb_url)
+        source = self._load_source(img_path, imgbb_url, record.get("local_video_path", ""))
         if source is None:
             log.warning("No source image for: %s v%s", topic, variant)
             return None
@@ -307,7 +333,7 @@ class PinTransformer:
             or cfg.DEFAULT_TOPIC
         )
 
-        source = self._load_source(img_path, imgbb_url)
+        source = self._load_source(img_path, imgbb_url, record.get("local_video_path", ""))
         if source is None:
             return None
 
@@ -319,7 +345,12 @@ class PinTransformer:
     # ------------------------------------------------------------------
     # Private
 
-    def _load_source(self, local_path: str, imgbb_url: str) -> "Image.Image | None":
+    def _load_source(
+        self,
+        local_path: str,
+        imgbb_url: str,
+        video_path: str = "",
+    ) -> "Image.Image | None":
         if local_path and Path(local_path).is_file():
             try:
                 return Image.open(local_path).convert("RGB")
@@ -334,6 +365,18 @@ class PinTransformer:
                 return Image.open(io.BytesIO(data)).convert("RGB")
             except Exception as exc:  # noqa: BLE001
                 log.warning("Cannot fetch %s: %s", imgbb_url, exc)
+
+        if video_path and Path(video_path).is_file():
+            try:
+                from pinterest_engine.inventory import extract_video_still  # noqa: PLC0415
+                still = extract_video_still(
+                    Path(video_path),
+                    self.pins_dir / "video_stills" / f"{Path(video_path).stem}.jpg",
+                )
+                if still:
+                    return Image.open(still).convert("RGB")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Cannot extract still from %s: %s", video_path, exc)
 
         return None
 

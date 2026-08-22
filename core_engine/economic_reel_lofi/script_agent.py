@@ -282,13 +282,23 @@ def _pack_caption_texts(
             )
         return packed
     while len(packed) > max_scenes and len(packed) >= 2:
-        best_i = 0
+        best_i = -1
         best_n = 10**9
         for i in range(len(packed) - 1):
+            trial = f"{packed[i]} {packed[i + 1]}".strip()
+            if not _caption_fits(trial, max_words, max_chars):
+                continue
             n = len(packed[i].split()) + len(packed[i + 1].split())
             if n < best_n:
                 best_n = n
                 best_i = i
+        if best_i < 0:
+            print(
+                f"[LOFI caption] {len(packed)} beats after split "
+                f"(cap {max_scenes}) — keeping extras; merge would exceed "
+                f"{max_words}w/{max_chars}c"
+            )
+            break
         packed[best_i] = f"{packed[best_i]} {packed[best_i + 1]}".strip()
         del packed[best_i + 1]
         print(
@@ -296,6 +306,62 @@ def _pack_caption_texts(
             f"to stay within {max_scenes} scenes"
         )
     return packed
+
+
+def trim_caption_to_cap(text: str, max_words: int, max_chars: int) -> str:
+    """Drop a trailing clause, then trailing words, until the caption fits."""
+    t = " ".join((text or "").split())
+    if _caption_fits(t, max_words, max_chars):
+        return t
+    for sep in (", ", " — ", " – ", " - ", "; ", ": "):
+        if sep not in t:
+            continue
+        head = t.rsplit(sep, 1)[0].rstrip(" ,;—–-:")
+        if len(head.split()) >= 3 and _caption_fits(head, max_words, max_chars):
+            return head
+    words = t.split()
+    while words and not _caption_fits(" ".join(words), max_words, max_chars):
+        words.pop()
+    return " ".join(words)
+
+
+def _reflow_captions_to_budget(
+    parts: list[str],
+    max_scenes: int,
+    max_words: int,
+    max_chars: int,
+) -> list[str]:
+    """
+    Fit spoken text into exactly ≤ max_scenes captions that each obey the cap.
+
+    Drops leftover trailing words only when they cannot fit. Never emits an
+    over-cap line.
+    """
+    words: list[str] = []
+    for part in parts:
+        words.extend((part or "").split())
+    out: list[str] = []
+    i = 0
+    n_slots = max(1, int(max_scenes))
+    for _ in range(n_slots):
+        if i >= len(words):
+            break
+        chunk: list[str] = []
+        while i < len(words):
+            trial = chunk + [words[i]]
+            blob = " ".join(trial)
+            if len(trial) > max_words or len(blob) > max_chars:
+                break
+            chunk.append(words[i])
+            i += 1
+        if chunk:
+            out.append(" ".join(chunk))
+    if i < len(words):
+        print(
+            f"[LOFI caption] dropped {len(words) - i} trailing word(s) "
+            f"to fit {n_slots} beats × {max_words}w/{max_chars}c"
+        )
+    return out or parts[:n_slots]
 
 
 def _words(text: str) -> list[str]:
@@ -382,12 +448,37 @@ def repair_script_captions(
         return script
     max_words, max_chars = lofi_cfg.caption_limits(str(script.get("arc_template") or ""))
     max_scenes = int(lofi_cfg.thematic_max_scenes())
+    min_scenes = int(getattr(lofi_cfg, "MIN_SCENES", 8))
+    beat_texts = [
+        str(r.get("text") or r.get("beat_text") or "").strip() for r in lines
+    ]
+    beats_fit = all(
+        t and _caption_fits(t, max_words, max_chars) for t in beat_texts
+    )
+    # Writer captions that already obey the cap are the spoken script.
+    # Do not expand them from a longer monologue — that produced 20-way
+    # splits and dropped the payoff (57 trailing words) on forgiveness.
+    if (
+        not keep_extra_scenes
+        and beats_fit
+        and min_scenes <= len(lines) <= max_scenes
+    ):
+        script["monologue"] = " ".join(beat_texts)
+        for i, row in enumerate(lines):
+            row["scene"] = i + 1
+            row["beat_text"] = beat_texts[i]
+            row["text"] = beat_texts[i]
+        script["lines"] = lines
+        return script
+
     mono = str(script.get("monologue") or "").strip()
-    concat = " ".join(str(r.get("text") or r.get("beat_text") or "") for r in lines)
+    concat = " ".join(beat_texts)
     concat_w = _words(concat)
     mono_w = _words(mono) if mono else []
 
-    if mono_w and concat_w != mono_w:
+    # Locked / sliced scripts only: restore tails from the monologue.
+    # New writer output must not absorb a 130-word thesis into 9 captions.
+    if keep_extra_scenes and mono_w and concat_w != mono_w:
         if _restore_sliced_beats_in_place(lines, mono):
             print(
                 "[LOFI caption] restored dropped tails from monologue "
@@ -419,6 +510,26 @@ def repair_script_captions(
     )
     if not packed:
         return script
+    if len(packed) > max_scenes:
+        packed = _reflow_captions_to_budget(
+            packed, max_scenes, max_words, max_chars
+        )
+    fitted: list[str] = []
+    for text in packed:
+        if _caption_fits(text, max_words, max_chars):
+            fitted.append(text)
+            continue
+        trimmed = trim_caption_to_cap(text, max_words, max_chars)
+        if trimmed != text:
+            print(
+                f"[LOFI caption] trimmed over-cap line "
+                f"{len(text.split())}w/{len(text)}c -> "
+                f"{len(trimmed.split())}w/{len(trimmed)}c"
+            )
+        fitted.append(trimmed)
+    packed = [t for t in fitted if t.strip()]
+    if not packed:
+        return script
     new_lines: list[dict[str, Any]] = []
     n = len(packed)
     for i, text in enumerate(packed):
@@ -431,7 +542,7 @@ def repair_script_captions(
     if len(new_lines) != len(lines):
         print(
             f"[LOFI caption] beat count {len(lines)} -> {len(new_lines)} "
-            "after clean-break split (no words dropped)"
+            "after clean-break split / cap fit"
         )
     script["lines"] = new_lines
     return script
@@ -1040,13 +1151,25 @@ Use THIS structure only (abstract shape — invent every sentence; never paste a
 {structure.get("example")}
 
 RULES:
-1) Write "monologue" as the full spoken thesis. Split THAT SAME text across
-   {min_scenes}–{max_scenes} "text" fields. Prefer exactly {scene_count} beats.
-   Never more than {max_scenes}.
+1) Write "monologue" as the full spoken thesis AND keep it short enough to
+   speak in {max_scenes} captions. HARD MAX {max_scenes * max_words} words
+   in the monologue (and in the concatenated "text" fields). Split THAT
+   SAME text across {min_scenes}–{max_scenes} "text" fields. Prefer exactly
+   {scene_count} beats. Never more than {max_scenes}.
 2) Caption chunks stay short: 4–8 words preferred, HARD MAX {max_words} words
-   and {max_chars} characters. If a sentence is longer, split it across the
-   NEXT beat at a comma, dash, or clause boundary — but never exceed {max_scenes}
-   beats total. If you are already at {max_scenes}, shorten the line instead.
+   AND {max_chars} characters. Count both before writing each "text".
+   If ONE beat is over cap, shorten THAT beat only (drop a trailing clause).
+   Do not rewrite the whole episode. If a sentence is longer, split it
+   across the NEXT beat at a comma, dash, or clause boundary — but never
+   exceed {max_scenes} beats total. If you are already at {max_scenes},
+   shorten the line instead of packing two clauses into one beat.
+   BOUNDARY EXAMPLES (copy the LENGTH, not the words):
+     OK 7w/38c: "Peace can feel boring after chaos."
+     OK 9w/47c: "You learn to read the silence like a language."
+     OK 9w/56c: "You set the stone down. You walked away."
+     OK 6w/32c: "The quiet just stays quiet."
+     TOO LONG (do not emit): "What if peace isn't the absence of the storm? You watch the kettle,"
+     TOO LONG (do not emit): "Forgiveness isn't an eraser. It's the decision to stop carrying"
 3) One longer thematic sentence MAY span 2 consecutive beats. Fragments are
    allowed. Not every beat must be a complete closed sentence.
 4) Scene 1 is the hook matching HOOK_TYPE:
@@ -1082,8 +1205,16 @@ RULES:
       Copy from SETTING_OBJECT_POOL when a pair matches the idea; otherwise
       name the stand-in. Do not reuse the same key_object more than once.
       Never pick a small object meant to be held near the face.
+      If key_object is a part of a larger whole (passenger seat, steering
+      wheel, dashboard, piano key, drawer, sofa cushion, place setting),
+      the phrase MUST name that whole — e.g. "empty passenger seat of a car,
+      seen through the open car door", never a disembodied part alone.
     - time_of_day: dawn | morning | afternoon | dusk | night | evening
     - beat_text: same as text
+    - visual_anchor_hint: 8–16 words. A visual paraphrase of this beat's
+      key_object in its setting — not the caption itself. Must name the
+      key_object. Never substitute a different still-life (no mug, vase,
+      flowers, or coffee when the object is rain, a seat, a suitcase, etc.).
 12) anchor_object is OPTIONAL. Omit it unless this theme naturally wants one
     recurring object. Varied imagery is valid and preferred.
 13) Every line must be original to this theme. If a sentence could belong to a
@@ -1102,15 +1233,16 @@ Output STRICT JSON only, no markdown:
   "lines": [
     {{
       "scene": 1,
-      "text": "<short hook chunk>",
-      "beat_text": "<same as text>",
+      "text": "Peace can feel boring after chaos.",
+      "beat_text": "Peace can feel boring after chaos.",
       "emotion": "opening_hook",
       "arc_position": "act1",
       "subject_type": "woman",
       "subject_expression": "distant, still",
       "setting": "bedroom, edge of a neatly made bed",
       "key_object": "untouched pillow",
-      "time_of_day": "dusk"
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "untouched pillow on an empty half of the bed"
     }}
   ]
 }}
@@ -1384,6 +1516,9 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             str(row.get("text") or row.get("beat_text") or "")
         ).strip()
         row["beat_text"] = row["text"]
+        hint = " ".join(str(row.get("visual_anchor_hint") or "").split())
+        if hint:
+            row["visual_anchor_hint"] = hint
         if not row.get("visual_prompt"):
             row["visual_prompt"] = f"story beat {i + 1}"
     data["lines"] = lines

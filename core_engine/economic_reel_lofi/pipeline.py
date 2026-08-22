@@ -151,6 +151,14 @@ _INTRUDER_SELF = re.compile(
     r"\b(mugs?|cups?|coffee|glasses?|laptops?|computers?|keyboards?)\b",
     re.I,
 )
+# Compact requested objects: a larger architectural dark plane (door/wall)
+# is often the biggest blob; the object itself then looks like a "mug".
+_COMPACT_INTENDED_RE = re.compile(
+    r"\b(suitcase|bag|kettle|chair|pillow|blanket|coat|lamp|radio|plate|"
+    r"journal|notebook|letter|envelope|stone|stones|rock|rocks|pebble|"
+    r"pebbles|boulder|box|boxes|paper|newspaper)\b",
+    re.I,
+)
 
 
 def _uniform_gray(gray: np.ndarray, k: int) -> np.ndarray:
@@ -200,6 +208,10 @@ def _connected_components(mask: np.ndarray, min_area: int) -> list[dict[str, flo
                     "aspect": bh / max(bw, 1),
                     "cy": float(np.mean(ys)) / h,
                     "cx": float(np.mean(xs)) / w,
+                    "x0": x0 / w,
+                    "y0": y0 / h,
+                    "x1": (x1 + 1) / w,
+                    "y1": (y1 + 1) / h,
                 }
             )
     out.sort(key=lambda d: d["bbox_frac"], reverse=True)
@@ -255,15 +267,28 @@ def assess_default_object_intrusion(
             and b["bbox_frac"] >= 0.03
             and b["frac"] >= 0.012
         ]
-        intended = blobs[0] if blobs else None
-        top = intruders[0] if intruders else None
+        # Door knobs / latches: small compact dark blobs, not mug-class props.
+        hardware = [b for b in intruders if b["bbox_frac"] < 0.06]
+        compact = [b for b in intruders if b["bbox_frac"] >= 0.06]
+        meta["n_hardware"] = len(hardware)
+        if obj and _COMPACT_INTENDED_RE.search(obj) and compact:
+            # First compact mid-frame blob is the requested object; only a
+            # second compact blob is a real extra prop.
+            intended = compact[0]
+            extras = compact[1:]
+            top = extras[0] if extras else None
+            meta["compact_as_intended"] = True
+        else:
+            intended = blobs[0] if blobs else None
+            top = compact[0] if compact else None
+            extras = compact
         intended_bbox = float((intended or {}).get("bbox_frac") or 0.0)
         intr_bbox = float((top or {}).get("bbox_frac") or 0.0)
         intr_frac = float((top or {}).get("frac") or 0.0)
         ratio = intr_bbox / max(intended_bbox, 1e-6) if intended_bbox else 0.0
         meta.update(
             {
-                "n_intruders": len(intruders),
+                "n_intruders": len(extras) if top is not None else 0,
                 "intruder_bbox_frac": round(intr_bbox, 4),
                 "intruder_area_frac": round(intr_frac, 4),
                 "intended_bbox_frac": round(intended_bbox, 4),
@@ -275,6 +300,21 @@ def assess_default_object_intrusion(
         fail = bool(top) and (
             intr_bbox >= 0.08 or intr_frac >= 0.04 or (ratio >= 0.45 and intr_bbox >= 0.03)
         )
+        # Same blob counted as both intended and intruder (ratio≈1): the
+        # requested compact object (stone, bag, box, …) is not a mug.
+        if (
+            fail
+            and intended is not None
+            and top is not None
+            and obj
+            and _COMPACT_INTENDED_RE.search(obj)
+            and abs(intr_bbox - intended_bbox) < 1e-6
+        ):
+            fail = False
+            top = None
+            extras = []
+            meta["n_intruders"] = 0
+            meta["compact_as_intended"] = True
         if fail and top is not None:
             meta["passed"] = False
             flaw = (
@@ -293,7 +333,8 @@ def assess_default_object_intrusion(
             return False, [flaw], meta
         print(
             f"[LOFI object-gate] PASS {image_path.name} "
-            f"n_intruders={len(intruders)} bbox={intr_bbox:.3f} ratio={ratio:.2f}"
+            f"n_intruders={meta.get('n_intruders')} bbox={intr_bbox:.3f} "
+            f"ratio={ratio:.2f} compact_intended={int(bool(meta.get('compact_as_intended')))}"
         )
         return True, [], meta
     except Exception as exc:  # noqa: BLE001
@@ -301,6 +342,46 @@ def assess_default_object_intrusion(
         meta["skipped"] = True
         meta["skip_reason"] = f"error:{exc}"
         return True, [], meta
+
+
+def debug_intruder_overlay(
+    image_path: Path,
+    out_path: Path | None = None,
+    *,
+    subject_type: str = "object_focus",
+    key_object: str = "",
+) -> Path:
+    """Draw dark-blob bboxes for INTRUDER debug. Does not change gate logic."""
+    from PIL import Image as PILImage
+    from PIL import ImageDraw
+
+    src = Path(image_path)
+    dest = Path(out_path) if out_path else src.with_name(f"{src.stem}_intruder_debug.png")
+    im = PILImage.open(src).convert("RGB")
+    w, h = im.size
+    _, gray = _load_lofi_thumb_gray(src, size=192)
+    local = _uniform_gray(gray, 21)
+    mask = gray < (local - 16.0)
+    blobs = _connected_components(mask, min_area=50)
+    draw = ImageDraw.Draw(im)
+    for i, b in enumerate(blobs[:12]):
+        color = (255, 40, 40) if i == 0 else (40, 200, 80)
+        x0 = int(float(b["x0"]) * w)
+        y0 = int(float(b["y0"]) * h)
+        x1 = int(float(b["x1"]) * w)
+        y1 = int(float(b["y1"]) * h)
+        draw.rectangle([x0, y0, x1, y1], outline=color, width=4)
+        draw.text((x0 + 4, y0 + 4), f"{i} bf={b['bbox_frac']:.3f}", fill=color)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    im.save(dest)
+    ok, flaws, meta = assess_default_object_intrusion(
+        src, subject_type=subject_type, key_object=key_object
+    )
+    print(
+        f"[LOFI intruder-debug] {src.name} → {dest.name} "
+        f"blobs={len(blobs)} gate_ok={int(ok)} meta={meta} flaws={flaws}"
+    )
+    return dest
 
 
 def assess_photoreal_style(
@@ -385,6 +466,8 @@ def _qa_scene_image(
     *,
     subject_type: str = "",
     key_object: str = "",
+    prior_fail_criteria: list[str] | None = None,
+    style_profile: str | None = None,
 ) -> tuple[bool, list[str], str]:
     """
     Run VisualQA lofi_economic profile when available.
@@ -408,6 +491,8 @@ def _qa_scene_image(
             quality_threshold=6.0,
             requested_subject=subject_type or None,
             requested_object=key_object or None,
+            prior_fail_criteria=prior_fail_criteria,
+            style_profile=style_profile,
         )
         critic_ok = bool(verdict.passed)
         critic_flaws = list(verdict.flaws or [])
@@ -453,13 +538,19 @@ def generate_and_qa_scene(
     attempt_budget: int | None = None,
     extra_prompt: str = "",
     mood: dict[str, Any] | None = None,
+    generate_fn: Any | None = None,
+    assemble_fn: Any | None = None,
 ) -> tuple[bool, dict[str, Any], int, int]:
     """
     Generate one beat still and run critic + uniq16 style_gate + INTRUDER.
 
     Writes pixels to ``out_img`` (last attempt kept on failure). Returns
     ``(ok, last_gate, n_image_calls, n_critic_calls)``.
+
+    ``generate_fn`` / ``assemble_fn`` default to the Schnell live path.
+    Flux Dev callers pass generate_scene_image_dev + assemble_v2_prompt_dev.
     """
+    gen_image = generate_fn or generate_scene_image
     scene_i = int(row.get("scene") or 1)
     visual = str(row.get("visual_prompt") or "")
     extra = " ".join((extra_prompt or "").split())
@@ -474,9 +565,12 @@ def generate_and_qa_scene(
         "highlight": lofi_cfg.DUOTONE_HIGHLIGHT,
     })
     if attempt_budget is None:
-        n_attempts = int(lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE) + 1
+        n_attempts = int(getattr(lofi_cfg, "IMAGE_ATTEMPTS_PER_SCENE", 0) or 0)
+        if n_attempts < 1:
+            n_attempts = int(lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE) + 1
     else:
         n_attempts = max(1, int(attempt_budget))
+    n_attempts = max(1, min(n_attempts, 2))
 
     ok_img = False
     last_flaws: list[str] = []
@@ -503,7 +597,8 @@ def generate_and_qa_scene(
                 assemble_v2_prompt,
             )
 
-            rebuilt = assemble_v2_prompt(row, focus_step=focus_step)
+            assembler = assemble_fn or assemble_v2_prompt
+            rebuilt = assembler(row, focus_step=focus_step)
             row["visual_prompt"] = rebuilt
             prompt_i = apply_ad_hoc_guidance(rebuilt, extra)
             print(
@@ -522,13 +617,16 @@ def generate_and_qa_scene(
             if extras:
                 prompt_i = f"{apply_ad_hoc_guidance(visual, extra)} {' '.join(extras)}"
         try:
-            _, mood_meta = generate_scene_image(
+            _, mood_meta = gen_image(
                 prompt_i,
                 out_img,
                 mood=mood_meta,
                 verbatim=True,
             )
             n_image_calls += 1
+            lofi_cfg.write_still_style_sidecar(
+                out_img, run_id=out_img.parent.name, reused=False
+            )
         except Exception as exc:  # noqa: BLE001
             last_flaws = [f"image gen failed: {exc}"]
             _LOG.warning("scene %s gen attempt %s failed: %s", scene_i, attempt, exc)
@@ -538,7 +636,21 @@ def generate_and_qa_scene(
             out_img, visual,
             subject_type=subject_type,
             key_object=key_object,
+            prior_fail_criteria=[
+                f for f in last_flaws
+                if f and not str(f).startswith("image gen failed")
+            ] if attempt > 1 and last_flaws else None,
+            style_profile=str(row.get("visual_identity_profile") or "") or None,
         )
+        if attempt > 1 and last_flaws:
+            hold = [
+                f for f in last_flaws
+                if f and not str(f).startswith("image gen failed")
+            ]
+            print(
+                f"[LOFI retry-hold] scene={scene_i} attempt={attempt} "
+                f"same_criteria={hold}"
+            )
         gate_ok, gate_flaws, gate_meta = assess_default_object_intrusion(
             out_img,
             subject_type=subject_type,
@@ -577,6 +689,12 @@ def generate_and_qa_scene(
             break
         last_flaws = flaws
         scene_attempts.append(dict(last_gate))
+        if attempt >= 2:
+            print(
+                f"[LOFI retry-stop] scene={scene_i} attempt={attempt} "
+                f"same named fail — not spending another call. flaws={flaws}"
+            )
+            break
         _LOG.info(
             "VisualQA reject scene %s attempt %s subject=%s: %s",
             scene_i,
@@ -593,6 +711,17 @@ def generate_and_qa_scene(
     last_gate["qa_passed"] = bool(ok_img)
     last_gate["mood"] = mood_meta
     return ok_img, last_gate, n_image_calls, n_critic_calls
+
+
+def _caption_cap_reasons_only(reasons: list[str]) -> bool:
+    """True when every validator reason is a per-beat word/char cap miss."""
+    if not reasons:
+        return False
+    pats = (
+        re.compile(r"has \d+ words \(max \d+\)"),
+        re.compile(r"caption exceeds \d+ chars"),
+    )
+    return all(any(p.search(r) for p in pats) for r in reasons)
 
 
 def _generate_validated_script(
@@ -623,6 +752,19 @@ def _generate_validated_script(
             scene_count=scene_count,
             persist_on_pass=persist_on_pass,
         )
+        if (not result.ok) and _caption_cap_reasons_only(result.reasons):
+            repair_script_captions(script)
+            result = validate_script(
+                script,
+                module=module,
+                scene_count=scene_count,
+                persist_on_pass=persist_on_pass,
+            )
+            if result.ok and result.script:
+                print(
+                    "[LOFI script] recovered over-cap beat(s) by trim — "
+                    "not retrying the whole episode"
+                )
         if result.ok and result.script:
             note_batch_structure_id(str(result.script.get("structure_id") or ""))
             return result.script, [], False
@@ -654,6 +796,7 @@ def _generate_validated_script(
         arc_template=str((last_script or {}).get("arc_template") or ""),
     )
     fallback["subtheme"] = theme_row.get("subtheme")
+    repair_script_captions(fallback)
     result = validate_script(
         fallback,
         module=module,
@@ -861,16 +1004,43 @@ def _produce_one(
 
     lines = list(script.get("lines") or [])
     episode_variety: dict[str, Any] = {}
+    use_dev = bool(lofi_cfg.uses_flux_dev())
     # V2 identity bank assembles prompts from beat fields (live riso JSON untouched).
     if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
-        from core_engine.economic_reel_lofi.visual_identity import apply_v2_prompts_to_lines
+        if use_dev:
+            from core_engine.economic_reel_lofi.visual_identity import (
+                apply_v2_prompts_to_lines_dev,
+            )
 
-        apply_v2_prompts_to_lines(
-            lines,
-            theme_row=theme_row,
-            vary_imagery=lofi_cfg.is_thematic_arc(str(script.get("arc_template") or "")),
-            lock_visuals=bool(locked_script),
-        )
+            print(
+                "[LOFI backend] flux=dev | "
+                f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
+                "assemble=assemble_v2_prompt_dev | "
+                f"gen={lofi_cfg.LOFI_IMAGE_WIDTH}x{lofi_cfg.LOFI_IMAGE_HEIGHT} "
+                f"delivery={lofi_cfg.REEL_WIDTH}x{lofi_cfg.REEL_HEIGHT} "
+                f"aspect={lofi_cfg.LOFI_IMAGE_WIDTH / lofi_cfg.LOFI_IMAGE_HEIGHT:.6f}"
+            )
+            apply_v2_prompts_to_lines_dev(
+                lines,
+                theme_row=theme_row,
+                vary_imagery=lofi_cfg.is_thematic_arc(
+                    str(script.get("arc_template") or "")
+                ),
+                lock_visuals=bool(locked_script),
+            )
+        else:
+            from core_engine.economic_reel_lofi.visual_identity import (
+                apply_v2_prompts_to_lines,
+            )
+
+            apply_v2_prompts_to_lines(
+                lines,
+                theme_row=theme_row,
+                vary_imagery=lofi_cfg.is_thematic_arc(
+                    str(script.get("arc_template") or "")
+                ),
+                lock_visuals=bool(locked_script),
+            )
         if lines and isinstance(lines[0], dict):
             raw_var = lines[0].pop("episode_variety", None)
             if isinstance(raw_var, dict):
@@ -948,6 +1118,13 @@ def _produce_one(
     n_image_calls = 0
     n_critic_calls = 0
     object_gate_by_scene: list[dict[str, Any]] = []
+    n_beats_planned = max(1, len(lines))
+    call_budget = lofi_cfg.image_call_budget(n_beats_planned)
+    print(
+        f"[LOFI budget] image_call_cap={call_budget} "
+        f"({n_beats_planned} beats x {lofi_cfg.IMAGE_CALL_BUDGET_MULT:g}) "
+        f"attempts_per_scene={lofi_cfg.IMAGE_ATTEMPTS_PER_SCENE}"
+    )
 
     if (not stills_only) and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
         try:
@@ -995,14 +1172,37 @@ def _produce_one(
         }
         reuse_src = reuse_images[scene_i - 1] if 0 < scene_i <= len(reuse_images) else None
         prev_ok = bool((row.get("default_object_gate") or {}).get("image_ok"))
+        want_tag = lofi_cfg.current_still_style_tag()
+        src_tag = lofi_cfg.still_style_tag_of(reuse_src) if reuse_src else None
+        allow_mixed = lofi_cfg.allow_mixed_era_assemble()
         reuse_ok = bool(
             reuse_src
             and reuse_src.is_file()
             and (prev_ok or scene_i in accept_scenes)
         )
+        if reuse_ok and src_tag != want_tag:
+            if allow_mixed:
+                print(
+                    f"[LOFI reuse] mixed-era APPROVED scene={scene_i} "
+                    f"src={src_tag or 'UNTAGGED'} want={want_tag}"
+                )
+            else:
+                print(
+                    f"[LOFI reuse] REJECT stale scene={scene_i} "
+                    f"src={src_tag or 'UNTAGGED'} want={want_tag} "
+                    f"— generating fresh"
+                )
+                reuse_ok = False
         if reuse_ok:
             if Path(reuse_src) != out_img:
                 shutil.copy2(reuse_src, out_img)
+            keep_tag = src_tag if (src_tag and src_tag != want_tag) else want_tag
+            lofi_cfg.write_still_style_sidecar(
+                out_img,
+                run_id=run_dir.name,
+                reused=True,
+                style_tag=keep_tag,
+            )
             ok_img = True
             last_gate = dict(row.get("default_object_gate") or last_gate)
             last_gate["image_ok"] = True
@@ -1014,8 +1214,59 @@ def _produce_one(
                 f"← {reuse_src.name}"
             )
         else:
+            remaining = call_budget - n_image_calls
+            if remaining <= 0:
+                qa_flags.append(
+                    f"scene_{scene_i}: skipped — episode image-call budget "
+                    f"{call_budget} exhausted"
+                )
+                print(
+                    f"[LOFI budget] STOP scene={scene_i} calls={n_image_calls}/"
+                    f"{call_budget} — unresolved"
+                )
+                if not out_img.is_file():
+                    from PIL import Image as PILImage
+
+                    PILImage.new("RGB", (LOFI_IMAGE_WIDTH, LOFI_IMAGE_HEIGHT), (30, 40, 55)).save(out_img)
+                last_gate = {
+                    "scene": scene_i,
+                    "subject_type": subject_type,
+                    "key_object": key_object,
+                    "passed": False,
+                    "qa_passed": False,
+                    "qa_flaws": ["episode image-call budget exhausted"],
+                    "image_ok": False,
+                    "skipped": True,
+                    "skip_reason": "image_call_budget",
+                }
+                object_gate_by_scene.append(last_gate)
+                row["default_object_gate"] = last_gate
+                row["riso_id"] = mood_meta.get("id")
+                scene_paths.append(out_img)
+                captions.append(caption)
+                scene_moods.append(mood_meta)
+                voice_paths.append(None)
+                word_timings_per_scene.append(None)
+                continue
+            gen_kw: dict[str, Any] = {
+                "mood": mood_meta,
+                "attempt_budget": min(
+                    int(getattr(lofi_cfg, "IMAGE_ATTEMPTS_PER_SCENE", 2) or 2),
+                    remaining,
+                ),
+            }
+            if use_dev:
+                from core_engine.economic_reel_lofi.image_gen import (
+                    generate_scene_image_dev,
+                )
+                from core_engine.economic_reel_lofi.visual_identity import (
+                    assemble_v2_prompt_dev,
+                )
+
+                gen_kw["generate_fn"] = generate_scene_image_dev
+                gen_kw["assemble_fn"] = assemble_v2_prompt_dev
             ok_img, last_gate, n_i, n_c = generate_and_qa_scene(
-                row, out_img, mood=mood_meta,
+                row, out_img, **gen_kw,
             )
             n_image_calls += n_i
             n_critic_calls += n_c
@@ -1029,7 +1280,7 @@ def _produce_one(
             if not out_img.is_file():
                 from PIL import Image as PILImage
 
-                PILImage.new("RGB", (768, 1344), (30, 40, 55)).save(out_img)
+                PILImage.new("RGB", (LOFI_IMAGE_WIDTH, LOFI_IMAGE_HEIGHT), (30, 40, 55)).save(out_img)
         row["riso_id"] = mood_meta.get("id")
         scene_paths.append(out_img)
         captions.append(caption)
@@ -1121,26 +1372,41 @@ def _produce_one(
                         f"lap_var={sg.get('lap_var')} uniq16={sg.get('uniq16')}"
                     )
 
-    # Single source of truth for the FLUX-schnell $/image estimate: the real
-    # DeepInfra formula, called with the actual width/height/steps this
-    # pipeline requests (no more separately-hardcoded per-call guesses).
-    # Computed here (not inside `if stills_only`) so cost is visible on every
-    # exit path, including the full production render.
+    # Per-image rate follows the backend this run actually POSTed
+    # (DeepInfra Dev formula vs DeepInfra Schnell formula).
     from VisualQA_Agent.config import COST_GEMINI_FLASH_USD
-    from avatar_engine.providers.together_image import estimate_deepinfra_schnell_cost_usd
 
-    img_cost_per_call = estimate_deepinfra_schnell_cost_usd(
-        LOFI_IMAGE_WIDTH, LOFI_IMAGE_HEIGHT, LOFI_IMAGE_STEPS
+    img_cost_per_call, cost_meta = lofi_cfg.lofi_image_cost_per_call_usd(
+        LOFI_IMAGE_WIDTH, LOFI_IMAGE_HEIGHT, schnell_steps=LOFI_IMAGE_STEPS
     )
     img_cost = img_cost_per_call * n_image_calls
     critic_cost = COST_GEMINI_FLASH_USD * n_critic_calls
     media_cost = img_cost + critic_cost
     total_est_cost = round(media_cost + script_llm_cost_usd, 5)
     print(
-        f"[LOFI cost] script_llm_calls={script_llm_calls} "
-        f"script_cost=${script_llm_cost_usd:.4f} | images={n_image_calls} "
+        f"[LOFI cost] backend={cost_meta.get('backend')} "
+        f"provider={cost_meta.get('provider')} "
+        f"rate=${img_cost_per_call:.6f}/image "
+        f"({cost_meta.get('formula')}) | "
+        f"images={n_image_calls}/{call_budget} "
         f"image_cost=${img_cost:.4f} | critic={n_critic_calls} "
-        f"critic_cost=${critic_cost:.4f} | total_est_cost=${total_est_cost:.4f}"
+        f"critic_cost=${critic_cost:.4f} | script_cost=${script_llm_cost_usd:.4f} "
+        f"| total_est_cost=${total_est_cost:.4f}"
+    )
+    if cost_meta.get("note"):
+        print(f"[LOFI cost] {cost_meta['note']}")
+    cost_delta = lofi_cfg.lofi_image_cost_delta()
+    print(
+        f"[LOFI cost] delta old={cost_delta['old_size']} "
+        f"${cost_delta['old_usd_per_image']:.6f}/image "
+        f"({cost_delta['old_mp']} MP) → new={cost_delta['new_size']} "
+        f"${cost_delta['new_usd_per_image']:.6f}/image "
+        f"({cost_delta['new_mp']} MP) usd_delta=${cost_delta['usd_delta']:.6f} "
+        f"pixel_ratio={cost_delta['pixel_ratio']} "
+        f"cost_ratio={cost_delta['cost_ratio']} "
+        f"scaling={cost_delta['scaling']} "
+        f"time_est_s={cost_delta['time_est_s_linear']} "
+        f"(baseline {cost_delta['time_baseline_s']}s @ {cost_delta['old_size']})"
     )
 
     if stills_only:
@@ -1191,6 +1457,10 @@ def _produce_one(
             "visual_identity": "v2"
             if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
             else "riso_library",
+            "flux_backend": "dev" if use_dev else "schnell",
+            "visual_identity_profile": (
+                lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE if use_dev else None
+            ),
             "scene_images": [str(p) for p in scene_paths],
             "work_dir": str(run_dir),
             "visual_qa_flags": qa_flags,
@@ -1198,6 +1468,9 @@ def _produce_one(
             "episode_variety": episode_variety,
             "object_gate_by_scene": object_gate_by_scene,
             "image_calls": n_image_calls,
+            "image_call_budget": call_budget,
+            "image_cost_per_call": img_cost_per_call,
+            "image_cost_meta": cost_meta,
             "critic_calls": n_critic_calls,
             "script_llm_calls": script_llm_calls,
             "script_llm_cost_usd": script_llm_cost_usd,
@@ -1254,7 +1527,14 @@ def _produce_one(
             "episode_variety": episode_variety,
             "object_gate_by_scene": object_gate_by_scene,
             "video_path": None,
+            "flux_backend": "dev" if use_dev else "schnell",
+            "visual_identity_profile": (
+                lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE if use_dev else None
+            ),
             "image_calls": n_image_calls,
+            "image_call_budget": call_budget,
+            "image_cost_per_call": img_cost_per_call,
+            "image_cost_meta": cost_meta,
             "critic_calls": n_critic_calls,
             "script_llm_calls": script_llm_calls,
             "script_llm_cost_usd": script_llm_cost_usd,
@@ -1340,7 +1620,63 @@ def _produce_one(
         f"total={actual_dur:.1f}s locked={int(lock_beat)} "
         f"(requested_writer_target={duration_s}s)"
     )
+    want_tag = lofi_cfg.current_still_style_tag()
+    by_tag: dict[str, list[int]] = {}
+    for i, p in enumerate(scene_paths, start=1):
+        tag = lofi_cfg.still_style_tag_of(p) or "UNTAGGED"
+        by_tag.setdefault(tag, []).append(i)
+    style_ok = set(by_tag.keys()) == {want_tag}
+    if not style_ok:
+        bits = []
+        for tag, idxs in sorted(by_tag.items()):
+            kind = "fresh" if tag == want_tag else "stale"
+            bits.append(
+                f"{len(idxs)} of {len(scene_paths)} beats are {kind} "
+                f"(style {tag}) scenes={idxs}"
+            )
+        mix_msg = " — ".join(bits) + (
+            " — cannot produce a consistent video automatically."
+        )
+        if not lofi_cfg.allow_mixed_era_assemble():
+            print(f"[LOFI assemble] REFUSE mixed-era: {mix_msg}")
+            hold_path = clips_dir / f"lofi_hold_mixed_era_{stamp}_v{index:02d}.json"
+            hold_path.write_text(
+                json.dumps(
+                    {
+                        "post_type": "ECONOMIC_REEL_LOFI",
+                        "mode": "mixed_era_hold",
+                        "error": mix_msg,
+                        "want_style_tag": want_tag,
+                        "style_tags": by_tag,
+                        "scene_images": [str(p) for p in scene_paths],
+                        "work_dir": str(run_dir),
+                        "script": script,
+                    },
+                    indent=2,
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
+            return LofiItemResult(
+                ok=False,
+                module=module,
+                theme=str(script.get("theme") or ""),
+                hook_type=str(script.get("hook_type") or ""),
+                scene_count=scene_count,
+                duration_s=actual_dur,
+                manual_review=True,
+                errors=[mix_msg],
+                script=script,
+                meta_path=str(hold_path),
+            )
+        print(f"[LOFI assemble] mixed-era APPROVED: {mix_msg}")
+    else:
+        print(
+            f"[LOFI assemble] style_ok=1 tag={want_tag} "
+            f"beats={len(scene_paths)}"
+        )
     try:
+        assemble_audit: dict[str, Any] = {}
         assemble_lofi_reel(
             scene_paths,
             captions,
@@ -1353,6 +1689,7 @@ def _produce_one(
             caption_style=lofi_cfg.DEFAULT_CAPTION_STYLE,
             voice_paths=voice_paths,
             word_timings_per_scene=word_timings_per_scene,
+            audit_out=assemble_audit,
         )
     except Exception as exc:  # noqa: BLE001
         _LOG.error("assemble failed: %s", exc, exc_info=True)
@@ -1397,6 +1734,19 @@ def _produce_one(
         "visual_identity": "v2"
         if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
         else "riso_library",
+        "flux_backend": "dev" if use_dev else "schnell",
+        "visual_identity_profile": (
+            lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE if use_dev else None
+        ),
+        "still_style_tag": lofi_cfg.current_still_style_tag(),
+        "gen_width": lofi_cfg.LOFI_IMAGE_WIDTH,
+        "gen_height": lofi_cfg.LOFI_IMAGE_HEIGHT,
+        "delivery_width": lofi_cfg.REEL_WIDTH,
+        "delivery_height": lofi_cfg.REEL_HEIGHT,
+        "aspect": round(lofi_cfg.LOFI_IMAGE_WIDTH / lofi_cfg.LOFI_IMAGE_HEIGHT, 6),
+        "image_cost_delta": cost_delta,
+        "watermark_native_size": int(assemble_audit.get("watermark_native_size") or 0),
+        "watermark_audit": assemble_audit,
         "voice_id": getattr(lofi_cfg, "LOFI_VOICE_ID", None),
         "caption_style": lofi_cfg.DEFAULT_CAPTION_STYLE,
         "grading_applied": bool(getattr(lofi_cfg, "LOFI_APPLY_GRADING", False)),
@@ -1409,6 +1759,9 @@ def _produce_one(
         "episode_variety": episode_variety,
         "object_gate_by_scene": object_gate_by_scene,
         "image_calls": n_image_calls,
+        "image_call_budget": call_budget,
+        "image_cost_per_call": img_cost_per_call,
+        "image_cost_meta": cost_meta,
         "critic_calls": n_critic_calls,
         "script_llm_calls": script_llm_calls,
         "script_llm_cost_usd": script_llm_cost_usd,

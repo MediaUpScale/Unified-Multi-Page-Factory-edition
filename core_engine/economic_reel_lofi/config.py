@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +44,17 @@ SCRIPT_MAX_RETRIES: int = 3
 DEDUP_SIMILARITY_THRESHOLD: float = 0.85
 # Auto-reject if a script copies stored wf1–4 / mc1–3 transcripts.
 REFERENCE_OVERLAP_THRESHOLD: float = 0.80
-IMAGE_MAX_RETRIES_PER_SCENE: int = 2
+# Total tries per scene = IMAGE_MAX_RETRIES_PER_SCENE + 1.
+# Cap at 2 attempts so a systematic fail cannot 3–4× its own cost.
+IMAGE_MAX_RETRIES_PER_SCENE: int = 1
+IMAGE_ATTEMPTS_PER_SCENE: int = 2
+# Stop the episode once image calls would exceed this × beat count.
+IMAGE_CALL_BUDGET_MULT: float = 2.0
+
+
+def image_call_budget(n_beats: int) -> int:
+    n = max(1, int(n_beats))
+    return max(n, int(math.ceil(n * IMAGE_CALL_BUDGET_MULT)))
 # Core Mode (a) retrieval — not quote/philosopher mode (b)
 CORE_DETAIL_COUNT: int = 3
 REQUIRE_ANCHOR_OBJECT: bool = True
@@ -145,6 +158,237 @@ LOFI_PROMPT_EXPOSURE_GUARD: str = (
 LOFI_PROMPT_LINEWORK_GUARD: str = (
     "fine black ink outlines, detailed interior objects, not a flat graphic, "
     "not a solid color field, not an empty silhouette poster"
+)
+
+# ── FLUX.1-dev (ECONOMIC_REEL_LOFI_FLUXDEV) ────────────────────────────────
+# Schnell constants above are unchanged. CFG=0 is inherent to Schnell; do not
+# try to make LOFI_NEGATIVE_PROMPT steer that path.
+LOFI_DEV_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-dev"
+LOFI_DEV_IMAGE_STEPS: int = 20
+# Mid of the 3.5–5.0 test range. Override per probe if needed.
+LOFI_DEV_GUIDANCE_SCALE: float = 4.0
+DEFAULT_VISUAL_IDENTITY_PROFILE: str = "style-riso_painting_retro_vintage"
+# Live ECONOMIC_REEL_LOFI stays Schnell unless this is "dev".
+# Override: set env LOFI_FLUX_BACKEND=dev for a Flux Dev episode.
+LOFI_FLUX_BACKEND: str = str(os.environ.get("LOFI_FLUX_BACKEND") or "schnell").strip()
+
+
+def uses_flux_dev() -> bool:
+    return LOFI_FLUX_BACKEND.lower() in {"dev", "flux_dev", "flux.1-dev"}
+
+
+# Exact 9:16 (0.5625), both axes ÷16, 0.92 MP — under Flux Dev's ~1 MP native
+# budget. 1080×1920 delivery is a uniform 1.5× scale (no crop, no stretch).
+# Previous 768×1344 was 0.5714 and forced ImageOps.fit to crop ~1.6%.
+LOFI_IMAGE_WIDTH: int = 720
+LOFI_IMAGE_HEIGHT: int = 1280
+LOFI_IMAGE_WIDTH_LEGACY: int = 768
+LOFI_IMAGE_HEIGHT_LEGACY: int = 1344
+# Mean wall-clock s/image observed on DeepInfra Dev @ 768×1344 × 20 steps
+# (2026-08-22 hope run, ~11 calls / ~200 s). Used only to scale a time guess.
+LOFI_DEV_SEC_PER_IMAGE_LEGACY: float = 18.0
+
+# Bump when the locked look changes (silhouette, negatives, profile).
+STILL_STYLE_VERSION: str = "riso_retro_lock_v1"
+
+
+def current_still_style_tag() -> str:
+    """Identity stamped on every still this process writes."""
+    if uses_flux_dev():
+        return (
+            f"{DEFAULT_VISUAL_IDENTITY_PROFILE}/dev/{STILL_STYLE_VERSION}"
+        )
+    return f"schnell_live/schnell/{STILL_STYLE_VERSION}"
+
+
+def still_style_sidecar_path(image_path: Path) -> Path:
+    p = Path(image_path)
+    return p.with_name(f"{p.stem}.style.json")
+
+
+def write_still_style_sidecar(
+    image_path: Path,
+    *,
+    run_id: str = "",
+    reused: bool = False,
+    style_tag: str | None = None,
+) -> dict[str, Any]:
+    rec = {
+        "style_tag": str(style_tag or current_still_style_tag()),
+        "visual_identity_profile": (
+            DEFAULT_VISUAL_IDENTITY_PROFILE if uses_flux_dev() else "schnell_live"
+        ),
+        "flux_backend": "dev" if uses_flux_dev() else "schnell",
+        "style_version": STILL_STYLE_VERSION,
+        "pipeline_run": run_id or Path(image_path).parent.name,
+        "reused": bool(reused),
+        "gen_width": LOFI_IMAGE_WIDTH,
+        "gen_height": LOFI_IMAGE_HEIGHT,
+        "aspect": round(LOFI_IMAGE_WIDTH / LOFI_IMAGE_HEIGHT, 6),
+    }
+    src = Path(image_path)
+    if src.is_file():
+        try:
+            from PIL import Image as PILImage
+
+            with PILImage.open(src) as im:
+                rec["gen_width"], rec["gen_height"] = int(im.size[0]), int(im.size[1])
+                if rec["gen_height"]:
+                    rec["aspect"] = round(rec["gen_width"] / rec["gen_height"], 6)
+        except Exception:  # noqa: BLE001
+            pass
+    side = still_style_sidecar_path(image_path)
+    side.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    return rec
+
+
+def read_still_style_sidecar(image_path: Path) -> dict[str, Any] | None:
+    side = still_style_sidecar_path(image_path)
+    if not side.is_file():
+        return None
+    try:
+        data = json.loads(side.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def still_style_tag_of(image_path: Path) -> str | None:
+    rec = read_still_style_sidecar(image_path)
+    if not rec:
+        return None
+    tag = str(rec.get("style_tag") or "").strip()
+    return tag or None
+
+
+def allow_mixed_era_assemble() -> bool:
+    return str(os.environ.get("LOFI_ALLOW_MIXED_ERA") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def lofi_image_cost_per_call_usd(
+    width: int | None = None,
+    height: int | None = None,
+    schnell_steps: int | None = None,
+) -> tuple[float, dict[str, Any]]:
+    """
+    Per-image USD for the backend this process will actually POST.
+
+    Dev live path bills DeepInfra FLUX-1-dev
+    ($0.009 × w/1024 × h/1024 × steps/25), not Together's $0.025 flat
+    (Together serverless Dev is unavailable). Schnell uses DeepInfra's
+    $0.0005 × megapixel × steps formula.
+    """
+    from avatar_engine.providers.together_image import (
+        estimate_deepinfra_dev_cost_usd,
+        estimate_deepinfra_schnell_cost_usd,
+        estimate_together_image_cost,
+    )
+
+    width = int(width if width is not None else LOFI_IMAGE_WIDTH)
+    height = int(height if height is not None else LOFI_IMAGE_HEIGHT)
+
+    if uses_flux_dev():
+        steps = int(LOFI_DEV_IMAGE_STEPS)
+        usd = estimate_deepinfra_dev_cost_usd(width, height, steps)
+        return usd, {
+            "backend": "dev",
+            "provider": "deepinfra",
+            "model": LOFI_DEV_IMAGE_MODEL,
+            "steps": steps,
+            "guidance_scale": LOFI_DEV_GUIDANCE_SCALE,
+            "allow_lora": False,
+            "usd_per_image": usd,
+            "formula": "0.009*(w/1024)*(h/1024)*(steps/25)",
+            "together_flat_usd": estimate_together_image_cost(LOFI_DEV_IMAGE_MODEL),
+            "note": (
+                "Together serverless Flux Dev is unavailable; "
+                "billed DeepInfra FLUX-1-dev formula."
+            ),
+        }
+    steps = int(schnell_steps or 4)
+    usd = estimate_deepinfra_schnell_cost_usd(width, height, steps)
+    return usd, {
+        "backend": "schnell",
+        "provider": "deepinfra",
+        "model": "black-forest-labs/FLUX-1-schnell",
+        "steps": steps,
+        "usd_per_image": usd,
+        "formula": "0.0005*(w/1024)*(h/1024)*steps",
+        "note": "DeepInfra Schnell dashboard formula.",
+    }
+
+
+def lofi_image_cost_delta() -> dict[str, Any]:
+    """Old 768×1344 vs current 720×1280, same backend/steps. For run-log delta."""
+    old_usd, old_meta = lofi_image_cost_per_call_usd(
+        LOFI_IMAGE_WIDTH_LEGACY, LOFI_IMAGE_HEIGHT_LEGACY
+    )
+    new_usd, new_meta = lofi_image_cost_per_call_usd(
+        LOFI_IMAGE_WIDTH, LOFI_IMAGE_HEIGHT
+    )
+    px_old = LOFI_IMAGE_WIDTH_LEGACY * LOFI_IMAGE_HEIGHT_LEGACY
+    px_new = LOFI_IMAGE_WIDTH * LOFI_IMAGE_HEIGHT
+    px_ratio = px_new / px_old
+    cost_ratio = new_usd / old_usd if old_usd else 0.0
+    drift = abs(cost_ratio - px_ratio)
+    scaling = (
+        "linear_with_pixels"
+        if drift < 0.01
+        else ("better_than_linear" if cost_ratio < px_ratio else "worse_than_linear")
+    )
+    time_est = (
+        LOFI_DEV_SEC_PER_IMAGE_LEGACY * px_ratio
+        if uses_flux_dev()
+        else None
+    )
+    return {
+        "old_size": f"{LOFI_IMAGE_WIDTH_LEGACY}x{LOFI_IMAGE_HEIGHT_LEGACY}",
+        "new_size": f"{LOFI_IMAGE_WIDTH}x{LOFI_IMAGE_HEIGHT}",
+        "old_mp": round(px_old / 1e6, 4),
+        "new_mp": round(px_new / 1e6, 4),
+        "old_usd_per_image": round(old_usd, 6),
+        "new_usd_per_image": round(new_usd, 6),
+        "usd_delta": round(new_usd - old_usd, 6),
+        "pixel_ratio": round(px_ratio, 4),
+        "cost_ratio": round(cost_ratio, 4),
+        "scaling": scaling,
+        "steps": new_meta.get("steps"),
+        "formula": new_meta.get("formula"),
+        "time_est_s_linear": None if time_est is None else round(time_est, 2),
+        "time_baseline_s": LOFI_DEV_SEC_PER_IMAGE_LEGACY if uses_flux_dev() else None,
+        "time_baseline_note": (
+            "legacy 768x1344 Dev ~18s/image; time guess assumes attention-bound "
+            "linear scaling with pixels"
+            if uses_flux_dev()
+            else None
+        ),
+        "old_meta": old_meta,
+        "new_meta": new_meta,
+    }
+
+
+# LOFI-owned Dev negative for style-riso_painting_retro_vintage.
+# Do NOT merge MANDATORY_NEGATIVE_PROMPT. Environment may be painterly;
+# ban photo/camera, glamour skin, text, clutter, hands, nsfw.
+LOFI_DEV_NEGATIVE_PROMPT: str = (
+    "photorealistic, photograph, photography, photorealistic rendering, "
+    "3d render, cgi, "
+    "beauty lighting, glamour portrait, off-shoulder, sensual pose, fashion close-up, "
+    "frontal close-up face, three-quarter beauty crop, looking at viewer, "
+    "mug, cup, coffee cup, coffee, drinking glass, wine glass, phone, smartphone, "
+    "keys, keyring, laptop, extra clutter, extra props, extra objects, "
+    "deformed hands, incorrect hands, extra fingers, extra hands, fused fingers, "
+    "missing fingers, hands merging into torso, bad anatomy, mutated hands, "
+    "bokeh, depth of field, lens flare, dslr, camera lens, photographic blur, "
+    "legible text, readable letters, watermark, signature, logo, typography, "
+    "subtitles, ui, garbled text, "
+    "monochrome, grayscale, blown highlights, white bloom, halo, overexposed whites, "
+    "radial glow, volumetric lighting, nsfw, nude, explicit, gore"
 )
 
 # Soft highlight clamp in prep_base_frame (before Ken Burns) — kills baked bloom.

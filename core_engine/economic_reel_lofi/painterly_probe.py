@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi.image_gen import LOFI_IMAGE_MODEL, LOFI_IMAGE_STEPS
 
 PAINTERLY_STYLE = (
@@ -90,8 +91,8 @@ def run_painterly_probe(page_id: str = "wonder_feed") -> Path:
             item["prompt"],
             dest,
             orientation="vertical",
-            width=768,
-            height=1344,
+            width=lofi_cfg.LOFI_IMAGE_WIDTH,
+            height=lofi_cfg.LOFI_IMAGE_HEIGHT,
             negative_prompt=PAINTERLY_NEGATIVE,
             model_name=LOFI_IMAGE_MODEL,
             steps=LOFI_IMAGE_STEPS,

@@ -13,7 +13,7 @@ from typing import Any, Sequence
 
 import numpy as np
 from PIL import Image as PILImage
-from PIL import ImageEnhance, ImageOps
+from PIL import ImageEnhance
 
 from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi.caption_style_lofi import (
@@ -656,6 +656,43 @@ def pick_library_bgm(engine_root: Path, *, seed: int | None = None) -> Path | No
     return Path(tracks[int(rng.integers(0, len(tracks)))])
 
 
+_UPSCALE_SCALE_EPS = 1e-4
+_UPSCALE_LOGGED: set[str] = set()
+
+
+def uniform_upscale_to_reel(im: PILImage.Image, *, src_name: str = "") -> PILImage.Image:
+    """
+    Pure uniform scale of a still onto the 1080×1920 delivery canvas.
+
+    720×1280 → 1.5× / 1.5×. Any leftover 768×1344 (or other mismatch) raises
+    so assemble cannot silently crop or stretch.
+    """
+    src_w, src_h = im.size
+    tw, th = int(lofi_cfg.REEL_WIDTH), int(lofi_cfg.REEL_HEIGHT)
+    sx = tw / max(src_w, 1)
+    sy = th / max(src_h, 1)
+    uniform = abs(sx - sy) <= _UPSCALE_SCALE_EPS
+    key = f"{src_w}x{src_h}->{tw}x{th}"
+    if key not in _UPSCALE_LOGGED:
+        print(
+            f"[LOFI upscale] src={src_w}x{src_h} dst={tw}x{th} "
+            f"scale_x={sx:.6f} scale_y={sy:.6f} uniform={int(uniform)} "
+            f"aspect_src={src_w / max(src_h, 1):.6f} aspect_dst={tw / th:.6f}"
+            + (f" file={src_name}" if src_name else "")
+        )
+        _UPSCALE_LOGGED.add(key)
+    if not uniform:
+        raise RuntimeError(
+            f"[LOFI upscale] REFUSE non-uniform scale: "
+            f"scale_x={sx:.6f} scale_y={sy:.6f} "
+            f"src={src_w}x{src_h} dst={tw}x{th} "
+            f"— leftover aspect mismatch (no crop, no stretch)"
+        )
+    if (src_w, src_h) == (tw, th):
+        return im
+    return im.resize((tw, th), PILImage.LANCZOS)
+
+
 def prep_base_frame(
     image_path: Path,
     *,
@@ -663,18 +700,13 @@ def prep_base_frame(
     highlight: tuple[int, int, int] | None = None,
 ) -> np.ndarray:
     """
-    Load + cover-fit to reel canvas.
+    Load + uniform-scale to reel canvas (no cover-crop, no stretch).
 
     When ``LOFI_APPLY_GRADING`` is False (default), preserves Flux/riso palette —
     no duotone/LUT. Legacy grading path kept behind the flag only.
     """
     im = PILImage.open(image_path).convert("RGB")
-    im = ImageOps.fit(
-        im,
-        (lofi_cfg.REEL_WIDTH, lofi_cfg.REEL_HEIGHT),
-        method=PILImage.LANCZOS,
-        centering=(0.5, 0.5),
-    )
+    im = uniform_upscale_to_reel(im, src_name=Path(image_path).name)
     arr = np.array(im)
     if bool(getattr(lofi_cfg, "ENABLE_HIGHLIGHT_CLAMP", True)):
         arr = clamp_baked_highlights(arr)
@@ -732,6 +764,13 @@ def render_logo_layer(
     scale: float,
     bottom_px: int = 48,
 ) -> np.ndarray | None:
+    """
+    Composite the channel PNG at its native width/height.
+
+    ``scale`` is accepted for caller compatibility and is unused. Size comes
+    from the file on disk so a swapped final-size logo does not need a
+    constant retune.
+    """
     if not logo_path or not Path(logo_path).is_file():
         return None
     try:
@@ -767,24 +806,115 @@ def render_logo_layer(
             vis[y, x + 1] = True
             stack.append((y, x + 1))
     logo = PILImage.fromarray(arr)
-    target_w = max(1, int(lofi_cfg.REEL_WIDTH * float(scale)))
-    ratio = target_w / max(1, logo.width)
-    target_h = max(1, int(logo.height * ratio))
-    logo = logo.resize((target_w, target_h), PILImage.LANCZOS)
+    # Composite at the file's own pixels. The PNG on disk is the final size;
+    # do not scale to a constant or to REEL_WIDTH * logo_scale.
+    _ = scale
+    native_w, native_h = logo.size
     r, g, b, a = logo.split()
     a = a.point(lambda v: int(v * max(0.05, min(1.0, opacity))))
     logo = PILImage.merge("RGBA", (r, g, b, a))
     canvas = PILImage.new("RGBA", (lofi_cfg.REEL_WIDTH, lofi_cfg.REEL_HEIGHT), (0, 0, 0, 0))
-    x = (lofi_cfg.REEL_WIDTH - target_w) // 2
+    x = (lofi_cfg.REEL_WIDTH - native_w) // 2
     inset = max(8, int(bottom_px))
-    y = lofi_cfg.REEL_HEIGHT - target_h - inset
+    y = lofi_cfg.REEL_HEIGHT - native_h - inset
     canvas.paste(logo, (x, y), logo)
     print(
-        f"[LOFI assemble] logo={Path(logo_path).name} scale={scale:.3f} "
-        f"px={target_w}x{target_h} pos=bottom_center y={y} inset={inset} "
-        f"center_from_bottom={inset + target_h / 2:.0f} every_scene=True"
+        f"[LOFI assemble] logo={Path(logo_path).name} native={native_w}x{native_h} "
+        f"no_resize=1 pos=bottom_center y={y} inset={inset} "
+        f"center_from_bottom={inset + native_h / 2:.0f} every_scene=True"
     )
     return np.array(canvas)
+
+
+def audit_watermark_native_size(
+    logo_layer: np.ndarray | None,
+    *,
+    logo_path: Path | None,
+    use_text: bool,
+) -> dict[str, Any]:
+    """
+    Confirm the watermark lives on the 1080×1920 canvas at file-native pixels.
+
+    Fail if the layer is the still size (would ride the 1.5× upscale) or if
+    the painted badge is larger than the PNG on disk (scaled-up watermark).
+    """
+    tw, th = int(lofi_cfg.REEL_WIDTH), int(lofi_cfg.REEL_HEIGHT)
+    rec: dict[str, Any] = {
+        "watermark_native_size": 0,
+        "canvas_w": 0,
+        "canvas_h": 0,
+        "logo_file_w": 0,
+        "logo_file_h": 0,
+        "painted_w": 0,
+        "painted_h": 0,
+        "composited_on_reel_canvas": 0,
+        "not_baked_into_still": 1,
+        "use_text_watermark": int(bool(use_text)),
+        "reason": "",
+    }
+    if logo_layer is None:
+        rec["reason"] = "no_logo_layer"
+        print("[LOFI assemble] watermark_native_size=0 reason=no_logo_layer")
+        return rec
+    rec["canvas_h"] = int(logo_layer.shape[0])
+    rec["canvas_w"] = int(logo_layer.shape[1])
+    on_reel = rec["canvas_w"] == tw and rec["canvas_h"] == th
+    rec["composited_on_reel_canvas"] = int(on_reel)
+    if not on_reel:
+        rec["reason"] = (
+            f"layer {rec['canvas_w']}x{rec['canvas_h']} != reel {tw}x{th} "
+            "(watermark must be painted after upscale)"
+        )
+        print(f"[LOFI assemble] watermark_native_size=0 reason={rec['reason']}")
+        return rec
+    if use_text:
+        rec["watermark_native_size"] = 1
+        rec["reason"] = "text_handle_on_reel_canvas"
+        print("[LOFI assemble] watermark_native_size=1 (text handle on 1080x1920)")
+        return rec
+    if not logo_path or not Path(logo_path).is_file():
+        rec["reason"] = "logo_file_missing"
+        print("[LOFI assemble] watermark_native_size=0 reason=logo_file_missing")
+        return rec
+    try:
+        with PILImage.open(logo_path) as logo_im:
+            rec["logo_file_w"], rec["logo_file_h"] = logo_im.size
+    except Exception as exc:  # noqa: BLE001
+        rec["reason"] = f"logo_read_failed:{exc}"
+        print(f"[LOFI assemble] watermark_native_size=0 reason={rec['reason']}")
+        return rec
+    alpha = logo_layer[..., 3] if logo_layer.ndim == 3 and logo_layer.shape[2] >= 4 else None
+    if alpha is None:
+        rec["reason"] = "layer_has_no_alpha"
+        print("[LOFI assemble] watermark_native_size=0 reason=layer_has_no_alpha")
+        return rec
+    ys, xs = np.where(alpha > 10)
+    if len(xs) == 0:
+        rec["reason"] = "empty_alpha"
+        print("[LOFI assemble] watermark_native_size=0 reason=empty_alpha")
+        return rec
+    rec["painted_w"] = int(xs.max() - xs.min() + 1)
+    rec["painted_h"] = int(ys.max() - ys.min() + 1)
+    # Flood-fill knockout can shrink the bbox a few px vs the file.
+    w_ok = rec["painted_w"] <= rec["logo_file_w"] + 2
+    h_ok = rec["painted_h"] <= rec["logo_file_h"] + 2
+    not_upscaled = rec["painted_w"] < int(rec["logo_file_w"] * 1.4)
+    if w_ok and h_ok and not_upscaled:
+        rec["watermark_native_size"] = 1
+        rec["reason"] = "png_native_on_reel_canvas"
+    else:
+        rec["reason"] = (
+            f"painted {rec['painted_w']}x{rec['painted_h']} vs file "
+            f"{rec['logo_file_w']}x{rec['logo_file_h']} — looks scaled"
+        )
+    print(
+        f"[LOFI assemble] watermark_native_size={rec['watermark_native_size']} "
+        f"file={rec['logo_file_w']}x{rec['logo_file_h']} "
+        f"painted={rec['painted_w']}x{rec['painted_h']} "
+        f"canvas={rec['canvas_w']}x{rec['canvas_h']} "
+        f"reason={rec['reason']}"
+    )
+    return rec
 
 
 def compute_caption_scene_duration_s(
@@ -850,6 +980,7 @@ def assemble_lofi_reel(
     bgm_path: Path | None = None,
     voice_paths: Sequence[Path | None] | None = None,
     word_timings_per_scene: Sequence[Sequence[tuple[str, float, float]] | None] | None = None,
+    audit_out: dict[str, Any] | None = None,
 ) -> Path:
     """
     Compile Wonder Feed LOFI relationship/reflection reels.
@@ -872,10 +1003,11 @@ def assemble_lofi_reel(
             f"Original error: {exc}"
         ) from exc
 
-    global _GRAIN_PREP_LOGGED, _GRAIN_BLEND_LOGS, _GRAIN_BLEND_LOGGED_T
+    global _GRAIN_PREP_LOGGED, _GRAIN_BLEND_LOGS, _GRAIN_BLEND_LOGGED_T, _UPSCALE_LOGGED
     _GRAIN_PREP_LOGGED = False
     _GRAIN_BLEND_LOGS = 0
     _GRAIN_BLEND_LOGGED_T = set()
+    _UPSCALE_LOGGED = set()
 
     if len(scene_images) != len(captions):
         raise ValueError("scene_images and captions length mismatch")
@@ -963,6 +1095,16 @@ def assemble_lofi_reel(
         )
         if logo_layer is None:
             print(f"[LOFI assemble] WARN logo missing path={logo_path}")
+
+    wm_audit = audit_watermark_native_size(
+        logo_layer,
+        logo_path=lofi_cfg.resolve_logo_path(page_id, engine_root)
+        if not cfg.get("use_text_watermark", True)
+        else None,
+        use_text=bool(cfg.get("use_text_watermark", True)),
+    )
+    if audit_out is not None:
+        audit_out.update(wm_audit)
 
     clips = []
     z0 = float(lofi_cfg.KEN_BURNS_ZOOM_START)

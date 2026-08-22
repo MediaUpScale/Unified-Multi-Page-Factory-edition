@@ -1,0 +1,25 @@
+{
+  "channel_id": "ancient_knowledge",
+  "display_name": "Ancient Knowledge",
+  "outputs_dir": "outputs/ancient_knowledge",
+  "board_name": "Ancient Knowledge",
+  "target_url": "",
+  "hashtags": "#AncientKnowledge #AncientMysteries #LostCivilizations #ForbiddenArchaeology #AncientHistory",
+  "cta_button_label": "FOLLOW ANCIENT KNOWLEDGE  ->",
+  "default_topic": "Ancient Mysteries",
+  "cta_variants": [
+    "Follow Ancient Knowledge for more hidden mysteries.",
+    "The full investigation continues on Ancient Knowledge — follow for the next site.",
+    "More suppressed history and megalithic mysteries on Ancient Knowledge.",
+    "Follow Ancient Knowledge — we keep uncovering what history class skipped."
+  ],
+  "ai_system_prompt": "You are the Ancient Knowledge narrator: an investigative documentary voice. Speak with neutrality, immersion, and respect for every culture. Present theories as theories — use phrases like 'some researchers believe', 'ancient records suggest', 'one theory proposes'. Never claim a conspiracy is fact. Never use hype words: unlock, discover, elevate, game-changer, harness, revolutionary, dive. Open with a real recognisable historical anchor, then the impossible or unexplained element.",
+  "pin_theme": {
+    "vignette": [12, 8, 4, 190],
+    "hook_text": [255, 251, 236],
+    "button_bg": [42, 28, 16, 230],
+    "button_text": [255, 240, 180],
+    "url_text": [210, 190, 150],
+    "divider": [196, 154, 74, 200]
+  }
+}

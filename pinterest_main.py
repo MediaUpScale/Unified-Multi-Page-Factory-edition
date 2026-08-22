@@ -15,6 +15,8 @@ fully generic run against any directory.
 QUICK START:
     python pinterest_main.py status --channel anna_protocol
     python pinterest_main.py schedule --channel anna_protocol --quantity 5
+    python pinterest_main.py schedule --channel ancient_knowledge --quantity 20
+    python pinterest_main.py status --channel ancient_knowledge
     python pinterest_main.py status --inventory-dir outputs --env .env
 """
 from __future__ import annotations
@@ -289,7 +291,7 @@ def cmd_validate_token(args: argparse.Namespace) -> None:
     print(f"  Channel : {config.CHANNEL_ID or '(none — generic)'}")
     print(f"  Env     : {config.DOTENV_PATH}")
     try:
-        pub = PinterestPublisher()
+        pub = PinterestPublisher(require_board=False)
         valid = pub.validate_token()
         if valid:
             print("Token is VALID. Ready to publish.\n")

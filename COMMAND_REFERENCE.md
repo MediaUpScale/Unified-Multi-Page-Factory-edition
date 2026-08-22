@@ -341,11 +341,20 @@ Channel context (`--channel`) loads `channels_config/<id>/` and routes inventory
 `python pinterest_oauth.py`  
 *// One-shot OAuth: opens the Pinterest consent page, captures the redirect on localhost:8080, writes PINTEREST_ACCESS_TOKEN / REFRESH_TOKEN to .env, and lists boards.*
 
+`python pinterest_oauth.py --channel ancient_knowledge`  
+*// Same OAuth flow, writing tokens to `.env.ancient_knowledge` and matching/creating the Ancient Knowledge board.*
+
 `python pinterest_main.py validate-token --channel anna_protocol`  
 *// Tests the Pinterest access token for anna_protocol (auto-refresh if expired).*
 
+`python pinterest_main.py validate-token --channel ancient_knowledge`  
+*// Tests the isolated Ancient Knowledge token (`.env.ancient_knowledge`); refreshes on 401.*
+
 `python pinterest_main.py status --channel anna_protocol`  
 *// Prints queue depth, publish history, and last legacy-ledger pins for anna_protocol.*
+
+`python pinterest_main.py status --channel ancient_knowledge`  
+*// Isolated queue/history under `outputs/ancient_knowledge/`.*
 
 `python pinterest_main.py check-readiness --channel anna_protocol`  
 *// Pre-flight checklist before the first publish (exit 0 = ready).*
@@ -367,6 +376,9 @@ Channel context (`--channel`) loads `channels_config/<id>/` and routes inventory
 
 `python pinterest_main.py schedule --channel anna_protocol --quantity 5 --min-hours 3 --max-hours 6`  
 *// Publishes 5 pins live with human-mimic delays randomly between 3 and 6 hours. Default quantity is a random 3–5 if -n is omitted.*
+
+`python pinterest_main.py schedule --channel ancient_knowledge --quantity 20`  
+*// Recycles Ancient Knowledge library stills + unpaired clips, auto-creates the "Ancient Knowledge" board if missing, then drip-publishes 20 pins.*
 
 `python pinterest_main.py schedule --channel wonder_feed -n 3 --dry-run --no-wait`  
 *// Full schedule pipeline without calling the Pinterest API, skipping sleep intervals (testing only).*

@@ -19,7 +19,7 @@ REPLACEMENTS = [
     {"setting": "window overlooking a quiet street", "key_object": "empty chair"},
     {"setting": "hallway near an open door", "key_object": "open doorway"},
     {"setting": "street corner under a streetlamp", "key_object": "streetlamp"},
-    {"setting": "curb at evening", "key_object": "empty passenger seat"},
+    {"setting": "parked car at evening, door open", "key_object": "empty passenger seat of a car"},
     {"setting": "kitchen at dawn", "key_object": "kettle just clicked off"},
     {"setting": "sofa in evening light", "key_object": "folded blanket"},
 ]

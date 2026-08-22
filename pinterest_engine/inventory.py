@@ -294,6 +294,83 @@ def resolve_image_path(record: dict) -> str:
     return ""
 
 
+_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm"}
+
+
+def resolve_video_path(record: dict) -> str:
+    """
+    Resolve a local video assigned to this library record.
+
+    Checks ``local_video_path`` / ``video_path``, then ``clips/`` matches
+    by subject slug or basename.
+    """
+    from pinterest_engine import config as cfg  # noqa: PLC0415
+
+    for field in ("local_video_path", "video_path"):
+        raw = record.get(field, "")
+        if not raw:
+            continue
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            for base in (cfg.ENGINE_ROOT, cfg.OUTPUTS_DIR):
+                trial = (base / raw).resolve()
+                if trial.is_file():
+                    return str(trial)
+        elif candidate.is_file():
+            return str(candidate.resolve())
+
+    slug = str(record.get("subject_slug") or "").strip()
+    clips_dir = cfg.OUTPUTS_DIR / "clips"
+    if slug and clips_dir.is_dir():
+        needle = slug.replace("-", "_").lower()
+        for clip in clips_dir.iterdir():
+            if clip.suffix.lower() not in _VIDEO_EXTS:
+                continue
+            if needle and needle in clip.stem.lower():
+                return str(clip.resolve())
+    return ""
+
+
+def _title_from_clip_name(filename: str) -> str:
+    stem = Path(filename).stem
+    stem = re.sub(r"^reel_", "", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"_v\d+$", "", stem, flags=re.IGNORECASE)
+    words = [w for w in re.split(r"[_\-]+", stem) if w]
+    topic = " ".join(words).strip() or "Ancient Mysteries"
+    return topic[:80]
+
+
+def extract_video_still(video_path: Path, dest: Path) -> str:
+    """Extract a mid-clip JPEG still. Returns dest path or empty string."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_file() and dest.stat().st_size > 0:
+        return str(dest.resolve())
+
+    try:
+        import subprocess  # noqa: PLC0415
+        cmd = [
+            "ffmpeg", "-y", "-ss", "2", "-i", str(video_path),
+            "-frames:v", "1", "-q:v", "3", str(dest),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if proc.returncode == 0 and dest.is_file():
+            return str(dest.resolve())
+    except Exception as exc:  # noqa: BLE001
+        log.debug("ffmpeg still extract failed for %s: %s", video_path.name, exc)
+
+    try:
+        from moviepy.editor import VideoFileClip  # noqa: PLC0415
+        clip = VideoFileClip(str(video_path))
+        t = min(2.0, max(0.1, (clip.duration or 2.0) * 0.2))
+        clip.save_frame(str(dest), t)
+        clip.close()
+        if dest.is_file():
+            return str(dest.resolve())
+    except Exception as exc:  # noqa: BLE001
+        log.debug("moviepy still extract failed for %s: %s", video_path.name, exc)
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Claude AI generation (optional, called when use_ai=True)
 # ---------------------------------------------------------------------------
@@ -487,9 +564,10 @@ class MasterInventory:
                 or ""
             )
 
-            # Resolve local image path (always re-check so new paths are found)
+            # Resolve local image / video paths (always re-check so new paths are found)
             combined = {**raw, **({"image_path": cl_entry.get("image_path", "")} if cl_entry else {})}
             local_img = resolve_image_path(combined)
+            local_vid = resolve_video_path(combined)
 
             # Determine if Pinterest metadata needs to be generated
             has_pinterest_meta = bool(
@@ -509,6 +587,8 @@ class MasterInventory:
                 "imgbb_url": raw.get("imgbb_url", ""),
                 "image_relative": raw.get("image_relative", ""),
                 "local_image_path": local_img,
+                "local_video_path": local_vid,
+                "media_kind": "image",
                 "created_utc": raw.get("created_utc", ""),
                 "target_url": _target_url(),
                 "pinterest_title": prev.get("pinterest_title", ""),
@@ -543,6 +623,10 @@ class MasterInventory:
 
             entries.append(entry)   # always accumulate in memory
 
+        recycled = self._recycle_unpaired_videos(entries, existing_map)
+        if recycled:
+            log.info("  recycled unpaired video clips: %d", recycled)
+
         from pinterest_engine import config as cfg  # noqa: PLC0415
 
         data = {
@@ -575,7 +659,11 @@ class MasterInventory:
         return [
             e for e in data.get("entries", [])
             if not e.get("publication_status", {}).get("posted_on_pinterest", False)
-            and (e.get("local_image_path") or e.get("imgbb_url"))
+            and (
+                e.get("local_image_path")
+                or e.get("imgbb_url")
+                or e.get("local_video_path")
+            )
             and e.get("pinterest_title")
             and e.get("pinterest_caption")
         ]
@@ -643,10 +731,12 @@ class MasterInventory:
         checks["token_set"] = bool(token)
         checks["token_preview"] = (token[:12] + "...") if token else "(not set)"
 
-        # 2. Board ID
+        # 2. Board ID or auto-create name
+        from pinterest_engine import config as cfg  # noqa: PLC0415
         board_id = os.getenv("PINTEREST_BOARD_ID", "")
-        checks["board_id_set"] = bool(board_id)
-        checks["board_id"] = board_id or "(not set)"
+        board_name = os.getenv("PINTEREST_BOARD_NAME") or getattr(cfg, "BOARD_NAME", "")
+        checks["board_id_set"] = bool(board_id or board_name)
+        checks["board_id"] = board_id or f"(will auto-create: {board_name or '?'})"
 
         # 3. Master inventory exists
         inv_exists = self.inventory_path.is_file()
@@ -766,3 +856,61 @@ class MasterInventory:
 
         if not entry.get("visual_hook"):
             entry["visual_hook"] = build_visual_hook(topic)
+
+    def _recycle_unpaired_videos(
+        self,
+        entries: list[dict],
+        existing_map: dict[str, dict],
+    ) -> int:
+        """
+        Add inventory rows for clips/ videos not already linked to a library post.
+        Extracts a still so the image transformer / image-pin fallback still works.
+        """
+        from pinterest_engine import config as cfg  # noqa: PLC0415
+
+        clips_dir = self.outputs_dir / "clips"
+        if not clips_dir.is_dir():
+            return 0
+
+        linked = {
+            Path(e["local_video_path"]).name
+            for e in entries
+            if e.get("local_video_path")
+        }
+        added = 0
+
+        for clip in sorted(clips_dir.iterdir()):
+            if clip.suffix.lower() not in _VIDEO_EXTS:
+                continue
+            if clip.name in linked:
+                continue
+            post_id = f"recycle_{clip.stem}"[:80]
+            prev = existing_map.get(post_id, {})
+            topic = prev.get("topic") or _title_from_clip_name(clip.name)
+            entry = {
+                "post_id": post_id,
+                "channel_id": cfg.CHANNEL_ID or "",
+                "content_library_id": "",
+                "topic": topic,
+                "subject_slug": clip.stem,
+                "variant_index": 0,
+                "original_caption": prev.get("original_caption") or topic,
+                "raw_fact_sheet": "",
+                "imgbb_url": "",
+                "image_relative": "",
+                "local_image_path": prev.get("local_image_path", ""),
+                "local_video_path": str(clip.resolve()),
+                "media_kind": "video",
+                "created_utc": prev.get("created_utc", ""),
+                "target_url": _target_url(),
+                "pinterest_title": prev.get("pinterest_title", ""),
+                "pinterest_caption": prev.get("pinterest_caption", ""),
+                "visual_hook": prev.get("visual_hook", ""),
+                "publication_status": prev.get("publication_status")
+                or _empty_publication_status(),
+            }
+            if not entry["pinterest_title"] or not entry["pinterest_caption"]:
+                self._fill_templates(entry, topic, 0)
+            entries.append(entry)
+            added += 1
+        return added
