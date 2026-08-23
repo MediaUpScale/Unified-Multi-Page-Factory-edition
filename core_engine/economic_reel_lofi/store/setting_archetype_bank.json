@@ -1,0 +1,104 @@
+{
+  "max_per_episode": 2,
+  "history_n": 10,
+  "min_new_vs_previous": 2,
+  "archetypes": {
+    "interior-domestic": {
+      "label": "home interiors",
+      "keywords": [
+        "kitchen", "bedroom", "bed", "sofa", "bathroom", "dining",
+        "living", "fridge", "counter", "sink", "blanket", "sweater"
+      ]
+    },
+    "threshold": {
+      "label": "doors, windows, landings",
+      "keywords": [
+        "door", "doorway", "window", "threshold", "jamb", "landing",
+        "balcony", "stoop", "porch", "coat hook", "hallway"
+      ]
+    },
+    "exterior-urban": {
+      "label": "streets and sidewalks",
+      "keywords": [
+        "street", "sidewalk", "crowd", "crosswalk", "streetlamp",
+        "streetlight", "alley", "curb", "city", "corner"
+      ]
+    },
+    "exterior-landscape": {
+      "label": "open land and water",
+      "keywords": [
+        "field", "coastline", "coast", "hill", "forest", "meadow",
+        "beach", "horizon", "river", "park", "path", "shore"
+      ]
+    },
+    "transit": {
+      "label": "cars, trains, airports, roads",
+      "keywords": [
+        "train", "platform", "station", "airport", "gate", "bus",
+        "road", "highway", "dashboard", "passenger", "car", "ticket"
+      ]
+    },
+    "public-interior": {
+      "label": "cafes, theaters, waiting rooms",
+      "keywords": [
+        "cafe", "café", "theater", "theatre", "lobby", "waiting",
+        "restaurant", "library", "museum", "booth", "counter stool"
+      ]
+    }
+  },
+  "pairs_by_archetype": {
+    "interior-domestic": [
+      {"setting": "kitchen at dawn", "key_object": "kettle just clicked off"},
+      {"setting": "sofa in evening light", "key_object": "folded blanket"},
+      {"setting": "bedroom, unmade empty bed", "key_object": "unmade empty bed"}
+    ],
+    "threshold": [
+      {"setting": "hallway near an open door", "key_object": "open doorway"},
+      {"setting": "rain-streaked window at dusk", "key_object": "rain on the window"},
+      {"setting": "coat hook by the door", "key_object": "two coats hanging"}
+    ],
+    "exterior-urban": [
+      {"setting": "street corner under a streetlamp", "key_object": "streetlamp"},
+      {"setting": "crowded sidewalk after rain", "key_object": "wet pavement"},
+      {"setting": "night crosswalk under a signal", "key_object": "crossing signal"}
+    ],
+    "exterior-landscape": [
+      {"setting": "empty park path at dusk", "key_object": "distant horizon"},
+      {"setting": "coastline path above the tide", "key_object": "tide line"},
+      {"setting": "forest path in late light", "key_object": "fallen branch"}
+    ],
+    "transit": [
+      {"setting": "empty train platform at night", "key_object": "empty platform"},
+      {"setting": "parked car at evening, door open", "key_object": "empty passenger seat of a car"},
+      {"setting": "airport gate at last call", "key_object": "unclaimed boarding pass"},
+      {"setting": "night bus window on the road", "key_object": "empty adjacent seat"}
+    ],
+    "public-interior": [
+      {"setting": "cafe table after closing", "key_object": "two chairs still out"},
+      {"setting": "theater lobby between acts", "key_object": "unclaimed program"},
+      {"setting": "clinic waiting room at dusk", "key_object": "empty plastic chair"}
+    ]
+  },
+  "themes": {
+    "communication": {
+      "recommended": [
+        "transit",
+        "public-interior",
+        "exterior-landscape",
+        "exterior-urban",
+        "threshold",
+        "interior-domestic"
+      ],
+      "pairs": [
+        {"setting": "parked car at evening, door open", "key_object": "empty passenger seat of a car", "archetype": "transit"},
+        {"setting": "airport gate at last call", "key_object": "unclaimed boarding pass", "archetype": "transit"},
+        {"setting": "cafe table after closing", "key_object": "two chairs still out", "archetype": "public-interior"},
+        {"setting": "theater lobby between acts", "key_object": "unclaimed program", "archetype": "public-interior"},
+        {"setting": "coastline path above the tide", "key_object": "tide line", "archetype": "exterior-landscape"},
+        {"setting": "night crosswalk under a signal", "key_object": "crossing signal", "archetype": "exterior-urban"},
+        {"setting": "bedroom doorway", "key_object": "folded letter", "archetype": "threshold"},
+        {"setting": "kitchen at dawn", "key_object": "two plates in the sink", "archetype": "interior-domestic"}
+      ]
+    }
+  }
+}

@@ -428,26 +428,64 @@
     "theme": "communication",
     "subtheme": "repair_after_conflict",
     "status": "used",
-    "last_used_date": "2026-08-20",
+    "last_used_date": "2026-08-23",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "forehead-to-forehead hug in a hallway, flat warm lamp light, mid shot",
     "setting_object_pairs": [
       {
         "setting": "parked car at evening, door open",
-        "key_object": "empty passenger seat of a car"
+        "key_object": "empty passenger seat of a car",
+        "archetype": "transit"
+      },
+      {
+        "setting": "airport gate at last call",
+        "key_object": "unclaimed boarding pass",
+        "archetype": "transit"
+      },
+      {
+        "setting": "cafe table after closing",
+        "key_object": "two chairs still out",
+        "archetype": "public-interior"
+      },
+      {
+        "setting": "theater lobby between acts",
+        "key_object": "unclaimed program",
+        "archetype": "public-interior"
+      },
+      {
+        "setting": "coastline path above the tide",
+        "key_object": "tide line",
+        "archetype": "exterior-landscape"
+      },
+      {
+        "setting": "night crosswalk under a signal",
+        "key_object": "crossing signal",
+        "archetype": "exterior-urban"
+      },
+      {
+        "setting": "bedroom doorway",
+        "key_object": "folded letter",
+        "archetype": "threshold"
+      },
+      {
+        "setting": "stair landing",
+        "key_object": "shoes facing opposite ways",
+        "archetype": "threshold"
+      },
+      {
+        "setting": "kitchen at dawn",
+        "key_object": "two plates in the sink",
+        "archetype": "interior-domestic"
+      },
+      {
+        "setting": "sofa in evening light",
+        "key_object": "folded blanket",
+        "archetype": "interior-domestic"
       },
       {
         "setting": "car parked at night",
         "key_object": "silent radio"
-      },
-      {
-        "setting": "bedroom doorway",
-        "key_object": "folded letter"
-      },
-      {
-        "setting": "stair landing",
-        "key_object": "shoes facing opposite ways"
       },
       {
         "setting": "small balcony",
@@ -458,14 +496,6 @@
         "key_object": "silent radio"
       },
       {
-        "setting": "kitchen at dawn",
-        "key_object": "kettle just clicked off"
-      },
-      {
-        "setting": "sofa in evening light",
-        "key_object": "folded blanket"
-      },
-      {
         "setting": "bedroom, unmade empty bed",
         "key_object": "unmade empty bed"
       }
@@ -473,53 +503,60 @@
     "concrete_details": [
       {
         "detail": "two plates left in the sink after the argument",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a towel held out without a speech",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the bedroom lamp turned back on after the dark",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a kettle that just clicked off",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the door opened a few inches and left open",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a chair pulled back to the table",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the same blanket spread over both laps again",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an empty passenger seat watched from the curb",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "The fight is not the whole story.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Repair is what they remember.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Coming back matters more than being right.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
@@ -732,7 +769,7 @@
     "theme": "distance",
     "subtheme": "silence_that_speaks",
     "status": "used",
-    "last_used_date": "2026-08-21",
+    "last_used_date": "2026-08-22",
     "performance_score": null,
     "preferred_mood_palette": "indigo_violet_night",
     "sample_scene": "two people sitting apart then reaching hands, warm lit doorway behind them",
@@ -743,7 +780,8 @@
       },
       {
         "setting": "rainy street corner",
-        "key_object": "two umbrellas not touching"
+        "key_object": "two umbrellas not touching",
+        "last_used_date": "2026-08-22"
       },
       {
         "setting": "train platform",
@@ -751,7 +789,8 @@
       },
       {
         "setting": "long kitchen table",
-        "key_object": "unused place setting at a dining table"
+        "key_object": "unused place setting at a dining table",
+        "last_used_date": "2026-08-22"
       },
       {
         "setting": "apartment hallway",
@@ -819,14 +858,15 @@
       }
     ],
     "arc_template_dates": {
-      "thematic_arc": "2026-08-21"
-    }
+      "thematic_arc": "2026-08-22"
+    },
+    "last_anchor_object": "two umbrellas not touching"
   },
   {
     "theme": "loneliness",
     "subtheme": "the_room_that_stays_empty",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-08-23",
     "performance_score": null,
     "preferred_mood_palette": "indigo_violet_night",
     "sample_scene": "one person at a kitchen table with a second unused chair, cool window light, mid shot",
@@ -867,15 +907,18 @@
     "concrete_details": [
       {
         "detail": "an extra plate still set at dinner",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a chair pulled out but never sat in",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an untouched pillow on a neatly made bed",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a spare room with the lamp left on",
@@ -907,7 +950,7 @@
     "hooks": [
       {
         "text": "Some rooms stay empty even when you fill them.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
@@ -917,26 +960,27 @@
       },
       {
         "text": "Loneliness sits down first.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
     ],
     "arc_template_dates": {
-      "thematic_arc": "2026-08-19"
+      "thematic_arc": "2026-08-22"
     }
   },
   {
     "theme": "grief",
     "subtheme": "learning_to_carry_it",
     "status": "used",
-    "last_used_date": "2026-08-17",
+    "last_used_date": "2026-08-22",
     "performance_score": null,
     "preferred_mood_palette": "muted_dawn",
     "sample_scene": "figure holding a worn coat by a closed door, grey morning light, mid shot",
     "setting_object_pairs": [
       {
         "setting": "closed front door at morning",
-        "key_object": "worn coat on a hook"
+        "key_object": "worn coat on a hook",
+        "last_used_date": "2026-08-22"
       },
       {
         "setting": "bedroom chair",
@@ -978,27 +1022,33 @@
     "concrete_details": [
       {
         "detail": "a coat still on the hook by the door",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "two coats hanging on one hook",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a folded sweater left in the bedroom chair",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a photograph turned face-down on the sill",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "an empty bench on the park path",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the worn coat lifted, then put back",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "tea cooling beside the unturned photo",
@@ -1014,26 +1064,30 @@
     "hooks": [
       {
         "text": "Grief does not leave. It changes shape.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "You learn to carry it, not to finish it.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "Some absences become a way of walking.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       }
-    ]
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-22"
+    },
+    "last_anchor_object": "worn coat on a hook"
   },
   {
     "theme": "loss",
     "subtheme": "what_the_leaving_took",
     "status": "used",
-    "last_used_date": "2026-08-17",
+    "last_used_date": "2026-08-23",
     "performance_score": null,
     "preferred_mood_palette": "indigo_violet_night",
     "sample_scene": "empty bus seat by a rain-streaked window, dusk, mid shot",
@@ -1070,53 +1124,60 @@
     "concrete_details": [
       {
         "detail": "a streetlamp on a quiet corner",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a gap in the closet where clothes were",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the empty bus seat by a rain-streaked window",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a half-packed box left on the floor",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an abandoned ticket on the platform",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an empty passenger seat watched from the curb",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a hanger swinging in the open closet",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "two coats hanging on one hook",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "The leaving took more than a person.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "It took the reaching for them.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "Some keys stay even after the door is gone.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ]
@@ -1125,7 +1186,7 @@
     "theme": "perseverance",
     "subtheme": "getting_up_anyway",
     "status": "used",
-    "last_used_date": "2026-08-17",
+    "last_used_date": "2026-08-22",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "person tying shoes on a stoop at dawn, flat warm light, mid shot",
@@ -1136,7 +1197,8 @@
       },
       {
         "setting": "kitchen before sunrise",
-        "key_object": "kettle just starting"
+        "key_object": "kettle just starting",
+        "last_used_date": "2026-08-22"
       },
       {
         "setting": "narrow hallway",
@@ -1158,15 +1220,18 @@
     "concrete_details": [
       {
         "detail": "untied shoes waiting on the stoop at dawn",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "the kettle just starting before sunrise",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "a work bag still by the door",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-22"
       },
       {
         "detail": "cold water splashed on a face at the sink",
@@ -1188,12 +1253,12 @@
     "hooks": [
       {
         "text": "Getting up anyway is still a kind of love.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
         "text": "The day does not wait for you to feel ready.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-22",
         "performance_score": null
       },
       {
@@ -1201,7 +1266,11 @@
         "last_used_date": null,
         "performance_score": null
       }
-    ]
+    ],
+    "arc_template_dates": {
+      "thematic_arc": "2026-08-22"
+    },
+    "last_anchor_object": "kettle just starting"
   },
   {
     "theme": "inspiration",
@@ -1549,7 +1618,7 @@
     "theme": "forgiveness",
     "subtheme": "putting_the_weight_down",
     "status": "used",
-    "last_used_date": "2026-08-22",
+    "last_used_date": "2026-08-23",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "person setting a heavy bag down on a bench, open park path, mid shot",

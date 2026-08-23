@@ -76,6 +76,48 @@ _CONCRETE_ACTION_RE = re.compile(
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _DEFAULT_BANK = _PACKAGE_DIR / "store" / "visual_identity_bank_v2.json"
+_CHARACTER_SHEETS = _PACKAGE_DIR / "store" / "character_identity_sheets.json"
+
+
+def load_character_identity_sheets() -> dict[str, Any]:
+    """Persistent WOMAN/MAN reference sheets — not regenerated per theme."""
+    try:
+        raw = json.loads(_CHARACTER_SHEETS.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def character_sheet_prompt(who: str) -> str:
+    sheets = load_character_identity_sheets()
+    key = "man" if str(who or "").strip().lower() == "man" else "woman"
+    row = sheets.get(key) if isinstance(sheets.get(key), dict) else {}
+    block = str(row.get("prompt_block") or "").strip()
+    if block:
+        return block
+    if key == "man":
+        return (
+            "the same recurring man: short-to-medium dark hair, slightly "
+            "disheveled; taller, broad-shouldered, slightly hunched; light "
+            "stubble when the face is visible; dark cool-neutral clothes"
+        )
+    return (
+        "the same recurring woman: long near-black slightly wavy hair, "
+        "loose or half-up; slim; dark or hazel-green eyes and a defined brow; "
+        "earth-tone sweater, midi dress, or long coat, no patterns"
+    )
+
+
+def portrait_close_identity_clause(who: str) -> str:
+    """Painterly portrait_close using the locked identity sheet."""
+    sheet = character_sheet_prompt(who)
+    return (
+        f"Portrait close of {sheet}. Partial face or body may be visible. "
+        "Same painterly risograph illustration as the rest of the episode: "
+        "ink line, flat printed color, paper grain, canvas tooth. "
+        "Not photoreal skin, not a camera portrait, not glossy beauty lighting, "
+        "not a rendered-eye close-up. Tight crop, not a wide establishing shot."
+    )
 
 
 def act_for_index(index: int, scene_count: int = 9) -> str:
@@ -135,13 +177,24 @@ def _hands_free_pairs(rows: list[dict[str, str]]) -> list[dict[str, str]]:
         if key in seen:
             continue
         seen.add(key)
-        out.append({"setting": setting, "key_object": obj})
+        item = {"setting": setting, "key_object": obj}
+        arch = str(row.get("archetype") or "").strip()
+        if arch:
+            item["archetype"] = arch
+        out.append(item)
     return out
 
 
 def setting_object_pool(theme_row: dict[str, Any] | None) -> list[dict[str, str]]:
+    from core_engine.economic_reel_lofi.setting_archetypes import (
+        classify_setting_archetype,
+        theme_bank_pairs,
+    )
+
     raw = (theme_row or {}).get("setting_object_pairs") if theme_row else None
     out: list[dict[str, str]] = []
+    theme = str((theme_row or {}).get("theme") or "").strip()
+    extras = theme_bank_pairs(theme) if theme else []
     if isinstance(raw, list):
         for row in raw:
             if not isinstance(row, dict):
@@ -149,7 +202,14 @@ def setting_object_pool(theme_row: dict[str, Any] | None) -> list[dict[str, str]
             setting = str(row.get("setting") or "").strip()
             obj = str(row.get("key_object") or "").strip()
             if setting and obj:
-                out.append({"setting": setting, "key_object": obj})
+                arch = str(row.get("archetype") or "").strip() or (
+                    classify_setting_archetype(setting, obj)
+                )
+                out.append(
+                    {"setting": setting, "key_object": obj, "archetype": arch}
+                )
+    for row in extras:
+        out.append(dict(row))
     cleaned = _hands_free_pairs(out)
     if cleaned:
         return cleaned
@@ -319,11 +379,17 @@ def object_focus_scene_text(
     step: int = 0,
     setting: str = "",
     hand_interaction: bool = False,
+    keep_setting: bool = False,
+    painterly: bool = False,
 ) -> tuple[str, str]:
     """
     object_focus framing ladder. Step 0 drops named rooms so Schnell's
     desk-at-night still-life prior has nothing to latch onto. Later steps
     only run after an INTRUDER gate fail.
+
+    keep_setting + painterly: used for episode-anchor callbacks so the
+    motif stays in the same atmospheric place as the rest of the reel
+    instead of collapsing to a flat ink still-life on blank paper.
     """
     obj = _object_focus_visual_noun(key_object, setting)
     keep_host = _needs_containing_whole(key_object, setting)
@@ -332,6 +398,16 @@ def object_focus_scene_text(
     text_clause = _TEXT_SURFACE_CLAUSE if _object_stem(obj) in _TEXT_BEARING_STEMS else ""
     step = max(0, min(int(step), 2))
     kind = _OBJECT_FOCUS_FRAMING[step]
+    if painterly or keep_setting:
+        place = (setting or "").strip() or "an atmospheric printed scene"
+        scene = (
+            f"A painterly risograph still-life of {obj} in {place}. "
+            f"The object sits in a real environment with paper grain, color "
+            f"gradient, and canvas texture — not a woodcut, not a flat ink "
+            f"diagram on blank paper, not isolated linework. "
+            f"{extra} {only} {text_clause}"
+        )
+        return " ".join(scene.split()), "painterly_setting"
     if keep_host:
         # Isolation ("no furniture / no named room") would strip the host
         # and leave a floating part — the original seat-in-empty-room bug.
@@ -785,7 +861,7 @@ _OBJECT_STEM_WORDS: tuple[str, ...] = (
     "paper", "chair", "door", "window", "letter", "envelope",
     "phone", "blanket", "notebook", "journal", "coat", "shoe",
     "pillow", "lamp", "kettle", "photo", "plate", "bag", "radio", "mail",
-    "bed", "seat", "bench",
+    "bed", "seat", "bench", "umbrella",
 )
 
 _EXPECTED_PALETTE_BY_ACT: dict[str, str] = {
@@ -860,7 +936,19 @@ _TEXT_LEGIBILITY_GUARD = (
 # purposes, extended to sibling text-bearing nouns from this file's own noun
 # regex (letters, envelopes, lists, notebooks, calendars, bills).
 _TEXT_BEARING_STEMS = frozenset(
-    {"paper", "mail", "letter", "envelope", "notebook", "journal", "calendar", "list", "bills"}
+    {
+        "paper",
+        "mail",
+        "letter",
+        "envelope",
+        "notebook",
+        "journal",
+        "calendar",
+        "list",
+        "bills",
+        "ticket",
+        "stub",
+    }
 )
 _TEXT_SURFACE_CLAUSE = (
     "The visible surface shows only abstract ink texture, creases, and blank "
@@ -956,7 +1044,8 @@ def score_episode_variety(lines: list[dict[str, Any]]) -> dict[str, Any]:
     Episode-level variety report for setting / framing / object / palette.
 
     Intended WARM×act1, COLD×act2, CONTRAST×act3 is not treated as palette
-    repetition. Log and persist only — never holds a render.
+    repetition. Variety-shot miss and non-anchor object-over-cap set
+    holds_episode so the narrative layer can hard-fail (not log-only).
     """
     setting_stems: list[str] = []
     compositions: list[str] = []
@@ -991,7 +1080,14 @@ def score_episode_variety(lines: list[dict[str, Any]]) -> dict[str, Any]:
     comp_counts = _counts(compositions)
     setting_repeats = {k: v for k, v in set_counts.items() if v >= 2}
     object_repeats = {k: v for k, v in obj_counts.items() if v >= 2}
-    object_over_cap = {k: v for k, v in obj_counts.items() if v > _MAX_OBJECT_STEM_HITS}
+    anchor_stem = ""
+    if lines and isinstance(lines[0], dict):
+        anchor_stem = str(lines[0].get("episode_anchor_stem") or "").strip().lower()
+    object_over_cap = {
+        k: v
+        for k, v in obj_counts.items()
+        if v > _MAX_OBJECT_STEM_HITS and k != anchor_stem
+    }
 
     person_n = sum(comp_counts.get(k, 0) for k in ("woman", "man", "couple"))
     variety_n = sum(comp_counts.get(k, 0) for k in ("object_focus", "silhouette"))
@@ -1034,7 +1130,7 @@ def score_episode_variety(lines: list[dict[str, Any]]) -> dict[str, Any]:
     )
     if notes:
         summary += f"; notes={notes}"
-    return {
+    report = {
         "beat_count": n,
         "distinct_settings": distinct_settings,
         "setting_stems": set_counts,
@@ -1053,8 +1149,98 @@ def score_episode_variety(lines: list[dict[str, Any]]) -> dict[str, Any]:
         "palette_mismatches": palette_mismatches,
         "notes": notes,
         "summary": summary,
-        "holds_episode": False,
+        "holds_episode": bool(
+            n >= 8
+            and (
+                person_n > 6
+                or bool(object_over_cap)
+            )
+        ),
     }
+    _merge_setting_archetype_score(report, lines)
+    _merge_composition_score(report, lines)
+    return report
+
+
+def _apply_setting_archetype_pass(
+    lines: list[dict[str, Any]],
+    pool: list[dict[str, str]] | None,
+    *,
+    lock_visuals: bool = False,
+) -> None:
+    """Remap overflow archetypes; prefer ones the previous script skipped."""
+    from core_engine.economic_reel_lofi.setting_archetypes import (
+        ARCHETYPE_ORDER,
+        enforce_setting_archetype_variety,
+    )
+
+    theme = ""
+    module = "relationship"
+    if lines and isinstance(lines[0], dict):
+        theme = str(lines[0].get("episode_theme") or "")
+        module = str(lines[0].get("episode_module") or "relationship") or (
+            "relationship"
+        )
+    prefer_new: list[str] = []
+    try:
+        from core_engine.economic_reel_lofi import lofi_collections as rag
+
+        prev = rag.preceding_setting_archetypes(module)
+        prefer_new = [a for a in ARCHETYPE_ORDER if a not in set(prev)]
+    except Exception:
+        prefer_new = []
+    enforce_setting_archetype_variety(
+        lines,
+        pool,
+        theme=theme,
+        prefer_new=prefer_new,
+        lock_visuals=lock_visuals,
+    )
+    from core_engine.economic_reel_lofi.setting_archetypes import (
+        enforce_composition_variety,
+    )
+
+    enforce_composition_variety(lines, lock_visuals=lock_visuals)
+
+
+def _merge_setting_archetype_score(report: dict[str, Any], lines: list[dict[str, Any]]) -> None:
+    """Attach archetype counts; overflow holds the episode."""
+    from core_engine.economic_reel_lofi.setting_archetypes import (
+        score_setting_archetypes,
+    )
+
+    arch = score_setting_archetypes(lines)
+    report["setting_archetypes"] = arch.get("counts") or {}
+    report["setting_archetype_beats"] = arch.get("beats") or []
+    report["setting_archetype_overflow"] = arch.get("overflow") or {}
+    if arch.get("holds_episode"):
+        report["holds_episode"] = True
+        notes = list(report.get("notes") or [])
+        notes.append(f"archetype_overflow={arch.get('overflow')}")
+        report["notes"] = notes
+        report["summary"] = (
+            str(report.get("summary") or "")
+            + f"; archetypes={arch.get('counts')}"
+        )
+
+
+def _merge_composition_score(report: dict[str, Any], lines: list[dict[str, Any]]) -> None:
+    from core_engine.economic_reel_lofi.setting_archetypes import (
+        score_composition_types,
+    )
+
+    comp = score_composition_types(lines)
+    report["composition_types"] = comp.get("counts") or {}
+    report["composition_beats"] = comp.get("beats") or []
+    report["figure_centered"] = comp.get("figure_centered")
+    if comp.get("holds_episode"):
+        report["holds_episode"] = True
+        notes = list(report.get("notes") or [])
+        notes.append(f"composition={comp.get('summary')}")
+        report["notes"] = notes
+        report["summary"] = (
+            str(report.get("summary") or "") + f"; {comp.get('summary')}"
+        )
 
 
 def _pair_fits_cluster(setting: str, key_object: str, cluster: dict[str, Any]) -> bool:
@@ -1199,12 +1385,14 @@ def _apply_framing_variety(lines: list[dict[str, Any]]) -> None:
     if need:
         candidates = [
             i for i in person_idx
-            if _stype(i) != "couple"
+            if _stype(i) != "couple" and i != 0
         ]
-        # Prefer opening + later object beats (loss baseline used object_focus on beat 1).
-        candidates.sort(key=lambda i: (0 if i == 0 else 1, i))
+        # Hook beat (scene 1) stays a figure. Variety fills from beats 2+.
         for k, i in enumerate(candidates[:need]):
             nxt = "object_focus" if k % 2 == 0 else "silhouette"
+            stem = _object_stem(str(lines[i].get("key_object") or ""))
+            if nxt == "object_focus" and stem in _AVOID_ANCHOR_STEMS:
+                nxt = "silhouette"
             lines[i]["subject_type"] = nxt
             lines[i]["subject_remap"] = "framing_variety"
             print(
@@ -1213,11 +1401,596 @@ def _apply_framing_variety(lines: list[dict[str, Any]]) -> None:
             )
             variety_idx.append(i)
 
+    if lines and isinstance(lines[0], dict):
+        hook_st = _stype(0)
+        if hook_st == "object_focus":
+            lines[0]["subject_type"] = "silhouette"
+            lines[0]["subject_remap"] = (
+                str(lines[0].get("subject_remap") or "") + "+hook_character"
+            ).strip("+")
+            print(
+                "[LOFI identity v2] hook-character scene=1 "
+                "object_focus -> silhouette"
+            )
+
     extra = len(variety_idx) - _MAX_VARIETY_SHOTS
     if extra > 0:
         for i in variety_idx[-extra:]:
             lines[i]["subject_type"] = "woman" if i % 2 == 0 else "man"
             lines[i]["subject_remap"] = "variety_cap_to_person"
+
+
+BEAT_FUNCTIONS: tuple[str, ...] = (
+    "hook",
+    "complication",
+    "turn",
+    "insight",
+    "close",
+)
+_CLOSE_TARGETS: tuple[str, ...] = ("hands", "shoulders", "object")
+_CLOSE_POSE_HINT: dict[str, str] = {
+    "hands": (
+        "Tight crop on empty hands and wrists only — no face in frame."
+    ),
+    "shoulders": (
+        "Tight crop on shoulders and the back of the neck — no face in frame."
+    ),
+    "object": (
+        "Tight crop on the named object in the foreground; figure only a "
+        "shoulder or hand edge — no face in frame."
+    ),
+    "eyes": (
+        "Extreme close on eyes only, upper face cropped above the nose "
+        "bridge, tearful or reflective expression, rest of face and hair "
+        "falling into shadow or out of frame. No nose, no mouth, no chin."
+    ),
+    "portrait": (
+        "Tight portrait crop on face or upper body of the recurring "
+        "character. Painterly print, not photoreal skin."
+    ),
+}
+_EYE_CLOSE_SCENE = (
+    "Extreme close on a recurring woman's eyes only — long dark hair, "
+    "reflective tearful eyes, brow and a fall of hair. The bottom edge of "
+    "the frame cuts through the eyebrows so the nose bridge is already "
+    "outside the picture. No nose, no nostrils, no mouth, no lips, no "
+    "chin, no jaw, no cheeks, no hands, no garment held to the face. "
+    "The rest of the face falls into shadow or out of frame. This is a "
+    "partial reveal of the eyes only, never a full face, never a portrait."
+)
+
+
+def crop_eye_close_still(path: Path) -> None:
+    """Zoom the upper-center 9:16 window so a Flux portrait becomes eyes-only."""
+    from PIL import Image
+
+    img = Image.open(path)
+    w, h = img.size
+    if w < 8 or h < 8:
+        return
+    crop_h = max(64, int(h * 0.40))
+    crop_w = max(36, int(round(crop_h * 9 / 16)))
+    if crop_w > w:
+        crop_w = w
+        crop_h = max(64, int(round(crop_w * 16 / 9)))
+    left = max(0, (w - crop_w) // 2)
+    top = max(0, int(h * 0.06))
+    if top + crop_h > h:
+        top = max(0, h - crop_h)
+    cropped = img.crop((left, top, left + crop_w, top + crop_h))
+    cropped = cropped.resize((w, h), Image.Resampling.LANCZOS)
+    cropped.save(path)
+    print(f"[LOFI eye-close] post-crop {path.name} box=({left},{top},{crop_w}x{crop_h})")
+
+
+_AVOID_ANCHOR_STEMS: frozenset[str] = frozenset(
+    {
+        "paper",
+        "mail",
+        "letter",
+        "envelope",
+        "notebook",
+        "journal",
+        "calendar",
+        "list",
+        "platform",
+        "horizon",
+        "footsteps",
+        "station",
+        "ticket",
+    }
+)
+_SIGNAGE_TRAP_RE = re.compile(
+    r"\b(platform|station|newspaper|signage|ticket|timetable)\b",
+    re.I,
+)
+
+
+def _remap_signage_traps(
+    lines: list[dict[str, Any]],
+    pool: list[dict[str, str]],
+) -> None:
+    """Swap platform/station stills for a caption-tied pair from the safe pool."""
+    safe = [
+        p
+        for p in (pool or [])
+        if not _SIGNAGE_TRAP_RE.search(f"{p.get('setting')} {p.get('key_object')}")
+    ]
+    if not safe:
+        safe = [
+            dict(p)
+            for p in DEFAULT_SETTING_OBJECT_PAIRS
+            if not _SIGNAGE_TRAP_RE.search(f"{p['setting']} {p['key_object']}")
+        ]
+    if not safe:
+        return
+    used_stems: dict[str, int] = {}
+    used_keys: set[tuple[str, str]] = set()
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        used_keys.add(
+            _pair_key(str(row.get("setting") or ""), str(row.get("key_object") or ""))
+        )
+        stem = _object_stem(str(row.get("key_object") or ""))
+        if stem:
+            used_stems[stem] = used_stems.get(stem, 0) + 1
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        blob = f"{row.get('setting') or ''} {row.get('key_object') or ''}"
+        if not _SIGNAGE_TRAP_RE.search(blob):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        pick = pick_caption_anchored_pair(
+            text, safe, used=used_keys, index=i, used_stems=used_stems
+        )
+        if _SIGNAGE_TRAP_RE.search(f"{pick.get('setting')} {pick.get('key_object')}"):
+            pick = dict(safe[i % len(safe)])
+        row["setting"] = pick["setting"]
+        row["key_object"] = pick["key_object"]
+        row["visual_fallback"] = "signage_trap_remap"
+        used_keys.add(_pair_key(pick["setting"], pick["key_object"]))
+        stem = _object_stem(pick["key_object"])
+        used_stems[stem] = used_stems.get(stem, 0) + 1
+        print(
+            f"[LOFI identity v2] signage-trap scene={i + 1} "
+            f"-> {row['setting']!r} / {row['key_object']!r} text={text!r}"
+        )
+
+
+_9_BEAT_FUNCTIONS: tuple[str, ...] = (
+    "hook",
+    "complication",
+    "turn",
+    "insight",
+    "complication",
+    "turn",
+    "insight",
+    "close",
+    "insight",
+)
+
+
+def default_beat_function(index: int, n: int) -> str:
+    """Meaning slot for beat i of n — independent of palette act."""
+    if n <= 1:
+        return "hook"
+    if n == 9 and 0 <= index < 9:
+        return _9_BEAT_FUNCTIONS[index]
+    t = index / max(1, n - 1)
+    if t < 0.12:
+        return "hook"
+    if t < 0.36:
+        return "complication"
+    if t < 0.56:
+        return "turn"
+    if t < 0.78:
+        return "insight"
+    return "close"
+
+
+def assign_beat_functions(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tag each beat hook|complication|turn|insight|close; no consecutive clones."""
+    n = len(lines)
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        fn = str(row.get("beat_function") or "").strip().lower()
+        if fn not in BEAT_FUNCTIONS:
+            row["beat_function"] = default_beat_function(i, n)
+    for i in range(1, n):
+        a = lines[i - 1] if isinstance(lines[i - 1], dict) else {}
+        b = lines[i] if isinstance(lines[i], dict) else {}
+        if str(a.get("beat_function") or "") != str(b.get("beat_function") or ""):
+            continue
+        nxt = default_beat_function(i, n)
+        if nxt == str(a.get("beat_function") or ""):
+            order = list(BEAT_FUNCTIONS)
+            cur = str(a.get("beat_function") or "hook")
+            nxt = order[(order.index(cur) + 1) % len(order)] if cur in order else "turn"
+        b["beat_function"] = nxt
+        b["beat_function_remap"] = "consecutive_shift"
+    return lines
+
+
+def assign_close_beat(
+    lines: list[dict[str, Any]],
+    *,
+    theme: str = "",
+    module: str = "relationship",
+) -> int:
+    """
+    Optional close on a turn/insight beat.
+
+    A script may ship with zero closes. When a close is used, rotate
+    silhouette / portrait_close / eye_close and woman / man. Silhouette-only
+    medium scenes are unchanged.
+    """
+    from core_engine.economic_reel_lofi import lofi_collections as rag
+
+    n = len(lines)
+    if n <= 0:
+        return -1
+    existing: list[int] = []
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("shot_scale") or "").strip().lower() != "close":
+            continue
+        if str(row.get("beat_function") or "") not in {"turn", "insight"}:
+            row["shot_scale"] = "medium"
+            row["close_variant"] = ""
+            continue
+        existing.append(i)
+    keep = existing[0] if existing else -1
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict) or i == keep:
+            continue
+        if str(row.get("shot_scale") or "").strip().lower() == "close":
+            row["shot_scale"] = "medium"
+            if str(row.get("close_variant") or "") and i != keep:
+                row["close_variant"] = ""
+    if keep >= 0:
+        row = lines[keep]
+        if not str(row.get("close_variant") or "").strip():
+            row["close_variant"] = "silhouette"
+            row["close_target"] = row.get("close_target") or "shoulders"
+        print(
+            f"[LOFI close] keep scene={keep + 1} "
+            f"variant={row.get('close_variant')} "
+            f"fn={row.get('beat_function')}"
+        )
+        return keep
+    pick = rag.pick_optional_close(theme, module)
+    if not pick:
+        print("[LOFI close] none — optional close skipped")
+        return -1
+    candidates = [
+        i
+        for i, row in enumerate(lines)
+        if isinstance(row, dict)
+        and str(row.get("beat_function") or "") in {"turn", "insight"}
+        and 1 <= i <= max(1, n - 3)
+    ]
+    if not candidates:
+        print("[LOFI close] none — no turn/insight slot")
+        return -1
+    variant = str(pick.get("variant") or "silhouette")
+    who = str(pick.get("character") or "woman")
+    idx = candidates[0]
+    if variant in {"portrait_close", "eye_close"}:
+        hits = [
+            i
+            for i in candidates
+            if str(lines[i].get("subject_type") or "").strip().lower() == who
+        ]
+        idx = hits[0] if hits else candidates[0]
+    else:
+        for i in candidates:
+            st = str(lines[i].get("subject_type") or "").strip().lower()
+            if st != "object_focus":
+                idx = i
+                break
+    row = lines[idx]
+    if not isinstance(row, dict):
+        return -1
+    seed = f"{theme}|{lines[0].get('text') if isinstance(lines[0], dict) else ''}"
+    st = str(row.get("subject_type") or "").strip().lower().replace(" ", "_")
+    if variant == "eye_close":
+        row["subject_type"] = "woman"
+        row["close_character"] = "woman"
+        if st != "woman":
+            row["subject_remap"] = (
+                str(row.get("subject_remap") or "") + "+eye_close"
+            ).strip("+")
+        ctx = rag.pick_eye_close_context(module)
+        row["shot_scale"] = "close"
+        row["close_variant"] = "eye_close"
+        row["close_target"] = "eyes"
+        row["eye_close_context"] = ctx
+        row["setting"] = ctx
+        row["pose_hint"] = _CLOSE_POSE_HINT["eyes"]
+        print(
+            f"[LOFI close] variant=eye_close scene={idx + 1} "
+            f"fn={row.get('beat_function')} context={ctx!r}"
+        )
+        return idx
+    if variant == "portrait_close":
+        row["subject_type"] = who if who in {"woman", "man"} else "woman"
+        row["close_character"] = row["subject_type"]
+        row["shot_scale"] = "close"
+        row["close_variant"] = "portrait_close"
+        row["close_target"] = "portrait"
+        row["eye_close_context"] = ""
+        row["pose_hint"] = _CLOSE_POSE_HINT["portrait"]
+        print(
+            f"[LOFI close] variant=portrait_close scene={idx + 1} "
+            f"character={row['close_character']} fn={row.get('beat_function')}"
+        )
+        return idx
+    target = rag.next_silhouette_close_target(module, seed)
+    if st == "object_focus":
+        row["subject_type"] = "silhouette"
+        row["subject_remap"] = (str(row.get("subject_remap") or "") + "+close_beat").strip("+")
+        st = "silhouette"
+    row["shot_scale"] = "close"
+    row["close_variant"] = "silhouette"
+    row["close_character"] = ""
+    row["close_target"] = target
+    row["eye_close_context"] = ""
+    row["pose_hint"] = _CLOSE_POSE_HINT[target]
+    print(
+        f"[LOFI close] variant=silhouette scene={idx + 1} "
+        f"type={st} target={target} fn={row.get('beat_function')}"
+    )
+    return idx
+
+
+def _episode_anchor_stem(lines: list[dict[str, Any]]) -> str:
+    if not lines or not isinstance(lines[0], dict):
+        return ""
+    return str(lines[0].get("episode_anchor_stem") or "").strip().lower()
+
+
+def stamp_episode_anchor(lines: list[dict[str, Any]], name: str) -> str:
+    """Persist the episode motif stem on beat 0 so later enforce passes keep it."""
+    stem = _object_stem(name)
+    if lines and isinstance(lines[0], dict) and stem:
+        lines[0]["episode_anchor_stem"] = stem
+        lines[0]["episode_anchor_name"] = str(name or "").strip()
+    return stem
+
+
+def pick_episode_anchor(
+    pool: list[dict[str, str]],
+    *,
+    avoid_stems: set[str] | None = None,
+    prefer_name: str = "",
+) -> dict[str, str]:
+    """Concrete pool object for the episode motif — skip text-bearing traps."""
+    avoid = set(avoid_stems or ())
+    avoid.update(_AVOID_ANCHOR_STEMS)
+    if prefer_name:
+        prefer_stem = _object_stem(prefer_name)
+        if prefer_stem and prefer_stem not in avoid:
+            for p in pool:
+                if _object_stem(str(p.get("key_object") or "")) == prefer_stem:
+                    return dict(p)
+            return {
+                "setting": str((pool[0] if pool else {}).get("setting") or "quiet indoor room"),
+                "key_object": prefer_name,
+            }
+    for p in pool:
+        stem = _object_stem(str(p.get("key_object") or ""))
+        if stem and stem not in avoid:
+            return dict(p)
+    if pool:
+        return dict(pool[0])
+    return {"setting": "kitchen at dawn", "key_object": "kettle just clicked off"}
+
+
+_ANCHOR_SHAPE_PARTS: dict[str, tuple[str, ...]] = {
+    "umbrella": ("canopy", "ribs or spokes", "shaft or pole", "curved handle"),
+    "kettle": ("spout", "lid", "handle", "rounded metal body"),
+    "suitcase": ("rectangular hard case", "top handle", "latches or corners"),
+    "chair": ("seat", "backrest", "four legs"),
+    "pillow": ("soft rectangular cushion", "pillowcase", "bed beside it"),
+    "plate": ("round dinner plate", "rim", "flat center"),
+    "door": ("door slab", "frame or jamb", "threshold"),
+    "coat": ("sleeves", "collar", "hanging body of the coat"),
+}
+
+
+def episode_anchor_name(lines_or_beat: list[dict[str, Any]] | dict[str, Any]) -> str:
+    """Name stamped on beat 0 or the row itself."""
+    if isinstance(lines_or_beat, dict):
+        name = str(lines_or_beat.get("episode_anchor_name") or "").strip()
+        if name:
+            return name
+        return ""
+    if lines_or_beat and isinstance(lines_or_beat[0], dict):
+        return str(lines_or_beat[0].get("episode_anchor_name") or "").strip()
+    return ""
+
+
+def anchor_shape_parts(name: str) -> tuple[str, ...]:
+    stem = _object_stem(name)
+    if stem in _ANCHOR_SHAPE_PARTS:
+        return _ANCHOR_SHAPE_PARTS[stem]
+    noun = (name or "").strip() or "the object"
+    return (f"the recognizable shape of {noun}",)
+
+
+def anchor_shape_clause(name: str, *, retry: bool = False) -> str:
+    """Concrete parts the model must draw — not the bare noun alone."""
+    obj = (name or "").strip() or "the episode object"
+    parts = ", ".join(anchor_shape_parts(obj))
+    base = (
+        f"The {obj} must be drawn as that real object, recognizable by: {parts}. "
+        "Not a blanket, comforter, cushion, rolled fabric, or a different still-life."
+    )
+    if _object_stem(obj) == "umbrella":
+        base += " " + umbrella_open_closed_clause()
+    if retry:
+        base += f" Center the {obj} so those parts fill the frame."
+    return base
+
+
+def umbrella_open_closed_clause() -> str:
+    """Caption 'one closed' means one open canopy-up + one furled."""
+    return (
+        "The dominant object is an OPEN umbrella: circular canopy fully "
+        "raised like a dome, ribs visible underneath, standing on wet "
+        "pavement. Beside it, a CLOSED umbrella is folded, canopy furled "
+        "and strapped to the pole, leaning against the open canopy. "
+        "Two umbrellas in different states — one open, one closed. "
+        "Not two closed umbrellas. Not two open umbrellas."
+    )
+
+
+def needs_umbrella_open_closed(caption: str = "", object_name: str = "") -> bool:
+    blob = f"{caption} {object_name}".lower()
+    if _object_stem(object_name) != "umbrella" and "umbrella" not in blob:
+        return False
+    return bool(re.search(r"one closed|one open|lean together", blob))
+
+
+def anchor_visual_noun(name: str, caption: str = "") -> str:
+    """Prompt noun for an anchor beat — concrete pose, not the motif slogan."""
+    if needs_umbrella_open_closed(caption, name):
+        return "one open umbrella and one closed folded umbrella"
+    return (name or "").strip()
+
+
+def couple_bed_pose_clause(setting: str, key_object: str, subject_type: str) -> str:
+    """Positive + negative framing so a couple is never staged on the mattress."""
+    st = (subject_type or "").strip().lower().replace(" ", "_")
+    if st != "couple":
+        return ""
+    blob = f"{setting} {key_object}".lower()
+    if not re.search(r"\b(bed|bedroom|mattress)\b", blob):
+        return ""
+    return (
+        "Both figures sit on the edge of the bed with feet planted on the "
+        "visible floor, or stand on the floor beside the bedframe with the "
+        "mattress behind them. The floor must be visible under their feet. "
+        "The bed is furniture they are next to, not a platform they stand on. "
+        "Not standing on the mattress, not standing on top of the bed, not "
+        "standing at full height on the bedding, not rising out of rumpled "
+        "covers as if the mattress is under their feet."
+    )
+
+
+def restore_anchor_visual_fields(lines: list[dict[str, Any]]) -> None:
+    """Keep callback/introduce beats on the episode motif, not a retied stand-in."""
+    name = episode_anchor_name(lines)
+    if not name:
+        return
+    intro_setting = ""
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("anchor_beat") or "") == "introduce":
+            intro_setting = str(row.get("setting") or "").strip()
+            break
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("anchor_beat") or "") not in {"introduce", "callback"}:
+            continue
+        row["key_object"] = name
+        row["episode_anchor_name"] = name
+        if str(row.get("anchor_beat") or "") == "callback" and intro_setting:
+            row["setting"] = intro_setting
+
+
+def _anchor_mentioned(text: str, name: str) -> bool:
+    blob = (text or "").lower()
+    stem = _object_stem(name)
+    if stem and stem in blob:
+        return True
+    skip = {
+        "two", "one", "not", "just", "empty", "unused", "closed", "open",
+        "the", "and", "for",
+    }
+    words = [
+        w
+        for w in re.findall(r"[a-z]+", (name or "").lower())
+        if w not in _STOP_VISUAL and w not in skip and len(w) > 2
+    ]
+    return bool(words) and any(w in blob for w in words)
+
+
+def apply_anchor_callback_beats(
+    lines: list[dict[str, Any]],
+    anchor: dict[str, str],
+    pool: list[dict[str, str]] | None = None,
+) -> list[int]:
+    """
+    Same motif on two beats: introduce early/mid, callback late, different state.
+
+    Mentions are caption-level. Visual key_object is aligned on those two beats
+    so the stem cap exemption can keep the callback.
+    """
+    del pool
+    name = str((anchor or {}).get("name") or (anchor or {}).get("key_object") or "").strip()
+    if not name or not lines:
+        return []
+    stem = stamp_episode_anchor(lines, name)
+    setting = str((anchor or {}).get("setting") or "").strip()
+    n = len(lines)
+    mentioned = [
+        i
+        for i, row in enumerate(lines)
+        if isinstance(row, dict)
+        and _anchor_mentioned(str(row.get("text") or row.get("beat_text") or ""), name)
+    ]
+    early = [i for i in mentioned if i <= max(1, min(4, n - 3))]
+    late = [i for i in mentioned if i >= max(4, n - 3)]
+    intro_i = early[0] if early else min(1, n - 1)
+    callback_i = late[-1] if late else max(n - 2, intro_i + 1)
+    if callback_i <= intro_i:
+        callback_i = max(n - 2, min(n - 1, intro_i + 3))
+    if intro_i >= max(4, n - 4):
+        intro_i = min(1, n - 1)
+    initial = str((anchor or {}).get("initial_state") or "just used").strip()
+    final = str((anchor or {}).get("final_state") or "cold, untouched").strip()
+    for i, state in ((intro_i, initial), (callback_i, final)):
+        if i < 0 or i >= n or not isinstance(lines[i], dict):
+            continue
+        row = lines[i]
+        if setting and not _SIGNAGE_TRAP_RE.search(setting):
+            row["setting"] = setting
+        elif _SIGNAGE_TRAP_RE.search(str(row.get("setting") or "")):
+            row["setting"] = "hallway with a closed suitcase on the floor"
+        row["key_object"] = name
+        hint = f"{name}, {state}"
+        row["visual_anchor_hint"] = hint
+        text = str(row.get("text") or row.get("beat_text") or "").strip()
+        fn = str(row.get("beat_function") or "")
+        if (i == 0 or fn in {"hook", "insight"}) and not _anchor_mentioned(text, name):
+            row["anchor_beat"] = "introduce" if i == intro_i else "callback"
+            continue
+        if not _anchor_mentioned(text, name):
+            noun = stem or name.split()[-1]
+            addon = f"the {noun}"
+            if i == callback_i:
+                addon = f"the {noun} now {final.split(',')[0].strip()}"
+            cand = f"{text.rstrip('.')} — {addon}."
+            if len(cand.split()) <= 9 and len(cand) <= 56:
+                row["text"] = cand
+                row["beat_text"] = cand
+            else:
+                short = (
+                    f"The {noun} has gone cold."
+                    if i == callback_i
+                    else f"You notice the {noun}."
+                )
+                row["text"] = short
+                row["beat_text"] = short
+        row["anchor_beat"] = "introduce" if i == intro_i else "callback"
+    return [intro_i, callback_i]
 
 
 def _candidate_pairs(
@@ -1385,6 +2158,12 @@ def enforce_concrete_beat_visuals(
     used: set[tuple[str, str]] = set()
     used_stems: dict[str, int] = {}
     n = len(lines)
+    anchor_stem = _episode_anchor_stem(lines)
+    theme = ""
+    module = "relationship"
+    if lines and isinstance(lines[0], dict):
+        theme = str(lines[0].get("episode_theme") or "")
+        module = str(lines[0].get("episode_module") or "relationship") or "relationship"
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue
@@ -1395,9 +2174,11 @@ def enforce_concrete_beat_visuals(
         tied = visual_tied_to_caption(text, setting, key_object)
         concrete = setting_is_concrete(setting, key_object)
         stem = _object_stem(key_object)
-        overused = used_stems.get(stem, 0) >= _MAX_OBJECT_STEM_HITS
+        stem_cap = 2 if (anchor_stem and stem == anchor_stem) else _MAX_OBJECT_STEM_HITS
+        overused = used_stems.get(stem, 0) >= stem_cap
         handheld = _is_banned_key_object(key_object)
         _apply_cluster_pose(row, text)
+        blank_visual = not setting.strip() or not key_object.strip()
         if (not lock_visuals) and (not tied or not concrete or overused or handheld):
             pick = pick_caption_anchored_pair(
                 text, pairs, used=used, index=i, used_stems=used_stems,
@@ -1410,6 +2191,18 @@ def enforce_concrete_beat_visuals(
             print(
                 f"[LOFI identity v2] caption-anchor scene={i + 1} "
                 f"tied={int(tied)} concrete={int(concrete)} overused={int(overused)} "
+                f"setting={row['setting']!r} object={row['key_object']!r} "
+                f"text={text!r}"
+            )
+        elif lock_visuals and blank_visual:
+            pick = pick_caption_anchored_pair(
+                text, pairs, used=used, index=i, used_stems=used_stems,
+            )
+            row["setting"] = pick["setting"]
+            row["key_object"] = pick["key_object"]
+            row["visual_fallback"] = "lock_visuals_blank_fill"
+            print(
+                f"[LOFI identity v2] lock-visuals fill scene={i + 1} "
                 f"setting={row['setting']!r} object={row['key_object']!r} "
                 f"text={text!r}"
             )
@@ -1428,7 +2221,8 @@ def enforce_concrete_beat_visuals(
         if (not lock_visuals) and _is_banned_key_object(str(row.get("key_object") or "")):
             for p in DEFAULT_SETTING_OBJECT_PAIRS:
                 stem_p = _object_stem(p["key_object"])
-                if used_stems.get(stem_p, 0) >= _MAX_OBJECT_STEM_HITS:
+                cap_p = 2 if (anchor_stem and stem_p == anchor_stem) else _MAX_OBJECT_STEM_HITS
+                if used_stems.get(stem_p, 0) >= cap_p:
                     continue
                 row["setting"] = p["setting"]
                 row["key_object"] = p["key_object"]
@@ -1438,7 +2232,11 @@ def enforce_concrete_beat_visuals(
         final_stem = _object_stem(str(row.get("key_object") or ""))
         used_stems[final_stem] = used_stems.get(final_stem, 0) + 1
     if not lock_visuals:
+        _remap_signage_traps(lines, pairs)
         _apply_framing_variety(lines)
+        assign_beat_functions(lines)
+        assign_close_beat(lines, theme=theme, module=module)
+    restore_anchor_visual_fields(lines)
     return lines
 
 
@@ -1563,6 +2361,7 @@ def apply_v2_prompts_to_lines(
     enforce_concrete_beat_visuals(
         lines, pool=pool, vary_imagery=vary_imagery, lock_visuals=lock_visuals
     )
+    _apply_setting_archetype_pass(lines, pool, lock_visuals=lock_visuals)
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue
@@ -1670,21 +2469,26 @@ _RISO_RETRO_EXPANSION: dict[str, str] = {
         "Printed atmosphere: visible paper tooth and a slight riso color offset. "
         f"{_DEV_PERSON_MOOD} "
         "The surrounding environment — sky, foliage, room, fabric, furniture — "
-        "keeps full painterly detail, color gradient, and canvas texture. "
-        "Do not flatten the whole image; only the human figure is a silhouette."
+        "is painted as flat gouache color blocks with hard printed edges and "
+        "visible paper grain, not photo-grain. No photographic light falloff, "
+        "no depth-of-field, no lens glow. Only the human figure is a silhouette; "
+        "the room stays readable as poster shapes."
     ),
     "man": (
         "Printed atmosphere: visible paper tooth and a slight riso color offset. "
         f"{_DEV_PERSON_MOOD} "
         "The surrounding environment — sky, foliage, room, fabric, furniture — "
-        "keeps full painterly detail, color gradient, and canvas texture. "
-        "Do not flatten the whole image; only the human figure is a silhouette."
+        "is painted as flat gouache color blocks with hard printed edges and "
+        "visible paper grain, not photo-grain. No photographic light falloff, "
+        "no depth-of-field, no lens glow. Only the human figure is a silhouette; "
+        "the room stays readable as poster shapes."
     ),
     "couple": (
         "Wide printed landscape: two small unlit silhouette figures, a hard "
         "horizon, empty ground as a flat color field. Distance between them is "
         "the subject. No rendered skin or faces on either figure. The street, "
-        "lamp, sky, and buildings keep full painterly detail and paper texture."
+        "lamp, sky, and buildings are flat printed color planes with paper grain, "
+        "not photographic depth."
     ),
     "silhouette": (
         "The figure stays readable against a printed sky or doorway field. "
@@ -1696,13 +2500,25 @@ _RISO_RETRO_EXPANSION: dict[str, str] = {
         "paper grain around it. Isolated still-life — one object, no implied hands "
         "just out of frame."
     ),
+    "object_focus_anchor": (
+        "Printed atmosphere: visible paper tooth and a slight riso color offset. "
+        "The street, rain, wall, and wet pavement are flat gouache color blocks "
+        "with paper grain — not photo-grain, not a color gradient, not lens light. "
+        "No person, no face, no hands, no silhouette figure."
+    ),
     "wide_couple": (
         "Wide printed landscape: two small unlit silhouette figures, a hard "
         "horizon, empty ground as a flat color field. Distance between them is "
         "the subject. No rendered skin or faces on either figure. The street, "
-        "lamp, sky, and buildings keep full painterly detail and paper texture."
+        "lamp, sky, and buildings are flat printed color planes with paper grain, "
+        "not photographic depth."
     ),
 }
+_RISO_FLAT_PRINT = (
+    "Flat gouache / riso-poster illustration: hard-edged color planes, "
+    "paper tooth, slight ink offset. Not a photograph, not cinematic lighting, "
+    "not volumetric sunset glow, not lens falloff, not depth-of-field."
+)
 _DEV_SCENE_EXPANSION: dict[str, str] = {
     "woman": (
         "Painted canvas grain and soft brush texture. "
@@ -1832,7 +2648,34 @@ def _dev_expanded_scene_detail(
     riso = is_riso_painting_retro_vintage(profile_name)
     table = _RISO_RETRO_EXPANSION if riso else _DEV_SCENE_EXPANSION
     tod_table = _RISO_RETRO_TOD if riso else _DEV_TOD_ATMOSPHERE
-    if framing == "wide_couple" or str(beat.get("silhouette_framing") or "") == "wide_couple":
+    bed_scene = bool(
+        couple_bed_pose_clause(
+            str(beat.get("setting") or ""),
+            str(beat.get("key_object") or ""),
+            st,
+        )
+    )
+    anchor_object = (
+        st == "object_focus"
+        and str(beat.get("anchor_beat") or "") in {"introduce", "callback"}
+    )
+    if str(beat.get("close_variant") or "") == "portrait_close":
+        body = (
+            "Printed atmosphere around the portrait: paper tooth, flat printed "
+            "color, canvas texture. Same illustration technique as the "
+            "episode. No photoreal skin, no camera portrait."
+        )
+    elif str(beat.get("close_variant") or "") == "eye_close":
+        body = (
+            "Printed atmosphere around the eyes: paper tooth, flat printed "
+            "color, lamp as a hard color plane. No full-figure, no silhouette body."
+        )
+    elif bed_scene:
+        # Landscape couple expansion ("street, lamp, horizon") fights a bedroom.
+        body = table.get("woman") or table.get("couple") or ""
+    elif anchor_object:
+        body = table.get("object_focus_anchor") or table.get("object_focus") or ""
+    elif framing == "wide_couple" or str(beat.get("silhouette_framing") or "") == "wide_couple":
         body = table.get("wide_couple") or table.get("couple") or ""
     else:
         body = table.get(st) or table.get("woman") or ""
@@ -1881,6 +2724,13 @@ def assemble_v2_prompt_dev(
     expr = str(beat.get("subject_expression") or "sad")
     setting = _sanitize_visual_phrase(str(beat.get("setting") or ""))
     key_object = _sanitize_visual_phrase(str(beat.get("key_object") or ""))
+    if str(beat.get("anchor_beat") or "") in {"introduce", "callback"}:
+        aname = str(beat.get("episode_anchor_name") or "").strip()
+        if aname:
+            cap = str(beat.get("text") or beat.get("beat_text") or "")
+            key_object = _sanitize_visual_phrase(
+                anchor_visual_noun(aname, cap) or aname
+            )
     beat["setting"] = setting
     beat["key_object"] = key_object
     key_object_prompt = _grounded_object_phrase(key_object, setting)
@@ -1896,17 +2746,50 @@ def assemble_v2_prompt_dev(
 
     riso_lock = is_riso_painting_retro_vintage(profile_name)
 
-    if st == "object_focus":
+    if str(beat.get("close_variant") or "") == "portrait_close":
+        who = str(beat.get("close_character") or st or "woman").strip().lower()
+        if who not in {"woman", "man"}:
+            who = "woman"
+        beat["subject_type"] = who
+        beat["close_character"] = who
+        ctx = str(beat.get("setting") or setting or "window light")
+        tod_s = str(beat.get("time_of_day") or tod or "dusk")
+        pose = str(beat.get("pose_hint") or _CLOSE_POSE_HINT["portrait"])
+        scene = (
+            f"{portrait_close_identity_clause(who)} {ctx}, {tod_s}. {pose} "
+            f"{key_object_prompt} is atmosphere only, not held in any hand."
+        )
+        beat["dev_scene_builder"] = "portrait_close"
+        framing_kind = "portrait_close"
+    elif str(beat.get("close_variant") or "") == "eye_close":
+        ctx = str(beat.get("eye_close_context") or setting or "window light")
+        tod_s = str(beat.get("time_of_day") or tod or "dusk")
+        pose = str(beat.get("pose_hint") or _CLOSE_POSE_HINT["eyes"])
+        scene = (
+            f"{_EYE_CLOSE_SCENE} {ctx}, {tod_s}. {pose} "
+            "Window-light atmosphere only — no named object in frame, "
+            "no hands, no sweater, no garment held to the face."
+        )
+        beat["dev_scene_builder"] = "eye_close"
+        framing_kind = "eye_close"
+    elif st == "object_focus":
+        anchor_focus = str(beat.get("anchor_beat") or "") in {"introduce", "callback"}
         scene, framing_kind = object_focus_scene_text(
             key_object,
             step=focus_step,
             setting=setting,
             hand_interaction=False,
+            keep_setting=anchor_focus,
+            painterly=anchor_focus,
         )
         if scene:
             scene = scene[0].upper() + scene[1:]
         beat["dev_scene_builder"] = "object_focus"
-    elif st == "couple" and _WIDE_COUPLE_PLACE_RE.search(f"{setting} {key_object}"):
+    elif (
+        st == "couple"
+        and _WIDE_COUPLE_PLACE_RE.search(f"{setting} {key_object}")
+        and not couple_bed_pose_clause(setting, key_object, st)
+    ):
         scene, framing_kind = couple_wide_silhouette_scene_text(
             setting, tod, step=focus_step
         )
@@ -1959,6 +2842,12 @@ def assemble_v2_prompt_dev(
         if char:
             char = char[0].upper() + char[1:]
         pose = str(beat.get("pose_hint") or "").strip()
+        if (
+            st == "couple"
+            and not pose
+            and couple_bed_pose_clause(setting, key_object, st)
+        ):
+            pose = "sitting on the edge of the bed with feet on the floor"
         pose_bit = f" {pose}." if pose else ""
         couple_bit = f" {_COUPLE_SEPARATION}" if st == "couple" else ""
         env_stem = _object_stem(key_object)
@@ -1988,6 +2877,22 @@ def assemble_v2_prompt_dev(
         beat["object_focus_step"] = max(0, min(int(focus_step), 2))
         beat["object_focus_framing"] = framing_kind
 
+    bed_pose = couple_bed_pose_clause(setting, key_object, st)
+    if bed_pose:
+        scene = f"{scene} {bed_pose}".strip()
+
+    shape_bit = ""
+    painterly_lock = ""
+    if str(beat.get("anchor_beat") or "") in {"introduce", "callback"}:
+        shape_bit = anchor_shape_clause(key_object, retry=int(focus_step or 0) > 0)
+        if st == "object_focus":
+            painterly_lock = (
+                "Same flat gouache risograph atmosphere as a furnished room or "
+                "rainy street — paper tooth, hard color blocks, printed dusk. "
+                "Not a photograph, not volumetric glow, not isolated "
+                "ink-diagram linework on blank paper."
+            )
+
     expanded = _dev_expanded_scene_detail(beat, st, framing_kind, profile_name)
     anchor = resolve_visual_anchor(beat)
     beat["visual_anchor_hint"] = anchor
@@ -1996,6 +2901,9 @@ def assemble_v2_prompt_dev(
     parts = [
         open_b,
         scene,
+        shape_bit,
+        painterly_lock,
+        _RISO_FLAT_PRINT if riso_lock else "",
         expanded,
         anchor_line,
         tech_b,
@@ -2037,6 +2945,7 @@ def apply_v2_prompts_to_lines_dev(
     enforce_concrete_beat_visuals(
         lines, pool=pool, vary_imagery=vary_imagery, lock_visuals=lock_visuals
     )
+    _apply_setting_archetype_pass(lines, pool, lock_visuals=lock_visuals)
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue

@@ -189,7 +189,7 @@ LOFI_IMAGE_HEIGHT_LEGACY: int = 1344
 LOFI_DEV_SEC_PER_IMAGE_LEGACY: float = 18.0
 
 # Bump when the locked look changes (silhouette, negatives, profile).
-STILL_STYLE_VERSION: str = "riso_retro_lock_v1"
+STILL_STYLE_VERSION: str = "riso_retro_flat_v2"
 
 
 def current_still_style_tag() -> str:
@@ -384,7 +384,11 @@ LOFI_DEV_NEGATIVE_PROMPT: str = (
     "keys, keyring, laptop, extra clutter, extra props, extra objects, "
     "deformed hands, incorrect hands, extra fingers, extra hands, fused fingers, "
     "missing fingers, hands merging into torso, bad anatomy, mutated hands, "
+    "standing on the mattress, standing on top of the bed, figures standing on bedding, "
     "bokeh, depth of field, lens flare, dslr, camera lens, photographic blur, "
+    "photographic light falloff, cinematic lighting, volumetric sunset, "
+    "lens-like glow, atmospheric perspective haze, photoreal sky gradient, "
+    "golden hour photography, photo-grain, "
     "legible text, readable letters, watermark, signature, logo, typography, "
     "subtitles, ui, garbled text, "
     "monochrome, grayscale, blown highlights, white bloom, halo, overexposed whites, "

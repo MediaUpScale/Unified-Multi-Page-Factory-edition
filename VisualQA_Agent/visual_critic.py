@@ -217,9 +217,34 @@ def list_reference_images(style_folder: Path | str) -> list[Path]:
 def _semantic_fidelity_block(
     requested_subject: str | None,
     requested_object: str | None = None,
+    close_variant: str | None = None,
 ) -> str:
     st = (requested_subject or "").strip().lower().replace(" ", "_")
     key_obj = " ".join(str(requested_object or "").strip().split())
+    if str(close_variant or "").strip().lower() == "portrait_close":
+        return """
+5) SEMANTIC FIDELITY TO REQUEST (HARD FAIL if pixels mismatch) — portrait_close:
+   Crop may show a face or upper body of one recurring adult (woman or man).
+   FAIL if the image is a photograph or photoreal skin/eyes. Prefix "STYLE:".
+   FAIL if no person is present. Technique must stay painterly/print.
+
+If this check fails, set passed=false even when style otherwise looks fine.
+fix_instructions MUST say: painterly risograph portrait, ink and flat color,
+no photoreal skin.
+""".strip()
+    if str(close_variant or "").strip().lower() == "eye_close":
+        return """
+5) SEMANTIC FIDELITY TO REQUEST (HARD FAIL if pixels mismatch) — eye_close:
+   Crop must show a woman's eyes, brow, and part of hair only.
+   FAIL if a nose, mouth, chin, or full face is visible. Prefix "FACE:".
+   FAIL if the crop is a full-figure or three-quarter portrait.
+   Eyes must be recognizable (reflective or tearful). This is a partial
+   reveal, not a face reveal.
+
+If this check fails, set passed=false even when style otherwise looks fine.
+fix_instructions MUST say: extreme close on eyes only, cropped above the
+nose bridge, no nose, no mouth, no lower face.
+""".strip()
     if st not in {"woman", "man", "couple", "silhouette", "object_focus"}:
         subject_block = (
             "5) SEMANTIC FIDELITY — requested subject_type was not provided; "
@@ -245,6 +270,11 @@ def _semantic_fidelity_block(
    - couple: TWO distinct people (a man and a woman), two distinct faces, two distinct bodies,
      standing separately (side by side or one slightly behind). FAIL if only one person,
      if bodies/faces are fused into one figure, or if extra phantom hands/limbs appear.
+     BED / MATTRESS (HARD FAIL): if a bed is in the scene, figures must stand on the
+     floor beside it (floor visible under their feet) or sit on the edge with feet
+     on the floor. FAIL if anyone stands ON the mattress / on top of the bed, if
+     feet are planted in rumpled bedding, or if the bed fills the foreground and
+     figures rise out of the covers with no visible floor. Prefix "POSE:".
    - object_focus: the object sits ALONE and dominates the frame.
      No dominant face or full-body figure. Default: zero hands.
      FAIL if a close portrait of a person fills the frame. Do not require facial anatomy.
@@ -310,12 +340,15 @@ def _build_lofi_critic_instruction(
     requested_object: str | None = None,
     prior_fail_criteria: Sequence[str] | None = None,
     style_profile: str | None = None,
+    close_variant: str | None = None,
 ) -> str:
     forbidden = ", ".join(rules.get("forbidden_tokens") or [])
     mandatory = ", ".join(rules.get("mandatory_elements") or [])
     lighting = rules.get("lighting_style") or ""
     audience = rules.get("target_audience_rules") or ""
-    semantic = _semantic_fidelity_block(requested_subject, requested_object)
+    semantic = _semantic_fidelity_block(
+        requested_subject, requested_object, close_variant=close_variant
+    )
     prof = str(style_profile or "").strip().lower()
     painterly = prof == "lofi_painterly_v1"
     riso_retro = prof in {
@@ -327,7 +360,24 @@ def _build_lofi_critic_instruction(
         for x in (prior_fail_criteria or [])
         if str(x).strip()
     ]
-    if painterly:
+    if str(close_variant or "").strip().lower() == "portrait_close":
+        style_eval = (
+            "1) Vintage risograph-painting print is ON STYLE. This beat is a "
+            "portrait_close: a painterly face or upper-body crop of the "
+            "recurring character MAY be visible. FAIL if photoreal skin, "
+            "glossy camera eyes, or beauty-lighting photography. "
+            "Technique must match the rest of the episode: ink, flat printed "
+            "color, paper grain."
+        )
+    elif str(close_variant or "").strip().lower() == "eye_close":
+        style_eval = (
+            "1) Vintage risograph-painting print is ON STYLE. This beat is "
+            "the eye_close exception: a tight crop of eyes, brow, and hair "
+            "MAY show detailed, reflective eyes. Do NOT require a full-body "
+            "or unlit silhouette. FAIL if a nose, mouth, chin, or full face "
+            "is visible. FAIL if it is a photograph / photoreal camera look."
+        )
+    elif painterly:
         style_eval = (
             "1) Painted illustration is ON STYLE — canvas grain, soft brush, "
             "muted vintage print. Do NOT fail for painterly softness or "
@@ -490,6 +540,7 @@ def _build_critic_instruction(
     requested_object: str | None = None,
     prior_fail_criteria: Sequence[str] | None = None,
     style_profile: str | None = None,
+    close_variant: str | None = None,
 ) -> str:
     profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
     if profile == "lofi_economic" or channel_name == "lofi_economic":
@@ -499,6 +550,7 @@ def _build_critic_instruction(
             requested_object=requested_object,
             prior_fail_criteria=prior_fail_criteria,
             style_profile=style_profile,
+            close_variant=close_variant,
         )
     if profile in ("ancient_mystery", "ancient_knowledge") or channel_name == "ancient_knowledge":
         return _build_ancient_mystery_critic_instruction(
@@ -615,6 +667,7 @@ def evaluate_image(
     requested_object: str | None = None,
     prior_fail_criteria: Sequence[str] | None = None,
     style_profile: str | None = None,
+    close_variant: str | None = None,
 ) -> CriticVerdict:
     """
     Judge a generated image with Gemini Vision against ALL style refs + rules.
@@ -671,7 +724,10 @@ def evaluate_image(
                 )
                 contents.append(part)
             st_req = (requested_subject or "").strip().lower().replace(" ", "_")
-            if st_req in {"woman", "man", "couple", "silhouette"}:
+            if (
+                st_req in {"woman", "man", "couple", "silhouette"}
+                and str(close_variant or "") != "eye_close"
+            ):
                 for name, part in _lofi_torso_crop_parts(Path(generated_image)):
                     contents.append(
                         f"TORSO CROP of IMAGE 1 — {name}. Inspect hands vs chest/"
@@ -702,6 +758,7 @@ def evaluate_image(
             requested_object=requested_object,
             prior_fail_criteria=prior_fail_criteria,
             style_profile=style_profile,
+            close_variant=close_variant,
         )
     )
 

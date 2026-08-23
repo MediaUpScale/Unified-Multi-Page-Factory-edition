@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import re
 import struct
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -392,7 +393,247 @@ def _history_name(module: str) -> str:
     return f"lofi_generated_history_{module}"
 
 
+_PHRASE_HISTORY_N = 10
+_TRIGRAM_DUP_THRESHOLD = 0.6
+_MIN_PHRASE_WORDS = 3
+
+
+def normalize_caption_text(text: str) -> str:
+    """Lowercase, strip punctuation — used for exact and near-dupe checks."""
+    blob = re.sub(r"[^\w\s']", " ", (text or "").lower())
+    return " ".join(blob.split())
+
+
+def caption_trigrams(text: str) -> set[str]:
+    words = normalize_caption_text(text).split()
+    if not words:
+        return set()
+    if len(words) < 3:
+        return {" ".join(words)}
+    return {" ".join(words[i : i + 3]) for i in range(len(words) - 2)}
+
+
+def trigram_overlap(a: str, b: str) -> float:
+    """Jaccard overlap of word trigrams. Exact-normalized match is 1.0."""
+    na = normalize_caption_text(a)
+    nb = normalize_caption_text(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    ta, tb = caption_trigrams(a), caption_trigrams(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def intra_script_duplicate_pairs(
+    lines: list[Any],
+    *,
+    threshold: float = _TRIGRAM_DUP_THRESHOLD,
+) -> list[tuple[int, int, float]]:
+    """1-based scene pairs that are exact or near-duplicate captions."""
+    texts = [
+        str((row or {}).get("text") or (row or {}).get("beat_text") or "")
+        if isinstance(row, dict)
+        else ""
+        for row in (lines or [])
+    ]
+    hits: list[tuple[int, int, float]] = []
+    for i, a in enumerate(texts):
+        if not a.strip():
+            continue
+        for j in range(i + 1, len(texts)):
+            b = texts[j]
+            if not b.strip():
+                continue
+            score = trigram_overlap(a, b)
+            if score >= threshold:
+                hits.append((i + 1, j + 1, score))
+    return hits
+
+
+def phrases_from_text(text: str, *, min_words: int = _MIN_PHRASE_WORDS) -> set[str]:
+    """Sliding 3–4 word phrases after normalize (catches 'isn't loud' leakage)."""
+    words = normalize_caption_text(text).split()
+    out: set[str] = set()
+    for n in (min_words, min_words + 1):
+        if len(words) < n:
+            continue
+        for i in range(0, len(words) - n + 1):
+            out.add(" ".join(words[i : i + n]))
+    return out
+
+
+def _recent_history_rows(module: str, n: int = _PHRASE_HISTORY_N) -> list[dict[str, Any]]:
+    ensure_seeded()
+    rows = _read_json(_store_path(_history_name(module)), [])
+    if not isinstance(rows, list) or not rows:
+        return []
+    take = max(1, int(n or _PHRASE_HISTORY_N))
+    return [r for r in rows[-take:] if isinstance(r, dict)]
+
+
+def preceding_setting_archetypes(module: str) -> list[str]:
+    """Unique archetypes from the immediately preceding generated script."""
+    rows = _recent_history_rows(module, 1)
+    if not rows:
+        return []
+    meta = rows[-1].get("meta") if isinstance(rows[-1].get("meta"), dict) else {}
+    raw = (meta or {}).get("setting_archetypes")
+    if isinstance(raw, list) and raw:
+        return [str(x).strip() for x in raw if str(x).strip()]
+    beats = (meta or {}).get("setting_archetype_beats")
+    if isinstance(beats, list) and beats:
+        return sorted({str(x).strip() for x in beats if str(x).strip()})
+    # First run of this gate: reconstruct perseverance from its locked script.
+    theme = str((meta or {}).get("theme") or "").strip().lower()
+    if theme == "perseverance":
+        from core_engine.economic_reel_lofi.setting_archetypes import (
+            classify_setting_archetype,
+        )
+
+        locked = _store_path("locked_script_perseverance_v2")
+        if not locked.is_file():
+            locked = Path(__file__).resolve().parent / "store" / (
+                "locked_script_perseverance_v2.json"
+            )
+        try:
+            data = _read_json(locked, {})
+        except Exception:
+            data = {}
+        script = data.get("script") if isinstance(data.get("script"), dict) else data
+        used: list[str] = []
+        for row in (script or {}).get("lines") or []:
+            if not isinstance(row, dict):
+                continue
+            used.append(
+                classify_setting_archetype(
+                    str(row.get("setting") or ""),
+                    str(row.get("key_object") or ""),
+                )
+            )
+        return sorted({a for a in used if a and a != "unknown"})
+    return []
+
+
+def recent_setting_archetypes(
+    module: str,
+    *,
+    theme: str = "",
+    n: int = _PHRASE_HISTORY_N,
+) -> list[list[str]]:
+    """Per-script archetype lists from the last N history rows (optionally one theme)."""
+    out: list[list[str]] = []
+    needle = str(theme or "").strip().lower()
+    for row in _recent_history_rows(module, n):
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        if needle and str((meta or {}).get("theme") or "").strip().lower() != needle:
+            continue
+        raw = (meta or {}).get("setting_archetypes")
+        if isinstance(raw, list) and raw:
+            out.append([str(x).strip() for x in raw if str(x).strip()])
+            continue
+        beats = (meta or {}).get("setting_archetype_beats")
+        if isinstance(beats, list) and beats:
+            out.append(sorted({str(x).strip() for x in beats if str(x).strip()}))
+    return out
+
+
+def recent_used_anchors(module: str, n: int = _PHRASE_HISTORY_N) -> set[str]:
+    """Anchor nouns from the last N generated scripts (all themes)."""
+    out: set[str] = set()
+    skip = {"the", "and", "empty", "just", "off", "on", "name", "initial", "final", "state"}
+    for row in _recent_history_rows(module, n):
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        raw = (meta or {}).get("anchor_object")
+        if isinstance(raw, dict):
+            name = str(raw.get("name") or "").strip().lower()
+        else:
+            name = str(raw or "").strip().lower()
+        if not name or name in {"none", "null"}:
+            continue
+        out.add(name)
+        for tok in re.findall(r"[a-z]+", name):
+            if len(tok) >= 3 and tok not in skip:
+                out.add(tok)
+    return out
+
+
+def _history_hook_text(row: dict[str, Any]) -> str:
+    meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+    hook = str((meta or {}).get("hook") or "").strip()
+    if hook:
+        return hook
+    text = str(row.get("text") or "").strip()
+    if not text:
+        return ""
+    return text.split(".")[0].strip() or text.split("\n")[0].strip()
+
+
+def recent_used_phrases(module: str, n: int = _PHRASE_HISTORY_N) -> set[str]:
+    """Hook 3-grams plus distinctive 4-grams from last-N full scripts."""
+    out: set[str] = set()
+    for row in _recent_history_rows(module, n):
+        hook = _history_hook_text(row)
+        if hook:
+            out.update(phrases_from_text(hook, min_words=3))
+        body = str(row.get("text") or "")
+        if body:
+            out.update(phrases_from_text(body, min_words=4))
+    return out
+
+
+def cross_run_phrase_hits(
+    module: str,
+    script: dict[str, Any] | str,
+    *,
+    n: int = _PHRASE_HISTORY_N,
+) -> list[str]:
+    """
+    Phrase-level history reuse (not whole-script cosine).
+
+    History side: last-N hooks + their anchor nouns (all themes).
+    New script: any beat that repeats a history-hook phrase, or the same
+    anchor noun (catches 'stone' / \"isn't loud\" leaking across themes).
+    """
+    if isinstance(script, dict):
+        lines = script.get("lines") or []
+        texts = [
+            str(r.get("text") or r.get("beat_text") or "")
+            for r in lines
+            if isinstance(r, dict)
+        ]
+        ao = script.get("anchor_object")
+        anchor = ""
+        if isinstance(ao, dict):
+            anchor = str(ao.get("name") or "").strip()
+        elif isinstance(ao, str):
+            anchor = ao.strip()
+        blob = " ".join(texts)
+    else:
+        blob = str(script or "")
+        anchor = ""
+    used_phrases = recent_used_phrases(module, n)
+    used_anchors = recent_used_anchors(module, n)
+    hits: list[str] = []
+    if anchor:
+        tokens = {anchor.lower()}
+        tokens.update(w for w in re.findall(r"[a-z]+", anchor.lower()) if len(w) >= 3)
+        # Ignore generic fillers that appear inside longer object names
+        tokens -= {"the", "and", "empty", "just", "off", "on"}
+        overlap = tokens & used_anchors
+        if overlap:
+            hits.append("anchor_reuse:" + ",".join(sorted(overlap)))
+    new_norm = normalize_caption_text(blob)
+    shared = sorted(p for p in used_phrases if p and p in new_norm)
+    if shared:
+        hits.append("phrase_reuse:" + ";".join(shared[:8]))
+    return hits
+
+
 def max_similarity_to_history(module: str, script_text: str) -> float:
+    """Whole-script embedding cosine vs generated history (all themes)."""
     ensure_seeded()
     rows = _read_json(_store_path(_history_name(module)), [])
     if not isinstance(rows, list) or not rows:
@@ -868,6 +1109,12 @@ def mark_core_rag_used(module: str, script: dict[str, Any]) -> None:
         if isinstance(d, dict)
     }
     arc_id = str(script.get("arc_template") or "")
+    ao = script.get("anchor_object")
+    anchor_name = ""
+    if isinstance(ao, dict):
+        anchor_name = str(ao.get("name") or "").strip()
+    elif isinstance(ao, str):
+        anchor_name = ao.strip()
     for r in rows:
         if str(r.get("theme")) != theme:
             continue
@@ -885,6 +1132,17 @@ def mark_core_rag_used(module: str, script: dict[str, Any]) -> None:
             dates = dict(r.get("arc_template_dates") or {})
             dates[arc_id] = today
             r["arc_template_dates"] = dates
+        if anchor_name:
+            r["last_anchor_object"] = anchor_name
+            pairs = list(r.get("setting_object_pairs") or [])
+            needle = anchor_name.lower()
+            for p in pairs:
+                if not isinstance(p, dict):
+                    continue
+                ko = str(p.get("key_object") or "").strip().lower()
+                if ko and (needle == ko or needle in ko or ko in needle):
+                    p["last_used_date"] = today
+            r["setting_object_pairs"] = pairs
         break
     _write_json(path, rows)
 
@@ -899,6 +1157,10 @@ def record_video_performance(
     anchor_object: str | None = None,
     video_path: str | None = None,
     retrieved_details: list[dict[str, Any]] | None = None,
+    close_variant: str | None = None,
+    close_target: str | None = None,
+    eye_close_context: str | None = None,
+    close_character: str | None = None,
 ) -> None:
     """
     Map a published video back onto theme+subtheme+anchor_object.
@@ -937,6 +1199,10 @@ def record_video_performance(
             "completion_rate": completion_rate,
             "performance_score": score,
             "video_path": video_path,
+            "close_variant": close_variant,
+            "close_target": close_target,
+            "eye_close_context": eye_close_context,
+            "close_character": close_character,
             "retrieved_details": [
                 str(d.get("detail") or d) if isinstance(d, dict) else str(d)
                 for d in (retrieved_details or [])
@@ -984,3 +1250,210 @@ def record_video_performance(
                 d["performance_score"] = round((dprev_f + score) / 2.0, 4)
         break
     _write_json(path, rows)
+
+
+# ── Close-beat rotation (silhouette vs eye_close) ───────────────────────────
+
+_SILHOUETTE_CLOSE_TARGETS: tuple[str, ...] = ("hands", "shoulders", "object")
+_EYE_CLOSE_THEMES: frozenset[str] = frozenset(
+    {
+        "grief",
+        "longing",
+        "release",
+        "loss",
+        "missing",
+        "regret",
+        "goodbye",
+        "absence",
+    }
+)
+_EYE_CLOSE_CONTEXTS: tuple[str, ...] = (
+    "window light on wet glass",
+    "rain streaking a dark pane",
+    "low amber lamp at the edge of frame",
+    "dawn light through a thin curtain",
+    "streetlight bounce on a night window",
+    "overcast morning through a kitchen pane",
+)
+
+
+def _close_history_rows(module: str, n: int = 12) -> list[dict[str, Any]]:
+    """Last N close-variant records from history meta + performance events."""
+    rows: list[dict[str, Any]] = []
+    for rec in _recent_history_rows(module, n):
+        meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+        variant = str(meta.get("close_variant") or "").strip()
+        if not variant:
+            continue
+        rows.append(
+            {
+                "close_variant": variant,
+                "close_target": str(meta.get("close_target") or ""),
+                "eye_close_context": str(meta.get("eye_close_context") or ""),
+                "close_character": str(meta.get("close_character") or ""),
+                "theme": str(meta.get("theme") or rec.get("theme") or ""),
+            }
+        )
+    events = _read_json(_store_path("lofi_performance_events"), [])
+    if isinstance(events, list):
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            if str(ev.get("module") or "") != module:
+                continue
+            variant = str(ev.get("close_variant") or "").strip()
+            if not variant:
+                continue
+            rows.append(
+                {
+                    "close_variant": variant,
+                    "close_target": str(ev.get("close_target") or ""),
+                    "eye_close_context": str(ev.get("eye_close_context") or ""),
+                    "close_character": str(ev.get("close_character") or ""),
+                    "theme": str(ev.get("theme") or ""),
+                }
+            )
+    return rows[-max(1, int(n)) :]
+
+
+def recent_close_variants(module: str, n: int = 12) -> list[str]:
+    return [
+        str(r.get("close_variant") or "")
+        for r in _close_history_rows(module, n)
+        if r.get("close_variant")
+    ]
+
+
+def recent_silhouette_close_targets(module: str, n: int = 12) -> list[str]:
+    return [
+        str(r.get("close_target") or "")
+        for r in _close_history_rows(module, n)
+        if str(r.get("close_variant") or "") == "silhouette"
+        and str(r.get("close_target") or "") in _SILHOUETTE_CLOSE_TARGETS
+    ]
+
+
+def recent_eye_close_contexts(module: str, n: int = 12) -> list[str]:
+    return [
+        str(r.get("eye_close_context") or "")
+        for r in _close_history_rows(module, n)
+        if str(r.get("close_variant") or "") == "eye_close"
+        and r.get("eye_close_context")
+    ]
+
+
+def theme_fits_eye_close(theme: str) -> bool:
+    blob = (theme or "").strip().lower().replace("-", " ").replace("_", " ")
+    if not blob:
+        return False
+    tokens = set(re.findall(r"[a-z]+", blob))
+    return bool(tokens & _EYE_CLOSE_THEMES)
+
+
+def next_silhouette_close_target(module: str, seed: str = "") -> str:
+    """Rotate hands → shoulders → object; eye_close does not consume a slot."""
+    recent = recent_silhouette_close_targets(module)
+    last = recent[-1] if recent else ""
+    order = _SILHOUETTE_CLOSE_TARGETS
+    if last in order:
+        pick = order[(order.index(last) + 1) % len(order)]
+    else:
+        pick = order[sum(ord(c) for c in (seed or "hands")) % len(order)]
+    print(
+        f"[LOFI close] silhouette-rotate last={last or 'none'} "
+        f"next={pick} recent={','.join(recent[-4:]) or 'none'}"
+    )
+    return pick
+
+
+def pick_eye_close_context(module: str) -> str:
+    used = {c.lower() for c in recent_eye_close_contexts(module)}
+    for ctx in _EYE_CLOSE_CONTEXTS:
+        if ctx.lower() not in used:
+            return ctx
+    return _EYE_CLOSE_CONTEXTS[len(used) % len(_EYE_CLOSE_CONTEXTS)]
+
+
+def recent_close_characters(module: str, n: int = 12) -> list[str]:
+    return [
+        str(r.get("close_character") or "")
+        for r in _close_history_rows(module, n)
+        if r.get("close_character")
+    ]
+
+
+def pick_optional_close(theme: str, module: str) -> dict[str, str] | None:
+    """
+    Rotation preference, not a quota. ~1 in 3 episodes skip a close.
+
+    Silhouette-only medium scenes are independent of this choice.
+    """
+    recent = recent_close_variants(module, 8)
+    last = recent[-1] if recent else ""
+    seed = f"{theme}|{module}|{','.join(recent[-3:])}"
+    roll = sum(ord(c) for c in seed) % 3
+    # After silhouette, next owes portrait. After portrait, next owes
+    # silhouette (or eye). Do not skip that rotation.
+    if last and roll == 0 and last not in {"silhouette", "portrait_close"}:
+        print(f"[LOFI close] skip-optional last={last or 'none'} recent={recent[-4:]}")
+        return None
+    chars = recent_close_characters(module, 8)
+    last_char = chars[-1] if chars else ""
+    next_char = "man" if last_char == "woman" else "woman"
+    if last == "eye_close":
+        variant = "portrait_close" if roll == 1 else "silhouette"
+    elif last == "portrait_close":
+        variant = "silhouette" if roll == 1 else (
+            "eye_close" if should_use_eye_close(theme, module) else "silhouette"
+        )
+    elif last == "silhouette":
+        variant = "portrait_close"
+        next_char = "woman"
+    else:
+        variant = "silhouette"
+    if variant == "eye_close" and not should_use_eye_close(theme, module):
+        variant = "portrait_close"
+    print(
+        f"[LOFI close] pick variant={variant} character={next_char} "
+        f"last={last or 'none'}"
+    )
+    return {"variant": variant, "character": next_char}
+
+
+def should_use_eye_close(theme: str, module: str) -> bool:
+    """
+    Occasional exception: ~1 in 3 fitting themes (grief/longing/release).
+
+    Never consecutive eye_close. Silhouette stays the default.
+    """
+    if not theme_fits_eye_close(theme):
+        return False
+    rows = [
+        r
+        for r in _close_history_rows(module, 12)
+        if theme_fits_eye_close(str(r.get("theme") or ""))
+    ]
+    last_fit = [str(r.get("close_variant") or "") for r in rows]
+    if last_fit and last_fit[-1] == "eye_close":
+        return False
+    if last_fit[-3:].count("eye_close") >= 1:
+        return False
+    print(f"[LOFI close] eye_close eligible theme={theme!r} recent_fit={last_fit[-4:]}")
+    return True
+
+
+def stamp_close_variant_on_script(script: dict[str, Any], lines: list[dict[str, Any]]) -> None:
+    """Copy the episode close choice onto the script root for history/logs."""
+    close_row = next(
+        (
+            r
+            for r in lines
+            if isinstance(r, dict)
+            and str(r.get("shot_scale") or "").strip().lower() == "close"
+        ),
+        {},
+    )
+    script["close_variant"] = str(close_row.get("close_variant") or "none")
+    script["close_target"] = str(close_row.get("close_target") or "")
+    script["eye_close_context"] = str(close_row.get("eye_close_context") or "")
+    script["close_character"] = str(close_row.get("close_character") or "")

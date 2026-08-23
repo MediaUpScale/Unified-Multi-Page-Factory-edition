@@ -11,14 +11,30 @@ from typing import Any
 
 from core_engine.economic_reel_lofi import config as lofi_cfg
 from core_engine.economic_reel_lofi import lofi_collections as rag
+from core_engine.economic_reel_lofi.setting_archetypes import (
+    assess_cross_run_settings,
+    enforce_composition_variety,
+    enforce_setting_archetype_variety,
+    score_composition_types,
+    score_setting_archetypes,
+)
 from core_engine.economic_reel_lofi.visual_identity import (
     DEFAULT_SETTING_OBJECT_PAIRS,
     act_for_index,
+    apply_anchor_callback_beats,
+    assign_beat_functions,
+    assign_close_beat,
     beat_lacks_noun_and_action,
     enforce_concrete_beat_visuals,
+    pick_caption_anchored_pair,
+    visual_tied_to_caption,
     last_concrete_noun,
+    pick_episode_anchor,
     preferred_concrete_noun,
+    score_episode_variety,
     setting_object_pool,
+    stamp_episode_anchor,
+    _anchor_mentioned,
     _BANNED_OBJECT_RE,
 )
 
@@ -951,7 +967,7 @@ def _fallback_script(
     )
     print("[LOFI script] fallback monologue:", monologue)
     print("[LOFI script] retrieved_details:", retrieved)
-    return {
+    out = {
         "hook_type": hook_out,
         "theme": theme,
         "module": module,
@@ -970,6 +986,13 @@ def _fallback_script(
         "retrieved_details": retrieved,
         "script_source": "fallback",
     }
+    if thematic:
+        _finalize_thematic_narrative(out, pool, module=module, theme=theme)
+        reasons = _narrative_gate_reasons(out, module)
+        _log_narrative(out, reasons)
+        out["holds_episode"] = bool(reasons)
+        out["narrative_holds"] = reasons
+    return out
 
 
 _THEMATIC_STRUCTURES: tuple[dict[str, str], ...] = (
@@ -1029,15 +1052,15 @@ _THEMATIC_STRUCTURES: tuple[dict[str, str], ...] = (
 # Repo-original gold standard (hope, 2026-08-19). Cadence/quality only — never
 # inject when the live theme is hope, and never treat as a line to copy.
 _GOLD_CADENCE_BEATS: tuple[str, ...] = (
-    "Hope isn't the feeling that everything's fine now.",
-    "It's refusing to believe last night was the end.",
-    "After the worst fight you've ever survived together,",
-    "the body wakes first, bracing for the same silence.",
-    "You brace for the cold side of the bed,",
-    "and find the kettle steaming without being asked.",
-    "Hope was never loud enough to announce itself.",
-    "It just quietly stayed lit anyway,",
-    "like one window still burning on a dark street.",
+    "Don't wait for the feeling first.",
+    "You press the sweater to your chest.",
+    "The kettle starts to warm.",
+    "Stay with the quiet.",
+    "Two cups sit by the sink.",
+    "The empty chair faces the light.",
+    "You pause in the doorway.",
+    "The kettle has gone cold.",
+    "You meet the morning there.",
 )
 
 
@@ -1082,17 +1105,23 @@ def _pick_thematic_structure(module: str, hook_type: str, theme: str) -> dict[st
 
 
 def _gold_cadence_block(theme: str, module: str) -> str:
-    """Repo-original hope script as quality bar — omitted when theme is hope."""
-    if str(theme or "").strip().lower() == "hope":
-        return ""
+    """Quality-bar example for every theme — never omitted (hope used to skip it)."""
     numbered = "\n".join(f"  {i+1}. {line}" for i, line in enumerate(_GOLD_CADENCE_BEATS))
-    domain = (
-        "Parenting content required — this sample is relationship cadence only."
-        if str(module or "").strip().lower() == "parenting"
-        else "Write THIS theme, not hope."
-    )
+    live = str(theme or "").strip().replace("_", " ") or "this theme"
+    if str(module or "").strip().lower() == "parenting":
+        domain = (
+            "Parenting content required — this sample is relationship cadence only. "
+            f"Write THIS {live} episode. Match split cadence, do not copy lines."
+        )
+    elif str(theme or "").strip().lower() == "hope":
+        domain = (
+            "Write THIS hope episode with original lines. Match the quality of "
+            "the split and the thesis shape. Do not copy the sample wording."
+        )
+    else:
+        domain = f"Write THIS {live} episode, not hope. Match cadence; do not copy."
     return f"""
-QUALITY BAR (repo-original approved script — match originality and split cadence; do NOT copy lines, images, or the word Hope):
+QUALITY BAR (cadence and thesis shape only — do NOT copy lines, images, or the sample nouns):
 {numbered}
 {domain}
 """
@@ -1142,10 +1171,17 @@ SETTING_OBJECT_POOL (visual fields only — pick setting + key_object from this 
 {feedback_block}
 
 This is ONE argument about a single theme that builds, costs, and pays off.
-Not object-anchored micro-scenes. Not "I wait by the door / I watch the rain."
-Not a list of removable maxims. Not a book-plug outro.
-Do NOT force one shared physical object across all beats. Varied imagery is the default.
-A recurring object is allowed only when this theme naturally wants one.
+Before the captions, write one internal thesis sentence. Every beat must serve it.
+VOICE: a story with ONE sharp lesson — not a list of instructions.
+ONLY the hook (scene 1) and the insight beat(s) are stated principles
+("Don't finish the argument first." / "Stay after the heat.").
+The other 7 beats are concrete narrative/sensory description of what the
+character is doing or what is in front of them — image-first
+("You press the sweater to your chest." / "Two plates wait in the sink.").
+At most TWO lines in the whole script may read as generalizable advice.
+Not a numbered "you should / remember to" list. Not a book-plug outro.
+ONE recurring physical object (anchor_object) is REQUIRED — introduced early/mid
+and paid off late in a different state. Other beats may use different imagery.
 
 Use THIS structure only (abstract shape — invent every sentence; never paste a known reel):
 {structure.get("example")}
@@ -1172,12 +1208,20 @@ RULES:
      TOO LONG (do not emit): "Forgiveness isn't an eraser. It's the decision to stop carrying"
 3) One longer thematic sentence MAY span 2 consecutive beats. Fragments are
    allowed. Not every beat must be a complete closed sentence.
-4) Scene 1 is the hook matching HOOK_TYPE:
-   - bold_claim: a hard opening assertion
-   - question: a short question
+4) Scene 1 is the hook matching HOOK_TYPE AND a stated principle
+   (imperative or declarative-general). This is one of at most TWO
+   principle lines in the script.
+   - bold_claim: a hard opening principle
+   - question: a short question that is still general advice
    - statistic: a specific number/claim (parenting ok; invent only if grounded)
    - definition / rhetorical_question: also allowed
 5) Last 2–3 beats are the insight/payoff of the SAME theme.
+   Every insight line MUST be a principle AND pass the character-agency
+   verb gate. All other beats (complication / turn / close) MUST be
+   scene-grounded narration — if they pass the principle-check, rewrite
+   them. "You press the sweater to your chest." is correct for a
+   non-insight beat. "Leave the kettle. Start anyway." belongs only on
+   hook or insight.
 6) Second person ("you"/"they") or close third is preferred over object diary.
 7) Details from the bank may color a line; they must not become the plot.
 8) FORBIDDEN:
@@ -1193,8 +1237,13 @@ RULES:
 10) arc_position MUST be act1, act2, or act3 matching ARC PER SCENE.
 11) For EVERY beat also emit visual fields (images, not spoken plot):
     - subject_type: woman | man | couple | silhouette | object_focus.
-      Mix the 9 beats: about 5–6 person shots and 3–4 object_focus or
-      silhouette shots. Use object_focus when the stand-in is a strong
+      Also emit composition_type: figure_centered | object_focus |
+      wide_environment. figure_centered (human-scale silhouette or
+      portrait as the visual anchor) is capped at 4 of 9. The other 5
+      must be object_focus (no figure) or wide_environment (landscape /
+      space at scale, figure small or absent). Scene 1 must be a
+      character (figure_centered), never object_focus.
+      Use object_focus on later beats when the stand-in is a strong
       specific object. Use couple on at most 3 beats (emotional peaks).
     - subject_expression: 1–3 words
     - setting + key_object MUST trace to THIS beat's idea: the noun in
@@ -1203,7 +1252,12 @@ RULES:
       peace/quiet→rain on the window or kettle).
       Never default every abstract line to a chair.
       Copy from SETTING_OBJECT_POOL when a pair matches the idea; otherwise
-      name the stand-in. Do not reuse the same key_object more than once.
+      name the stand-in. Each pool row is tagged with a setting ARCHETYPE.
+      At most 2 of the 9 beats may share the same archetype
+      (interior-domestic, threshold, exterior-urban, exterior-landscape,
+      transit, public-interior). Spread the episode across at least 5
+      archetypes. Prefer archetypes listed as REQUIRED_NEW below.
+      Do not reuse the same key_object more than once.
       Never pick a small object meant to be held near the face.
       If key_object is a part of a larger whole (passenger seat, steering
       wheel, dashboard, piano key, drawer, sofa cushion, place setting),
@@ -1215,10 +1269,41 @@ RULES:
       key_object in its setting — not the caption itself. Must name the
       key_object. Never substitute a different still-life (no mug, vase,
       flowers, or coffee when the object is rain, a seat, a suitcase, etc.).
-12) anchor_object is OPTIONAL. Omit it unless this theme naturally wants one
-    recurring object. Varied imagery is valid and preferred.
+    - beat_function: exactly one of hook | complication | turn | insight | close.
+      Consecutive beats must not share the same beat_function. The script MUST
+      include at least one turn or insight (not hook restatement only).
+      Every insight line must hand the viewer a concrete reframe, permission,
+      or action: you (the character) as grammatical subject of a finite
+      physical or decisive verb — walk, set down, stay, leave, open, close,
+      turn, carry, reach, hold, let go, wear, fold — in ANY construction
+      ("you walk with it", "carry it", "set it down"), in that beat or the
+      one immediately before it. Copular/state verbs alone (is, was,
+      becomes), personification of an abstract noun ("the morning finds its
+      way", "hope is a habit"), and cognitive verbs with no physical
+      correlate (learn, realize, understand, know) are a hold.
+    - shot_scale: medium by default. A close beat is OPTIONAL, only on a
+      turn or insight if the arc needs one — never required. If used, set
+      close_variant to silhouette | portrait_close | eye_close.
+    Scene 1 (hook) MUST show a character — woman, man, couple, or
+    silhouette — in a high-contrast, emotionally charged composition
+    (sunset, rain, lamp glow, dawn backlight). No object-only still life
+    and no empty establishing shot on beat 1. This is the highest-priority
+    visual beat.
+12) thesis (string, REQUIRED, internal only — never spoken on screen): one
+    sentence the 9 beats develop.
+    anchor_object (REQUIRED): pick ONE concrete object from SETTING_OBJECT_POOL
+    or the DETAIL BANK. name / initial_state / final_state required.
+    That object MUST be named in at least 2 spoken beats: introduce early/mid
+    (a different state) and callback on the turn, insight, or last beats
+    (same object, changed state — e.g. kettle just clicked off → kettle cold).
+    Close beats are optional. If one is used, put it on the turn or insight
+    (not the hook, not the last close). Available types: silhouette close
+    (hands / shoulders / nape / object), portrait_close (recurring woman or
+    man, painterly face/body), or eye_close. Do not force a close.
 13) Every line must be original to this theme. If a sentence could belong to a
     famous relationship/parenting reel, rewrite it.
+    Intra-script: no two captions may be the same or near-duplicates.
+    "X isn't Y" / "X is not Y" may appear in at most ONE line.
 14) STRUCTURAL VARIETY: do not open with "the saddest thing X can believe is...".
     Do not reuse the same rhetorical frame as another episode in this batch.
 
@@ -1229,6 +1314,12 @@ Output STRICT JSON only, no markdown:
   "module": "{module}",
   "arc_template": "{arc.get("id")}",
   "structure_id": "{structure.get("id")}",
+  "thesis": "<one internal sentence this episode proves — not shown on screen>",
+  "anchor_object": {{
+    "name": "<object from the pool or detail bank>",
+    "initial_state": "<how it first appears>",
+    "final_state": "<how it has changed by the callback>"
+  }},
   "monologue": "<full continuous spoken thesis>",
   "lines": [
     {{
@@ -1237,6 +1328,8 @@ Output STRICT JSON only, no markdown:
       "beat_text": "Peace can feel boring after chaos.",
       "emotion": "opening_hook",
       "arc_position": "act1",
+      "beat_function": "hook",
+      "shot_scale": "medium",
       "subject_type": "woman",
       "subject_expression": "distant, still",
       "setting": "bedroom, edge of a neatly made bed",
@@ -1249,6 +1342,1001 @@ Output STRICT JSON only, no markdown:
 Valid JSON only: no trailing commas, no comments, escape quotes inside strings.
 No NSFW. No real private individuals named. Brand-safe for {module}.
 """
+
+
+_ISNT_Y_RE = re.compile(
+    r"\b(?:isn['’]t|is not|wasn['’]t|was not)\b",
+    re.I,
+)
+_INSIGHT_CLAUSE_SPLIT_RE = re.compile(
+    r"\s*[,;:—–]\s*|\s+\band\b\s+|\s+\bbut\b\s+|\s+\bthen\b\s+",
+    re.I,
+)
+_INSIGHT_LEAD_STRIP_RE = re.compile(
+    r"^(so|and|but|then|yet|still|now|or)\s+",
+    re.I,
+)
+_INSIGHT_CHAR_SUBJ = frozenset({"you", "i", "we", "she", "he"})
+_INSIGHT_ABSTRACT_SUBJ = frozenset(
+    {
+        "morning", "hope", "grief", "peace", "love", "rain", "night",
+        "silence", "distance", "habit", "weight", "absence", "presence",
+        "day", "dusk", "dawn", "evening", "light", "dark", "time",
+        "feeling", "memory", "sorrow", "joy", "pain", "loss", "habit",
+        "way", "shape", "hole", "address", "surrender", "beginning",
+    }
+)
+_INSIGHT_CONCRETE = frozenset(
+    {
+        "walk", "set", "stay", "leave", "open", "close", "turn", "carry",
+        "reach", "hold", "fold", "refold", "unfold", "wear", "press",
+        "gather", "lift", "put", "pick", "sit", "stand", "go", "come",
+        "take", "keep", "stop", "choose", "let", "drop", "hang", "pull",
+        "push", "wait", "move", "step", "give", "place", "lay", "shut",
+        "lock", "unlock", "pour", "fill", "empty", "touch", "grip",
+        "clutch", "wrap", "unwrap", "throw", "catch", "run", "drive",
+        "write", "cut", "tear", "wash", "wake", "eat", "drink", "shift",
+        "draw", "call", "ask", "tell",
+    }
+)
+_INSIGHT_COGNITIVE = frozenset(
+    {
+        "learn", "realize", "realise", "understand", "know", "notice",
+        "think", "believe", "remember", "forget", "imagine", "wonder",
+        "recognize", "recognise", "discover", "see", "feel", "sense",
+        "find",
+    }
+)
+_INSIGHT_COPULAR = frozenset(
+    {
+        "be", "become", "seem", "appear",
+    }
+)
+_INSIGHT_BORDERLINE = frozenset(
+    {
+        "try", "begin", "start", "forgive", "enough",
+    }
+)
+_INSIGHT_MODAL = frozenset(
+    {
+        "can", "could", "will", "would", "may", "might", "must",
+        "shall", "should", "do", "did",
+    }
+)
+_INSIGHT_IRREGULAR = {
+    "am": "be", "is": "be", "are": "be", "was": "be", "were": "be",
+    "been": "be", "being": "be",
+    "went": "go", "gone": "go", "goes": "go",
+    "came": "come", "comes": "come",
+    "wore": "wear", "worn": "wear", "wears": "wear",
+    "held": "hold", "holds": "hold",
+    "left": "leave", "leaves": "leave",
+    "sat": "sit", "sits": "sit",
+    "stood": "stand", "stands": "stand",
+    "took": "take", "takes": "take", "taken": "take",
+    "got": "get", "gets": "get",
+    "put": "put", "puts": "put",
+    "set": "set", "sets": "set",
+    "let": "let", "lets": "let",
+    "kept": "keep", "keeps": "keep",
+    "felt": "feel", "feels": "feel",
+    "found": "find", "finds": "find",
+    "became": "become", "becomes": "become",
+    "chose": "choose", "chooses": "choose",
+    "knew": "know", "knows": "know",
+    "thought": "think", "thinks": "think",
+    "saw": "see", "sees": "see",
+    "laid": "lay", "lays": "lay",
+    "lied": "lie", "lies": "lie",
+    "ran": "run", "runs": "run",
+    "gave": "give", "gives": "give", "given": "give",
+    "made": "make", "makes": "make",
+}
+_NARRATIVE_REWRITE_ALTS: tuple[str, ...] = (
+    "You notice the {noun} anyway.",
+    "The {noun} is still there.",
+    "Nobody moved the {noun}.",
+    "The {noun} has gone cold.",
+    "You leave the {noun} untouched.",
+)
+
+
+def _line_texts(lines: list[Any]) -> list[str]:
+    out: list[str] = []
+    for row in lines or []:
+        if isinstance(row, dict):
+            out.append(str(row.get("text") or row.get("beat_text") or "").strip())
+        else:
+            out.append("")
+    return out
+
+
+def _normalize_anchor_object(data: dict[str, Any], pool: list[dict[str, str]]) -> dict[str, str]:
+    raw = data.get("anchor_object")
+    name = ""
+    initial = ""
+    final = ""
+    if isinstance(raw, dict):
+        name = str(raw.get("name") or raw.get("key_object") or "").strip()
+        initial = str(raw.get("initial_state") or "").strip()
+        final = str(raw.get("final_state") or "").strip()
+    elif isinstance(raw, str):
+        name = raw.strip()
+    avoid = set(rag.recent_used_anchors(str(data.get("module") or "relationship")))
+    picked = pick_episode_anchor(pool, avoid_stems=avoid, prefer_name=name)
+    name = str(picked.get("key_object") or name or "empty chair").strip()
+    data["anchor_object"] = {
+        "name": name,
+        "initial_state": initial or "just set down",
+        "final_state": final or "cold, untouched",
+        "setting": str(picked.get("setting") or ""),
+    }
+    return data["anchor_object"]
+
+
+def _rewrite_caption(index: int, noun: str) -> str:
+    tmpl = _NARRATIVE_REWRITE_ALTS[index % len(_NARRATIVE_REWRITE_ALTS)]
+    word = noun or "chair"
+    line = tmpl.format(noun=word)
+    if word.endswith("s") and " has " in line:
+        line = line.replace(" has ", " have ", 1)
+    return line
+
+
+def _retie_beat_visuals(lines: list[dict[str, Any]], pool: list[dict[str, str]]) -> None:
+    """After caption rewrites, keep setting/object tied so the validator can pass."""
+    used_stems: dict[str, int] = {}
+    used: set[tuple[str, str]] = set()
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        setting = str(row.get("setting") or "")
+        obj = str(row.get("key_object") or "")
+        if str(row.get("anchor_beat") or "").strip():
+            continue
+        if str(row.get("close_variant") or "") == "eye_close":
+            continue
+        if visual_tied_to_caption(text, setting, obj):
+            used.add((setting.lower(), obj.lower()))
+            stem = (obj.split() or [""])[-1].lower()
+            used_stems[stem] = used_stems.get(stem, 0) + 1
+            continue
+        pick = pick_caption_anchored_pair(
+            text, pool, used=used, index=i, used_stems=used_stems
+        )
+        row["setting"] = pick["setting"]
+        row["key_object"] = pick["key_object"]
+        row["visual_fallback"] = "retie_after_rewrite"
+        used.add((pick["setting"].lower(), pick["key_object"].lower()))
+        print(
+            f"[LOFI narrative] retie scene={i + 1} "
+            f"-> {pick['setting']!r} / {pick['key_object']!r}"
+        )
+
+
+def _cap_isnt_y_lines(lines: list[dict[str, Any]], noun: str) -> int:
+    """Keep at most one 'X isn't Y' line; rewrite later extras. Returns kept count."""
+    kept = 0
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        if not _ISNT_Y_RE.search(text):
+            continue
+        kept += 1
+        if kept <= 1:
+            continue
+        repl = _rewrite_caption(i, noun)
+        row["text"] = repl
+        row["beat_text"] = repl
+        row["isnt_y_rewrite"] = True
+        print(f"[LOFI narrative] isnt-Y rewrite scene={i + 1} -> {repl!r}")
+        kept -= 1
+    return sum(
+        1
+        for row in lines
+        if isinstance(row, dict)
+        and _ISNT_Y_RE.search(str(row.get("text") or row.get("beat_text") or ""))
+    )
+
+
+def _rewrite_intra_dupes(lines: list[dict[str, Any]], noun: str) -> list[tuple[int, int, float]]:
+    leftover = rag.intra_script_duplicate_pairs(lines)
+    for _a, b, score in leftover:
+        idx = b - 1
+        if idx < 0 or idx >= len(lines) or not isinstance(lines[idx], dict):
+            continue
+        repl = _rewrite_caption(idx, noun)
+        # Avoid rewriting into another existing caption
+        existing = {rag.normalize_caption_text(t) for t in _line_texts(lines)}
+        if rag.normalize_caption_text(repl) in existing:
+            repl = f"The {noun} waits unused."
+        lines[idx]["text"] = repl
+        lines[idx]["beat_text"] = repl
+        lines[idx]["intra_dupe_rewrite"] = True
+        print(
+            f"[LOFI narrative] intra-dupe rewrite scene={b} "
+            f"score={score:.2f} -> {repl!r}"
+        )
+    return rag.intra_script_duplicate_pairs(lines)
+
+
+def _rewrite_cross_run_phrases(
+    data: dict[str, Any],
+    module: str,
+    noun: str,
+) -> list[str]:
+    hits = rag.cross_run_phrase_hits(module, data)
+    if not hits:
+        return []
+    lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+    used = rag.recent_used_phrases(module)
+    for i, row in enumerate(lines):
+        if i == 0 or str(row.get("beat_function") or "") in {"hook", "insight"}:
+            continue
+        text = str(row.get("text") or "")
+        phrases = rag.phrases_from_text(text)
+        if not (phrases & used):
+            continue
+        repl = _rewrite_caption(i + 3, noun)
+        row["text"] = repl
+        row["beat_text"] = repl
+        row["cross_run_rewrite"] = True
+        print(f"[LOFI narrative] cross-run rewrite scene={i + 1} -> {repl!r}")
+    leftover = rag.cross_run_phrase_hits(module, data)
+    if leftover and lines:
+        target = None
+        for i, row in enumerate(lines):
+            fn = str(row.get("beat_function") or "")
+            if i == 0 or fn in {"hook", "insight"}:
+                continue
+            target = i
+        if target is not None:
+            repl = _rewrite_caption(target + 3, noun)
+            lines[target]["text"] = repl
+            lines[target]["beat_text"] = repl
+            lines[target]["cross_run_rewrite"] = True
+            print(
+                f"[LOFI narrative] cross-run rewrite scene={target + 1} "
+                f"(kept hook/insight) -> {repl!r}"
+            )
+    # Anchor noun reuse: swap to a different pool object if still colliding
+    ao = data.get("anchor_object") if isinstance(data.get("anchor_object"), dict) else {}
+    used_anchors = rag.recent_used_anchors(module)
+    name = str(ao.get("name") or "")
+    tokens = {name.lower()} | {w for w in re.findall(r"[a-z]+", name.lower()) if len(w) >= 3}
+    if tokens & used_anchors:
+        pool = setting_object_pool(None)
+        fresh = pick_episode_anchor(pool, avoid_stems=used_anchors)
+        data["anchor_object"] = {
+            "name": fresh["key_object"],
+            "initial_state": str(ao.get("initial_state") or "just set down"),
+            "final_state": str(ao.get("final_state") or "cold, untouched"),
+            "setting": fresh.get("setting") or "",
+        }
+        print(f"[LOFI narrative] anchor rotated off history -> {fresh['key_object']!r}")
+    return rag.cross_run_phrase_hits(module, data)
+
+
+def _ensure_thesis(data: dict[str, Any], theme: str) -> str:
+    thesis = str(data.get("thesis") or "").strip()
+    if thesis:
+        return thesis
+    lines = _line_texts(data.get("lines") or [])
+    first = lines[0] if lines else ""
+    label = (theme or "this").replace("_", " ")
+    thesis = first or f"{label.capitalize()} costs something before it stays."
+    data["thesis"] = thesis
+    return thesis
+
+
+def _finalize_thematic_narrative(
+    data: dict[str, Any],
+    pool: list[dict[str, str]],
+    *,
+    module: str,
+    theme: str,
+) -> dict[str, Any]:
+    """Thesis, mandatory anchor+callback, close beat, dedup, isn't-Y cap."""
+    lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+    if lines and isinstance(lines[0], dict):
+        lines[0]["episode_theme"] = theme
+        lines[0]["episode_module"] = module
+    ao = _normalize_anchor_object(data, pool)
+    noun = preferred_concrete_noun(ao.get("name") or "") or (
+        (ao.get("name") or "chair").split()[-1]
+    )
+    stamp_episode_anchor(lines, ao["name"])
+    _ensure_thesis(data, theme)
+    repair_script_captions(data)
+    lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+    if lines and isinstance(lines[0], dict):
+        lines[0]["episode_theme"] = theme
+        lines[0]["episode_module"] = module
+        stamp_episode_anchor(lines, ao["name"])
+    enforce_concrete_beat_visuals(lines, pool=pool, vary_imagery=True)
+    apply_anchor_callback_beats(lines, ao, pool)
+    assign_beat_functions(lines)
+    assign_close_beat(lines, theme=theme, module=module)
+    _cap_isnt_y_lines(lines, noun)
+    _rewrite_intra_dupes(lines, noun)
+    _rewrite_cross_run_phrases(data, module, noun)
+    # Re-apply after rewrites so callback/close tags survive caption edits
+    apply_anchor_callback_beats(lines, data.get("anchor_object") or ao, pool)
+    assign_beat_functions(lines)
+    assign_close_beat(lines, theme=theme, module=module)
+    _retie_beat_visuals(lines, pool)
+    prev_arch = rag.preceding_setting_archetypes(module)
+    from core_engine.economic_reel_lofi.setting_archetypes import ARCHETYPE_ORDER
+
+    prefer_new = [a for a in ARCHETYPE_ORDER if a not in set(prev_arch)]
+    enforce_setting_archetype_variety(
+        lines, pool, theme=theme, prefer_new=prefer_new
+    )
+    enforce_composition_variety(lines)
+    rag.stamp_close_variant_on_script(data, lines)
+    data["lines"] = lines
+    data["monologue"] = " ".join(_line_texts(lines))
+    if not data.get("monologue"):
+        data["monologue"] = " ".join(_line_texts(lines))
+    return data
+
+
+def _insight_lemma(word: str) -> str:
+    w = re.sub(r"[^a-z]", "", (word or "").lower())
+    if not w:
+        return ""
+    if w in _INSIGHT_IRREGULAR:
+        return _INSIGHT_IRREGULAR[w]
+    if (
+        w in _INSIGHT_CONCRETE
+        or w in _INSIGHT_COGNITIVE
+        or w in _INSIGHT_COPULAR
+        or w in _INSIGHT_BORDERLINE
+        or w in _INSIGHT_MODAL
+        or w in _INSIGHT_CHAR_SUBJ
+        or w in _INSIGHT_ABSTRACT_SUBJ
+    ):
+        return w
+    for suf, repl in (("ies", "y"), ("ied", "y")):
+        if w.endswith(suf) and len(w) > 4:
+            return w[: -len(suf)] + repl
+    for suf in ("ing", "ed", "es", "s"):
+        if w.endswith(suf) and len(w) > len(suf) + 2:
+            return w[: -len(suf)]
+    return w
+
+
+def _insight_expand_contractions(text: str) -> str:
+    blob = str(text or "")
+    repl = (
+        (r"\bthat's\b", "that is"),
+        (r"\bit's\b", "it is"),
+        (r"\bthere's\b", "there is"),
+        (r"\byou're\b", "you are"),
+        (r"\bi'm\b", "i am"),
+        (r"\bwe're\b", "we are"),
+        (r"\bshe's\b", "she is"),
+        (r"\bhe's\b", "he is"),
+        (r"\bdon't\b", "do not"),
+        (r"\bdoesn't\b", "does not"),
+        (r"\bcan't\b", "can not"),
+        (r"\bwon't\b", "will not"),
+        (r"\blet's\b", "let us"),
+        (r"\bisn't\b", "is not"),
+        (r"\bwasn't\b", "was not"),
+    )
+    for pat, to in repl:
+        blob = re.sub(pat, to, blob, flags=re.I)
+    return blob
+
+
+def _insight_clauses(text: str) -> list[str]:
+    blob = _insight_expand_contractions(text)
+    return [p.strip() for p in _INSIGHT_CLAUSE_SPLIT_RE.split(blob) if p.strip()]
+
+
+def _analyze_insight_clause(clause: str) -> dict[str, str]:
+    raw = _INSIGHT_LEAD_STRIP_RE.sub("", clause.strip())
+    tokens = re.findall(r"[A-Za-z']+", raw)
+    lemmas = [_insight_lemma(t) for t in tokens]
+    lemmas = [x for x in lemmas if x]
+    if not lemmas:
+        return {"status": "fail", "reason": "empty-clause"}
+
+    subject = ""
+    subject_kind = ""
+    verb_i = 0
+    char_at = next((i for i, tok in enumerate(lemmas) if tok in _INSIGHT_CHAR_SUBJ), -1)
+    if lemmas[0] in _INSIGHT_CHAR_SUBJ:
+        subject = lemmas[0]
+        subject_kind = "character"
+        verb_i = 1
+    elif char_at >= 0:
+        # "just before you ask" — character subject is not clause-initial.
+        subject = lemmas[char_at]
+        subject_kind = "character"
+        verb_i = char_at + 1
+    elif lemmas[0] in {"the", "a", "an"} and len(lemmas) > 1 and lemmas[1] in _INSIGHT_ABSTRACT_SUBJ:
+        subject = lemmas[1]
+        subject_kind = "abstract"
+        verb_i = 2
+    elif lemmas[0] in _INSIGHT_ABSTRACT_SUBJ:
+        subject = lemmas[0]
+        subject_kind = "abstract"
+        verb_i = 1
+    elif lemmas[0] in {"the", "a", "an"} and len(lemmas) > 1:
+        subject = lemmas[1]
+        subject_kind = "noncharacter"
+        verb_i = 2
+    elif lemmas[0] in {"it", "that", "this", "there"}:
+        subject = lemmas[0]
+        subject_kind = "noncharacter"
+        verb_i = 1
+    elif lemmas[0] in _INSIGHT_CONCRETE or lemmas[0] in _INSIGHT_BORDERLINE:
+        subject = "you"
+        subject_kind = "character"
+        verb_i = 0
+    else:
+        subject_kind = "unknown"
+        verb_i = 0
+
+    # Skip noun tokens until a verb-like lemma; allow "get to <verb>".
+    i = verb_i
+    while i < len(lemmas) and lemmas[i] in {"the", "a", "an", "to", "not", "no"}:
+        i += 1
+    if i < len(lemmas) and lemmas[i] == "get":
+        if i + 1 < len(lemmas) and lemmas[i + 1] == "to":
+            i += 2
+        elif subject_kind == "character":
+            return {
+                "status": "pass",
+                "reason": f"{subject}+get",
+                "subject": subject,
+                "verb": "get",
+            }
+    if i < len(lemmas) and lemmas[i] in _INSIGHT_MODAL:
+        i += 1
+        while i < len(lemmas) and lemmas[i] in {"to", "not"}:
+            i += 1
+
+    verb = lemmas[i] if i < len(lemmas) else ""
+    rest = lemmas[i:]
+    has_concrete = any(v in _INSIGHT_CONCRETE for v in rest)
+    has_cognitive = any(v in _INSIGHT_COGNITIVE for v in rest)
+    has_copular = any(v in _INSIGHT_COPULAR for v in rest)
+    has_border = any(v in _INSIGHT_BORDERLINE for v in rest)
+
+    if subject_kind == "abstract":
+        return {
+            "status": "fail",
+            "reason": f"personification:{subject}+{verb or 'state'}",
+            "subject": subject,
+            "verb": verb,
+        }
+    if subject_kind == "noncharacter":
+        kind = "copular" if has_copular else "noncharacter-subject"
+        return {
+            "status": "fail",
+            "reason": f"{kind}:{subject}+{verb or 'state'}",
+            "subject": subject,
+            "verb": verb,
+        }
+    if subject_kind == "character" and has_concrete:
+        concrete = next(v for v in rest if v in _INSIGHT_CONCRETE)
+        return {
+            "status": "pass",
+            "reason": f"{subject}+{concrete}",
+            "subject": subject,
+            "verb": concrete,
+        }
+    if subject_kind == "character" and has_cognitive and not has_concrete:
+        cog = next(v for v in rest if v in _INSIGHT_COGNITIVE)
+        return {
+            "status": "fail",
+            "reason": f"cognitive-only:{cog}",
+            "subject": subject,
+            "verb": cog,
+        }
+    if subject_kind == "character" and has_copular and not has_concrete:
+        return {
+            "status": "fail",
+            "reason": f"copular:{subject}+{verb or 'be'}",
+            "subject": subject,
+            "verb": verb or "be",
+        }
+    if subject_kind == "character" and has_border and not has_concrete:
+        border = next(v for v in rest if v in _INSIGHT_BORDERLINE)
+        return {
+            "status": "borderline",
+            "reason": f"{subject}+{border}",
+            "subject": subject,
+            "verb": border,
+        }
+    if has_concrete and subject_kind in {"unknown", "noncharacter"}:
+        # Bare infinitive / implied-you fragment: "to put down", "to carry".
+        concrete = next(v for v in rest if v in _INSIGHT_CONCRETE)
+        return {
+            "status": "borderline",
+            "reason": f"infinitive:{concrete}",
+            "subject": subject,
+            "verb": concrete,
+        }
+    return {
+        "status": "fail",
+        "reason": f"no-character-concrete:{subject_kind}:{verb or lemmas[0]}",
+        "subject": subject,
+        "verb": verb,
+    }
+
+
+def analyze_insight_agency(text: str) -> dict[str, str]:
+    """Verb-role check: character subject + concrete/decisive verb."""
+    blob = str(text or "").strip()
+    if not blob:
+        return {"status": "fail", "reason": "empty", "subject": "", "verb": ""}
+    best: dict[str, str] | None = None
+    rank = {"pass": 2, "borderline": 1, "fail": 0}
+    for clause in _insight_clauses(blob):
+        rec = _analyze_insight_clause(clause)
+        if best is None or rank.get(rec["status"], 0) > rank.get(best["status"], 0):
+            best = rec
+        if rec.get("status") == "pass":
+            return rec
+    return best or {"status": "fail", "reason": "empty-clause", "subject": "", "verb": ""}
+
+
+def insight_agency_status(text: str) -> str:
+    """pass | borderline | fail — character performs a concrete verb."""
+    return str(analyze_insight_agency(text).get("status") or "fail")
+
+
+def assess_insight_lines(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Content check for beats tagged insight.
+
+    Pass if this beat or the one immediately before it has a character
+    subject performing a concrete physical/decisive verb. Borderline is
+    logged, not a hold. Copular / cognitive-only / personification is a hold.
+    """
+    report: list[dict[str, Any]] = []
+    fails: list[str] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("beat_function") or "") != "insight":
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        prev = ""
+        if i > 0 and isinstance(lines[i - 1], dict):
+            prev = str(lines[i - 1].get("text") or lines[i - 1].get("beat_text") or "")
+        here = analyze_insight_agency(text)
+        before = analyze_insight_agency(prev) if prev else {"status": "fail", "reason": "no-prev"}
+        # Previous beat may rescue a fragment/borderline split, not a
+        # hard fail (cognitive-only, copular, personification).
+        if here["status"] == "pass":
+            status = "pass"
+            why = here["reason"]
+        elif here["status"] == "borderline" and before["status"] == "pass":
+            status = "pass"
+            why = f"prev:{before['reason']}"
+        elif here["status"] == "borderline":
+            status = "borderline"
+            why = here["reason"]
+        else:
+            status = "fail"
+            why = here.get("reason") or "no-character-concrete"
+        rec = {
+            "scene": i + 1,
+            "text": text,
+            "prev": prev,
+            "status": status,
+            "reason": why,
+            "here": here,
+            "before": before,
+        }
+        report.append(rec)
+        if status == "borderline":
+            print(
+                f"[LOFI insight] BORDERLINE scene={i + 1} "
+                f"line={text!r} why={why}"
+            )
+        elif status == "fail":
+            fails.append(
+                f"insight scene {i + 1} has no character-performed concrete verb "
+                f"({why}): {text!r}"
+            )
+            print(f"[LOFI insight] FAIL scene={i + 1} line={text!r} why={why}")
+        else:
+            print(f"[LOFI insight] PASS scene={i + 1} line={text!r} why={why}")
+    return {"insights": report, "fails": fails}
+
+
+_PRINCIPLE_LEAD_RE = re.compile(
+    r"^(let|don't|do not|never|always|stop|start|keep|wait|say|ask|leave|"
+    r"stay|hold|walk|put|set|tell|call|come|go|open|close|give|take|"
+    r"choose|try|make|use|drop|pick|turn|send|write|listen|speak|"
+    r"repair|forgive|stay|return)\b",
+    re.I,
+)
+_PRINCIPLE_FRAME_RE = re.compile(
+    r"\b("
+    r"don't have to|do not have to|doesn't have to|just have to|"
+    r"doesn't need|does not need|get to|happens when|is what|"
+    r"isn't|is not|when you|if you|"
+    r"before you|after you|the part that counts"
+    r")\b",
+    re.I,
+)
+_SCENE_NARRATION_RE = re.compile(
+    r"\b("
+    r"wake at dawn|bracing|you sit|you stand|you watch|you stare|"
+    r"you wake|you find|you notice|the fight was|you press|"
+    r"you leave the|sitting cold|bracing for"
+    r")\b",
+    re.I,
+)
+_PAST_SCENE_RE = re.compile(
+    r"\b(was|were|had|woke|found|sat|stood|watched|said)\b",
+    re.I,
+)
+
+
+def analyze_principle_voice(text: str) -> dict[str, str]:
+    """
+    Quotable behavioral principle, not this-character scene narration.
+
+    Separate from the agency-verb gate. A concrete verb can still fail here.
+    """
+    blob = str(text or "").strip()
+    if not blob:
+        return {"status": "fail", "reason": "empty", "kind": ""}
+    lead = blob.split(".", 1)[0].strip()
+    if _PRINCIPLE_LEAD_RE.search(lead):
+        return {"status": "pass", "reason": "imperative", "kind": "imperative"}
+    if _PRINCIPLE_FRAME_RE.search(blob):
+        return {
+            "status": "pass",
+            "reason": "declarative-general",
+            "kind": "declarative",
+        }
+    if _SCENE_NARRATION_RE.search(blob):
+        return {
+            "status": "fail",
+            "reason": "scene-narration",
+            "kind": "scene",
+        }
+    if _PAST_SCENE_RE.search(blob) and not _PRINCIPLE_FRAME_RE.search(blob):
+        return {
+            "status": "fail",
+            "reason": "past-scene",
+            "kind": "scene",
+        }
+    # Bare second-person present with no general frame = this-moment report.
+    if re.match(r"^you\b", blob, re.I) and not _PRINCIPLE_FRAME_RE.search(blob):
+        return {
+            "status": "fail",
+            "reason": "this-moment-you",
+            "kind": "scene",
+        }
+    # Abstract claim the viewer can quote ("Peace can feel boring after chaos.").
+    if not re.match(
+        r"^(you|i|we|the fight|the kettle|the bed|the body)\b",
+        blob,
+        re.I,
+    ) and re.search(
+        r"\b(is|isn't|is not|can|matters|holds|starts|stays|means)\b",
+        blob,
+        re.I,
+    ):
+        return {
+            "status": "pass",
+            "reason": "declarative-general",
+            "kind": "declarative",
+        }
+    return {
+        "status": "fail",
+        "reason": "not-quotable-advice",
+        "kind": "other",
+    }
+
+
+def assess_principle_lines(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Hook + every insight must pass the principle-voice check."""
+    report: list[dict[str, Any]] = []
+    fails: list[str] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        fn = str(row.get("beat_function") or "").strip().lower()
+        if fn not in {"hook", "insight"} and i != 0:
+            continue
+        if i == 0:
+            fn = "hook"
+        text = str(row.get("text") or row.get("beat_text") or "")
+        rec = analyze_principle_voice(text)
+        item = {
+            "scene": i + 1,
+            "beat_function": fn,
+            "text": text,
+            "status": rec.get("status"),
+            "reason": rec.get("reason"),
+            "kind": rec.get("kind"),
+        }
+        report.append(item)
+        if rec.get("status") == "pass":
+            print(
+                f"[LOFI principle] PASS scene={i + 1} fn={fn} "
+                f"why={rec.get('reason')} line={text!r}"
+            )
+        else:
+            fails.append(
+                f"principle {fn} scene {i + 1} ({rec.get('reason')}): {text!r}"
+            )
+            print(
+                f"[LOFI principle] FAIL scene={i + 1} fn={fn} "
+                f"why={rec.get('reason')} line={text!r}"
+            )
+    return {"lines": report, "fails": fails}
+
+
+MAX_PRINCIPLE_BEATS = 2
+
+
+def assess_principle_scope(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Hold if 3+ beats read as generalizable advice. Privilege is hook+insight."""
+    hits: list[dict[str, Any]] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        rec = analyze_principle_voice(text)
+        if rec.get("status") != "pass":
+            continue
+        fn = str(row.get("beat_function") or "")
+        hits.append(
+            {
+                "scene": i + 1,
+                "beat_function": fn,
+                "text": text,
+                "reason": rec.get("reason"),
+            }
+        )
+    extra = [
+        h
+        for h in hits
+        if h.get("beat_function") not in {"hook", "insight"} and h.get("scene") != 1
+    ]
+    over = len(hits) > MAX_PRINCIPLE_BEATS
+    fails: list[str] = []
+    if over:
+        fails.append(
+            f"principle-scope: {len(hits)} beats read as advice "
+            f"(max {MAX_PRINCIPLE_BEATS}): "
+            + "; ".join(f"s{h['scene']} {h['text']!r}" for h in hits)
+        )
+        print(f"[LOFI principle] SCOPE FAIL count={len(hits)} extra={extra}")
+    else:
+        print(
+            f"[LOFI principle] SCOPE pass count={len(hits)} "
+            f"scenes={[h['scene'] for h in hits]}"
+        )
+    return {"hits": hits, "count": len(hits), "fails": fails}
+
+
+_HOOK_LIGHT_RE = re.compile(
+    r"\b("
+    r"sunset|sunrise|dusk|dawn|rain|storm|lamp|streetlamp|streetlight|"
+    r"glow|backlit|lightning|firelight|window light|overcast|wet glass"
+    r")\b",
+    re.I,
+)
+_HOOK_STRIKE_RE = re.compile(
+    r"\b("
+    r"sunset|rain|storm|lamp|streetlamp|streetlight|glow|backlit|"
+    r"lightning|firelight|wet glass"
+    r")\b",
+    re.I,
+)
+_HOOK_FLAT_RE = re.compile(
+    r"\b(unmade empty bed|empty bed|empty chair|empty platform)\b",
+    re.I,
+)
+_HOOK_CHAR_TYPES = frozenset({"woman", "man", "couple", "silhouette"})
+
+
+def assess_hook_beat(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Highest-priority gate: scene 1 must be a striking character beat."""
+    rec: dict[str, Any] = {"scene": 1, "status": "fail", "reason": "missing scene 1"}
+    if not lines or not isinstance(lines[0], dict):
+        print("[LOFI hook] FAIL scene=1 missing")
+        return rec
+    row = lines[0]
+    st = str(row.get("subject_type") or "").strip().lower().replace(" ", "_")
+    text = str(row.get("text") or row.get("beat_text") or "")
+    setting = str(row.get("setting") or "")
+    obj = str(row.get("key_object") or "")
+    tod = str(row.get("time_of_day") or "")
+    blob = f"{setting} {obj} {tod} {text}"
+    rec.update({"text": text, "subject_type": st, "setting": setting, "object": obj})
+    if st == "object_focus" or st not in _HOOK_CHAR_TYPES:
+        rec["reason"] = (
+            "hook scene 1 is object-only / no character "
+            "(need woman, man, couple, or silhouette in a striking frame)"
+        )
+        print(f"[LOFI hook] FAIL scene=1 {rec['reason']} type={st!r}")
+        return rec
+    if _HOOK_FLAT_RE.search(blob) and not _HOOK_STRIKE_RE.search(blob):
+        rec["reason"] = (
+            "hook scene 1 is a flat establishing still "
+            "(empty bed/chair/platform without rain, lamp, or sunset)"
+        )
+        print(f"[LOFI hook] FAIL scene=1 {rec['reason']} setting={setting!r}")
+        return rec
+    if not _HOOK_LIGHT_RE.search(blob):
+        rec["reason"] = (
+            "hook scene 1 lacks high-contrast light "
+            "(sunset/rain/lamp/dawn/dusk/glow)"
+        )
+        print(f"[LOFI hook] FAIL scene=1 {rec['reason']} setting={setting!r}")
+        return rec
+    rec["status"] = "pass"
+    rec["reason"] = f"character={st} light=ok"
+    print(
+        f"[LOFI hook] PASS scene=1 type={st} setting={setting!r} "
+        f"tod={tod!r} line={text!r}"
+    )
+    return rec
+
+
+def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
+    reasons: list[str] = []
+    lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+    hook_rep = assess_hook_beat(lines)
+    data["hook_gate"] = hook_rep
+    if hook_rep.get("status") != "pass":
+        reasons.append(f"HOOK: {hook_rep.get('reason')}")
+    ao = data.get("anchor_object") if isinstance(data.get("anchor_object"), dict) else {}
+    name = str(ao.get("name") or "").strip()
+    if not name:
+        reasons.append("anchor_object is null")
+    mentioned = []
+    if name:
+        for i, row in enumerate(lines):
+            blob = str(row.get("text") or row.get("beat_text") or "")
+            if _anchor_mentioned(blob, name):
+                mentioned.append(i + 1)
+    if name and len(mentioned) < 2:
+        reasons.append(
+            f"anchor_object {name!r} mentioned in {len(mentioned)} beat(s) (need 2+)"
+        )
+    elif name:
+        early = [b for b in mentioned if b <= 5]
+        late = [b for b in mentioned if b >= 6]
+        if not early or not late:
+            reasons.append(
+                f"anchor_object {name!r} needs early/mid + late callback "
+                f"(beats={mentioned})"
+            )
+    thesis = str(data.get("thesis") or "").strip()
+    if not thesis:
+        reasons.append("missing internal thesis")
+    fns = [str(r.get("beat_function") or "") for r in lines]
+    if any(f not in {"hook", "complication", "turn", "insight", "close"} for f in fns):
+        reasons.append("beat_function missing or invalid")
+    for i in range(1, len(fns)):
+        if fns[i] and fns[i] == fns[i - 1]:
+            reasons.append(f"consecutive beat_function {fns[i]!r} at scenes {i}-{i + 1}")
+            break
+    if "turn" not in fns and "insight" not in fns:
+        reasons.append("missing turn/insight — no development")
+    insight_rep = assess_insight_lines(lines)
+    data["insight_agency"] = insight_rep
+    reasons.extend(insight_rep.get("fails") or [])
+    principle_rep = assess_principle_lines(lines)
+    data["principle_voice"] = principle_rep
+    reasons.extend(principle_rep.get("fails") or [])
+    scope_rep = assess_principle_scope(lines)
+    data["principle_scope"] = scope_rep
+    reasons.extend(scope_rep.get("fails") or [])
+    close_n = sum(
+        1 for r in lines if str(r.get("shot_scale") or "").strip().lower() == "close"
+    )
+    data["close_beat_count"] = close_n
+    isnt_n = sum(
+        1
+        for r in lines
+        if _ISNT_Y_RE.search(str(r.get("text") or r.get("beat_text") or ""))
+    )
+    if isnt_n > 1:
+        reasons.append(f"X-isn't-Y used {isnt_n} times (max 1)")
+    dupes = rag.intra_script_duplicate_pairs(lines)
+    if dupes:
+        a, b, score = dupes[0]
+        reasons.append(f"intra-script dupe scenes {a}-{b} overlap={score:.2f}")
+    phrase_hits = rag.cross_run_phrase_hits(module, data)
+    if phrase_hits:
+        reasons.append("cross-run phrase/anchor reuse: " + " | ".join(phrase_hits[:3]))
+    variety = score_episode_variety(lines)
+    if variety.get("holds_episode"):
+        reasons.append(f"episode_variety hold: {variety.get('summary')}")
+    arch = score_setting_archetypes(lines)
+    data["setting_archetypes"] = arch
+    if arch.get("holds_episode"):
+        reasons.append(
+            f"setting archetype overflow (max {arch.get('max_per_episode')}/9): "
+            f"{arch.get('overflow')}"
+        )
+    prev_arch = rag.preceding_setting_archetypes(module)
+    cross_set = assess_cross_run_settings(arch.get("unique") or [], prev_arch)
+    data["setting_archetype_cross"] = cross_set
+    if not cross_set.get("passed"):
+        reasons.append(f"setting archetype cross-run: {cross_set.get('reason')}")
+    comp = score_composition_types(lines)
+    data["composition_types"] = comp
+    if comp.get("holds_episode"):
+        reasons.append(f"composition hold: {comp.get('summary')}")
+    print(
+        f"[LOFI setting] intra={arch.get('summary')} "
+        f"cross={'pass' if cross_set.get('passed') else 'FAIL'} "
+        f"fresh={cross_set.get('fresh')} prev={cross_set.get('previous')} "
+        f"pulled_to_avoid_repeat={cross_set.get('fresh')}"
+    )
+    data["anchor_beats"] = mentioned
+    data["isnt_y_count"] = isnt_n
+    data["intra_dedup_pass"] = not dupes
+    data["cross_run_dedup_pass"] = not phrase_hits
+    data["episode_variety"] = variety
+    return reasons
+
+
+def _log_narrative(data: dict[str, Any], reasons: list[str]) -> None:
+    ao = data.get("anchor_object") if isinstance(data.get("anchor_object"), dict) else {}
+    lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+    close_i = next(
+        (
+            i + 1
+            for i, r in enumerate(lines)
+            if str(r.get("shot_scale") or "").lower() == "close"
+        ),
+        0,
+    )
+    close_row = lines[close_i - 1] if close_i else {}
+    fns = ",".join(str(r.get("beat_function") or "-") for r in lines)
+    print(f"[LOFI narrative] thesis={data.get('thesis')!r}")
+    print(
+        f"[LOFI narrative] anchor_object={ao.get('name')!r} "
+        f"beats={data.get('anchor_beats')} "
+        f"initial={ao.get('initial_state')!r} final={ao.get('final_state')!r}"
+    )
+    print(
+        f"[LOFI narrative] hook={data.get('hook_gate', {}).get('status')} "
+        f"{data.get('hook_gate', {}).get('reason')}"
+    )
+    print(
+        f"[LOFI narrative] close_beat={close_i or 'none'} "
+        f"variant={data.get('close_variant') or close_row.get('close_variant') or 'none'} "
+        f"character={data.get('close_character') or close_row.get('close_character') or ''} "
+        f"target={close_row.get('close_target')} "
+        f"eye_ctx={data.get('eye_close_context') or close_row.get('eye_close_context')!r} "
+        f"fn={close_row.get('beat_function')}"
+    )
+    print(f"[LOFI narrative] beat_functions={fns}")
+    pv = data.get("principle_voice") or {}
+    print(
+        f"[LOFI narrative] principle={pv.get('fails') or 'pass'} "
+        f"lines={[(r.get('scene'), r.get('status'), r.get('reason')) for r in (pv.get('lines') or [])]}"
+    )
+    print(
+        f"[LOFI narrative] dedup intra={'pass' if data.get('intra_dedup_pass') else 'FAIL'} "
+        f"cross={'pass' if data.get('cross_run_dedup_pass') else 'FAIL'} "
+        f"isnt_y={data.get('isnt_y_count')}"
+    )
+    print(
+        f"[LOFI narrative] holds_episode={int(bool(reasons))} "
+        f"reasons={reasons or 'none'}"
+    )
 
 
 def generate_script(
@@ -1270,8 +2358,13 @@ def generate_script(
         f"\nPREVIOUS REJECTION FEEDBACK (must fix):\n{feedback}\n" if feedback else ""
     )
     pool = setting_object_pool(theme_row)
+    from core_engine.economic_reel_lofi.setting_archetypes import (
+        classify_setting_archetype,
+    )
+
     pool_block = "\n".join(
-        f'  - setting="{p["setting"]}" | key_object="{p["key_object"]}"'
+        f'  - archetype="{p.get("archetype") or classify_setting_archetype(p["setting"], p["key_object"])}" '
+        f'| setting="{p["setting"]}" | key_object="{p["key_object"]}"'
         for p in pool
     )
     arc = rag.select_arc_template(module, theme, subtheme)
@@ -1325,6 +2418,28 @@ def generate_script(
             quote_block = (
                 "\nOPTIONAL QUOTE (do not speak it unless it fits as texture; never attribute):\n"
                 f'  \"{q_text}\"\n'
+            )
+
+    if thematic:
+        used_anchors = rag.recent_used_anchors(module)
+        used_phrases = list(rag.recent_used_phrases(module))[:24]
+        if used_anchors or used_phrases:
+            feedback_block += (
+                "\nDO NOT REUSE these recent anchors/phrases from ANY theme:\n"
+                f"  anchors: {', '.join(sorted(used_anchors)) or '(none)'}\n"
+                f"  phrases: {'; '.join(used_phrases) or '(none)'}\n"
+            )
+        prev_arch = rag.preceding_setting_archetypes(module)
+        from core_engine.economic_reel_lofi.setting_archetypes import ARCHETYPE_ORDER
+
+        required_new = [a for a in ARCHETYPE_ORDER if a not in set(prev_arch)]
+        if prev_arch or required_new:
+            feedback_block += (
+                "\nSETTING ARCHETYPES:\n"
+                f"  previous script used: {', '.join(prev_arch) or '(none)'}\n"
+                f"  REQUIRED_NEW (use at least 2 of these): "
+                f"{', '.join(required_new[:4]) or '(any unused)'}\n"
+                "  Max 2 beats per archetype. Logically spread the 9 beats.\n"
             )
 
     if thematic:
@@ -1523,10 +2638,58 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             row["visual_prompt"] = f"story beat {i + 1}"
     data["lines"] = lines
     if thematic:
-        repair_script_captions(data)
+        _finalize_thematic_narrative(data, pool, module=module, theme=theme)
+        reasons = _narrative_gate_reasons(data, module)
+        if reasons:
+            print(f"[LOFI narrative] first-pass holds: {reasons}")
+            try:
+                retry_prompt = _thematic_script_prompt(
+                    module=module,
+                    theme=theme,
+                    subtheme=subtheme,
+                    scene_count=scene_count,
+                    hook_type=hook_type,
+                    arc=arc,
+                    detail_block=detail_block,
+                    pool_block=pool_block,
+                    feedback_block=(
+                        feedback_block
+                        + "\nNARRATIVE HOLDS (must fix):\n"
+                        + "\n".join(f"  - {r}" for r in reasons)
+                        + "\n"
+                    ),
+                    act_guide=act_guide,
+                    structure=structure,
+                    quote_block=quote_block,
+                    gold_block=_gold_cadence_block(theme, module),
+                )
+                raw = _call_llm(retry_prompt)
+                retry = _extract_json_object(raw)
+                if isinstance(retry, dict) and retry.get("lines"):
+                    retry["hook_type"] = hook_type
+                    retry["theme"] = theme
+                    retry["module"] = module
+                    retry["retrieved_details"] = retrieved
+                    retry["arc_template"] = data.get("arc_template")
+                    retry["structure_id"] = data.get("structure_id")
+                    retry["seed_hooks"] = data.get("seed_hooks")
+                    data = retry
+                    _finalize_thematic_narrative(
+                        data, pool, module=module, theme=theme
+                    )
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("narrative retry failed (%s)", exc)
+                print(f"[LOFI narrative] retry failed: {exc}")
+            reasons = _narrative_gate_reasons(data, module)
+        _log_narrative(data, reasons)
+        data["holds_episode"] = bool(reasons)
+        data["narrative_holds"] = reasons
+        if reasons:
+            # Hard-fail: validator rejects missing hook_type so the episode
+            # cannot ship a log-only miss the way hope 161048 did.
+            print("[LOFI narrative] HARD HOLD — rejecting script")
+            data["hook_type"] = ""
         lines = data.get("lines") or lines
-        enforce_concrete_beat_visuals(lines, pool=pool, vary_imagery=True)
-        data["lines"] = lines
     if not data.get("monologue"):
         data["monologue"] = " ".join(
             str(r.get("text") or "") for r in lines if isinstance(r, dict)

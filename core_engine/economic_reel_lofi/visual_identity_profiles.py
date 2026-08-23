@@ -169,6 +169,11 @@ VISUAL_IDENTITY_PROFILES: dict[str, dict[str, Any]] = {
 VISUAL_IDENTITY_PROFILES["style-riso_painting_retro_vintage"] = copy.deepcopy(
     VISUAL_IDENTITY_PROFILES["lofi_risograph_v1"]
 )
+VISUAL_IDENTITY_PROFILES["style-riso_painting_retro_vintage"]["technique"] = (
+    "Bold flat gouache color blocks, fine hand-inked linework, and paper-grain "
+    "halftone with hard-edged color shading. No smooth photographic gradients, "
+    "no lens falloff, no cinematic bloom. Paper grain, not photo-grain."
+)
 
 
 def get_visual_identity_profile(

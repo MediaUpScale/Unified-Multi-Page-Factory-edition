@@ -266,6 +266,19 @@ def validate_script(
                 "anchor_object": script.get("anchor_object"),
                 "arc_template": script.get("arc_template"),
                 "retrieved_details": script.get("retrieved_details"),
+                "close_variant": script.get("close_variant"),
+                "close_target": script.get("close_target"),
+                "eye_close_context": script.get("eye_close_context"),
+                "setting_archetypes": (
+                    (script.get("setting_archetypes") or {}).get("unique")
+                    if isinstance(script.get("setting_archetypes"), dict)
+                    else script.get("setting_archetypes")
+                ),
+                "setting_archetype_beats": (
+                    (script.get("setting_archetypes") or {}).get("beats")
+                    if isinstance(script.get("setting_archetypes"), dict)
+                    else None
+                ),
             },
         )
         theme = str(script.get("theme") or "")

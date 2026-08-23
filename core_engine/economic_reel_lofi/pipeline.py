@@ -460,6 +460,568 @@ def assess_photoreal_style(
         return True, [], meta
 
 
+def assess_anchor_object_identity(
+    image_path: Path,
+    *,
+    object_name: str,
+    shape_parts: tuple[str, ...] | list[str] | None = None,
+    caption: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """
+    Confirm the episode motif was actually drawn — not a substitute still-life.
+
+    Gemini tag/caption check: the named object and its shape parts must be
+    plausibly present. Fail-open only on API/parse errors.
+    """
+    from core_engine.economic_reel_lofi.visual_identity import (
+        anchor_shape_clause,
+        anchor_shape_parts,
+        needs_umbrella_open_closed,
+        umbrella_open_closed_clause,
+    )
+
+    name = " ".join((object_name or "").split())
+    parts = list(shape_parts or anchor_shape_parts(name))
+    want_asym = needs_umbrella_open_closed(caption, name)
+    meta: dict[str, Any] = {
+        "object_name": name,
+        "shape_parts": parts,
+        "want_open_closed": want_asym,
+        "passed": True,
+        "skipped": False,
+    }
+    if not name:
+        meta["skipped"] = True
+        meta["skip_reason"] = "no_anchor_name"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration. Answer JSON only with keys: "
+            "object_present (bool), visible_parts (string array), "
+            "missing_parts (string array), substitute_object (string, empty if none)"
+        )
+        if want_asym:
+            prompt += (
+                ", open_canopy_present (bool), closed_furled_present (bool), "
+                "both_closed (bool)"
+            )
+        prompt += (
+            ".\n"
+            f"Requested object: {name}. Required shape parts: {', '.join(parts)}.\n"
+            "object_present=true only if the requested object is recognizable "
+            "by those parts. If a blanket, comforter, cushion, mug, or other "
+            "unrelated still-life dominates instead, object_present=false and "
+            "name it in substitute_object."
+        )
+        if want_asym:
+            prompt += (
+                " open_canopy_present=true only if one umbrella has its canopy "
+                "raised (dome up). closed_furled_present=true only if one "
+                "umbrella is closed/furled. both_closed=true if every umbrella "
+                "is closed with no open canopy."
+            )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        present = bool(data.get("object_present"))
+        substitute = str(data.get("substitute_object") or "").strip()
+        sub_l = substitute.lower()
+        if sub_l and "umbrella" in sub_l and not re.search(
+            r"blanket|comforter|cushion|mug|pumpkin", sub_l
+        ):
+            # "leaning together" is the caption; do not treat contact as a miss.
+            present = True
+            substitute = ""
+        missing = [
+            str(x) for x in (data.get("missing_parts") or []) if str(x).strip()
+        ]
+        meta.update(
+            {
+                "object_present": present,
+                "visible_parts": list(data.get("visible_parts") or []),
+                "missing_parts": missing,
+                "substitute_object": substitute,
+            }
+        )
+        if want_asym:
+            meta["open_canopy_present"] = bool(data.get("open_canopy_present"))
+            meta["closed_furled_present"] = bool(data.get("closed_furled_present"))
+            meta["both_closed"] = bool(data.get("both_closed"))
+        asym_ok = (not want_asym) or (
+            meta.get("open_canopy_present")
+            and meta.get("closed_furled_present")
+            and not meta.get("both_closed")
+        )
+        if present and not substitute and asym_ok:
+            print(
+                f"[LOFI anchor-id] PASS {image_path.name} object={name!r} "
+                f"parts={meta.get('visible_parts')}"
+            )
+            return True, [], meta
+        meta["passed"] = False
+        if present and not substitute and not asym_ok:
+            flaw = "OBJECT: need one open canopy-up umbrella leaning on one closed/furled"
+            fix = umbrella_open_closed_clause()
+        else:
+            sub = f" (got {substitute})" if substitute else ""
+            flaw = f"OBJECT: requested {name!r} not in pixels{sub}"
+            fix = anchor_shape_clause(name, retry=True)
+        meta["fix_instructions"] = fix
+        print(f"[LOFI anchor-id] REJECT {image_path.name} {flaw}")
+        return False, [flaw], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("anchor-id skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_anchor_painterly_lock(
+    image_path: Path,
+    *,
+    subject_type: str = "",
+    anchor_beat: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """
+    Anchor object_focus stills must match the episode's painterly look.
+
+    Isolation still-life often collapses to flat ink/woodcut. Fail that
+    before style_ok can pass. Fail-open only on API/parse errors.
+    """
+    st = (subject_type or "").strip().lower().replace(" ", "_")
+    meta: dict[str, Any] = {
+        "subject_type": st,
+        "passed": True,
+        "skipped": False,
+    }
+    if st != "object_focus" or str(anchor_beat or "") not in {"introduce", "callback"}:
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_anchor_object_focus"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration. JSON only: "
+            "style_kind (flat_gouache_riso or painterly_photographic or "
+            "flat_ink_woodcut), note (string).\n"
+            "flat_gouache_riso = flat printed color blocks, paper grain, "
+            "hard edges, a readable environment, not a photograph.\n"
+            "painterly_photographic = grain plus photographic depth, lens "
+            "falloff, or cinematic sunset glow — still a painted scene.\n"
+            "flat_ink_woodcut = bold outlines on a blank or cream field, "
+            "poster diagram, isolated linework, no environment."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        kind = str(data.get("style_kind") or "").strip().lower()
+        meta["style_kind"] = kind
+        meta["note"] = str(data.get("note") or "")
+        if kind in {"flat_gouache_riso", "painterly_photographic"}:
+            print(f"[LOFI painterly] PASS {image_path.name} kind={kind}")
+            return True, [], meta
+        meta["passed"] = False
+        flaw = "STYLE: flat ink/woodcut on an empty field; need printed environment"
+        meta["fix_instructions"] = (
+            "Same flat gouache risograph atmosphere as a furnished "
+            "room or rainy street — paper tooth, hard color blocks, "
+            "printed dusk. Not a photograph, not isolated "
+            "ink-diagram linework on blank paper."
+        )
+        print(f"[LOFI painterly] REJECT {image_path.name} {flaw}")
+        return False, [flaw], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("painterly skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_couple_bed_pose(
+    image_path: Path,
+    *,
+    setting: str = "",
+    key_object: str = "",
+    subject_type: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """Bed scenes only: fail if figures stand on the mattress."""
+    from core_engine.economic_reel_lofi.visual_identity import couple_bed_pose_clause
+
+    st = (subject_type or "").strip().lower().replace(" ", "_")
+    meta: dict[str, Any] = {
+        "subject_type": st,
+        "passed": True,
+        "skipped": False,
+    }
+    clause = couple_bed_pose_clause(setting, key_object, st)
+    if not clause:
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_couple_bed"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration. JSON only: "
+            "figures_on_mattress (bool), pose_ok (bool), note (string).\n"
+            "figures_on_mattress=true if ANY of these are true: a person stands "
+            "on the mattress or on top of the bed; feet are planted in rumpled "
+            "bedding; the bed fills the lower third and figures rise out of the "
+            "covers with no visible floor under their feet; or it is ambiguous "
+            "whether they stand on the mattress or just behind it.\n"
+            "pose_ok=true ONLY if the floor is clearly visible under their feet "
+            "beside the bed, OR they sit on the edge with feet on the floor. "
+            "If unsure, set figures_on_mattress=true and pose_ok=false."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        on_bed = bool(data.get("figures_on_mattress"))
+        pose_ok = bool(data.get("pose_ok")) if "pose_ok" in data else (not on_bed)
+        meta.update(
+            {
+                "figures_on_mattress": on_bed,
+                "pose_ok": pose_ok,
+                "note": str(data.get("note") or ""),
+            }
+        )
+        if on_bed or not pose_ok:
+            meta["passed"] = False
+            flaw = "POSE: figures standing on the mattress / on top of the bed"
+            meta["fix_instructions"] = clause
+            print(f"[LOFI bed-pose] REJECT {image_path.name} {flaw}")
+            return False, [flaw], meta
+        print(f"[LOFI bed-pose] PASS {image_path.name}")
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("bed-pose skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_hook_still(
+    image_path: Path,
+    *,
+    scene: int = 1,
+    subject_type: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """Highest-priority visual gate: scene 1 must hold attention."""
+    meta: dict[str, Any] = {
+        "scene": scene,
+        "subject_type": subject_type,
+        "passed": True,
+        "skipped": False,
+    }
+    if int(scene or 1) != 1:
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_hook"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration, the first frame of a 9:16 reel. JSON only: "
+            "has_character (bool), high_contrast (bool), empty_still_life (bool), "
+            "striking (bool), note (string).\n"
+            "has_character = a human figure or silhouette is in frame. "
+            "empty_still_life = only furniture/objects, no person. "
+            "high_contrast = strong light (sunset, rain, lamp, dawn backlight). "
+            "striking = would hold a thumb-stop in the first 3 seconds. "
+            "FAIL if empty_still_life or not has_character or not high_contrast."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        meta.update(
+            {
+                "has_character": bool(data.get("has_character")),
+                "high_contrast": bool(data.get("high_contrast")),
+                "empty_still_life": bool(data.get("empty_still_life")),
+                "striking": bool(data.get("striking")),
+                "note": str(data.get("note") or ""),
+            }
+        )
+        failed = (
+            meta["empty_still_life"]
+            or not meta["has_character"]
+            or not meta["high_contrast"]
+        )
+        if failed:
+            meta["passed"] = False
+            flaw = (
+                "HOOK: scene 1 is flat or object-only — need a character in "
+                "high-contrast light (sunset/rain/lamp/dawn)"
+            )
+            meta["fix_instructions"] = (
+                "Put a silhouette or figure in strong backlight, rain, or lamp "
+                "glow. No empty bed or object-only still life."
+            )
+            print(f"[LOFI hook] REJECT {image_path.name} {flaw}")
+            return False, [flaw], meta
+        print(
+            f"[LOFI hook] PASS {image_path.name} "
+            f"character={int(meta['has_character'])} "
+            f"contrast={int(meta['high_contrast'])} "
+            f"striking={int(meta['striking'])}"
+        )
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("hook still skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_portrait_close_style(
+    image_path: Path,
+    *,
+    close_variant: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """Portrait/eye close must stay painterly — no photoreal skin or eyes."""
+    meta: dict[str, Any] = {
+        "close_variant": close_variant,
+        "passed": True,
+        "skipped": False,
+    }
+    if str(close_variant or "") not in {"portrait_close", "eye_close"}:
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_portrait_or_eye_close"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration. JSON only: "
+            "photoreal_skin (bool), photoreal_eyes (bool), painterly_match (bool), "
+            "note (string).\n"
+            "painterly_match = ink, flat printed color, paper grain — same as a "
+            "risograph poster, not a camera photo. "
+            "photoreal_skin / photoreal_eyes = rendered photographic skin or glossy "
+            "camera eyes. FAIL if photoreal_skin or photoreal_eyes or not painterly_match."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        meta.update(
+            {
+                "photoreal_skin": bool(data.get("photoreal_skin")),
+                "photoreal_eyes": bool(data.get("photoreal_eyes")),
+                "painterly_match": bool(data.get("painterly_match")),
+                "note": str(data.get("note") or ""),
+            }
+        )
+        if (
+            meta["photoreal_skin"]
+            or meta["photoreal_eyes"]
+            or not meta["painterly_match"]
+        ):
+            meta["passed"] = False
+            flaw = (
+                "STYLE: portrait_close/eye_close mixed photoreal skin or eyes "
+                "into a painterly episode"
+            )
+            meta["fix_instructions"] = (
+                "Redraw as risograph illustration: ink line, flat printed color, "
+                "paper grain. No photoreal skin, no camera eyes."
+            )
+            print(f"[LOFI portrait-style] REJECT {image_path.name} {flaw}")
+            return False, [flaw], meta
+        print(f"[LOFI portrait-style] PASS {image_path.name} variant={close_variant}")
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("portrait style skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_eye_close_crop(
+    image_path: Path,
+    *,
+    close_variant: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """Reject eye_close stills that leak a nose or mouth."""
+    meta: dict[str, Any] = {
+        "close_variant": close_variant,
+        "passed": True,
+        "skipped": False,
+    }
+    if str(close_variant or "") != "eye_close":
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_eye_close"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration. JSON only: "
+            "eyes_present (bool), nose_visible (bool), mouth_visible (bool), "
+            "chin_visible (bool), full_face (bool), note (string).\n"
+            "This must be an extreme crop of eyes/brow/hair only. "
+            "nose_visible or mouth_visible or chin_visible or full_face = fail."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        meta.update(
+            {
+                "eyes_present": bool(data.get("eyes_present")),
+                "nose_visible": bool(data.get("nose_visible")),
+                "mouth_visible": bool(data.get("mouth_visible")),
+                "chin_visible": bool(data.get("chin_visible")),
+                "full_face": bool(data.get("full_face")),
+                "note": str(data.get("note") or ""),
+            }
+        )
+        leaked = (
+            meta["nose_visible"]
+            or meta["mouth_visible"]
+            or meta["chin_visible"]
+            or meta["full_face"]
+            or not meta["eyes_present"]
+        )
+        if leaked:
+            meta["passed"] = False
+            flaw = "FACE: eye_close leaked nose/mouth/full face or missing eyes"
+            meta["fix_instructions"] = (
+                "Extreme close on eyes only, cropped above the nose bridge. "
+                "No nose, no mouth, no chin, no lower face."
+            )
+            print(f"[LOFI eye-close] REJECT {image_path.name} {flaw}")
+            return False, [flaw], meta
+        print(f"[LOFI eye-close] PASS {image_path.name}")
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("eye-close skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
 def _qa_scene_image(
     image_path: Path,
     visual_prompt: str,
@@ -468,6 +1030,7 @@ def _qa_scene_image(
     key_object: str = "",
     prior_fail_criteria: list[str] | None = None,
     style_profile: str | None = None,
+    close_variant: str | None = None,
 ) -> tuple[bool, list[str], str]:
     """
     Run VisualQA lofi_economic profile when available.
@@ -493,6 +1056,7 @@ def _qa_scene_image(
             requested_object=key_object or None,
             prior_fail_criteria=prior_fail_criteria,
             style_profile=style_profile,
+            close_variant=close_variant,
         )
         critic_ok = bool(verdict.passed)
         critic_flaws = list(verdict.flaws or [])
@@ -590,14 +1154,39 @@ def generate_and_qa_scene(
 
     for attempt in range(1, n_attempts + 1):
         prompt_i = apply_ad_hoc_guidance(visual, extra)
-        if st_l in {"object_focus", "silhouette"}:
+        if assemble_fn is not None:
+            escalate = last_intruder or attempt > 1
+            if (
+                escalate
+                and str(row.get("anchor_beat") or "") not in {
+                    "introduce",
+                    "callback",
+                }
+                and str(row.get("close_variant") or "") != "eye_close"
+            ):
+                focus_step = min(focus_step + 1, 2)
+            rebuilt = assemble_fn(row, focus_step=focus_step)
+            row["visual_prompt"] = rebuilt
+            visual = rebuilt
+            prompt_i = apply_ad_hoc_guidance(rebuilt, extra)
+            print(
+                f"[LOFI framing] scene={scene_i} attempt={attempt} "
+                f"step={focus_step} kind={row.get('object_focus_framing')} "
+                f"escalate_intruder={int(last_intruder)}"
+            )
+            if attempt > 1 and last_fix:
+                guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
+                extras = [p for p in (guard, last_fix) if p]
+                if extras:
+                    prompt_i = f"{prompt_i} {' '.join(extras)}"
+        elif st_l in {"object_focus", "silhouette"}:
             if last_intruder:
                 focus_step = min(focus_step + 1, 2)
             from core_engine.economic_reel_lofi.visual_identity import (
                 assemble_v2_prompt,
             )
 
-            assembler = assemble_fn or assemble_v2_prompt
+            assembler = assemble_v2_prompt
             rebuilt = assembler(row, focus_step=focus_step)
             row["visual_prompt"] = rebuilt
             prompt_i = apply_ad_hoc_guidance(rebuilt, extra)
@@ -624,6 +1213,12 @@ def generate_and_qa_scene(
                 verbatim=True,
             )
             n_image_calls += 1
+            if str(row.get("close_variant") or "") == "eye_close":
+                from core_engine.economic_reel_lofi.visual_identity import (
+                    crop_eye_close_still,
+                )
+
+                crop_eye_close_still(out_img)
             lofi_cfg.write_still_style_sidecar(
                 out_img, run_id=out_img.parent.name, reused=False
             )
@@ -632,15 +1227,19 @@ def generate_and_qa_scene(
             _LOG.warning("scene %s gen attempt %s failed: %s", scene_i, attempt, exc)
             continue
         n_critic_calls += 1
+        qa_object = key_object
+        if str(row.get("anchor_beat") or "") in {"introduce", "callback"}:
+            qa_object = str(row.get("episode_anchor_name") or key_object).strip() or key_object
         passed, flaws, last_fix = _qa_scene_image(
             out_img, visual,
             subject_type=subject_type,
-            key_object=key_object,
+            key_object=qa_object,
             prior_fail_criteria=[
                 f for f in last_flaws
                 if f and not str(f).startswith("image gen failed")
             ] if attempt > 1 and last_flaws else None,
             style_profile=str(row.get("visual_identity_profile") or "") or None,
+            close_variant=str(row.get("close_variant") or "") or None,
         )
         if attempt > 1 and last_flaws:
             hold = [
@@ -681,6 +1280,98 @@ def generate_and_qa_scene(
             extra_fix = str(style_meta.get("fix_instructions") or "").strip()
             if extra_fix:
                 last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        if (
+            str(row.get("anchor_beat") or "") in {"introduce", "callback"}
+            and str(row.get("close_variant") or "") != "eye_close"
+        ):
+            id_ok, id_flaws, id_meta = assess_anchor_object_identity(
+                out_img,
+                object_name=qa_object,
+                caption=str(row.get("text") or row.get("beat_text") or ""),
+            )
+            gate_meta["anchor_identity"] = id_meta
+            if id_flaws:
+                flaws = list(flaws) + id_flaws
+                passed = False
+                extra_fix = str(id_meta.get("fix_instructions") or "").strip()
+                if extra_fix:
+                    last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+            paint_ok, paint_flaws, paint_meta = assess_anchor_painterly_lock(
+                out_img,
+                subject_type=subject_type,
+                anchor_beat=str(row.get("anchor_beat") or ""),
+            )
+            del paint_ok
+            gate_meta["painterly_lock"] = paint_meta
+            if paint_flaws:
+                flaws = list(flaws) + paint_flaws
+                passed = False
+                extra_fix = str(paint_meta.get("fix_instructions") or "").strip()
+                if extra_fix:
+                    last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        pose_ok, pose_flaws, pose_meta = assess_couple_bed_pose(
+            out_img,
+            setting=str(row.get("setting") or ""),
+            key_object=str(row.get("key_object") or ""),
+            subject_type=subject_type,
+        )
+        gate_meta["bed_pose"] = pose_meta
+        if pose_flaws:
+            flaws = list(flaws) + pose_flaws
+            passed = False
+            extra_fix = str(pose_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        hook_ok, hook_flaws, hook_meta = assess_hook_still(
+            out_img,
+            scene=scene_i,
+            subject_type=subject_type,
+        )
+        del hook_ok
+        gate_meta["hook"] = hook_meta
+        if hook_flaws:
+            flaws = list(hook_flaws) + list(flaws)
+            passed = False
+            extra_fix = str(hook_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{extra_fix} {last_fix}".strip() if last_fix else extra_fix
+        port_ok, port_flaws, port_meta = assess_portrait_close_style(
+            out_img,
+            close_variant=str(row.get("close_variant") or ""),
+        )
+        del port_ok
+        gate_meta["portrait_style"] = port_meta
+        if port_flaws:
+            flaws = list(flaws) + port_flaws
+            passed = False
+            extra_fix = str(port_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        eye_ok, eye_flaws, eye_meta = assess_eye_close_crop(
+            out_img,
+            close_variant=str(row.get("close_variant") or ""),
+        )
+        del eye_ok
+        gate_meta["eye_close"] = eye_meta
+        if eye_flaws:
+            flaws = list(flaws) + eye_flaws
+            passed = False
+            extra_fix = str(eye_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        if scene_i == 1:
+            print(
+                f"[LOFI hook] still scene=1 "
+                f"status={'pass' if not hook_flaws else 'FAIL'} "
+                f"note={hook_meta.get('note')!r}"
+            )
+        if str(row.get("close_variant") or "") in {"portrait_close", "eye_close", "silhouette"}:
+            print(
+                f"[LOFI close] still scene={scene_i} "
+                f"variant={row.get('close_variant')} "
+                f"character={row.get('close_character') or row.get('subject_type')} "
+                f"style={'pass' if not port_flaws else 'FAIL'}"
+            )
         gate_meta["qa_passed"] = bool(passed)
         gate_meta["qa_flaws"] = list(flaws)
         if passed:
@@ -1781,6 +2472,10 @@ def _produce_one(
         anchor_object=str(ao.get("name") or "") or None,
         video_path=str(out_mp4),
         retrieved_details=list(script.get("retrieved_details") or []),
+        close_variant=str(script.get("close_variant") or ""),
+        close_target=str(script.get("close_target") or ""),
+        eye_close_context=str(script.get("eye_close_context") or ""),
+        close_character=str(script.get("close_character") or ""),
     )
 
     return LofiItemResult(
