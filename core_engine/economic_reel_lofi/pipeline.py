@@ -1458,6 +1458,7 @@ def _generate_validated_script(
                 )
         if result.ok and result.script:
             note_batch_structure_id(str(result.script.get("structure_id") or ""))
+            rag.note_batch_script(result.script)
             return result.script, [], False
         last_errors = list(result.reasons)
         feedback = result.feedback()

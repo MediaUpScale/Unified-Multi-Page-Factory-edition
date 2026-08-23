@@ -1,0 +1,162 @@
+[
+  {
+    "at": "2026-08-23T19:33:01.495945+00:00",
+    "theme": "forgiveness",
+    "model": "claude-sonnet-5",
+    "input_tokens": 130,
+    "uncached_input_tokens": 130,
+    "output_tokens": 159,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.002785,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:33:01.500293+00:00",
+    "theme": "loss",
+    "model": "claude-sonnet-5",
+    "input_tokens": 129,
+    "uncached_input_tokens": 129,
+    "output_tokens": 400,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.003989,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:33:01.501018+00:00",
+    "theme": "loneliness",
+    "model": "claude-sonnet-5",
+    "input_tokens": 139,
+    "uncached_input_tokens": 139,
+    "output_tokens": 400,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.003999,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:33:01.501290+00:00",
+    "theme": "regret",
+    "model": "claude-sonnet-5",
+    "input_tokens": 130,
+    "uncached_input_tokens": 130,
+    "output_tokens": 400,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.00399,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:33:01.501500+00:00",
+    "theme": "belonging",
+    "model": "claude-sonnet-5",
+    "input_tokens": 139,
+    "uncached_input_tokens": 139,
+    "output_tokens": 400,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1488,
+    "cost_usd": 0.002288,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:35:31.647688+00:00",
+    "theme": "forgiveness",
+    "model": "claude-sonnet-5",
+    "input_tokens": 130,
+    "uncached_input_tokens": 130,
+    "output_tokens": 159,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.002785,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:35:31.648304+00:00",
+    "theme": "loss",
+    "model": "claude-sonnet-5",
+    "input_tokens": 129,
+    "uncached_input_tokens": 129,
+    "output_tokens": 147,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.002724,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:35:31.648450+00:00",
+    "theme": "loneliness",
+    "model": "claude-sonnet-5",
+    "input_tokens": 139,
+    "uncached_input_tokens": 139,
+    "output_tokens": 157,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.002784,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:35:31.648563+00:00",
+    "theme": "regret",
+    "model": "claude-sonnet-5",
+    "input_tokens": 130,
+    "uncached_input_tokens": 130,
+    "output_tokens": 142,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1488,
+    "cost_usd": 0.000989,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  },
+  {
+    "at": "2026-08-23T19:35:31.649546+00:00",
+    "theme": "belonging",
+    "model": "claude-sonnet-5",
+    "input_tokens": 139,
+    "uncached_input_tokens": 139,
+    "output_tokens": 153,
+    "cache_creation_input_tokens": 1488,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.002764,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    }
+  }
+]

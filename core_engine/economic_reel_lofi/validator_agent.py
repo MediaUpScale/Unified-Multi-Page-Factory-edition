@@ -279,6 +279,11 @@ def validate_script(
                     if isinstance(script.get("setting_archetypes"), dict)
                     else None
                 ),
+                "connective_map": rag.extract_connective_map(
+                    [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+                ),
+                "rhetoric_pattern": script.get("rhetoric_pattern"),
+                "rhetoric_hook_overlay": script.get("rhetoric_hook_overlay"),
             },
         )
         theme = str(script.get("theme") or "")

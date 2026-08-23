@@ -1,0 +1,1546 @@
+{
+  "manual_accept_scenes": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "work_dir": "outputs/wonder_feed/assets/lofi_run_20260823_044616_03",
+  "scene_images": [
+    "outputs/wonder_feed/assets/lofi_run_20260823_060812_03/scene_01.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044616_03/scene_02.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044616_03/scene_03.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044616_03/scene_04.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_060812_03/scene_05.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044616_03/scene_06.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044616_03/scene_07.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044616_03/scene_08.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_061123_02/scene_09.png"
+  ],
+  "script": {
+    "hook_type": "bold_claim",
+    "theme": "forgiveness",
+    "module": "relationship",
+    "subtheme": "putting_the_weight_down",
+    "arc_template": "thematic_arc",
+    "structure_id": "nested_belief",
+    "thesis": "Forgiveness is setting the weight down, not making them earn the lift.",
+    "close_variant": "silhouette",
+    "close_character": "man",
+    "close_target": "hands",
+    "anchor_object": {
+      "name": "heavy bag",
+      "initial_state": "still on the shoulder",
+      "final_state": "set down on the bench",
+      "setting": "park path, open bench"
+    },
+    "monologue": "Forgiveness starts before they earn it. You set the bag on the table. Because they never touch the river stone. Set the bag down without them earning it. You leave the letter open now. Yet you walk the dusk river wall. You unclench in the doorway. The bag you set down sits empty. You walk away empty-handed.",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "Forgiveness starts before they earn it.",
+        "beat_text": "Forgiveness starts before they earn it.",
+        "emotion": "opening_hook",
+        "arc_position": "act1",
+        "beat_function": "hook",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "stopped, heavy",
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "lone man halted under a glowing streetlamp, no signature, no corner mark",
+        "episode_theme": "forgiveness",
+        "episode_module": "relationship",
+        "episode_anchor_stem": "bag",
+        "episode_anchor_name": "heavy bag",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "streetlamp",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 1,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 1,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": false,
+            "has_character": true,
+            "high_contrast": true,
+            "empty_still_life": false,
+            "striking": true,
+            "note": "PASS"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "streetlamp",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 1,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 1,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": false,
+                "has_character": true,
+                "high_contrast": true,
+                "empty_still_life": false,
+                "striking": true,
+                "note": "PASS"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 2,
+        "text": "You set the bag on the table.",
+        "beat_text": "You set the bag on the table.",
+        "emotion": "quiet_sorrowful",
+        "arc_position": "act1",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "still",
+        "setting": "cafe table after closing",
+        "key_object": "heavy bag set down",
+        "time_of_day": "evening",
+        "visual_anchor_hint": "heavy bag set down at a closed cafe table",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "heavy bag set down",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0771,
+          "intruder_area_frac": 0.0181,
+          "intended_bbox_frac": 0.0802,
+          "ratio": 0.961,
+          "n_intruders": 1,
+          "n_hardware": 0,
+          "compact_as_intended": true,
+          "fix_instructions": "Draw only heavy bag set down filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 2,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 402,
+            "lap_var": 681.2,
+            "edge": 9.94,
+            "std": 49.2,
+            "hard": 0.0815
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 2,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.077 area_frac=0.018 ratio=0.96 vs requested 'heavy bag set down'"
+          ],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "heavy bag set down",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.4172,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 582,
+                "lap_var": 1069.0,
+                "edge": 12.12,
+                "std": 66.1,
+                "hard": 0.1074
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: cafe interior with table and chairs dominates, requested heavy bag set down"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "heavy bag set down",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0771,
+              "intruder_area_frac": 0.0181,
+              "intended_bbox_frac": 0.0802,
+              "ratio": 0.961,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "compact_as_intended": true,
+              "fix_instructions": "Draw only heavy bag set down filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 2,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 402,
+                "lap_var": 681.2,
+                "edge": 9.94,
+                "std": 49.2,
+                "hard": 0.0815
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.077 area_frac=0.018 ratio=0.96 vs requested 'heavy bag set down'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          },
+          "manual_accept": true,
+          "reused": true
+        }
+      },
+      {
+        "scene": 3,
+        "text": "Because they never touch the river stone.",
+        "beat_text": "Because they never touch the river stone.",
+        "emotion": "melancholic_quiet",
+        "arc_position": "act1",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "woman",
+        "subject_expression": "deciding",
+        "setting": "river wall at dusk",
+        "key_object": "stone placed and left",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "woman placing a stone on a dusk river wall",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "stone placed and left",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 3,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "stone placed and left",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 3,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          },
+          "reused": true,
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 4,
+        "text": "Set the bag down without them earning it.",
+        "beat_text": "Set the bag down without them earning it.",
+        "emotion": "realization",
+        "arc_position": "act2",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "released, tired",
+        "setting": "theater lobby between acts",
+        "key_object": "unclenched hands",
+        "time_of_day": "evening",
+        "visual_anchor_hint": "man in a theater lobby, hands open",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "unclenched hands",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 4,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 4,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "unclenched hands",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 4,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          },
+          "reused": true,
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 5,
+        "text": "You leave the letter open now.",
+        "beat_text": "You leave the letter open now.",
+        "emotion": "doubt",
+        "arc_position": "act2",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "open",
+        "setting": "kitchen table",
+        "key_object": "letter finally opened",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "opened letter alone, blank paper, no signature, no corner stamp",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "letter finally opened",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.5475,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 5,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 109,
+            "lap_var": 665.5,
+            "edge": 5.84,
+            "std": 47.1,
+            "hard": 0.0367
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 5,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "letter finally opened",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.5475,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 5,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 109,
+                "lap_var": 665.5,
+                "edge": 5.84,
+                "std": 47.1,
+                "hard": 0.0367
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 6,
+        "text": "Yet you walk the dusk river wall.",
+        "beat_text": "Yet you walk the dusk river wall.",
+        "emotion": "longing",
+        "arc_position": "act2",
+        "beat_function": "complication",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "river wall at dusk",
+        "key_object": "river wall",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "wide dusk river wall, no figure",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "river wall",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.1343,
+          "intruder_area_frac": 0.0399,
+          "intended_bbox_frac": 0.1343,
+          "ratio": 1.0,
+          "n_intruders": 1,
+          "n_hardware": 2,
+          "fix_instructions": "Draw only river wall filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 6,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 400,
+            "lap_var": 824.5,
+            "edge": 11.06,
+            "std": 49.1,
+            "hard": 0.101
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 6,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: landscape with river and trees dominates, requested river wall",
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.134 area_frac=0.040 ratio=1.00 vs requested 'river wall'"
+          ],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "river wall",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.1136,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 2,
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 320,
+                "lap_var": 676.3,
+                "edge": 10.36,
+                "std": 59.7,
+                "hard": 0.0837
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: river wall requested, but a landscape with a river and trees dominates"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "river wall",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.1343,
+              "intruder_area_frac": 0.0399,
+              "intended_bbox_frac": 0.1343,
+              "ratio": 1.0,
+              "n_intruders": 1,
+              "n_hardware": 2,
+              "fix_instructions": "Draw only river wall filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 6,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 400,
+                "lap_var": 824.5,
+                "edge": 11.06,
+                "std": 49.1,
+                "hard": 0.101
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: landscape with river and trees dominates, requested river wall",
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.134 area_frac=0.040 ratio=1.00 vs requested 'river wall'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          },
+          "manual_accept": true,
+          "reused": true
+        }
+      },
+      {
+        "scene": 7,
+        "text": "You unclench in the doorway.",
+        "beat_text": "You unclench in the doorway.",
+        "emotion": "realization",
+        "arc_position": "act3",
+        "beat_function": "turn",
+        "shot_scale": "close",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "open, tired",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
+        "time_of_day": "evening",
+        "close_variant": "silhouette",
+        "close_target": "hands",
+        "close_character": "man",
+        "visual_anchor_hint": "silhouette of the man unclenching in a doorway",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "open doorway",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 7,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 7,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "open doorway",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 7,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "reused": true,
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 8,
+        "text": "The bag you set down sits empty.",
+        "beat_text": "The bag you set down sits empty.",
+        "emotion": "acceptance",
+        "arc_position": "act3",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "open",
+        "setting": "kitchen at dawn",
+        "key_object": "heavy bag set down",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "empty bag left on a kitchen floor",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "heavy bag set down",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0784,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "compact_as_intended": true,
+          "scene": 8,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 591,
+            "lap_var": 1497.7,
+            "edge": 13.66,
+            "std": 61.5,
+            "hard": 0.1425
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 8,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "heavy bag set down",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0784,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "compact_as_intended": true,
+              "scene": 8,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 591,
+                "lap_var": 1497.7,
+                "edge": 13.66,
+                "std": 61.5,
+                "hard": 0.1425
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 8,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "reused": true,
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 9,
+        "text": "You walk away empty-handed.",
+        "beat_text": "You walk away empty-handed.",
+        "emotion": "resolution_warmth",
+        "arc_position": "act3",
+        "beat_function": "close",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "empty train tracks at night",
+        "key_object": "empty train tracks",
+        "time_of_day": "night",
+        "visual_anchor_hint": "wide empty night tracks, no train, no cart, no signs, no figure",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "empty platform",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0923,
+          "intruder_area_frac": 0.0212,
+          "intended_bbox_frac": 0.4536,
+          "ratio": 0.204,
+          "n_intruders": 1,
+          "n_hardware": 0,
+          "fix_instructions": "Draw only empty platform filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 9,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 752,
+            "lap_var": 1143.8,
+            "edge": 13.26,
+            "std": 45.7,
+            "hard": 0.1394
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 9,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: train dominates, requested empty platform",
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.092 area_frac=0.021 ratio=0.20 vs requested 'empty platform'"
+          ],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty platform",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.2667,
+              "intruder_area_frac": 0.0797,
+              "intended_bbox_frac": 0.2667,
+              "ratio": 1.0,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only empty platform filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 472,
+                "lap_var": 672.4,
+                "edge": 10.28,
+                "std": 39.3,
+                "hard": 0.0957
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: train and people dominate, requested empty platform",
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.267 area_frac=0.080 ratio=1.00 vs requested 'empty platform'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty platform",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0923,
+              "intruder_area_frac": 0.0212,
+              "intended_bbox_frac": 0.4536,
+              "ratio": 0.204,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only empty platform filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 9,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 752,
+                "lap_var": 1143.8,
+                "edge": 13.26,
+                "std": 45.7,
+                "hard": 0.1394
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: train dominates, requested empty platform",
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.092 area_frac=0.021 ratio=0.20 vs requested 'empty platform'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "manual_accept": true
+        }
+      }
+    ],
+    "rhetoric_pattern": "definition_then_evidence",
+    "rhetoric_hook_overlay": ""
+  }
+}

@@ -1,0 +1,1709 @@
+{
+  "manual_accept_scenes": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "work_dir": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02",
+  "scene_images": [
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_01.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_02.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_03.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_04.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_05.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_06.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_07.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_08.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203846_02\\scene_09.png"
+  ],
+  "script": {
+    "hook_type": "bold_claim",
+    "theme": "belonging",
+    "module": "relationship",
+    "subtheme": "looking_for_a_place",
+    "arc_template": "thematic_arc",
+    "structure_id": "nested_belief",
+    "rhetoric_pattern": "contrast_metaphor_resolution",
+    "rhetoric_hook_overlay": "anaphora_to_universal_law",
+    "thesis": "Belonging is sitting down without waiting to be poured, not looking invited.",
+    "close_variant": "silhouette",
+    "close_character": "man",
+    "close_target": "hands",
+    "anchor_object": {
+      "name": "untouched drink",
+      "initial_state": "full, left at the edge of the table",
+      "final_state": "lifted, then empty",
+      "setting": "cafe table after closing"
+    },
+    "monologue": "Stay. Sit. Remain. Belonging is not granted. But the drink sits full, unused. You stand at the table's edge. Stay even if no one pours first. Even then you lift the drink yourself. You walk the picnic edge now. Since you walked, you hold the drink. The drink you lifted sits empty. You remain at the table.",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "Stay. Sit. Remain. Belonging is not granted.",
+        "beat_text": "Stay. Sit. Remain. Belonging is not granted.",
+        "emotion": "opening_hook",
+        "arc_position": "act1",
+        "beat_function": "hook",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "woman",
+        "subject_expression": "stopped, outside",
+        "setting": "edge of a porch gathering",
+        "key_object": "porch light",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "woman halted at a dusk porch gathering, light behind her",
+        "episode_theme": "belonging",
+        "episode_module": "relationship",
+        "episode_anchor_stem": "drink",
+        "episode_anchor_name": "untouched drink",
+        "setting_archetype": "threshold",
+        "palette_key": "WARM",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, stopped, outside posture, shoulders covered, no visible face or skin in edge of a porch gathering, dusk. porch light is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: woman halted at a dusk porch gathering, light behind her. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "porch light",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 1,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 1,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": false,
+            "has_character": true,
+            "high_contrast": true,
+            "empty_still_life": false,
+            "striking": true,
+            "note": "A woman stands in a doorway, silhouetted against a vibrant orange sunset with a large, bright sun. The scene has strong backlighting and high contrast, making it visually striking."
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "porch light",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 1,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 1,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": false,
+                "has_character": true,
+                "high_contrast": true,
+                "empty_still_life": false,
+                "striking": true,
+                "note": "A woman stands in a doorway, silhouetted against a vibrant orange sunset with a large, bright sun. The scene has strong backlighting and high contrast, making it visually striking."
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 2,
+        "text": "But the drink sits full, unused.",
+        "beat_text": "But the drink sits full, unused.",
+        "emotion": "quiet_sorrowful",
+        "arc_position": "act1",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "cafe table after closing",
+        "key_object": "untouched drink",
+        "time_of_day": "evening",
+        "visual_anchor_hint": "untouched drink left full on a closed cafe table",
+        "setting_archetype": "public-interior",
+        "palette_key": "WARM",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. An illustrated close study of untouched drink alone, drawn to occupy most of the frame, not photographed. Background keeps the same grainy halftone print texture as the object, muted flat color with visible ink-dot grain, no gradient, no furniture, no room, no other objects, no distinct background shapes. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only untouched drink is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Evening print: lamp-warm interiors as flat color, window as a dark plane. The image must visually embody: untouched drink left full on a closed cafe table. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "untouched drink",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.6198,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 2,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 424,
+            "lap_var": 423.8,
+            "edge": 7.89,
+            "std": 51.5,
+            "hard": 0.0591
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 2,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: mug dominates, requested untouched drink"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "untouched drink",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.4375,
+              "intruder_area_frac": 0.0966,
+              "intended_bbox_frac": 0.4375,
+              "ratio": 1.0,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only untouched drink filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 463,
+                "lap_var": 719.6,
+                "edge": 8.71,
+                "std": 54.4,
+                "hard": 0.0761
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.438 area_frac=0.097 ratio=1.00 vs requested 'untouched drink'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "untouched drink",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.6198,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 424,
+                "lap_var": 423.8,
+                "edge": 7.89,
+                "std": 51.5,
+                "hard": 0.0591
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: mug dominates, requested untouched drink"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 3,
+        "text": "You stand at the table's edge.",
+        "beat_text": "You stand at the table's edge.",
+        "emotion": "melancholic_quiet",
+        "arc_position": "act1",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "hesitant",
+        "setting": "long dining table",
+        "key_object": "unclaimed place setting at a dining table",
+        "time_of_day": "evening",
+        "visual_anchor_hint": "man standing at the edge of a long dining table",
+        "setting_archetype": "interior-domestic",
+        "palette_key": "WARM",
+        "dev_scene_builder": "man_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone man as a flat unlit clothed silhouette, hesitant posture, no visible face or skin in long dining table, evening. unclaimed place setting at a dining table is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Evening print: lamp-warm interiors as flat color, window as a dark plane. The image must visually embody: man standing at the edge of a long dining table. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_man_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "unclaimed place setting at a dining table",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 3,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "unclaimed place setting at a dining table",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 3,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 4,
+        "text": "Stay even if no one pours first.",
+        "beat_text": "Stay even if no one pours first.",
+        "emotion": "realization",
+        "arc_position": "act2",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "woman",
+        "subject_expression": "deciding",
+        "setting": "empty train platform at night",
+        "key_object": "empty platform",
+        "time_of_day": "night",
+        "visual_anchor_hint": "woman sitting down on a night platform bench",
+        "setting_archetype": "transit",
+        "palette_key": "COLD",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, deciding posture, shoulders covered, no visible face or skin in empty train platform at night, night. empty platform is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Night print: indigo and charcoal flats, small warm windows, no neon photography. The image must visually embody: woman sitting down on a night platform bench. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "empty platform",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 4,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 4,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "empty platform",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 4,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 5,
+        "text": "Even then you lift the drink yourself.",
+        "beat_text": "Even then you lift the drink yourself.",
+        "emotion": "doubt",
+        "arc_position": "act2",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "still",
+        "setting": "kitchen counter at night",
+        "key_object": "untouched drink",
+        "time_of_day": "night",
+        "visual_anchor_hint": "a drink being lifted from a night kitchen counter",
+        "setting_archetype": "interior-domestic",
+        "palette_key": "COLD",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. An illustrated close study of untouched drink alone, drawn to occupy most of the frame, not photographed. Background keeps the same grainy halftone print texture as the object, muted flat color with visible ink-dot grain, no gradient, no furniture, no room, no other objects, no distinct background shapes. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only untouched drink is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Night print: indigo and charcoal flats, small warm windows, no neon photography. The image must visually embody: a drink being lifted from a night kitchen counter. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "untouched drink",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.1379,
+          "intruder_area_frac": 0.0507,
+          "intended_bbox_frac": 0.1379,
+          "ratio": 1.0,
+          "n_intruders": 2,
+          "n_hardware": 0,
+          "fix_instructions": "Draw only untouched drink filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 5,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 358,
+            "lap_var": 485.5,
+            "edge": 5.41,
+            "std": 67.7,
+            "hard": 0.0391
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 5,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.138 area_frac=0.051 ratio=1.00 vs requested 'untouched drink'"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "untouched drink",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.1286,
+              "intruder_area_frac": 0.0382,
+              "intended_bbox_frac": 0.2391,
+              "ratio": 0.538,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only untouched drink filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 5,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 433,
+                "lap_var": 808.0,
+                "edge": 8.73,
+                "std": 57.5,
+                "hard": 0.0878
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.129 area_frac=0.038 ratio=0.54 vs requested 'untouched drink'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "untouched drink",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.1379,
+              "intruder_area_frac": 0.0507,
+              "intended_bbox_frac": 0.1379,
+              "ratio": 1.0,
+              "n_intruders": 2,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only untouched drink filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 5,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 358,
+                "lap_var": 485.5,
+                "edge": 5.41,
+                "std": 67.7,
+                "hard": 0.0391
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.138 area_frac=0.051 ratio=1.00 vs requested 'untouched drink'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 6,
+        "text": "You walk the picnic edge now.",
+        "beat_text": "You walk the picnic edge now.",
+        "emotion": "longing",
+        "arc_position": "act2",
+        "beat_function": "complication",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "woman",
+        "subject_expression": "small, walking",
+        "setting": "empty park path at dusk",
+        "key_object": "park path",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "walk picnic edge now",
+        "pose_hint": "body turned mid-step toward the door, hands empty, not seated",
+        "setting_archetype": "exterior-landscape",
+        "palette_key": "COLD",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, small, walking posture, shoulders covered, no visible face or skin in empty park path at dusk, dusk. body turned mid-step toward the door, hands empty, not seated. park path is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: walk picnic edge now. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "park path",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 6,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 6,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "park path",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 7,
+        "text": "Since you walked, you hold the drink.",
+        "beat_text": "Since you walked, you hold the drink.",
+        "emotion": "realization",
+        "arc_position": "act3",
+        "beat_function": "turn",
+        "shot_scale": "close",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "open, tired",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
+        "time_of_day": "evening",
+        "close_variant": "silhouette",
+        "close_target": "hands",
+        "close_character": "man",
+        "visual_anchor_hint": "silhouette of the man holding a drink in a doorway",
+        "pose_hint": "body turned mid-step toward the door, hands empty, not seated",
+        "setting_archetype": "threshold",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "man_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone man as a flat unlit clothed silhouette, open, tired posture, no visible face or skin in hallway near an open door, evening. body turned mid-step toward the door, hands empty, not seated. open doorway is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Evening print: lamp-warm interiors as flat color, window as a dark plane. The image must visually embody: silhouette of the man holding a drink in a doorway. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_man_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "open doorway",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 7,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 7,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "open doorway",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 7,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 8,
+        "text": "The drink you lifted sits empty.",
+        "beat_text": "The drink you lifted sits empty.",
+        "emotion": "acceptance",
+        "arc_position": "act3",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "open",
+        "setting": "cafe table after closing",
+        "key_object": "untouched drink",
+        "time_of_day": "evening",
+        "visual_anchor_hint": "untouched drink alone, filling the frame",
+        "setting_archetype": "public-interior",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "macro_no_setting",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A bold hand-inked illustration of untouched drink filling the frame, drawn flat with visible ink outlines, not photographed. Printed halftone background, no named room, no furniture, no other objects. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only untouched drink is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Evening print: lamp-warm interiors as flat color, window as a dark plane. The image must visually embody: untouched drink alone, filling the frame. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "untouched drink",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.7063,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 8,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 749,
+            "lap_var": 786.6,
+            "edge": 9.34,
+            "std": 61.8,
+            "hard": 0.0837
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 8,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "untouched drink",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.7063,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 8,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 749,
+                "lap_var": 786.6,
+                "edge": 9.34,
+                "std": 61.8,
+                "hard": 0.0837
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 8,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 9,
+        "text": "You remain at the table.",
+        "beat_text": "You remain at the table.",
+        "emotion": "resolution_warmth",
+        "arc_position": "act3",
+        "beat_function": "close",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "park picnic edge",
+        "key_object": "distant horizon",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "empty distant horizon line alone, filling the frame",
+        "setting_archetype": "exterior-landscape",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. An illustrated close study of empty distant horizon line alone, drawn to occupy most of the frame, not photographed. Background keeps the same grainy halftone print texture as the object, muted flat color with visible ink-dot grain, no gradient, no furniture, no room, no other objects, no distinct background shapes. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only empty distant horizon line is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: empty distant horizon line alone, filling the frame. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "distant horizon",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0709,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 9,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 353,
+            "lap_var": 298.7,
+            "edge": 5.74,
+            "std": 44.3,
+            "hard": 0.0417
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 9,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: boat dominates, requested distant horizon"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "distant horizon",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.1429,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 195,
+                "lap_var": 64.2,
+                "edge": 2.46,
+                "std": 50.2,
+                "hard": 0.0073
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "flat/no linework lap_var=64.2 edge=2.46"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "distant horizon",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0709,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 9,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 353,
+                "lap_var": 298.7,
+                "edge": 5.74,
+                "std": 44.3,
+                "hard": 0.0417
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: boat dominates, requested distant horizon"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      }
+    ],
+    "episode_variety": {
+      "beat_count": 9,
+      "distinct_settings": 7,
+      "setting_stems": {
+        "porch": 1,
+        "table": 2,
+        "dining": 1,
+        "platform": 1,
+        "kitchen": 1,
+        "park": 2,
+        "hallway": 1
+      },
+      "setting_repeats": {
+        "table": 2,
+        "park": 2
+      },
+      "distinct_compositions": 3,
+      "compositions": {
+        "woman": 3,
+        "object_focus": 4,
+        "man": 2
+      },
+      "person_shots": 5,
+      "variety_shots": 4,
+      "distinct_object_stems": 7,
+      "object_stems": {
+        "light": 1,
+        "drink": 3,
+        "table": 1,
+        "platform": 1,
+        "path": 1,
+        "door": 1,
+        "horizon": 1
+      },
+      "object_repeats": {
+        "drink": 3
+      },
+      "object_over_cap": {},
+      "palette_sequence": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_expected": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_arc_ok": true,
+      "palette_mismatches": [],
+      "notes": [
+        "setting_repeats=tablex2,parkx2"
+      ],
+      "summary": "settings=7/9 distinct; compositions={'woman': 3, 'object_focus': 4, 'man': 2}; objects=7 distinct; palette_arc_ok=true; notes=['setting_repeats=tablex2,parkx2']",
+      "holds_episode": false,
+      "setting_archetypes": {
+        "threshold": 2,
+        "public-interior": 2,
+        "interior-domestic": 2,
+        "transit": 1,
+        "exterior-landscape": 2
+      },
+      "setting_archetype_beats": [
+        "threshold",
+        "public-interior",
+        "interior-domestic",
+        "transit",
+        "interior-domestic",
+        "exterior-landscape",
+        "threshold",
+        "public-interior",
+        "exterior-landscape"
+      ],
+      "setting_archetype_overflow": {},
+      "composition_types": {
+        "figure_centered": 4,
+        "object_focus": 3,
+        "wide_environment": 2
+      },
+      "composition_beats": [
+        "figure_centered",
+        "object_focus",
+        "figure_centered",
+        "figure_centered",
+        "object_focus",
+        "wide_environment",
+        "figure_centered",
+        "object_focus",
+        "wide_environment"
+      ],
+      "figure_centered": 4
+    }
+  }
+}

@@ -199,6 +199,7 @@ _CAPTION_TAIL_START = _CAPTION_PREP_SPLIT | {
 
 def reset_batch_structure_ids() -> None:
     _BATCH_USED_STRUCTURES.clear()
+    rag.reset_batch_scripts()
 
 
 def note_batch_structure_id(structure_id: str) -> None:
@@ -676,13 +677,15 @@ def _call_deepseek(prompt: str) -> str:
     print(f"[LOFI script] writer=deepseek model={model}")
     client = OpenAI(api_key=str(api_key), base_url=base_url)
     system = (
-        "You write continuous first-person spoken-word scripts for short vertical reels. "
-        "Every line must follow causally from the previous one. Output STRICT JSON only."
+        "You write continuous spoken-word scripts for short vertical reels. "
+        "Output STRICT JSON only."
     )
+    temp = float(os.getenv("LOFI_DEEPSEEK_TEMPERATURE", "1.15") or 1.15)
+    print(f"[LOFI script] deepseek temperature={temp}")
     resp = client.chat.completions.create(
         model=model,
-        max_tokens=8192,
-        temperature=0.82,
+        max_tokens=4096,
+        temperature=temp,
         extra_body={"thinking": {"type": "disabled"}},
         messages=[
             {"role": "system", "content": system},
@@ -1049,18 +1052,29 @@ _THEMATIC_STRUCTURES: tuple[dict[str, str], ...] = (
 )
 
 
-# Repo-original gold standard (hope, 2026-08-19). Cadence/quality only — never
-# inject when the live theme is hope, and never treat as a line to copy.
+# Cadence/quality only — never treat as lines to copy. These model
+# claim → complication/contrast → resolution, not action → action.
 _GOLD_CADENCE_BEATS: tuple[str, ...] = (
     "Don't wait for the feeling first.",
+    "Because the feeling never leads.",
     "You press the sweater to your chest.",
-    "The kettle starts to warm.",
     "Stay with the quiet.",
     "Two cups sit by the sink.",
-    "The empty chair faces the light.",
+    "The chair faces the light, yet you stay.",
     "You pause in the doorway.",
     "The kettle has gone cold.",
-    "You meet the morning there.",
+    "You meet the morning there anyway.",
+)
+_GOLD_CADENCE_BEATS_B: tuple[str, ...] = (
+    "Don't finish the argument first.",
+    "You shut the door.",
+    "Still you hear the hallway hold.",
+    "Stay after the heat.",
+    "The coat hangs there.",
+    "You leave it hanging though it waits.",
+    "You stand in the doorway.",
+    "The coat hangs alone now.",
+    "You walk out since the heat passed.",
 )
 
 
@@ -1106,12 +1120,13 @@ def _pick_thematic_structure(module: str, hook_type: str, theme: str) -> dict[st
 
 def _gold_cadence_block(theme: str, module: str) -> str:
     """Quality-bar example for every theme — never omitted (hope used to skip it)."""
-    numbered = "\n".join(f"  {i+1}. {line}" for i, line in enumerate(_GOLD_CADENCE_BEATS))
+    numbered_a = "\n".join(f"  {i+1}. {line}" for i, line in enumerate(_GOLD_CADENCE_BEATS))
+    numbered_b = "\n".join(f"  {i+1}. {line}" for i, line in enumerate(_GOLD_CADENCE_BEATS_B))
     live = str(theme or "").strip().replace("_", " ") or "this theme"
     if str(module or "").strip().lower() == "parenting":
         domain = (
-            "Parenting content required — this sample is relationship cadence only. "
-            f"Write THIS {live} episode. Match split cadence, do not copy lines."
+            "Parenting content required — these samples are cadence only. "
+            f"Write THIS {live} episode. Match the argument shape, do not copy lines."
         )
     elif str(theme or "").strip().lower() == "hope":
         domain = (
@@ -1119,12 +1134,61 @@ def _gold_cadence_block(theme: str, module: str) -> str:
             "the split and the thesis shape. Do not copy the sample wording."
         )
     else:
-        domain = f"Write THIS {live} episode, not hope. Match cadence; do not copy."
+        domain = f"Write THIS {live} episode. Match the argument shape; do not copy nouns or lines."
     return f"""
-QUALITY BAR (cadence and thesis shape only — do NOT copy lines, images, or the sample nouns):
-{numbered}
+QUALITY BAR (argument shape only — do NOT copy lines, images, or the sample nouns):
+Sample A:
+{numbered_a}
+Sample B:
+{numbered_b}
+Shape: hook makes a claim; a later beat complicates it; the insight answers
+or reverses that SAME claim. Connectives must be load-bearing (deleting the
+word should change the logic). Vary WHERE the turn happens — Sample A and
+Sample B put devices on different beat numbers on purpose. Do not copy
+either sample's connective positions. Banned shape:
+but@3 / even-if@4 / anyway@5 / even-then@6 / because@7 / so@9.
 {domain}
 """
+
+
+def _rhetoric_prompt_block(rhetoric: dict[str, Any] | None) -> str:
+    """Assigned library shape — additive; does not replace existing gates."""
+    rec = rhetoric if isinstance(rhetoric, dict) else {}
+    name = str(rec.get("name") or "").strip()
+    if not name:
+        return ""
+    shape = str(rec.get("shape") or "").strip()
+    strength = str(rec.get("tool_strength") or "").strip()
+    example = rec.get("in_house_example") or []
+    if isinstance(example, list):
+        numbered = "\n".join(f"  {i + 1}. {line}" for i, line in enumerate(example))
+    else:
+        numbered = str(example)
+    overlay = str(rec.get("hook_overlay") or "").strip()
+    overlay_block = ""
+    if overlay == "anaphora_to_universal_law":
+        overlay_pat = rag.get_rhetoric_pattern(overlay) or {}
+        overlay_block = f"""
+HOOK-ONLY OVERLAY ({overlay}):
+Write scene 1 in this hook shape, then write beats 2–9 in the assigned body pattern.
+Do not use anaphora as the whole-script structure.
+shape: {str(overlay_pat.get("shape") or "").strip()}
+"""
+    aphorism_ok = name in rag.RHETORIC_APHORISM_PATTERNS or overlay in rag.RHETORIC_APHORISM_PATTERNS
+    aphorism_block = ""
+    if aphorism_ok:
+        aphorism_block = """
+OPTIONAL OPENING DEVICE — unattributed aphorism:
+You MAY open with a stated principle or aphorism delivered WITHOUT naming any
+real person. Forbidden: "X said", "as Y wrote", any philosopher or author name.
+Invent the line. This replaces named-philosopher quote framing.
+"""
+    return f"""
+ASSIGNED PATTERN: {name}
+shape: {shape}
+example (shape only — invent every sentence; do not copy nouns or clauses):
+{numbered}
+{overlay_block}{aphorism_block}"""
 
 
 def _thematic_script_prompt(
@@ -1142,206 +1206,77 @@ def _thematic_script_prompt(
     structure: dict[str, str],
     quote_block: str,
     gold_block: str,
+    rhetoric: dict[str, Any] | None = None,
 ) -> str:
-    max_words, max_chars = lofi_cfg.caption_limits(lofi_cfg.THEMATIC_ARC_ID)
-    min_scenes = int(getattr(lofi_cfg, "MIN_SCENES", 8))
-    max_scenes = int(lofi_cfg.thematic_max_scenes())
-    return f"""Write a spoken-word vertical-reel script as ONE progressive thesis.
+    # Gate rules are enforced post-hoc, not listed here. DeepSeek collapses
+    # when the generation prompt becomes a checklist.
+    _ = (detail_block, quote_block, gold_block, act_guide, hook_type, structure)
+    thesis = ""
+    if isinstance(rhetoric, dict):
+        thesis = str(rhetoric.get("locked_thesis") or "").strip()
+    anchor_block = ""
+    if isinstance(rhetoric, dict) and isinstance(rhetoric.get("locked_anchor"), dict):
+        ao = rhetoric["locked_anchor"]
+        anchor_block = (
+            f"ANCHOR OBJECT: {ao.get('name')}\n"
+            f"  first seen: {ao.get('initial_state')}\n"
+            f"  later: {ao.get('final_state')}\n"
+        )
+    elif isinstance(rhetoric, dict) and rhetoric.get("locked_anchor_name"):
+        anchor_block = f"ANCHOR OBJECT: {rhetoric.get('locked_anchor_name')}\n"
+    thesis_block = f"THESIS (internal — do not speak it): {thesis}\n" if thesis else ""
+    return f"""Write a spoken-word vertical reel as STRICT JSON.
 
-MODULE: {module}
 THEME: {theme}
 SUBTHEME: {subtheme or "(none)"}
-TARGET_SCENE_COUNT: {scene_count} (HARD MAX {max_scenes} beats / {max_scenes * 3}s.
-  Prefer exactly {scene_count}. Do not emit a 10th beat.)
-HOOK_TYPE: {hook_type}
-STRUCTURE_ID: {structure.get("id")} — {structure.get("label")}
-ARC PER SCENE: {act_guide}
-ARC SHAPE:
-  id={arc.get("id")}
-  {arc.get("label")}
-  act1: {arc.get("act1")}
-  act2: {arc.get("act2")}
-  act3: {arc.get("act3")}
-{gold_block}
-CONCRETE DETAIL BANK (optional texture inside lines, not the skeleton — do NOT quote verbatim):
-{detail_block}
-{quote_block}
-SETTING_OBJECT_POOL (visual fields only — pick setting + key_object from this list):
+BEAT COUNT: {scene_count}
+{thesis_block}{anchor_block}CHARACTER / SETTING CONTEXT:
 {pool_block}
+{_rhetoric_prompt_block(rhetoric)}
 {feedback_block}
 
-This is ONE argument about a single theme that builds, costs, and pays off.
-Before the captions, write one internal thesis sentence. Every beat must serve it.
-VOICE: a story with ONE sharp lesson — not a list of instructions.
-ONLY the hook (scene 1) and the insight beat(s) are stated principles
-("Don't finish the argument first." / "Stay after the heat.").
-The other 7 beats are concrete narrative/sensory description of what the
-character is doing or what is in front of them — image-first
-("You press the sweater to your chest." / "Two plates wait in the sink.").
-At most TWO lines in the whole script may read as generalizable advice.
-Not a numbered "you should / remember to" list. Not a book-plug outro.
-ONE recurring physical object (anchor_object) is REQUIRED — introduced early/mid
-and paid off late in a different state. Other beats may use different imagery.
+FORMAT (length and tone only — not content rules):
+- Exactly {scene_count} spoken lines. One line per beat. No paragraphs.
+- Each line is one breath: about 5–9 words, under 56 characters.
+- Concise and imagistic. A short caption, not an essay.
 
-Use THIS structure only (abstract shape — invent every sentence; never paste a known reel):
-{structure.get("example")}
-
-RULES:
-1) Write "monologue" as the full spoken thesis AND keep it short enough to
-   speak in {max_scenes} captions. HARD MAX {max_scenes * max_words} words
-   in the monologue (and in the concatenated "text" fields). Split THAT
-   SAME text across {min_scenes}–{max_scenes} "text" fields. Prefer exactly
-   {scene_count} beats. Never more than {max_scenes}.
-2) Caption chunks stay short: 4–8 words preferred, HARD MAX {max_words} words
-   AND {max_chars} characters. Count both before writing each "text".
-   If ONE beat is over cap, shorten THAT beat only (drop a trailing clause).
-   Do not rewrite the whole episode. If a sentence is longer, split it
-   across the NEXT beat at a comma, dash, or clause boundary — but never
-   exceed {max_scenes} beats total. If you are already at {max_scenes},
-   shorten the line instead of packing two clauses into one beat.
-   BOUNDARY EXAMPLES (copy the LENGTH, not the words):
-     OK 7w/38c: "Peace can feel boring after chaos."
-     OK 9w/47c: "You learn to read the silence like a language."
-     OK 9w/56c: "You set the stone down. You walked away."
-     OK 6w/32c: "The quiet just stays quiet."
-     TOO LONG (do not emit): "What if peace isn't the absence of the storm? You watch the kettle,"
-     TOO LONG (do not emit): "Forgiveness isn't an eraser. It's the decision to stop carrying"
-3) One longer thematic sentence MAY span 2 consecutive beats. Fragments are
-   allowed. Not every beat must be a complete closed sentence.
-4) Scene 1 is the hook matching HOOK_TYPE AND a stated principle
-   (imperative or declarative-general). This is one of at most TWO
-   principle lines in the script.
-   - bold_claim: a hard opening principle
-   - question: a short question that is still general advice
-   - statistic: a specific number/claim (parenting ok; invent only if grounded)
-   - definition / rhetorical_question: also allowed
-5) Last 2–3 beats are the insight/payoff of the SAME theme.
-   Every insight line MUST be a principle AND pass the character-agency
-   verb gate. All other beats (complication / turn / close) MUST be
-   scene-grounded narration — if they pass the principle-check, rewrite
-   them. "You press the sweater to your chest." is correct for a
-   non-insight beat. "Leave the kettle. Start anyway." belongs only on
-   hook or insight.
-6) Second person ("you"/"they") or close third is preferred over object diary.
-7) Details from the bank may color a line; they must not become the plot.
-8) FORBIDDEN:
-   - object-skeleton ("I wait by the door", "the keys stayed in the bowl")
-   - advice lists ("you should", "remember to")
-   - named authors, quotes, attributions, book plugs
-   - stretching toward a 50–60s / 20-line format
-   - copying or lightly paraphrasing famous/viral relationship or parenting reels
-   - any sentence that would still be recognizable as a published reel if you changed one noun
-9) emotion per line from: opening_hook, quiet_sorrowful, melancholic_quiet,
-   bittersweet, longing, doubt, realization, acceptance, hopeful_bittersweet,
-   resolution_warmth, melancholic_romantic
-10) arc_position MUST be act1, act2, or act3 matching ARC PER SCENE.
-11) For EVERY beat also emit visual fields (images, not spoken plot):
-    - subject_type: woman | man | couple | silhouette | object_focus.
-      Also emit composition_type: figure_centered | object_focus |
-      wide_environment. figure_centered (human-scale silhouette or
-      portrait as the visual anchor) is capped at 4 of 9. The other 5
-      must be object_focus (no figure) or wide_environment (landscape /
-      space at scale, figure small or absent). Scene 1 must be a
-      character (figure_centered), never object_focus.
-      Use object_focus on later beats when the stand-in is a strong
-      specific object. Use couple on at most 3 beats (emotional peaks).
-    - subject_expression: 1–3 words
-    - setting + key_object MUST trace to THIS beat's idea: the noun in
-      the line, or a meaning stand-in (chaos→unmade empty bed / suitcase on
-      the floor; walking from a fight→open doorway; cost→empty platform;
-      peace/quiet→rain on the window or kettle).
-      Never default every abstract line to a chair.
-      Copy from SETTING_OBJECT_POOL when a pair matches the idea; otherwise
-      name the stand-in. Each pool row is tagged with a setting ARCHETYPE.
-      At most 2 of the 9 beats may share the same archetype
-      (interior-domestic, threshold, exterior-urban, exterior-landscape,
-      transit, public-interior). Spread the episode across at least 5
-      archetypes. Prefer archetypes listed as REQUIRED_NEW below.
-      Do not reuse the same key_object more than once.
-      Never pick a small object meant to be held near the face.
-      If key_object is a part of a larger whole (passenger seat, steering
-      wheel, dashboard, piano key, drawer, sofa cushion, place setting),
-      the phrase MUST name that whole — e.g. "empty passenger seat of a car,
-      seen through the open car door", never a disembodied part alone.
-    - time_of_day: dawn | morning | afternoon | dusk | night | evening
-    - beat_text: same as text
-    - visual_anchor_hint: 8–16 words. A visual paraphrase of this beat's
-      key_object in its setting — not the caption itself. Must name the
-      key_object. Never substitute a different still-life (no mug, vase,
-      flowers, or coffee when the object is rain, a seat, a suitcase, etc.).
-    - beat_function: exactly one of hook | complication | turn | insight | close.
-      Consecutive beats must not share the same beat_function. The script MUST
-      include at least one turn or insight (not hook restatement only).
-      Every insight line must hand the viewer a concrete reframe, permission,
-      or action: you (the character) as grammatical subject of a finite
-      physical or decisive verb — walk, set down, stay, leave, open, close,
-      turn, carry, reach, hold, let go, wear, fold — in ANY construction
-      ("you walk with it", "carry it", "set it down"), in that beat or the
-      one immediately before it. Copular/state verbs alone (is, was,
-      becomes), personification of an abstract noun ("the morning finds its
-      way", "hope is a habit"), and cognitive verbs with no physical
-      correlate (learn, realize, understand, know) are a hold.
-    - shot_scale: medium by default. A close beat is OPTIONAL, only on a
-      turn or insight if the arc needs one — never required. If used, set
-      close_variant to silhouette | portrait_close | eye_close.
-    Scene 1 (hook) MUST show a character — woman, man, couple, or
-    silhouette — in a high-contrast, emotionally charged composition
-    (sunset, rain, lamp glow, dawn backlight). No object-only still life
-    and no empty establishing shot on beat 1. This is the highest-priority
-    visual beat.
-12) thesis (string, REQUIRED, internal only — never spoken on screen): one
-    sentence the 9 beats develop.
-    anchor_object (REQUIRED): pick ONE concrete object from SETTING_OBJECT_POOL
-    or the DETAIL BANK. name / initial_state / final_state required.
-    That object MUST be named in at least 2 spoken beats: introduce early/mid
-    (a different state) and callback on the turn, insight, or last beats
-    (same object, changed state — e.g. kettle just clicked off → kettle cold).
-    Close beats are optional. If one is used, put it on the turn or insight
-    (not the hook, not the last close). Available types: silhouette close
-    (hands / shoulders / nape / object), portrait_close (recurring woman or
-    man, painterly face/body), or eye_close. Do not force a close.
-13) Every line must be original to this theme. If a sentence could belong to a
-    famous relationship/parenting reel, rewrite it.
-    Intra-script: no two captions may be the same or near-duplicates.
-    "X isn't Y" / "X is not Y" may appear in at most ONE line.
-14) STRUCTURAL VARIETY: do not open with "the saddest thing X can believe is...".
-    Do not reuse the same rhetorical frame as another episode in this batch.
+Write {scene_count} original spoken lines that follow the assigned pattern's SHAPE
+and develop the theme around the anchor. Scene 1 is the opening. One later beat
+is the insight. Invent every sentence. Include a visual field per beat.
 
 Output STRICT JSON only, no markdown:
 {{
-  "hook_type": "{hook_type}",
   "theme": "{theme}",
   "module": "{module}",
-  "arc_template": "{arc.get("id")}",
-  "structure_id": "{structure.get("id")}",
   "thesis": "<one internal sentence this episode proves — not shown on screen>",
   "anchor_object": {{
-    "name": "<object from the pool or detail bank>",
+    "name": "<concrete object>",
     "initial_state": "<how it first appears>",
     "final_state": "<how it has changed by the callback>"
   }},
-  "monologue": "<full continuous spoken thesis>",
+  "monologue": "<the {scene_count} lines joined>",
   "lines": [
     {{
       "scene": 1,
-      "text": "Peace can feel boring after chaos.",
-      "beat_text": "Peace can feel boring after chaos.",
+      "text": "<spoken line>",
+      "beat_text": "<same as text>",
       "emotion": "opening_hook",
       "arc_position": "act1",
       "beat_function": "hook",
       "shot_scale": "medium",
       "subject_type": "woman",
       "subject_expression": "distant, still",
-      "setting": "bedroom, edge of a neatly made bed",
-      "key_object": "untouched pillow",
+      "setting": "<from context>",
+      "key_object": "<from context>",
       "time_of_day": "dusk",
-      "visual_anchor_hint": "untouched pillow on an empty half of the bed"
+      "visual_anchor_hint": "<object in setting>"
     }}
   ]
 }}
-Valid JSON only: no trailing commas, no comments, escape quotes inside strings.
-No NSFW. No real private individuals named. Brand-safe for {module}.
+Valid JSON only. No NSFW. No real private individuals named.
 """
+
+
 
 
 _ISNT_Y_RE = re.compile(
@@ -2125,6 +2060,598 @@ def assess_principle_scope(lines: list[dict[str, Any]]) -> dict[str, Any]:
     return {"hits": hits, "count": len(hits), "fails": fails}
 
 
+MIN_CONNECTIVE_BEATS = 3
+MAX_BARE_ACTION_BEATS = 5
+MIN_DEVELOPED_LINES = 2
+MAX_SUPPORTING_OBJECTS = 2
+_CONNECTIVE_RE = re.compile(
+    r"\b("
+    r"because|so|since|therefore|"
+    r"but|yet|still|anyway|"
+    r"even though|even if|even then|even when|"
+    r"although|though|without|"
+    r"the way|not later|not because"
+    r")\b",
+    re.I,
+)
+_SUBORDINATE_RE = re.compile(
+    r"\b(because|when|if|while|though|although|since|without|even)\b",
+    re.I,
+)
+_BARE_SVO_RE = re.compile(
+    r"^(you|i|we|they)\s+[a-z']+\s+(the|a|an|your)?\s*[a-z']+\b",
+    re.I,
+)
+_BARE_IMP_RE = re.compile(
+    r"^(don't|do not|keep|put|set|leave|stay|open|walk|hold|wait|stop|"
+    r"touch|fold|cross|face|press|name)\b",
+    re.I,
+)
+_CONTENT_STOP = frozenset(
+    {
+        "you", "your", "i", "we", "they", "them", "their", "it", "its",
+        "the", "a", "an", "to", "for", "of", "in", "on", "and", "or",
+        "not", "do", "did", "does", "don't", "first", "just", "with",
+        "from", "into", "at", "as", "is", "are", "was", "were", "be",
+        "this", "that", "there", "then", "than", "now",
+    }
+)
+_PLACE_STEMS = frozenset(
+    {
+        "door", "doorway", "hallway", "kitchen", "path", "wall", "platform",
+        "stairwell", "street", "window", "porch", "track", "tracks",
+        "hall", "hallway",
+        "horizon", "landing", "stoop", "corner", "lobby", "cafe", "park",
+        "picnic", "distant",
+        "room", "table", "sink", "floor", "ground", "tide", "coast",
+        "streetlamp", "streetlight", "car", "train", "river", "lamp",
+    }
+)
+_ABSTRACT_STEMS = frozenset(
+    {
+        "gap", "space", "weight", "quiet", "morning", "knock", "feeling",
+        "heat", "silence", "light", "dark", "place", "hand", "hands",
+        "chest", "body", "argument", "word", "words",
+        "habit", "night", "shape", "sore", "hour", "minute",
+        "side", "cost", "place", "wound",
+
+    }
+)
+_PROP_ADJ = frozenset(
+    {
+        "empty", "heavy", "unused", "old", "folded", "bare", "half",
+        "packed", "dark", "dusk", "second", "now", "alone", "open",
+        "closed", "cold", "same", "handed", "spare",
+        "single", "lit", "hollow", "raw", "full", "slow", "still",
+        "untouched", "unworn", "unused", "own", "other", "such",
+        "first", "last", "next", "more", "most", "least", "warm",
+        "finally", "gone", "left", "right", "long", "short", "small",
+        "great", "whole", "only", "even", "ever", "never", "emptied",
+        "standing", "waiting", "lying", "going", "worn", "still",
+        "sore",
+    }
+)
+_PROP_CLOSED = frozenset(
+    {
+        "behind", "before", "after", "under", "over", "into", "onto",
+        "from", "with", "without", "while", "when", "once", "then",
+        "there", "here", "later", "again", "away", "back", "down",
+        "up", "out", "off", "together", "else", "inch", "bit", "lot",
+        "way", "kind", "sort", "edge",
+    }
+)
+_PROP_VERBS = frozenset(
+    {
+        "sit", "walk", "stand", "hold", "lift", "set", "leave", "stay",
+        "wait", "fold", "cross", "pause", "remain", "face", "stop",
+        "touch", "tell", "say", "save", "hang", "lie", "keep", "go",
+        "come", "take", "put", "get", "make", "let", "give", "look",
+        "name", "earn", "pour", "knock", "speak",
+    }
+)
+
+
+def _line_word_count(text: str) -> int:
+    return len(re.findall(r"[A-Za-z']+", str(text or "")))
+
+
+def _content_stems(text: str) -> set[str]:
+    stems: set[str] = set()
+    for raw in re.findall(r"[A-Za-z']+", str(text or "").lower()):
+        w = raw.replace("'", "")
+        if len(w) < 3 or w in _CONTENT_STOP:
+            continue
+        if w.endswith("ing") and len(w) > 6:
+            w = w[:-3]
+        elif w.endswith("ed") and len(w) > 5:
+            w = w[:-2]
+        elif w.endswith("s") and not w.endswith("ss") and len(w) > 4:
+            w = w[:-1]
+        stems.add(w)
+    return stems
+
+
+def _has_connective(text: str) -> bool:
+    return bool(_CONNECTIVE_RE.search(str(text or "")))
+
+
+def _is_bare_action_clause(text: str) -> bool:
+    blob = str(text or "").strip()
+    if not blob:
+        return True
+    if _line_word_count(blob) >= 8:
+        return False
+    if _has_connective(blob) or _SUBORDINATE_RE.search(blob):
+        return False
+    lead = blob.split(".", 1)[0].strip()
+    return bool(_BARE_SVO_RE.search(lead) or _BARE_IMP_RE.search(lead))
+
+
+def _echo_with_twist(text: str, prior_stems: set[str]) -> bool:
+    if not prior_stems:
+        return False
+    shared = _content_stems(text) & prior_stems
+    if not shared:
+        return False
+    return bool(
+        _has_connective(text)
+        or re.search(r"\b(now|anyway|still|not|without|even)\b", text, re.I)
+    )
+
+
+def assess_connective_development(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """At least 3 beats relate to a prior idea via connective or echo-twist."""
+    hits: list[dict[str, Any]] = []
+    prior: set[str] = set()
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        why = ""
+        if _has_connective(text):
+            why = "connective"
+        elif i > 0 and _echo_with_twist(text, prior):
+            why = "echo-twist"
+        if why:
+            hits.append({"scene": i + 1, "text": text, "reason": why})
+        prior |= _content_stems(text)
+    fails: list[str] = []
+    if len(hits) < MIN_CONNECTIVE_BEATS:
+        fails.append(
+            f"connective-development: {len(hits)} beats relate to a prior idea "
+            f"(need {MIN_CONNECTIVE_BEATS}+ because/but/so/even-then or echo-twist)"
+        )
+        print(f"[LOFI argument] CONNECT FAIL count={len(hits)}")
+    else:
+        print(
+            f"[LOFI argument] CONNECT pass count={len(hits)} "
+            f"scenes={[h['scene'] for h in hits]}"
+        )
+    return {"hits": hits, "count": len(hits), "fails": fails}
+
+
+def assess_insight_answers_hook(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Insight must share/develop/reverse the hook claim, not only the anchor."""
+    hook = ""
+    if lines and isinstance(lines[0], dict):
+        hook = str(lines[0].get("text") or lines[0].get("beat_text") or "")
+    insights = [
+        (i, str(row.get("text") or row.get("beat_text") or ""))
+        for i, row in enumerate(lines or [])
+        if isinstance(row, dict) and str(row.get("beat_function") or "") == "insight"
+    ]
+    hook_stems = _content_stems(hook)
+    fails: list[str] = []
+    report: list[dict[str, Any]] = []
+    if not insights:
+        fails.append("insight-hook: no insight beat to answer the hook claim")
+        print("[LOFI argument] INSIGHT-HOOK FAIL no insight")
+        return {"status": "fail", "fails": fails, "insights": report}
+    for i, text in insights:
+        shared = _content_stems(text) & hook_stems
+        contrast = bool(
+            re.search(r"\b(don't|do not|never)\b", hook, re.I)
+            and re.search(r"\b(now|anyway|still|without|even|stay|leave|set|keep)\b", text, re.I)
+        )
+        ok = bool(shared) or contrast
+        rec = {
+            "scene": i + 1,
+            "text": text,
+            "hook": hook,
+            "shared": sorted(shared),
+            "status": "pass" if ok else "fail",
+        }
+        report.append(rec)
+        if ok:
+            print(
+                f"[LOFI argument] INSIGHT-HOOK pass scene={i + 1} "
+                f"shared={sorted(shared)} line={text!r}"
+            )
+        else:
+            fails.append(
+                f"insight scene {i + 1} does not answer/reverse the hook claim "
+                f"{hook!r}: {text!r}"
+            )
+            print(f"[LOFI argument] INSIGHT-HOOK FAIL scene={i + 1} line={text!r}")
+    return {
+        "status": "fail" if fails else "pass",
+        "fails": fails,
+        "insights": report,
+    }
+
+
+def assess_recipe_pattern(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Hold the uniform SVO-action collapse: 6+ bare clauses, no length mix."""
+    bare: list[int] = []
+    developed: list[int] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        n = _line_word_count(text)
+        fn = str(row.get("beat_function") or "").strip().lower()
+        if fn not in {"hook", "insight"} and _is_bare_action_clause(text):
+            bare.append(i + 1)
+        if n >= 8 or (_has_connective(text) and n >= 7):
+            developed.append(i + 1)
+    fails: list[str] = []
+    if len(bare) > MAX_BARE_ACTION_BEATS:
+        fails.append(
+            f"recipe-collapse: {len(bare)}/{len(lines)} beats are bare SVO/imperative "
+            f"under 8 words with no connective (max {MAX_BARE_ACTION_BEATS}): "
+            + ",".join(str(s) for s in bare)
+        )
+        print(f"[LOFI argument] RECIPE FAIL bare={bare}")
+    if len(developed) < MIN_DEVELOPED_LINES:
+        fails.append(
+            f"sentence-variety: {len(developed)} developed line(s) "
+            f"(need {MIN_DEVELOPED_LINES}+ at 8–9 words or connective+7)"
+        )
+        print(f"[LOFI argument] VARIETY FAIL developed={developed}")
+    if not fails:
+        print(
+            f"[LOFI argument] RECIPE pass bare={len(bare)} "
+            f"developed={developed}"
+        )
+    return {
+        "bare_scenes": bare,
+        "developed_scenes": developed,
+        "fails": fails,
+    }
+
+
+def _spoken_prop_stems(text: str) -> set[str]:
+    """Concrete countable nouns after a determiner — not adjectives or participles."""
+    stems: set[str] = set()
+    tokens = re.findall(r"[a-z]+", str(text or "").lower())
+    dets = {"the", "a", "an", "your", "two"}
+    i = 0
+    while i < len(tokens):
+        if tokens[i] in dets:
+            j = i + 1
+            while j < len(tokens) and tokens[j] in _PROP_ADJ:
+                j += 1
+            if j < len(tokens):
+                cand = tokens[j]
+                if cand.endswith("s") and cand not in {"glass"} and len(cand) > 3:
+                    cand = cand[:-1]
+                if (
+                    cand not in _PLACE_STEMS
+                    and cand not in _ABSTRACT_STEMS
+                    and cand not in _PROP_ADJ
+                    and cand not in _PROP_CLOSED
+                    and cand not in _PROP_VERBS
+                    and cand not in _CONTENT_STOP
+                    and len(cand) >= 3
+                ):
+                    stems.add(cand)
+            i = max(j, i + 1)
+            continue
+        i += 1
+    return stems
+
+
+def assess_object_churn(
+    lines: list[dict[str, Any]],
+    anchor_name: str,
+) -> dict[str, Any]:
+    """Spoken captions may name the anchor plus at most two supporting props."""
+    anchor_stem = ""
+    tokens = re.findall(r"[a-z]+", str(anchor_name or "").lower())
+    if tokens:
+        anchor_stem = tokens[-1]
+    spoken: set[str] = set()
+    by_scene: list[dict[str, Any]] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        found = _spoken_prop_stems(text)
+        spoken |= found
+        if found:
+            by_scene.append({"scene": i + 1, "props": sorted(found)})
+    extras = sorted(s for s in spoken if s != anchor_stem)
+    fails: list[str] = []
+    if len(extras) > MAX_SUPPORTING_OBJECTS:
+        fails.append(
+            f"object-churn: {len(extras)} supporting spoken props {extras} "
+            f"(max {MAX_SUPPORTING_OBJECTS} besides anchor {anchor_stem!r})"
+        )
+        print(f"[LOFI argument] OBJECT FAIL extras={extras}")
+    else:
+        print(
+            f"[LOFI argument] OBJECT pass anchor={anchor_stem!r} "
+            f"supporting={extras}"
+        )
+    return {
+        "anchor": anchor_stem,
+        "supporting": extras,
+        "by_scene": by_scene,
+        "fails": fails,
+    }
+
+
+_PRONOUN_RE = re.compile(r"\b(it|its|they|them|this|that)\b", re.I)
+_NOUNY_RE = re.compile(
+    r"\b(?:the|a|an|your|empty|heavy|unused|old|folded|two)\s+([a-z]+)\b",
+    re.I,
+)
+
+
+def assess_pronoun_continuity(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Hold dangling it/they/this after a prop was cut from spoken text."""
+    fails: list[str] = []
+    seen_nouns: list[str] = []
+    people_ok = False
+    report: list[dict[str, Any]] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        nouns = [m.group(1).lower() for m in _NOUNY_RE.finditer(text)]
+        nouns = [n for n in nouns if n not in _PROP_ADJ and n not in _CONTENT_STOP]
+        if re.search(r"\b(them|they|someone)\b", text, re.I) and i == 0:
+            people_ok = True
+        if re.search(r"\b(them|they)\b", text, re.I) and i == 0:
+            people_ok = True
+        dangling: list[str] = []
+        object_it = bool(re.search(
+            r"\b(open|set|leave|fold|carry|place|touch|press|keep)\s+it\b",
+            text,
+            re.I,
+        ))
+        if object_it and not nouns and not seen_nouns:
+            dangling.append("it")
+        dangling = sorted(set(dangling))
+        rec = {"scene": i + 1, "text": text, "dangling": dangling}
+        report.append(rec)
+        if dangling:
+            fails.append(
+                f"pronoun-continuity scene {i + 1} dangling {dangling} "
+                f"with no spoken noun antecedent: {text!r}"
+            )
+            print(f"[LOFI argument] PRONOUN FAIL scene={i + 1} {text!r}")
+        seen_nouns.extend(nouns)
+    if not fails:
+        print("[LOFI argument] PRONOUN pass")
+    return {"beats": report, "fails": fails}
+
+
+def assess_caption_still_alignment(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Object-focus stills must be named in speech, or have a resolvable pronoun."""
+    fails: list[str] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        ctype = str(row.get("composition_type") or "").strip()
+        st = str(row.get("subject_type") or "").strip()
+        if ctype == "wide_environment":
+            continue
+        if ctype not in {"object_focus"} and st != "object_focus":
+            continue
+        obj = str(row.get("key_object") or "")
+        stems = [
+            t
+            for t in re.findall(r"[a-z]+", obj.lower())
+            if t not in _PROP_ADJ and t not in _CONTENT_STOP and len(t) >= 3
+        ]
+        if not stems or any(s in _PLACE_STEMS or s in _ABSTRACT_STEMS for s in stems):
+            continue
+        text = str(row.get("text") or row.get("beat_text") or "")
+        blob = text.lower()
+        named = any(s in blob for s in stems)
+        pronoun = bool(_PRONOUN_RE.search(text))
+        if not named and not pronoun:
+            fails.append(
+                f"still-align scene {i + 1} object_focus {obj!r} is not in caption "
+                f"{text!r}"
+            )
+            print(f"[LOFI argument] STILL-ALIGN FAIL scene={i + 1} obj={obj!r}")
+    if not fails:
+        print("[LOFI argument] STILL-ALIGN pass")
+    return {"fails": fails}
+
+
+def _connective_load_bearing(prev: str, text: str, word: str) -> str:
+    """Empty string if the device needs the prior beat; else why it's decorative."""
+    prev_l = str(prev or "").lower()
+    here_l = str(text or "").lower()
+    if word == "anyway":
+        if re.search(r"\b(don't|do not|never|not|wait|earn|later)\b", prev_l):
+            return ""
+        return "anyway has no prior expectation to push against"
+    if word in {"even then", "still", "even when"}:
+        if prev_l:
+            return ""
+        return f"{word} has no prior beat to persist against"
+    if word in {"so", "therefore"}:
+        if prev_l:
+            return ""
+        return f"{word} has no prior reason"
+    if word in {"because", "since"}:
+        if _content_stems(prev) & _content_stems(text) or re.search(
+            r"\b(they|them|it|gap|knock|earn|name|chair|bag)\b", here_l
+        ):
+            return ""
+        return f"{word} does not share a referent with the prior beat"
+    if word in {"but", "yet", "though", "although"}:
+        if re.search(r"\b(never|not|don't|empty|alone|still|yet|gone|wait)\b", here_l + " " + prev_l):
+            return ""
+        return f"{word} does not contrast the prior beat"
+    if word in {"even if", "even though", "without"}:
+        if _content_stems(prev) or _content_stems(text):
+            return ""
+        return f"{word} is not attached to a prior claim"
+    return ""
+
+
+def assess_connective_cross_run(
+    lines: list[dict[str, Any]],
+    module: str,
+    *,
+    exclude_themes: set[str] | None = None,
+    extra_records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Same word@beat as last 2–3 scripts, or the same family sequence, is a hold."""
+    cmap = rag.extract_connective_map(lines)
+    seq = rag.connective_sequence(cmap)
+    prev = rag.recent_connective_records(module, 10, exclude_themes=exclude_themes)
+    if extra_records:
+        prev = list(prev) + list(extra_records)
+    recent = prev[-3:]
+    fails: list[str] = []
+    pairs = {(int(r["scene"]), str(r["word"])) for r in cmap}
+    for rec in recent:
+        overlap = sorted(pairs & rec.get("pairs", set()))
+        if overlap:
+            fails.append(
+                f"connective-position reuse vs {rec.get('theme') or 'prior'}: "
+                + ",".join(f"{w}@s{s}" for s, w in overlap)
+            )
+    if seq in rag.BANNED_CONNECTIVE_SHAPES:
+        fails.append(f"banned connective sequence {seq}")
+    for rec in recent:
+        if seq and seq == rec.get("sequence"):
+            fails.append(
+                f"connective-sequence reuse vs {rec.get('theme') or 'prior'}: {seq}"
+            )
+    if fails:
+        print(f"[LOFI argument] CONNECT-DEDUP FAIL {fails}")
+    else:
+        print(
+            f"[LOFI argument] CONNECT-DEDUP pass map="
+            f"{[(r['scene'], r['word']) for r in cmap]}"
+        )
+    return {"map": cmap, "sequence": seq, "fails": fails}
+
+
+def assess_connective_coherence(
+    lines: list[dict[str, Any]],
+    *,
+    use_llm: bool = True,
+) -> dict[str, Any]:
+    """
+    Load-bearing check: the connective must change the relationship to the
+    prior beat, and the line must be clear with its own referents.
+    """
+    fails: list[str] = []
+    report: list[dict[str, Any]] = []
+    texts = [
+        str(r.get("text") or r.get("beat_text") or "") if isinstance(r, dict) else ""
+        for r in (lines or [])
+    ]
+    cmap = {int(r["scene"]): r for r in rag.extract_connective_map(lines)}
+    for i, text in enumerate(texts):
+        prev = texts[i - 1] if i else ""
+        hit = cmap.get(i + 1)
+        decorative = ""
+        if hit:
+            decorative = _connective_load_bearing(prev, text, str(hit["word"]))
+        rec = {
+            "scene": i + 1,
+            "text": text,
+            "word": (hit or {}).get("word"),
+            "decorative": decorative,
+        }
+        report.append(rec)
+        if decorative:
+            fails.append(
+                f"decorative connective scene {i + 1} ({hit.get('word')}): "
+                f"{decorative} — {text!r}"
+            )
+            print(f"[LOFI argument] COHERENCE FAIL scene={i + 1} {decorative}")
+    if use_llm and os.getenv("LOFI_SKIP_COHERENCE_LLM", "").strip() not in {"1", "true", "yes"}:
+        llm_fails = _coherence_llm_judge(texts, cmap)
+        fails.extend(llm_fails)
+    if not fails:
+        print("[LOFI argument] COHERENCE pass")
+    return {"beats": report, "fails": fails}
+
+
+def _coherence_llm_judge(
+    texts: list[str],
+    cmap: dict[int, dict[str, Any]],
+) -> list[str]:
+    numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(texts, 1) if t)
+    if not numbered:
+        return []
+    devices = ", ".join(
+        f"s{s}:{r.get('word')}" for s, r in sorted(cmap.items())
+    ) or "none"
+    prompt = f"""Spoken 9-beat reel captions:
+
+{numbered}
+
+Connective words present: {devices}
+
+For each beat 2–9 return JSON only:
+{{"beats":[{{"scene":2,"follows":true,"relation":"reason|contrast|consequence|none","load_bearing":true,"alone_clear":true,"why":"..."}}]}}
+
+follows: does this beat follow from the previous as a reason, contrast, or consequence?
+load_bearing: if a transition word is present, would deleting it change the logical relationship? false = decorative insert.
+alone_clear: are it/they/this resolvable from earlier spoken lines (not from a cut object)?
+"""
+    try:
+        raw = _call_llm(prompt)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[LOFI argument] COHERENCE LLM skip ({exc})")
+        return []
+    blob = raw.strip()
+    start = blob.find("{")
+    end = blob.rfind("}")
+    if start < 0 or end <= start:
+        print("[LOFI argument] COHERENCE LLM unparsed — skip")
+        return []
+    try:
+        data = json.loads(blob[start : end + 1])
+    except json.JSONDecodeError:
+        print("[LOFI argument] COHERENCE LLM bad JSON — skip")
+        return []
+    fails: list[str] = []
+    for rec in data.get("beats") or []:
+        if not isinstance(rec, dict):
+            continue
+        scene = int(rec.get("scene") or 0)
+        word = (cmap.get(scene) or {}).get("word")
+        if word and rec.get("load_bearing") is False:
+            fails.append(
+                f"coherence-llm scene {scene} decorative {word!r}: {rec.get('why')}"
+            )
+        if rec.get("alone_clear") is False:
+            fails.append(
+                f"coherence-llm scene {scene} unclear referents: {rec.get('why')}"
+            )
+        if word and rec.get("follows") is False and rec.get("relation") == "none":
+            fails.append(
+                f"coherence-llm scene {scene} connective does not follow: {rec.get('why')}"
+            )
+    if fails:
+        print(f"[LOFI argument] COHERENCE LLM FAIL {fails}")
+    else:
+        print("[LOFI argument] COHERENCE LLM pass")
+    return fails
+
+
 _HOOK_LIGHT_RE = re.compile(
     r"\b("
     r"sunset|sunrise|dusk|dawn|rain|storm|lamp|streetlamp|streetlight|"
@@ -2240,6 +2767,37 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
     scope_rep = assess_principle_scope(lines)
     data["principle_scope"] = scope_rep
     reasons.extend(scope_rep.get("fails") or [])
+    connect_rep = assess_connective_development(lines)
+    data["connective_development"] = connect_rep
+    reasons.extend(connect_rep.get("fails") or [])
+    hook_ans = assess_insight_answers_hook(lines)
+    data["insight_answers_hook"] = hook_ans
+    reasons.extend(hook_ans.get("fails") or [])
+    recipe_rep = assess_recipe_pattern(lines)
+    data["recipe_pattern"] = recipe_rep
+    reasons.extend(recipe_rep.get("fails") or [])
+    object_rep = assess_object_churn(lines, name)
+    data["object_churn"] = object_rep
+    reasons.extend(object_rep.get("fails") or [])
+    theme_name = str(data.get("theme") or "").strip().lower()
+    extra = data.pop("_connective_extra_records", None)
+    connect_x = assess_connective_cross_run(
+        lines,
+        module,
+        exclude_themes={theme_name} if theme_name else None,
+        extra_records=extra if isinstance(extra, list) else None,
+    )
+    data["connective_cross_run"] = connect_x
+    reasons.extend(connect_x.get("fails") or [])
+    pronoun_rep = assess_pronoun_continuity(lines)
+    data["pronoun_continuity"] = pronoun_rep
+    reasons.extend(pronoun_rep.get("fails") or [])
+    still_rep = assess_caption_still_alignment(lines)
+    data["caption_still_align"] = still_rep
+    reasons.extend(still_rep.get("fails") or [])
+    coherence_rep = assess_connective_coherence(lines)
+    data["connective_coherence"] = coherence_rep
+    reasons.extend(coherence_rep.get("fails") or [])
     close_n = sum(
         1 for r in lines if str(r.get("shot_scale") or "").strip().lower() == "close"
     )
@@ -2334,6 +2892,12 @@ def _log_narrative(data: dict[str, Any], reasons: list[str]) -> None:
         f"isnt_y={data.get('isnt_y_count')}"
     )
     print(
+        f"[LOFI narrative] argument connect={len((data.get('connective_development') or {}).get('hits') or [])} "
+        f"insight_hook={(data.get('insight_answers_hook') or {}).get('status')} "
+        f"recipe_bare={(data.get('recipe_pattern') or {}).get('bare_scenes')} "
+        f"objects={(data.get('object_churn') or {}).get('supporting')}"
+    )
+    print(
         f"[LOFI narrative] holds_episode={int(bool(reasons))} "
         f"reasons={reasons or 'none'}"
     )
@@ -2348,6 +2912,11 @@ def generate_script(
     feedback: str | None = None,
     force_hook_type: str | None = None,
     theme_row: dict[str, Any] | None = None,
+    force_rhetoric: str | None = None,
+    force_hook_overlay: str | None = None,
+    lock_thesis: str | None = None,
+    lock_anchor: dict[str, Any] | None = None,
+    skip_polish: bool = False,
 ) -> dict[str, Any]:
     """
     Write ONE continuous spoken-word story, then split across scenes.
@@ -2355,7 +2924,9 @@ def generate_script(
     Scene 1 is the scroll-stop hook. Final scenes deliver comfort, not a dry moral.
     """
     feedback_block = (
-        f"\nPREVIOUS REJECTION FEEDBACK (must fix):\n{feedback}\n" if feedback else ""
+        "\nWrite a fresh draft. Do not repeat the previous captions.\n"
+        if feedback
+        else ""
     )
     pool = setting_object_pool(theme_row)
     from core_engine.economic_reel_lofi.setting_archetypes import (
@@ -2408,6 +2979,45 @@ def generate_script(
         f"{i+1}:{act_for_index(i, scene_count)}" for i in range(scene_count)
     )
     structure = _pick_thematic_structure(module, hook_type, theme) if thematic else {}
+    rhetoric = (
+        rag.pick_rhetoric_pattern(
+            module,
+            force=force_rhetoric,
+            force_hook_overlay=force_hook_overlay,
+        )
+        if thematic
+        else {}
+    )
+    if thematic and rhetoric:
+        if lock_thesis:
+            rhetoric["locked_thesis"] = str(lock_thesis).strip()
+        elif not rhetoric.get("locked_thesis"):
+            rhetoric["locked_thesis"] = _ensure_thesis(
+                {"theme": theme, "thesis": "", "lines": []}, theme
+            )
+        if isinstance(lock_anchor, dict) and lock_anchor.get("name"):
+            rhetoric["locked_anchor"] = {
+                "name": str(lock_anchor.get("name") or "").strip(),
+                "initial_state": str(lock_anchor.get("initial_state") or "").strip(),
+                "final_state": str(lock_anchor.get("final_state") or "").strip(),
+            }
+        else:
+            avoid = set(rag.recent_used_anchors(module))
+            picked = pick_episode_anchor(pool, avoid_stems=avoid)
+            rhetoric["locked_anchor"] = {
+                "name": str(picked.get("key_object") or "").strip(),
+                "initial_state": "first seen",
+                "final_state": "changed by the last beats",
+            }
+        print(
+            f"[LOFI script] rhetoric={rhetoric.get('name')} "
+            f"hook_overlay={rhetoric.get('hook_overlay') or 'none'} "
+            f"strength={rhetoric.get('tool_strength')}"
+        )
+        print(
+            f"[LOFI script] locked thesis={rhetoric.get('locked_thesis')!r} "
+            f"anchor={rhetoric.get('locked_anchor')}"
+        )
     quote_block = ""
     q_seed = seed.get("quote") if isinstance(seed.get("quote"), dict) else None
     q_text = str((q_seed or {}).get("quote_text") or "").strip()
@@ -2418,28 +3028,6 @@ def generate_script(
             quote_block = (
                 "\nOPTIONAL QUOTE (do not speak it unless it fits as texture; never attribute):\n"
                 f'  \"{q_text}\"\n'
-            )
-
-    if thematic:
-        used_anchors = rag.recent_used_anchors(module)
-        used_phrases = list(rag.recent_used_phrases(module))[:24]
-        if used_anchors or used_phrases:
-            feedback_block += (
-                "\nDO NOT REUSE these recent anchors/phrases from ANY theme:\n"
-                f"  anchors: {', '.join(sorted(used_anchors)) or '(none)'}\n"
-                f"  phrases: {'; '.join(used_phrases) or '(none)'}\n"
-            )
-        prev_arch = rag.preceding_setting_archetypes(module)
-        from core_engine.economic_reel_lofi.setting_archetypes import ARCHETYPE_ORDER
-
-        required_new = [a for a in ARCHETYPE_ORDER if a not in set(prev_arch)]
-        if prev_arch or required_new:
-            feedback_block += (
-                "\nSETTING ARCHETYPES:\n"
-                f"  previous script used: {', '.join(prev_arch) or '(none)'}\n"
-                f"  REQUIRED_NEW (use at least 2 of these): "
-                f"{', '.join(required_new[:4]) or '(any unused)'}\n"
-                "  Max 2 beats per archetype. Logically spread the 9 beats.\n"
             )
 
     if thematic:
@@ -2457,6 +3045,7 @@ def generate_script(
             structure=structure,
             quote_block=quote_block,
             gold_block=_gold_cadence_block(theme, module),
+            rhetoric=rhetoric,
         )
     else:
         prompt = f"""Write a spoken-word vertical-reel script.
@@ -2601,6 +3190,14 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
     data["structure_id"] = str(
         data.get("structure_id") or (structure.get("id") if thematic else "") or ""
     )
+    data["rhetoric_pattern"] = str(
+        data.get("rhetoric_pattern") or (rhetoric.get("name") if rhetoric else "") or ""
+    )
+    data["rhetoric_hook_overlay"] = str(
+        data.get("rhetoric_hook_overlay")
+        or (rhetoric.get("hook_overlay") if rhetoric else "")
+        or ""
+    )
     data["seed_hooks"] = list(seed.get("hooks") or [])
     if isinstance(data.get("anchor_object"), dict):
         ao = data["anchor_object"]
@@ -2638,55 +3235,87 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             row["visual_prompt"] = f"story beat {i + 1}"
     data["lines"] = lines
     if thematic:
-        _finalize_thematic_narrative(data, pool, module=module, theme=theme)
-        reasons = _narrative_gate_reasons(data, module)
-        if reasons:
-            print(f"[LOFI narrative] first-pass holds: {reasons}")
-            try:
-                retry_prompt = _thematic_script_prompt(
-                    module=module,
-                    theme=theme,
-                    subtheme=subtheme,
-                    scene_count=scene_count,
-                    hook_type=hook_type,
-                    arc=arc,
-                    detail_block=detail_block,
-                    pool_block=pool_block,
-                    feedback_block=(
-                        feedback_block
-                        + "\nNARRATIVE HOLDS (must fix):\n"
-                        + "\n".join(f"  - {r}" for r in reasons)
-                        + "\n"
-                    ),
-                    act_guide=act_guide,
-                    structure=structure,
-                    quote_block=quote_block,
-                    gold_block=_gold_cadence_block(theme, module),
-                )
-                raw = _call_llm(retry_prompt)
-                retry = _extract_json_object(raw)
-                if isinstance(retry, dict) and retry.get("lines"):
-                    retry["hook_type"] = hook_type
-                    retry["theme"] = theme
-                    retry["module"] = module
-                    retry["retrieved_details"] = retrieved
-                    retry["arc_template"] = data.get("arc_template")
-                    retry["structure_id"] = data.get("structure_id")
-                    retry["seed_hooks"] = data.get("seed_hooks")
-                    data = retry
-                    _finalize_thematic_narrative(
-                        data, pool, module=module, theme=theme
-                    )
-            except Exception as exc:  # noqa: BLE001
-                _LOG.warning("narrative retry failed (%s)", exc)
-                print(f"[LOFI narrative] retry failed: {exc}")
+        n_cand = max(1, int(os.getenv("LOFI_DEEPSEEK_CANDIDATES", "3") or 3))
+        best = data
+        best_n = 10**9
+        cand_prompt = prompt
+        for ci in range(n_cand):
+            if ci > 0:
+                print(f"[LOFI script] DeepSeek candidate {ci + 1}/{n_cand}")
+                try:
+                    raw = _call_llm(cand_prompt)
+                    nxt = _extract_json_object(raw)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[LOFI script] candidate {ci + 1} parse fail: {exc}")
+                    continue
+                if not (isinstance(nxt, dict) and nxt.get("lines")):
+                    continue
+                nxt["hook_type"] = hook_type
+                nxt["theme"] = theme
+                nxt["module"] = module
+                nxt["retrieved_details"] = retrieved
+                nxt["arc_template"] = data.get("arc_template")
+                nxt["structure_id"] = data.get("structure_id")
+                nxt["rhetoric_pattern"] = data.get("rhetoric_pattern")
+                nxt["rhetoric_hook_overlay"] = data.get("rhetoric_hook_overlay")
+                nxt["seed_hooks"] = data.get("seed_hooks")
+                data = nxt
+            _finalize_thematic_narrative(data, pool, module=module, theme=theme)
+            if rhetoric.get("locked_thesis"):
+                data["thesis"] = rhetoric["locked_thesis"]
+            if isinstance(rhetoric.get("locked_anchor"), dict) and rhetoric["locked_anchor"].get("name"):
+                data["anchor_object"] = dict(rhetoric["locked_anchor"])
             reasons = _narrative_gate_reasons(data, module)
+            print(
+                f"[LOFI narrative] candidate {ci + 1}/{n_cand} "
+                f"holds={len(reasons)}"
+            )
+            if len(reasons) < best_n:
+                best = data
+                best_n = len(reasons)
+            if not reasons:
+                break
+            cand_prompt = _thematic_script_prompt(
+                module=module,
+                theme=theme,
+                subtheme=subtheme,
+                scene_count=scene_count,
+                hook_type=hook_type,
+                arc=arc,
+                detail_block=detail_block,
+                pool_block=pool_block,
+                feedback_block=(
+                    "Write a fresh draft. Do not repeat the previous captions.\n"
+                ),
+                act_guide=act_guide,
+                structure=structure,
+                quote_block=quote_block,
+                gold_block="",
+                rhetoric=rhetoric,
+            )
+        data = best
+        reasons = _narrative_gate_reasons(data, module)
+        if not reasons and not skip_polish:
+            try:
+                from core_engine.economic_reel_lofi.claude_polish import polish_one
+
+                polished = polish_one(data)
+                polish_reasons = _narrative_gate_reasons(dict(polished), module)
+                if polish_reasons:
+                    print(
+                        "[LOFI polish] post-polish gates failed — "
+                        "keeping DeepSeek finalist (no Claude retry)"
+                    )
+                else:
+                    data = polished
+                    reasons = []
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("Claude polish skipped (%s)", exc)
+                print(f"[LOFI polish] skipped ({exc})")
         _log_narrative(data, reasons)
         data["holds_episode"] = bool(reasons)
         data["narrative_holds"] = reasons
         if reasons:
-            # Hard-fail: validator rejects missing hook_type so the episode
-            # cannot ship a log-only miss the way hope 161048 did.
             print("[LOFI narrative] HARD HOLD — rejecting script")
             data["hook_type"] = ""
         lines = data.get("lines") or lines
@@ -2699,5 +3328,11 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
     print("[LOFI script] arc:", data.get("arc_template"))
     print("[LOFI script] anchor:", data.get("anchor_object"))
     print("[LOFI script] structure:", data.get("structure_id"))
+    print(
+        "[LOFI script] rhetoric:",
+        data.get("rhetoric_pattern"),
+        "overlay:",
+        data.get("rhetoric_hook_overlay") or "none",
+    )
     print("[LOFI script] seed_hooks:", data.get("seed_hooks"))
     return data

@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import struct
 from datetime import date, datetime, timezone
@@ -117,6 +118,138 @@ def get_reference_structures(module: str | None = None, limit: int = 4) -> list[
         if filtered:
             rows = filtered
     return rows[: max(1, limit)]
+
+
+# ── Structure library (additive rhetorical shapes) ──────────────────────────
+
+RHETORIC_HISTORY_N = 10
+RHETORIC_HIGH = frozenset(
+    {
+        "domino_chain",
+        "definition_then_evidence",
+        "negation_list_to_permission",
+        "parable_triad",
+    }
+)
+RHETORIC_MEDIUM = frozenset(
+    {
+        "anaphora_to_universal_law",
+        "contrast_metaphor_resolution",
+        "thinker_juxtaposition",
+        "before_after_transformation",
+    }
+)
+RHETORIC_LOW = frozenset(
+    {
+        "retrospective_reversal",
+        "personification_sensory",
+        "open_question",
+    }
+)
+RHETORIC_APHORISM_PATTERNS = frozenset(
+    {"anaphora_to_universal_law", "thinker_juxtaposition"}
+)
+_RHETORIC_LIB_CACHE: dict[str, Any] | None = None
+
+
+def load_structure_library() -> dict[str, Any]:
+    """Read data/structure_library.json (shapes only; examples are never spoken)."""
+    global _RHETORIC_LIB_CACHE
+    if _RHETORIC_LIB_CACHE is not None:
+        return _RHETORIC_LIB_CACHE
+    path = lofi_cfg.DATA_DIR / "structure_library.json"
+    raw = _read_json(path, {})
+    if not isinstance(raw, dict):
+        raw = {}
+    patterns = [p for p in (raw.get("patterns") or []) if isinstance(p, dict) and p.get("name")]
+    _RHETORIC_LIB_CACHE = {"version": raw.get("version") or 1, "patterns": patterns}
+    return _RHETORIC_LIB_CACHE
+
+
+def get_rhetoric_pattern(name: str) -> dict[str, Any] | None:
+    needle = str(name or "").strip()
+    if not needle:
+        return None
+    for row in load_structure_library().get("patterns") or []:
+        if str(row.get("name") or "") == needle:
+            return dict(row)
+    return None
+
+
+def recent_rhetoric_patterns(module: str, n: int = RHETORIC_HISTORY_N) -> list[str]:
+    """Last N scripts' assigned rhetoric_pattern names (skips unstamped rows)."""
+    out: list[str] = []
+    for row in _recent_history_rows(module, n):
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        name = str((meta or {}).get("rhetoric_pattern") or "").strip()
+        if name:
+            out.append(name)
+    return out
+
+
+def pick_rhetoric_pattern(
+    module: str,
+    *,
+    force: str | None = None,
+    force_hook_overlay: str | None = None,
+) -> dict[str, Any]:
+    """
+    Assign ONE library pattern before writing.
+
+    Target mix: ~70% tool_strength=high, ~30% medium/low.
+    Low-strength patterns (7, 8, 11) at most once in any 6-episode window.
+    Never repeat the same pattern back-to-back.
+    anaphora_to_universal_law may also overlay as a hook-only device.
+    """
+    lib = load_structure_library()
+    by_name = {str(p.get("name") or ""): dict(p) for p in (lib.get("patterns") or [])}
+    forced = str(force or os.getenv("LOFI_FORCE_RHETORIC_PATTERN") or "").strip()
+    overlay_req = str(
+        force_hook_overlay or os.getenv("LOFI_FORCE_HOOK_OVERLAY") or ""
+    ).strip()
+    recent = recent_rhetoric_patterns(module, RHETORIC_HISTORY_N)
+    last = recent[-1] if recent else ""
+    low_in_window = sum(1 for p in recent[-6:] if p in RHETORIC_LOW)
+
+    chosen: dict[str, Any] | None = None
+    if forced and forced in by_name:
+        chosen = dict(by_name[forced])
+    else:
+        high = [n for n in RHETORIC_HIGH if n in by_name and n != last]
+        med = [n for n in RHETORIC_MEDIUM if n in by_name and n != last]
+        low = (
+            [n for n in RHETORIC_LOW if n in by_name and n != last]
+            if low_in_window < 1
+            else []
+        )
+        if not high and not med and not low:
+            high = [n for n in RHETORIC_HIGH if n in by_name]
+            med = [n for n in RHETORIC_MEDIUM if n in by_name]
+        roll = random.random()
+        if roll < 0.70 and high:
+            pool = high
+        else:
+            pool = med + low
+            if not pool:
+                pool = high or med or list(by_name)
+        name = random.choice(pool)
+        chosen = dict(by_name.get(name) or next(iter(by_name.values())))
+
+    hook_overlay = ""
+    if (
+        overlay_req == "anaphora_to_universal_law"
+        and str(chosen.get("name") or "") != "anaphora_to_universal_law"
+    ):
+        hook_overlay = "anaphora_to_universal_law"
+    elif (
+        not overlay_req
+        and not forced
+        and str(chosen.get("name") or "") != "anaphora_to_universal_law"
+        and random.random() < 0.12
+    ):
+        hook_overlay = "anaphora_to_universal_law"
+    chosen["hook_overlay"] = hook_overlay
+    return chosen
 
 
 # ── Verified quotes ─────────────────────────────────────────────────────────
@@ -396,6 +529,50 @@ def _history_name(module: str) -> str:
 _PHRASE_HISTORY_N = 10
 _TRIGRAM_DUP_THRESHOLD = 0.6
 _MIN_PHRASE_WORDS = 3
+_BATCH_CAPTIONS: list[tuple[str, str]] = []
+_BATCH_PHRASES: set[str] = set()
+_BATCH_THEMES: list[str] = []
+
+
+def reset_batch_scripts() -> None:
+    """Clear same-run caption/phrase memory (call at the start of a qty>1 batch)."""
+    _BATCH_CAPTIONS.clear()
+    _BATCH_PHRASES.clear()
+    _BATCH_THEMES.clear()
+
+
+def note_batch_script(script: dict[str, Any] | str, *, theme: str = "") -> None:
+    """Record a finished script so later episodes in THIS run can be cross-checked."""
+    if isinstance(script, dict):
+        theme = str(theme or script.get("theme") or "").strip().lower()
+        lines = script.get("lines") or []
+        texts = [
+            str(r.get("text") or r.get("beat_text") or "")
+            for r in lines
+            if isinstance(r, dict)
+        ]
+        blob = " ".join(texts) or str(script.get("monologue") or "")
+    else:
+        blob = str(script or "")
+        texts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", blob) if p.strip()]
+    if theme:
+        _BATCH_THEMES.append(theme)
+    for text in texts:
+        norm = normalize_caption_text(text)
+        if norm:
+            _BATCH_CAPTIONS.append((theme, norm))
+            _BATCH_PHRASES.update(phrases_from_text(text, min_words=3))
+            _BATCH_PHRASES.update(phrases_from_text(text, min_words=4))
+    if blob:
+        _BATCH_PHRASES.update(phrases_from_text(blob, min_words=4))
+
+
+def batch_script_count() -> int:
+    return len(_BATCH_THEMES)
+
+
+def recent_batch_captions() -> list[str]:
+    return [cap for _theme, cap in _BATCH_CAPTIONS]
 
 
 def normalize_caption_text(text: str) -> str:
@@ -572,7 +749,7 @@ def _history_hook_text(row: dict[str, Any]) -> str:
 
 
 def recent_used_phrases(module: str, n: int = _PHRASE_HISTORY_N) -> set[str]:
-    """Hook 3-grams plus distinctive 4-grams from last-N full scripts."""
+    """Hook 3-grams plus distinctive 4-grams from last-N full scripts + this batch."""
     out: set[str] = set()
     for row in _recent_history_rows(module, n):
         hook = _history_hook_text(row)
@@ -581,6 +758,7 @@ def recent_used_phrases(module: str, n: int = _PHRASE_HISTORY_N) -> set[str]:
         body = str(row.get("text") or "")
         if body:
             out.update(phrases_from_text(body, min_words=4))
+    out |= set(_BATCH_PHRASES)
     return out
 
 
@@ -617,6 +795,13 @@ def cross_run_phrase_hits(
     used_phrases = recent_used_phrases(module, n)
     used_anchors = recent_used_anchors(module, n)
     hits: list[str] = []
+    if isinstance(script, dict):
+        self_theme = str(script.get("theme") or "").strip().lower()
+        peer_caps = {cap for th, cap in _BATCH_CAPTIONS if th != self_theme}
+        for raw in texts:
+            norm = normalize_caption_text(raw)
+            if norm and len(norm.split()) >= 4 and norm in peer_caps:
+                hits.append(f"batch_caption_reuse:{norm}")
     if anchor:
         tokens = {anchor.lower()}
         tokens.update(w for w in re.findall(r"[a-z]+", anchor.lower()) if len(w) >= 3)
@@ -647,6 +832,97 @@ def max_similarity_to_history(module: str, script_text: str) -> float:
         else:
             best = max(best, _cosine(query, _EMBEDDER.embed(str(row.get("text") or ""))))
     return best
+
+
+_CONNECTIVE_DEVICES: tuple[tuple[str, str], ...] = (
+    ("even though", "exception"),
+    ("even if", "exception"),
+    ("even then", "persist"),
+    ("even when", "persist"),
+    ("not later", "reversal"),
+    ("not because", "reversal"),
+    ("the way", "manner"),
+    ("because", "cause"),
+    ("since", "cause"),
+    ("therefore", "consequence"),
+    ("anyway", "anyway"),
+    ("without", "exception"),
+    ("although", "contrast"),
+    ("though", "exception"),
+    ("still", "persist"),
+    ("yet", "contrast"),
+    ("but", "contrast"),
+    ("so", "consequence"),
+)
+BANNED_CONNECTIVE_SHAPES: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("contrast", "exception", "anyway", "persist", "cause", "consequence"),
+    }
+)
+
+
+def extract_connective_device(text: str) -> dict[str, str] | None:
+    blob = str(text or "").strip().lower()
+    if not blob:
+        return None
+    for word, family in _CONNECTIVE_DEVICES:
+        if re.search(rf"\b{re.escape(word)}\b", blob):
+            return {"word": word, "family": family}
+    return None
+
+
+def extract_connective_map(lines: list[dict[str, Any]] | list[str]) -> list[dict[str, Any]]:
+    """Per-beat connective word + family. Empty if the beat has no device."""
+    out: list[dict[str, Any]] = []
+    for i, row in enumerate(lines or []):
+        if isinstance(row, dict):
+            text = str(row.get("text") or row.get("beat_text") or "")
+        else:
+            text = str(row or "")
+        hit = extract_connective_device(text)
+        if not hit:
+            continue
+        rec = {"scene": i + 1, "word": hit["word"], "family": hit["family"], "text": text}
+        out.append(rec)
+    return out
+
+
+def connective_sequence(cmap: list[dict[str, Any]]) -> tuple[str, ...]:
+    return tuple(str(r.get("family") or "") for r in cmap if r.get("family"))
+
+
+def recent_connective_records(
+    module: str,
+    n: int = 10,
+    exclude_themes: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Last N scripts' connective maps (from meta, or derived from monologue)."""
+    skip = {str(t).strip().lower() for t in (exclude_themes or set()) if str(t).strip()}
+    records: list[dict[str, Any]] = []
+    for row in _recent_history_rows(module, n):
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        theme = str((meta or {}).get("theme") or "").strip().lower()
+        if theme and theme in skip:
+            continue
+        raw = (meta or {}).get("connective_map")
+        cmap: list[dict[str, Any]] = []
+        if isinstance(raw, list) and raw:
+            cmap = [r for r in raw if isinstance(r, dict) and r.get("word")]
+        if not cmap:
+            text = str(row.get("text") or "")
+            parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
+            cmap = extract_connective_map(parts)
+        if not cmap:
+            continue
+        records.append(
+            {
+                "theme": theme,
+                "map": cmap,
+                "sequence": connective_sequence(cmap),
+                "pairs": {(int(r.get("scene") or 0), str(r.get("word") or "")) for r in cmap},
+            }
+        )
+    return records
 
 
 def append_history(module: str, script_text: str, meta: dict[str, Any] | None = None) -> None:

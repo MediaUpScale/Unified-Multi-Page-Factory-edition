@@ -1,0 +1,1720 @@
+{
+  "manual_accept_scenes": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "work_dir": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01",
+  "scene_images": [
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_01.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_02.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_03.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_04.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_05.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_06.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_07.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_08.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_203537_01\\scene_09.png"
+  ],
+  "script": {
+    "hook_type": "bold_claim",
+    "theme": "regret",
+    "module": "relationship",
+    "subtheme": "the_sentence_never_said",
+    "arc_template": "thematic_arc",
+    "structure_id": "nested_belief",
+    "rhetoric_pattern": "parable_triad",
+    "rhetoric_hook_overlay": "",
+    "thesis": "What you meant to say sits in the empty seat until you tell them.",
+    "close_variant": "portrait_close",
+    "close_character": "woman",
+    "close_target": "portrait",
+    "anchor_object": {
+      "name": "empty passenger seat",
+      "initial_state": "still indented from someone who left",
+      "final_state": "cold, facing an unsaid line",
+      "setting": "parked car at evening, door open"
+    },
+    "monologue": "Don't wait to speak later. You touch the empty seat. Although the path waits empty for them now. A coat still waits unused there now. You pause in the empty lobby. Because they left the seat cold now. You stand in the doorway. Don't wait. Tell them at the seat. You walk back to the seat anyway.",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "Don't wait to speak later.",
+        "beat_text": "Don't wait to speak later.",
+        "emotion": "opening_hook",
+        "arc_position": "act1",
+        "beat_function": "hook",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "stopped, charged",
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "lone man halted under a glowing streetlamp",
+        "episode_theme": "regret",
+        "episode_module": "relationship",
+        "episode_anchor_stem": "seat",
+        "episode_anchor_name": "empty passenger seat",
+        "setting_archetype": "exterior-urban",
+        "palette_key": "WARM",
+        "dev_scene_builder": "man_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone man as a flat unlit clothed silhouette, stopped, charged posture, no visible face or skin in street corner under a streetlamp, dusk. streetlamp is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: lone man halted under a glowing streetlamp. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_man_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "streetlamp",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 1,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 1,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": false,
+            "has_character": true,
+            "high_contrast": true,
+            "empty_still_life": false,
+            "striking": true,
+            "note": "The image features a human figure silhouetted against a vibrant sunset, creating strong contrast and a dramatic, striking visual. It successfully meets all criteria."
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "streetlamp",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 1,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 1,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": false,
+                "has_character": true,
+                "high_contrast": true,
+                "empty_still_life": false,
+                "striking": true,
+                "note": "The image features a human figure silhouetted against a vibrant sunset, creating strong contrast and a dramatic, striking visual. It successfully meets all criteria."
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 2,
+        "text": "You touch the empty seat.",
+        "beat_text": "You touch the empty seat.",
+        "emotion": "quiet_sorrowful",
+        "arc_position": "act1",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "still",
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "empty passenger seat seen through an open car door",
+        "setting_archetype": "transit",
+        "palette_key": "WARM",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "host_context",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A bold hand-inked illustration of the empty passenger seat of a car, seen through the open car door, drawn flat with visible ink outlines, not photographed. The containing whole stays in frame so this is not a floating part. Printed atmosphere, no extra still-life, no clutter. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. the empty passenger seat of a car, seen through the open car door is the subject, shown inside its containing whole so the part is not a disembodied prop in an empty room. No extra still-life objects, no clutter. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: empty passenger seat seen through an open car door. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "empty passenger seat of a car",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.4918,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 2,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "host_context",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 653,
+            "lap_var": 1067.5,
+            "edge": 10.94,
+            "std": 60.0,
+            "hard": 0.0958
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 2,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.331 area_frac=0.078 ratio=0.62 vs requested 'empty passenger seat of a car'"
+          ],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty passenger seat of a car",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.331,
+              "intruder_area_frac": 0.0775,
+              "intended_bbox_frac": 0.5314,
+              "ratio": 0.623,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only empty passenger seat of a car filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "host_context",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 734,
+                "lap_var": 1451.0,
+                "edge": 13.68,
+                "std": 65.3,
+                "hard": 0.1326
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.331 area_frac=0.078 ratio=0.62 vs requested 'empty passenger seat of a car'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty passenger seat of a car",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.4918,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "host_context",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 653,
+                "lap_var": 1067.5,
+                "edge": 10.94,
+                "std": 60.0,
+                "hard": 0.0958
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 3,
+        "text": "Although the path waits empty for them now.",
+        "beat_text": "Although the path waits empty for them now.",
+        "emotion": "melancholic_quiet",
+        "arc_position": "act1",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "woman",
+        "subject_expression": "hesitant",
+        "setting": "empty park path at dusk",
+        "key_object": "park path",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "woman halted on an empty dusk park path",
+        "setting_archetype": "exterior-landscape",
+        "palette_key": "WARM",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, hesitant posture, shoulders covered, no visible face or skin in empty park path at dusk, dusk. park path is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: woman halted on an empty dusk park path. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "park path",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 3,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "park path",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 3,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 4,
+        "text": "A coat still waits unused there now.",
+        "beat_text": "A coat still waits unused there now.",
+        "emotion": "longing",
+        "arc_position": "act2",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "bedroom chair in lamplight",
+        "key_object": "waiting coat",
+        "time_of_day": "night",
+        "visual_anchor_hint": "a single coat left on a bedroom chair",
+        "setting_archetype": "interior-domestic",
+        "palette_key": "COLD",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. An illustrated close study of waiting coat alone, drawn to occupy most of the frame, not photographed. Background keeps the same grainy halftone print texture as the object, muted flat color with visible ink-dot grain, no gradient, no furniture, no room, no other objects, no distinct background shapes. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only waiting coat is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Night print: indigo and charcoal flats, small warm windows, no neon photography. The image must visually embody: a single coat left on a bedroom chair. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "waiting coat",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0846,
+          "intruder_area_frac": 0.022,
+          "intended_bbox_frac": 0.1019,
+          "ratio": 0.831,
+          "n_intruders": 1,
+          "n_hardware": 1,
+          "compact_as_intended": true,
+          "fix_instructions": "Draw only waiting coat filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 4,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 264,
+            "lap_var": 459.7,
+            "edge": 6.37,
+            "std": 45.6,
+            "hard": 0.0484
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 4,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.085 area_frac=0.022 ratio=0.83 vs requested 'waiting coat'"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "waiting coat",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.364,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 1,
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 248,
+                "lap_var": 877.4,
+                "edge": 10.51,
+                "std": 55.9,
+                "hard": 0.0956
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 4,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: bed and room dominate, requested waiting coat",
+                "garbled letters in bottom-left corner",
+                "readable number in bottom-right corner"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "waiting coat",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0846,
+              "intruder_area_frac": 0.022,
+              "intended_bbox_frac": 0.1019,
+              "ratio": 0.831,
+              "n_intruders": 1,
+              "n_hardware": 1,
+              "compact_as_intended": true,
+              "fix_instructions": "Draw only waiting coat filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 4,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 264,
+                "lap_var": 459.7,
+                "edge": 6.37,
+                "std": 45.6,
+                "hard": 0.0484
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 4,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.085 area_frac=0.022 ratio=0.83 vs requested 'waiting coat'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 5,
+        "text": "You pause in the empty lobby.",
+        "beat_text": "You pause in the empty lobby.",
+        "emotion": "doubt",
+        "arc_position": "act2",
+        "beat_function": "turn",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "woman",
+        "subject_expression": "small, waiting",
+        "setting": "theater lobby between acts",
+        "key_object": "empty lobby",
+        "time_of_day": "evening",
+        "visual_anchor_hint": "wide empty theater lobby, figure small at the far end",
+        "setting_archetype": "public-interior",
+        "palette_key": "COLD",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, small, waiting posture, shoulders covered, no visible face or skin in theater lobby between acts, evening. empty lobby is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Evening print: lamp-warm interiors as flat color, window as a dark plane. The image must visually embody: wide empty theater lobby, figure small at the far end. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "empty lobby",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 5,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 5,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "empty lobby",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 5,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 6,
+        "text": "Because they left the seat cold now.",
+        "beat_text": "Because they left the seat cold now.",
+        "emotion": "realization",
+        "arc_position": "act2",
+        "beat_function": "complication",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "coastline path above the tide",
+        "key_object": "distant horizon",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "empty distant horizon line alone, filling the frame",
+        "setting_archetype": "exterior-landscape",
+        "palette_key": "COLD",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. An illustrated close study of empty distant horizon line alone, drawn to occupy most of the frame, not photographed. Background keeps the same grainy halftone print texture as the object, muted flat color with visible ink-dot grain, no gradient, no furniture, no room, no other objects, no distinct background shapes. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only empty distant horizon line is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: empty distant horizon line alone, filling the frame. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "distant horizon",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.1237,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 6,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 153,
+            "lap_var": 113.5,
+            "edge": 2.94,
+            "std": 47.9,
+            "hard": 0.0144
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 6,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "SEMANTIC: object_focus requested, but a full-body figure is present and acts as a dominant subject."
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "distant horizon",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.1105,
+              "intruder_area_frac": 0.0425,
+              "intended_bbox_frac": 0.1105,
+              "ratio": 1.0,
+              "n_intruders": 2,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only distant horizon filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 253,
+                "lap_var": 149.7,
+                "edge": 3.51,
+                "std": 49.9,
+                "hard": 0.0209
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: pod-like structure dominates, requested distant horizon",
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.110 area_frac=0.043 ratio=1.00 vs requested 'distant horizon'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "distant horizon",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.1237,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 6,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 153,
+                "lap_var": 113.5,
+                "edge": 2.94,
+                "std": 47.9,
+                "hard": 0.0144
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "SEMANTIC: object_focus requested, but a full-body figure is present and acts as a dominant subject."
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 7,
+        "text": "You stand in the doorway.",
+        "beat_text": "You stand in the doorway.",
+        "emotion": "realization",
+        "arc_position": "act3",
+        "beat_function": "turn",
+        "shot_scale": "close",
+        "composition_type": "figure_centered",
+        "subject_type": "woman",
+        "subject_expression": "open, tired",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
+        "time_of_day": "evening",
+        "close_variant": "portrait_close",
+        "close_target": "portrait",
+        "close_character": "woman",
+        "visual_anchor_hint": "painterly portrait of the woman in a doorway",
+        "setting_archetype": "threshold",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "portrait_close",
+        "object_focus_step": 0,
+        "object_focus_framing": "portrait_close",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. Portrait close of the same recurring woman: long near-black or very dark brown slightly wavy hair, loose or half-up, often falling across part of the face in profile; slim, average height; dark or hazel-green expressive eyes and a defined brow; wardrobe in quiet neutrals and earth tones — sweater, midi dress, or long coat, no patterns. Partial face or body may be visible. Same painterly risograph illustration as the rest of the episode: ink line, flat printed color, paper grain, canvas tooth. Not photoreal skin, not a camera portrait, not glossy beauty lighting, not a rendered-eye close-up. Tight crop, not a wide establishing shot. hallway near an open door, evening. Tight portrait crop on face or upper body of the recurring character. Painterly print, not photoreal skin. open doorway is atmosphere only, not held in any hand. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere around the portrait: paper tooth, flat printed color, canvas texture. Same illustration technique as the episode. No photoreal skin, no camera portrait. Evening print: lamp-warm interiors as flat color, window as a dark plane. The image must visually embody: painterly portrait of the woman in a doorway. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "open doorway",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 7,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "portrait_close",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 7,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "portrait_close",
+            "passed": true,
+            "skipped": false,
+            "photoreal_skin": false,
+            "photoreal_eyes": false,
+            "painterly_match": true,
+            "note": "The illustration features a stylized aesthetic with distinct outlines, flat-printed colors, and a visible texture resembling paper grain, consistent with a risograph poster. The skin and eyes are rendered illustratively, not photorealistically."
+          },
+          "eye_close": {
+            "close_variant": "portrait_close",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "open doorway",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "portrait_close",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 7,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "portrait_close",
+                "passed": true,
+                "skipped": false,
+                "photoreal_skin": false,
+                "photoreal_eyes": false,
+                "painterly_match": true,
+                "note": "The illustration features a stylized aesthetic with distinct outlines, flat-printed colors, and a visible texture resembling paper grain, consistent with a risograph poster. The skin and eyes are rendered illustratively, not photorealistically."
+              },
+              "eye_close": {
+                "close_variant": "portrait_close",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 8,
+        "text": "Don't wait. Tell them at the seat.",
+        "beat_text": "Don't wait. Tell them at the seat.",
+        "emotion": "acceptance",
+        "arc_position": "act3",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "deciding",
+        "setting": "empty train platform at night",
+        "key_object": "empty platform",
+        "time_of_day": "night",
+        "visual_anchor_hint": "man alone on a night train platform",
+        "setting_archetype": "transit",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "man_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone man as a flat unlit clothed silhouette, deciding posture, no visible face or skin in empty train platform at night, night. empty platform is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Night print: indigo and charcoal flats, small warm windows, no neon photography. The image must visually embody: man alone on a night train platform. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_man_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "empty platform",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 8,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 8,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "empty platform",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 8,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 8,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 9,
+        "text": "You walk back to the seat anyway.",
+        "beat_text": "You walk back to the seat anyway.",
+        "emotion": "resolution_warmth",
+        "arc_position": "act3",
+        "beat_function": "close",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "wet sidewalk after rain",
+        "key_object": "wet sidewalk",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "wide wet dusk sidewalk, no figure",
+        "pose_hint": "body turned mid-step toward the door, hands empty, not seated",
+        "setting_archetype": "exterior-urban",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "macro_no_setting",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A bold hand-inked illustration of wet sidewalk filling the frame, drawn flat with visible ink outlines, not photographed. Printed halftone background, no named room, no furniture, no other objects. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only wet sidewalk is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: wide wet dusk sidewalk, no figure. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "wet sidewalk",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.1315,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 9,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 693,
+            "lap_var": 1119.9,
+            "edge": 14.15,
+            "std": 51.8,
+            "hard": 0.1255
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 9,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "wet sidewalk",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.1315,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 693,
+                "lap_var": 1119.9,
+                "edge": 14.15,
+                "std": 51.8,
+                "hard": 0.1255
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      }
+    ],
+    "episode_variety": {
+      "beat_count": 9,
+      "distinct_settings": 8,
+      "setting_stems": {
+        "street": 1,
+        "park": 2,
+        "bedroom": 1,
+        "theater lobby": 1,
+        "coastline path": 1,
+        "hallway": 1,
+        "platform": 1,
+        "wet sidewalk": 1
+      },
+      "setting_repeats": {
+        "park": 2
+      },
+      "distinct_compositions": 3,
+      "compositions": {
+        "man": 2,
+        "object_focus": 4,
+        "woman": 3
+      },
+      "person_shots": 5,
+      "variety_shots": 4,
+      "distinct_object_stems": 9,
+      "object_stems": {
+        "streetlamp": 1,
+        "seat": 1,
+        "path": 1,
+        "coat": 1,
+        "lobby": 1,
+        "horizon": 1,
+        "door": 1,
+        "platform": 1,
+        "sidewalk": 1
+      },
+      "object_repeats": {},
+      "object_over_cap": {},
+      "palette_sequence": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_expected": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_arc_ok": true,
+      "palette_mismatches": [],
+      "notes": [
+        "setting_repeats=parkx2"
+      ],
+      "summary": "settings=8/9 distinct; compositions={'man': 2, 'object_focus': 4, 'woman': 3}; objects=9 distinct; palette_arc_ok=true; notes=['setting_repeats=parkx2']",
+      "holds_episode": false,
+      "setting_archetypes": {
+        "exterior-urban": 2,
+        "transit": 2,
+        "exterior-landscape": 2,
+        "interior-domestic": 1,
+        "public-interior": 1,
+        "threshold": 1
+      },
+      "setting_archetype_beats": [
+        "exterior-urban",
+        "transit",
+        "exterior-landscape",
+        "interior-domestic",
+        "public-interior",
+        "exterior-landscape",
+        "threshold",
+        "transit",
+        "exterior-urban"
+      ],
+      "setting_archetype_overflow": {},
+      "composition_types": {
+        "figure_centered": 4,
+        "object_focus": 2,
+        "wide_environment": 3
+      },
+      "composition_beats": [
+        "figure_centered",
+        "object_focus",
+        "figure_centered",
+        "object_focus",
+        "wide_environment",
+        "wide_environment",
+        "figure_centered",
+        "figure_centered",
+        "wide_environment"
+      ],
+      "figure_centered": 4
+    }
+  }
+}
