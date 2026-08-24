@@ -2,11 +2,14 @@
 """
 ElevenLabs audio generation for ECONOMIC_REEL / Master Mei.
 
-  generate_voiceover()              — TTS narration (speed + expressive model).
+  generate_voiceover()              — TTS narration (speed lives in voice_settings).
   generate_ambient_track()          — Legacy SFX ambient tile.
   generate_impact_sfx()             — Cinematic braam at t=0.
   generate_music_v2_bed()           — Dual-chunk music_v2 composition plan.
   generate_master_mei_soundscape()  — Music bed + impact SFX pair.
+
+Speed is never a convert() / convert_with_timestamps() kwarg.
+See docs/elevenlabs_tts.md.
 """
 from __future__ import annotations
 
@@ -146,17 +149,34 @@ _TTS_CURLY_RE = re.compile(r"\{[^}]*\}")
 _TTS_CODE_FENCE_RE = re.compile(r"`{1,3}[^`]*`{1,3}")
 
 
-def strip_tts_markers(text: str) -> str:
+def strip_tts_markers(text: str, *, keep_ssml_breaks: bool = False) -> str:
     """Remove brackets, SSML, curly cues, and code fences from TTS input.
 
     Primary filter (mandatory): ``re.sub(r'\\[.*?\\]', '', text)`` so tags like
     ``[stoic]`` / ``[ACT 1]`` are never spoken aloud.
+    When *keep_ssml_breaks* is True, ``<break .../>`` tags are preserved for
+    ElevenLabs SSML parsing.
     """
     clean = text or ""
     # Mandatory bracket wipe (non-greedy, DOTALL for multi-line tags)
     clean = re.sub(r"\[.*?\]", "", clean, flags=re.DOTALL)
-    clean = re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", clean, flags=re.IGNORECASE)
+    held: list[str] = []
+    if keep_ssml_breaks:
+        def _hold_break(match: re.Match[str]) -> str:
+            held.append(match.group(0))
+            return f"<<<SSMLBREAK{len(held) - 1}>>>"
+
+        clean = re.sub(
+            r"<\s*break\s+[^>]*/?\s*>",
+            _hold_break,
+            clean,
+            flags=re.IGNORECASE,
+        )
+    else:
+        clean = re.sub(r"<\s*break\s+[^>]*/?\s*>", " ... ", clean, flags=re.IGNORECASE)
     clean = _TTS_ANGLE_RE.sub(" ", clean)
+    for i, tag in enumerate(held):
+        clean = clean.replace(f"<<<SSMLBREAK{i}>>>", tag)
     clean = _TTS_CURLY_RE.sub(" ", clean)
     clean = _TTS_CODE_FENCE_RE.sub(" ", clean)
     clean = re.sub(r"[ \t]{2,}", " ", clean)
@@ -189,13 +209,34 @@ def _resolve_voice_settings(
     return merged
 
 
+def _voice_settings_as_dict(vs: Any) -> dict[str, Any]:
+    """JSON-shaped dump of a VoiceSettings object (what the wire body should contain)."""
+    if vs is None:
+        return {}
+    if hasattr(vs, "model_dump"):
+        try:
+            dumped = vs.model_dump(exclude_none=True)
+            if isinstance(dumped, dict):
+                return dumped
+        except Exception:  # noqa: BLE001
+            pass
+    out: dict[str, Any] = {}
+    for key in ("stability", "similarity_boost", "style", "use_speaker_boost", "speed"):
+        if hasattr(vs, key):
+            val = getattr(vs, key)
+            if val is not None:
+                out[key] = val
+    return out
+
+
 def _build_voice_settings_obj(_VoiceSettings, vs: dict, speed: float):
     """
-    Build ElevenLabs VoiceSettings with speed inside voice_settings when supported.
+    Build ElevenLabs VoiceSettings with speed nested inside the object.
 
-    Official payload shape:
+    POST /v1/text-to-speech/{voice_id}/with-timestamps has NO top-level
+    ``speed`` field. Speed only exists on ``voice_settings``:
       {stability, similarity_boost, style, use_speaker_boost, speed}
-    Falls back without ``speed`` kwarg on older SDKs.
+    Range: 0.7–1.2 (default 1.0). Never pass ``speed=`` to convert().
     """
     common = dict(
         stability=vs["stability"],
@@ -205,9 +246,27 @@ def _build_voice_settings_obj(_VoiceSettings, vs: dict, speed: float):
     )
     _spd = float(vs.get("speed", speed) if vs.get("speed") is not None else speed)
     try:
-        return _VoiceSettings(**common, speed=_spd), _spd
+        obj = _VoiceSettings(**common, speed=_spd)
     except TypeError:
-        return _VoiceSettings(**common), _spd
+        logger.error(
+            "ElevenLabs VoiceSettings rejected speed=%.2f — SDK too old; "
+            "pacing will default to 1.0x. See docs/elevenlabs_tts.md.",
+            _spd,
+        )
+        print(
+            f"[ElevenLabs TTS] ERROR VoiceSettings has no speed field — "
+            f"speed={_spd:.2f} DROPPED. Update the elevenlabs SDK."
+        )
+        obj = _VoiceSettings(**common)
+        return obj, _spd
+    dumped = _voice_settings_as_dict(obj)
+    if dumped.get("speed") is None:
+        logger.error("VoiceSettings serialized without speed (wanted %.2f)", _spd)
+        print(
+            f"[ElevenLabs TTS] ERROR serialized voice_settings missing speed "
+            f"(wanted {_spd:.2f}): {dumped}"
+        )
+    return obj, _spd
 
 
 def apply_elevenlabs_voice_settings(
@@ -382,7 +441,10 @@ def generate_voiceover(
 
     client = ElevenLabs(api_key=api_key)
     vid = voice_id or _DEFAULT_VOICE_ID
-    text = strip_tts_markers(text)
+    _ssml = bool(enable_ssml) if enable_ssml is not None else (
+        "<break" in (text or "").lower()
+    )
+    text = strip_tts_markers(text, keep_ssml_breaks=_ssml)
     _vs = _resolve_voice_settings(voice_settings, expressive_mode=expressive_mode)
     # Prefer explicit speed arg, else voice_settings.speed, else engine default
     if speed is not None:
@@ -391,14 +453,18 @@ def generate_voiceover(
         _speed = float(_vs["speed"])
     else:
         _speed = _NARRATION_SPEED
-    _ssml = bool(enable_ssml) if enable_ssml is not None else False
     vs_obj, _speed = _build_voice_settings_obj(_VoiceSettings, _vs, _speed)
     _model = (model_id or _DEFAULT_TTS_MODEL).strip() or _DEFAULT_TTS_MODEL
 
+    vs_dump = _voice_settings_as_dict(vs_obj)
     logger.info(
-        "Generating voiceover | voice=%s | model=%s | chars=%d | speed=%.2f | "
-        "stability=%.2f | expressive=%s | ssml=%s",
-        vid, _model, len(text), _speed, _vs["stability"], expressive_mode, _ssml,
+        "Generating voiceover | voice=%s | model=%s | chars=%d | "
+        "voice_settings=%s | expressive=%s | ssml=%s",
+        vid, _model, len(text), vs_dump, expressive_mode, _ssml,
+    )
+    print(
+        f"[ElevenLabs TTS] convert voice={vid} model={_model} "
+        f"voice_settings={vs_dump} chars={len(text)}"
     )
     _tts_kwargs: dict = dict(
         voice_id=vid,
@@ -413,14 +479,15 @@ def generate_voiceover(
     if expressive_mode:
         _tts_kwargs["expressive_mode"] = True
     try:
-        audio_stream = client.text_to_speech.convert(**_tts_kwargs, speed=_speed)
+        # speed lives only on voice_settings — never as a client kwarg
+        audio_stream = client.text_to_speech.convert(**_tts_kwargs)
     except TypeError:
         logger.debug("ElevenLabs SDK param mismatch — retrying with reduced kwargs")
-        _tts_kwargs.pop("enable_ssml_parsing", None)
         _tts_kwargs.pop("expressive_mode", None)
         try:
-            audio_stream = client.text_to_speech.convert(**_tts_kwargs, speed=_speed)
+            audio_stream = client.text_to_speech.convert(**_tts_kwargs)
         except TypeError:
+            _tts_kwargs.pop("enable_ssml_parsing", None)
             audio_stream = client.text_to_speech.convert(**_tts_kwargs)
     except Exception as _tts_exc:
         # eleven_v3 unavailable → fall back to multilingual_v2 once
@@ -428,10 +495,7 @@ def generate_voiceover(
             logger.warning("eleven_v3 unavailable (%s) — falling back to multilingual_v2", _tts_exc)
             _tts_kwargs["model_id"] = "eleven_multilingual_v2"
             _tts_kwargs.pop("expressive_mode", None)
-            try:
-                audio_stream = client.text_to_speech.convert(**_tts_kwargs, speed=_speed)
-            except TypeError:
-                audio_stream = client.text_to_speech.convert(**_tts_kwargs)
+            audio_stream = client.text_to_speech.convert(**_tts_kwargs)
         else:
             raise
 
@@ -632,7 +696,10 @@ def generate_voiceover_with_timestamps(
 
     client = ElevenLabs(api_key=api_key)
     vid = voice_id or _DEFAULT_VOICE_ID
-    text = strip_tts_markers(text)
+    _ssml = bool(enable_ssml) if enable_ssml is not None else (
+        "<break" in (text or "").lower()
+    )
+    text = strip_tts_markers(text, keep_ssml_breaks=_ssml)
     _vs = _resolve_voice_settings(voice_settings, expressive_mode=expressive_mode)
     if speed is not None:
         _speed = float(speed)
@@ -640,20 +707,18 @@ def generate_voiceover_with_timestamps(
         _speed = float(_vs["speed"])
     else:
         _speed = _NARRATION_SPEED
-    _ssml = bool(enable_ssml) if enable_ssml is not None else False
     vs, _speed = _build_voice_settings_obj(_VoiceSettings, _vs, _speed)
     _model = (model_id or _DEFAULT_TTS_MODEL).strip() or _DEFAULT_TTS_MODEL
 
+    vs_dump = _voice_settings_as_dict(vs)
     logger.info(
         "Generating voiceover+timestamps | voice=%s | model=%s | chars=%d | "
-        "speed=%.2f | stability=%.2f | expressive=%s | ssml=%s",
-        vid, _model, len(text), _speed, _vs["stability"], expressive_mode, _ssml,
+        "voice_settings=%s | expressive=%s | ssml=%s",
+        vid, _model, len(text), vs_dump, expressive_mode, _ssml,
     )
     print(
         f"[ElevenLabs TTS] convert_with_timestamps voice={vid} model={_model} "
-        f"speed={_speed:.2f} stability={_vs.get('stability')} "
-        f"similarity={_vs.get('similarity_boost')} style={_vs.get('style')} "
-        f"chars={len(text)}"
+        f"voice_settings={vs_dump} chars={len(text)}"
     )
 
     word_timings: list[tuple[str, float, float]] = []
@@ -675,24 +740,16 @@ def generate_voiceover_with_timestamps(
             _ts_kwargs["enable_ssml_parsing"] = True
         if expressive_mode:
             _ts_kwargs["expressive_mode"] = True
+        # speed is NOT a convert_with_timestamps kwarg — only voice_settings.speed.
         try:
-            result = client.text_to_speech.convert_with_timestamps(
-                **_ts_kwargs, speed=_speed
-            )
+            result = client.text_to_speech.convert_with_timestamps(**_ts_kwargs)
         except TypeError:
-            logger.debug("convert_with_timestamps: speed/ssml unsupported — retrying reduced kwargs")
-            _ts_kwargs.pop("enable_ssml_parsing", None)
+            logger.debug("convert_with_timestamps: extra kwargs unsupported")
             _ts_kwargs.pop("expressive_mode", None)
             try:
-                result = client.text_to_speech.convert_with_timestamps(
-                    **_ts_kwargs, speed=_speed
-                )
+                result = client.text_to_speech.convert_with_timestamps(**_ts_kwargs)
             except TypeError:
-                print(
-                    f"[ElevenLabs TTS] WARN convert_with_timestamps dropped "
-                    f"speed={_speed:.2f} (SDK TypeError) — relying on "
-                    f"voice settings/edit API"
-                )
+                _ts_kwargs.pop("enable_ssml_parsing", None)
                 result = client.text_to_speech.convert_with_timestamps(**_ts_kwargs)
 
         # Decode audio — try the correct field name first, then legacy/fallback names
@@ -733,9 +790,12 @@ def generate_voiceover_with_timestamps(
             voice_id=vid, text=text, model_id=_fb_model,
             voice_settings=vs, output_format="mp3_44100_128",
         )
+        if _ssml:
+            _fb_kwargs["enable_ssml_parsing"] = True
         try:
-            audio_stream = client.text_to_speech.convert(**_fb_kwargs, speed=_speed)
+            audio_stream = client.text_to_speech.convert(**_fb_kwargs)
         except TypeError:
+            _fb_kwargs.pop("enable_ssml_parsing", None)
             audio_stream = client.text_to_speech.convert(**_fb_kwargs)
         audio_bytes = b"".join(chunk for chunk in audio_stream if chunk)
 

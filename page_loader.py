@@ -21,6 +21,9 @@ Supported pages
   down_dirty      Matrix escape, financial sovereignty, raw mindset, avatar OFF (default)
   ancient_knowledge  Ancient history, conspiracies, mysteries, photorealistic style, avatar OFF
   momma_circle    Parenting / PARENTAL_CONTENTS — reference-clip reels, warm lullaby audio, avatar OFF
+  principles_of_wealth_finance_economics
+                  Educational / Financial Curation — library ingest of the
+                  Principles of Wealth production drive (wealth_main.py)
 
 Usage
 -----
@@ -121,6 +124,7 @@ VALID_PAGES: tuple[str, ...] = (
     "down_dirty",
     "ancient_knowledge",
     "momma_circle",
+    "principles_of_wealth_finance_economics",
 )
 
 VALID_AVATAR_MODES: tuple[str, ...] = ("ON", "OFF")

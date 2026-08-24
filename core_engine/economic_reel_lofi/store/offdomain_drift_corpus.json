@@ -1,0 +1,112 @@
+[
+  {
+    "theme": "perseverance",
+    "pattern": "quiet_proof_inventory",
+    "source_domain": "trust",
+    "thesis": "Perseverance costs something before it stays.",
+    "anchor": {
+      "name": "untied shoes",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "captions": [
+      "Perseverance never shows up as one big speech",
+      "It's just these untied shoes, laced again anyway",
+      "So I stopped waiting for a burst of will",
+      "Because the cost comes first, every single morning",
+      "My hands tie the same knot, half asleep",
+      "Yet nothing dramatic happened on any given day",
+      "The doing became the only proof that counted",
+      "Although some mornings the laces felt impossible today",
+      "The shoes stayed tied longer than the doubt did"
+    ]
+  },
+  {
+    "theme": "belonging",
+    "pattern": "personification_sensory",
+    "source_domain": "grief",
+    "thesis": "Belonging costs something before it stays.",
+    "anchor": {
+      "name": "untouched drink",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "captions": [
+      "Belonging waits in the kitchen doorway, arms crossed.",
+      "It watches the drink I poured but haven't touched.",
+      "So it studies whether I'll walk further inside.",
+      "Although the room is loud, it makes me hesitate.",
+      "Because it needs proof before handing a seat.",
+      "Yet it lingers near my hand, patient, unclaimed.",
+      "The ice melts while I decide to move.",
+      "I finally cross the room and the doorway empties.",
+      "The drink is warm now, and finally, mine."
+    ]
+  },
+  {
+    "theme": "communication",
+    "pattern": "learning_to_hold_it",
+    "source_domain": "grief/healing",
+    "thesis": "Communication costs something before it stays.",
+    "anchor": {
+      "name": "empty passenger seat of a car",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "captions": [
+      "Nobody tells you the words don't just leave you",
+      "This seat stayed empty long after you stopped talking",
+      "At first every silence cost me my whole evening",
+      "I thought saying nothing meant nothing had to change",
+      "So I kept driving with the seat beside me",
+      "But the cost didn't vanish, it just moved seats",
+      "Now the quiet rides shotgun instead of blocking me",
+      "I speak first now, because waiting always cost more",
+      "The seat sits empty, but I keep it open"
+    ]
+  },
+  {
+    "theme": "vulnerability",
+    "pattern": "setting_the_weight_down",
+    "source_domain": "forgiveness",
+    "thesis": "Vulnerability costs something before it stays.",
+    "anchor": {
+      "name": "dropped dish towel",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "captions": [
+      "The towel slipped from my hands before I decided",
+      "I let it lie there instead of grabbing",
+      "Picking it up costs less than speaking next",
+      "Because saying the true thing means they can refuse",
+      "So I stood in the kitchen, hands empty, exposed",
+      "Yet nobody made me stay that open on purpose",
+      "Staying open isn't the same as staying unguarded forever",
+      "It meant choosing the risk after it cost me",
+      "I bent down, lifted the towel, and stayed anyway"
+    ]
+  },
+  {
+    "theme": "regret",
+    "pattern": "open_question",
+    "source_domain": "loneliness",
+    "thesis": "Regret costs something before it stays.",
+    "anchor": {
+      "name": "folded letter never sent",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "captions": [
+      "The letter's still folded, still on the desk tonight",
+      "You paid something the moment you sealed it shut",
+      "Not sending it felt like keeping a door closed",
+      "Sending it might have cost you the whole room",
+      "So the folded letter stayed cheaper than the truth",
+      "But cheap isn't the same as free, is it",
+      "Every night it sits there, the cost keeps compounding",
+      "You call that saving yourself, or delaying the bill",
+      "So which was that letter, mercy or unpaid debt"
+    ]
+  }
+]

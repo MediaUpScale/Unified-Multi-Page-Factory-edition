@@ -966,6 +966,303 @@ def compute_caption_scene_duration_s(
     return round(dur, 3), extended, meta
 
 
+def _silence_audio_clip(duration_s: float, fps: int = 44100):
+    from moviepy.audio.AudioClip import AudioClip as _AC  # type: ignore
+
+    dur = max(0.05, float(duration_s))
+    return _AC(lambda t: 0, duration=dur, fps=fps)
+
+
+# Match ffmpeg silencedetect noise=-30dB so line-boundary hush is not inherited.
+_VO_EDGE_TRIM_DB: float = -30.0
+_VO_EDGE_TRIM_SR: int = 44100
+
+
+def _pcm_peak_envelope(path: Path, sr: int = _VO_EDGE_TRIM_SR) -> tuple[np.ndarray, float]:
+    """Mono peak envelope + file duration. Prefers MoviePy; ffmpeg PCM fallback."""
+    path = Path(path)
+    try:
+        from moviepy import AudioFileClip  # type: ignore
+
+        clip = AudioFileClip(str(path))
+        try:
+            dur = float(clip.duration or 0.0)
+            arr = np.asarray(clip.to_soundarray(fps=sr), dtype=np.float32)
+        finally:
+            clip.close()
+        if arr.ndim > 1:
+            env = np.max(np.abs(arr), axis=1)
+        else:
+            env = np.abs(arr)
+        return env, dur
+    except Exception:
+        import subprocess
+
+        import imageio_ffmpeg
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        raw = subprocess.check_output(
+            [
+                exe,
+                "-v",
+                "error",
+                "-i",
+                str(path),
+                "-ac",
+                "1",
+                "-ar",
+                str(sr),
+                "-f",
+                "f32le",
+                "-",
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+        env = np.abs(np.frombuffer(raw, dtype=np.float32))
+        dur = float(len(env)) / float(sr) if sr else 0.0
+        return env, dur
+
+
+def _load_vo_samples(path: Path, sr: int = _VO_EDGE_TRIM_SR) -> tuple[np.ndarray, int]:
+    """Return float32 samples shaped (n, channels)."""
+    path = Path(path)
+    from moviepy import AudioFileClip  # type: ignore
+
+    clip = AudioFileClip(str(path))
+    try:
+        arr = np.asarray(clip.to_soundarray(fps=sr), dtype=np.float32)
+    finally:
+        clip.close()
+    if arr.ndim == 1:
+        arr = arr.reshape(-1, 1)
+    return arr, sr
+
+
+def normalize_vo_pcm(
+    path: Path | str,
+    *,
+    gap_s: float | None = None,
+    thresh_db: float = _VO_EDGE_TRIM_DB,
+    min_run_s: float = 0.15,
+    sr: int = _VO_EDGE_TRIM_SR,
+) -> tuple[np.ndarray, int, dict[str, Any]]:
+    """
+    Strip leading/trailing hush and collapse every internal hush run (>= min_run_s)
+    to exactly ``gap_s`` (default VO_INTERLINE_SILENCE_S). Concat then inserts
+    that same flat gap between lines.
+    """
+    path = Path(path)
+    target = float(
+        lofi_cfg.VO_INTERLINE_SILENCE_S if gap_s is None else gap_s
+    )
+    arr, sr = _load_vo_samples(path, sr=sr)
+    n = int(arr.shape[0])
+    if n < 8:
+        return arr, sr, {"duration_s": n / float(sr), "lead_s": 0.0, "map": []}
+    env = np.max(np.abs(arr), axis=1)
+    thresh = float(10.0 ** (float(thresh_db) / 20.0))
+    silent = env <= thresh
+    runs: list[tuple[int, int, bool]] = []
+    i = 0
+    while i < n:
+        flag = bool(silent[i])
+        j = i + 1
+        while j < n and bool(silent[j]) == flag:
+            j += 1
+        runs.append((i, j, flag))
+        i = j
+    min_run = max(1, int(round(min_run_s * sr)))
+    gap_n = max(1, int(round(target * sr)))
+    pieces: list[np.ndarray] = []
+    time_map: list[tuple[float, float]] = []
+    new_i = 0
+    n_runs = len(runs)
+    for idx, (a, b, is_sil) in enumerate(runs):
+        orig_a_s = a / float(sr)
+        if is_sil:
+            run_n = b - a
+            if idx == 0 or idx == n_runs - 1:
+                time_map.append((orig_a_s, new_i / float(sr)))
+                continue
+            if run_n < min_run:
+                pieces.append(arr[a:b])
+                time_map.append((orig_a_s, new_i / float(sr)))
+                new_i += run_n
+                continue
+            zeros = np.zeros((gap_n, arr.shape[1]), dtype=np.float32)
+            pieces.append(zeros)
+            time_map.append((orig_a_s, new_i / float(sr)))
+            new_i += gap_n
+        else:
+            pieces.append(arr[a:b])
+            time_map.append((orig_a_s, new_i / float(sr)))
+            new_i += b - a
+    if not pieces:
+        return arr, sr, {"duration_s": n / float(sr), "lead_s": 0.0, "map": []}
+    out = np.concatenate(pieces, axis=0)
+    lead_s = 0.0
+    if runs and runs[0][2]:
+        lead_s = (runs[0][1] - runs[0][0]) / float(sr)
+    meta = {
+        "duration_s": float(out.shape[0]) / float(sr),
+        "lead_s": round(lead_s, 4),
+        "file_duration_s": n / float(sr),
+        "map": time_map,
+        "internal_flat": sum(
+            1
+            for i, (a, b, sil) in enumerate(runs)
+            if sil and i not in {0, n_runs - 1} and (b - a) >= min_run
+        ),
+    }
+    return out, sr, meta
+
+
+def remap_word_timings(
+    timings: Sequence[tuple[str, float, float]] | None,
+    time_map: list[tuple[float, float]],
+    lead_s: float = 0.0,
+) -> list[tuple[str, float, float]] | None:
+    """Map original TTS word times onto normalized (edge-stripped) audio."""
+    if not timings:
+        return None if timings is None else []
+    if not time_map:
+        return shift_word_timings(timings, lead_s)
+
+    xs = np.array([p[0] for p in time_map], dtype=np.float64)
+    ys = np.array([p[1] for p in time_map], dtype=np.float64)
+
+    def _map(t: float) -> float:
+        tt = float(t)
+        if xs.size == 1:
+            return max(0.0, tt - float(lead_s or 0.0))
+        return float(np.interp(tt, xs, ys))
+
+    out: list[tuple[str, float, float]] = []
+    for w, s, e in timings:
+        out.append(
+            (
+                str(w),
+                round(max(0.0, _map(float(s))), 4),
+                round(max(0.0, _map(float(e))), 4),
+            )
+        )
+    return out
+
+
+def _audio_clip_from_samples(arr: np.ndarray, sr: int):
+    from moviepy.audio.AudioClip import AudioArrayClip  # type: ignore
+
+    if arr.ndim == 1:
+        arr = arr.reshape(-1, 1)
+    return AudioArrayClip(arr.astype(np.float32), fps=int(sr))
+
+
+def measure_vo_speech_span(
+    path: Path | str,
+    *,
+    thresh_db: float = _VO_EDGE_TRIM_DB,
+    sr: int = _VO_EDGE_TRIM_SR,
+) -> tuple[float, float, float]:
+    """
+    Return (speech_start_s, speech_end_s, file_duration_s).
+
+    Strips leading/trailing hush so concat can insert a flat inter-line gap
+    instead of inheriting whatever silence each TTS clip has at its edges.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return 0.0, 0.0, 0.0
+    env, file_dur = _pcm_peak_envelope(path, sr=sr)
+    file_dur = max(float(file_dur or 0.0), 0.0)
+    if env.size == 0 or file_dur <= 0.0:
+        return 0.0, file_dur, file_dur
+    thresh = float(10.0 ** (float(thresh_db) / 20.0))
+    above = np.flatnonzero(env > thresh)
+    if above.size == 0:
+        return 0.0, file_dur, file_dur
+    start = float(above[0]) / float(sr)
+    end = float(above[-1] + 1) / float(sr)
+    start = max(0.0, min(start, file_dur))
+    end = max(start, min(end, file_dur))
+    if end - start < 0.12:
+        return 0.0, file_dur, file_dur
+    return round(start, 4), round(end, 4), round(file_dur, 4)
+
+
+def measure_vo_speech_duration(path: Path | str) -> float:
+    """Spoken duration after edge-trim and internal hush flattened to 300ms."""
+    try:
+        _arr, sr, meta = normalize_vo_pcm(path)
+        dur = float(meta.get("duration_s") or 0.0)
+        if dur > 0.05:
+            return dur
+    except Exception:  # noqa: BLE001
+        pass
+    start, end, file_dur = measure_vo_speech_span(path)
+    spoken = end - start
+    if spoken <= 0.05:
+        return float(file_dur or 0.0)
+    return float(spoken)
+
+
+def shift_word_timings(
+    timings: Sequence[tuple[str, float, float]] | None,
+    lead_s: float,
+) -> list[tuple[str, float, float]] | None:
+    """Rebase ElevenLabs word times after leading hush is trimmed."""
+    if not timings:
+        return None if timings is None else []
+    lead = max(0.0, float(lead_s or 0.0))
+    if lead < 0.001:
+        return [(str(w), float(s), float(e)) for w, s, e in timings]
+    out: list[tuple[str, float, float]] = []
+    for w, s, e in timings:
+        out.append(
+            (
+                str(w),
+                round(max(0.0, float(s) - lead), 4),
+                round(max(0.0, float(e) - lead), 4),
+            )
+        )
+    return out
+
+
+def _duck_bgm_during_gaps(bac, windows: list[tuple[float, float]], *, gap_vol: float, full_vol: float):
+    """Scale an already-loaded BGM clip: full_vol everywhere, gap_vol in windows."""
+    if not windows or bac is None:
+        return bac
+    full = max(1e-6, float(full_vol))
+    gap = max(0.0, float(gap_vol))
+    factor = gap / full
+
+    def _env(t):
+        arr = np.atleast_1d(np.asarray(t, dtype=np.float64))
+        out = np.ones(arr.shape, dtype=np.float32)
+        for a, b in windows:
+            out[(arr >= float(a)) & (arr < float(b))] = factor
+        if np.isscalar(t) or (getattr(t, "ndim", 1) == 0):
+            return float(out.flat[0])
+        return out
+
+    def _xform(gf, t):
+        frame = np.asarray(gf(t), dtype=np.float32)
+        env = _env(t)
+        if frame.ndim == 1:
+            return frame * env
+        if np.ndim(env) == 0:
+            return frame * float(env)
+        return frame * env.reshape(-1, 1)
+
+    try:
+        return bac.transform(_xform)
+    except Exception:  # noqa: BLE001
+        try:
+            return bac.fl(_xform)
+        except Exception:  # noqa: BLE001
+            _LOG.warning("BGM gap duck failed — mixing unducked")
+            return bac
+
+
 def assemble_lofi_reel(
     scene_images: Sequence[Path],
     captions: Sequence[str],
@@ -1016,6 +1313,8 @@ def assemble_lofi_reel(
 
     n_scenes = len(scene_images)
     scene_durs: list[float] = []
+    vo_pcm: list[tuple[np.ndarray, int] | None] = []
+    caption_timings: list[Sequence[tuple[str, float, float]] | None] = []
     lock_beat = bool(getattr(lofi_cfg, "LOCK_FIXED_BEAT_DURATION", True))
     for i in range(n_scenes):
         preset = None
@@ -1027,17 +1326,40 @@ def assemble_lofi_reel(
         timings_i = None
         if word_timings_per_scene is not None and i < len(word_timings_per_scene):
             timings_i = word_timings_per_scene[i]
+        pcm: tuple[np.ndarray, int] | None = None
+        vo_dur = 0.0
+        lead_s = 0.0
+        if vp and Path(vp).is_file():
+            try:
+                arr, sr, meta = normalize_vo_pcm(Path(vp))
+                pcm = (arr, sr)
+                vo_dur = float(meta.get("duration_s") or 0.0)
+                lead_s = float(meta.get("lead_s") or 0.0)
+                timings_i = remap_word_timings(
+                    timings_i,
+                    list(meta.get("map") or []),
+                    lead_s=lead_s,
+                )
+                print(
+                    f"[LOFI assemble] scene {i + 1} VO normalized "
+                    f"{float(meta.get('file_duration_s') or 0):.3f}s -> "
+                    f"{vo_dur:.3f}s internal_flat={meta.get('internal_flat')}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("VO normalize failed for %s (%s)", vp, exc)
+                pcm = None
+                vo_dur = measure_vo_speech_duration(Path(vp))
+                timings_i = shift_word_timings(timings_i, 0.0)
+        vo_pcm.append(pcm)
+        caption_timings.append(timings_i)
         if lock_beat:
-            vo_dur = 0.0
-            if vp and Path(vp).is_file():
-                try:
-                    from avatar_engine.audio_engine import _audio_file_duration_s
-
-                    vo_dur = float(_audio_file_duration_s(Path(vp)))
-                except Exception:  # noqa: BLE001
-                    vo_dur = 0.0
+            trail = (
+                0.0
+                if i >= n_scenes - 1
+                else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
+            )
             dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
-                vo_dur, base_s=scene_duration_s,
+                vo_dur, base_s=scene_duration_s, trailing_silence_s=trail
             )
             if preset is not None:
                 dur_i = max(float(preset), dur_i)
@@ -1046,6 +1368,8 @@ def assemble_lofi_reel(
                 "last_word_end": 0.0,
                 "needed_s": dur_i,
                 "duration_s": dur_i,
+                "speech_start": round(lead_s, 3),
+                "speech_end": round(lead_s + vo_dur, 3),
             }
         else:
             dur_i, extended_i, dur_meta = compute_caption_scene_duration_s(
@@ -1175,8 +1499,8 @@ def assemble_lofi_reel(
         f"highlight_clamp={getattr(lofi_cfg, 'ENABLE_HIGHLIGHT_CLAMP', True)} | "
         f"caption={style} size_frac={getattr(lofi_cfg, 'CAPTION_LINE_HEIGHT_FRAC', 0)} "
         f"size_px={int(lofi_cfg.REEL_HEIGHT * float(getattr(lofi_cfg, 'CAPTION_LINE_HEIGHT_FRAC', 0.034)))} "
-        f"word_fade=True | voice={getattr(lofi_cfg, 'LOFI_VOICE_ID', '')} "
-        f"speed={getattr(lofi_cfg, 'LOFI_VOICE_SPEED', None)}"
+        f"word_fade=True | voice={lofi_cfg.tts_voice_id()} "
+        f"speed={lofi_cfg.tts_speed()}"
     )
 
     for idx, (img_path, caption) in enumerate(zip(scene_images, captions)):
@@ -1193,8 +1517,8 @@ def assemble_lofi_reel(
         hi = tuple(mood.get("highlight") or lofi_cfg.DUOTONE_HIGHLIGHT)
         base = prep_base_frame(Path(img_path), shadow=sh, highlight=hi)
         timings: Sequence[tuple[str, float, float]] | None = None
-        if word_timings_per_scene is not None and idx < len(word_timings_per_scene):
-            timings = word_timings_per_scene[idx]
+        if idx < len(caption_timings):
+            timings = caption_timings[idx]
         h, w = base.shape[:2]
         this_dur = float(scene_durs[idx])
         t_offset = float(sum(scene_durs[:idx]))
@@ -1286,62 +1610,69 @@ def assemble_lofi_reel(
     audio_clips_to_close: list[Any] = []
     mixed = None
     vo_parts: list[Any] = []
+    gap_windows: list[tuple[float, float]] = []
+    gap_s = float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
     if voice_paths:
+        present = [
+            i for i, vp in enumerate(voice_paths) if vp is not None and Path(vp).is_file()
+        ]
+        last_present = present[-1] if present else -1
+        t_cursor = 0.0
         for idx, vp in enumerate(voice_paths):
-            slot = float(scene_durs[idx] if idx < len(scene_durs) else scene_duration_s)
             if vp is None or not Path(vp).is_file():
-                # Silence for this scene slot
+                slot = float(
+                    scene_durs[idx] if idx < len(scene_durs) else scene_duration_s
+                )
                 try:
-                    from moviepy.audio.AudioClip import AudioClip as _AC  # type: ignore
-
-                    silence = _AC(
-                        lambda t: 0,
-                        duration=float(slot),
-                        fps=44100,
-                    )
+                    silence = _silence_audio_clip(slot)
                     vo_parts.append(silence)
                     audio_clips_to_close.append(silence)
+                    t_cursor += float(silence.duration or 0)
                 except Exception:  # noqa: BLE001
                     continue
                 continue
-            vac = AudioFileClip(str(vp))
+            pcm = vo_pcm[idx] if idx < len(vo_pcm) else None
+            if pcm is None:
+                vac = AudioFileClip(str(vp))
+            else:
+                vac = _audio_clip_from_samples(pcm[0], pcm[1])
             audio_clips_to_close.append(vac)
             vdur = float(vac.duration or 0.0)
+            slot = float(scene_durs[idx] if idx < len(scene_durs) else scene_duration_s)
             never_trim = bool(getattr(lofi_cfg, "NEVER_TRIM_VOICEOVER", True))
             if vdur > slot + 0.05:
-                if never_trim:
-                    print(
-                        f"[LOFI assemble] scene {idx + 1} VO {vdur:.2f}s > "
-                        f"slot {slot:.2f}s — keeping full VO (never trim)"
-                    )
-                else:
-                    print(
-                        f"[LOFI assemble] WARN scene {idx + 1} VO {vdur:.2f}s > "
-                        f"slot {slot:.2f}s — keeping full VO (no trim)"
-                    )
-            elif vdur < slot - 0.05:
-                try:
-                    from moviepy import concatenate_audioclips as _cat  # type: ignore
-                    from moviepy.audio.AudioClip import AudioClip as _AC  # type: ignore
-
-                    pad = _AC(
-                        lambda t: 0,
-                        duration=float(slot - vdur),
-                        fps=44100,
-                    )
-                    vac = _cat([vac, pad])
-                    audio_clips_to_close.append(pad)
-                except Exception:  # noqa: BLE001
-                    pass
+                print(
+                    f"[LOFI assemble] scene {idx + 1} VO {vdur:.2f}s > "
+                    f"slot {slot:.2f}s — keeping full speech "
+                    f"({'never trim' if never_trim else 'no trim'})"
+                )
             vac = vac.with_volume_scaled(
                 float(getattr(lofi_cfg, "LOFI_VOICE_VOLUME", 1.0))
             )
             vo_parts.append(vac)
+            t_cursor += vdur
+            if idx < last_present and gap_s >= 0.15:
+                silence = _silence_audio_clip(gap_s)
+                vo_parts.append(silence)
+                audio_clips_to_close.append(silence)
+                gap_windows.append(
+                    (
+                        round(t_cursor, 3),
+                        round(t_cursor + gap_s, 3),
+                    )
+                )
+                t_cursor += gap_s
+                print(
+                    f"[LOFI assemble] interline silence {gap_s:.3f}s "
+                    f"after scene {idx + 1} duck={gap_windows[-1]}"
+                )
 
     bgm = bgm_path or pick_library_bgm(
         engine_root, seed=hash(str(output_mp4)) % (2**31)
     )
     bac = None
+    bgm_full_vol = float(getattr(lofi_cfg, "BGM_VOLUME", 0.38))
+    bgm_gap_vol = float(getattr(lofi_cfg, "BGM_GAP_VOLUME", 0.02))
     if bgm is None or not Path(bgm).is_file():
         msg = (
             f"LOFI BGM required but no library .mp3 found under "
@@ -1369,10 +1700,18 @@ def assemble_lofi_reel(
             bac = bac.subclipped(0, total_dur)
         else:
             bac = bac.subclipped(0, total_dur)
-        bac = bac.with_volume_scaled(float(getattr(lofi_cfg, "BGM_VOLUME", 0.38)))
+        bac = bac.with_volume_scaled(bgm_full_vol)
+        if gap_windows:
+            bac = _duck_bgm_during_gaps(
+                bac, gap_windows, gap_vol=bgm_gap_vol, full_vol=bgm_full_vol
+            )
+            print(
+                f"[LOFI assemble] BGM ducked {len(gap_windows)} interline gaps "
+                f"to vol={bgm_gap_vol} (≈{20.0 * math.log10(max(bgm_gap_vol, 1e-6)):.1f} dB)"
+            )
         print(
             f"[LOFI assemble] BGM={Path(bgm).name} "
-            f"vol={getattr(lofi_cfg, 'BGM_VOLUME', 0.38)} trimmed={total_dur:.1f}s"
+            f"vol={bgm_full_vol} trimmed={total_dur:.1f}s"
         )
 
     audio_attached = False
@@ -1388,6 +1727,17 @@ def assemble_lofi_reel(
                 )
                 mix_dur = vo_len
             audio_clips_to_close.append(vo_full)
+            vo_sidecar = Path(output_mp4).with_name(
+                f"{Path(output_mp4).stem}_vo_concat.mp3"
+            )
+            try:
+                vo_full.write_audiofile(str(vo_sidecar), logger=None)
+                print(f"[LOFI assemble] raw VO concat -> {vo_sidecar}")
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("raw VO concat sidecar failed: %s", exc)
+            if isinstance(audit_out, dict):
+                audit_out["vo_concat_path"] = str(vo_sidecar)
+                audit_out["interline_gaps"] = gap_windows
             layers = [vo_full]
             if bac is not None:
                 layers.append(bac)
@@ -1399,7 +1749,10 @@ def assemble_lofi_reel(
                     pass
             final = final.with_audio(mixed)
             audio_attached = True
-            print(f"[LOFI assemble] VO scenes={len(vo_parts)} + BGM mixed")
+            print(
+                f"[LOFI assemble] VO files={len(present) if voice_paths else 0} "
+                f"+ {len(gap_windows)} interline silences + BGM mixed"
+            )
         elif bac is not None:
             final = final.with_audio(bac)
             audio_attached = True

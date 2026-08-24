@@ -15,7 +15,7 @@
     "final_state": "pulled out, still unused",
     "setting": "kitchen table at night"
   },
-  "monologue": "Don't wait for the knock. Two cups sit on the table. You leave the second place set. Keep the empty chair. You fold the unused napkin. You cross the dark stairwell. You pause by the spare-room lamp. The chair faces outward now. You leave the porch light on.",
+  "monologue": "Don't wait for the knock. Yet two cups sit by the empty chair. You leave the second place set. Stay. The knock is not coming. Though no one knocks, you fold the napkin. You cross the dark stairwell. You pause by the spare-room lamp. Since the chair faces out, you remain. You leave the porch light on.",
   "lines": [
     {
       "scene": 1,
@@ -39,8 +39,8 @@
     },
     {
       "scene": 2,
-      "text": "Two cups sit on the table.",
-      "beat_text": "Two cups sit on the table.",
+      "text": "Yet two cups sit by the empty chair.",
+      "beat_text": "Yet two cups sit by the empty chair.",
       "emotion": "quiet_sorrowful",
       "arc_position": "act1",
       "beat_function": "complication",
@@ -71,8 +71,8 @@
     },
     {
       "scene": 4,
-      "text": "Keep the empty chair.",
-      "beat_text": "Keep the empty chair.",
+      "text": "Stay. The knock is not coming.",
+      "beat_text": "Stay. The knock is not coming.",
       "emotion": "realization",
       "arc_position": "act2",
       "beat_function": "insight",
@@ -87,8 +87,8 @@
     },
     {
       "scene": 5,
-      "text": "You fold the unused napkin.",
-      "beat_text": "You fold the unused napkin.",
+      "text": "Though no one knocks, you fold the napkin.",
+      "beat_text": "Though no one knocks, you fold the napkin.",
       "emotion": "doubt",
       "arc_position": "act2",
       "beat_function": "turn",
@@ -138,8 +138,8 @@
     },
     {
       "scene": 8,
-      "text": "The chair faces outward now.",
-      "beat_text": "The chair faces outward now.",
+      "text": "Since the chair faces out, you remain.",
+      "beat_text": "Since the chair faces out, you remain.",
       "emotion": "acceptance",
       "arc_position": "act3",
       "beat_function": "complication",

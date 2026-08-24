@@ -1,0 +1,323 @@
+[
+  {
+    "theme": "distance",
+    "pattern": "quiet_proof_inventory",
+    "writer": "claude",
+    "thesis": "Distance costs something before it stays.",
+    "anchor": {
+      "name": "wide empty sofa cushion on a sofa",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "source_monologue": "Distance never announces itself with one dramatic exit It starts small, a cushion left empty between us Then it's your coat staying on the far armrest Then it's my body angling toward the window instead Each small shift costs nothing, so we ignore it But the cushion never shrinks back on its own It just sits there, keeping the space we allowed So the gap wasn't sudden, it was paid daily By the time we noticed, the whole cushion was distance",
+    "captions": [
+      "Distance never announces itself with one dramatic exit",
+      "It starts small, a cushion left empty between us",
+      "Then it's your coat staying on the far armrest",
+      "Then it's my body angling toward the window instead",
+      "Each small shift costs nothing, so we ignore it",
+      "But the cushion never shrinks back on its own",
+      "It just sits there, keeping the space we allowed",
+      "So the gap wasn't sudden, it was paid daily",
+      "By the time we noticed, the whole cushion was distance"
+    ],
+    "line_stats": [
+      {
+        "scene": 1,
+        "words": 8,
+        "chars": 54,
+        "text": "Distance never announces itself with one dramatic exit"
+      },
+      {
+        "scene": 2,
+        "words": 9,
+        "chars": 48,
+        "text": "It starts small, a cushion left empty between us"
+      },
+      {
+        "scene": 3,
+        "words": 9,
+        "chars": 46,
+        "text": "Then it's your coat staying on the far armrest"
+      },
+      {
+        "scene": 4,
+        "words": 9,
+        "chars": 51,
+        "text": "Then it's my body angling toward the window instead"
+      },
+      {
+        "scene": 5,
+        "words": 9,
+        "chars": 47,
+        "text": "Each small shift costs nothing, so we ignore it"
+      },
+      {
+        "scene": 6,
+        "words": 9,
+        "chars": 45,
+        "text": "But the cushion never shrinks back on its own"
+      },
+      {
+        "scene": 7,
+        "words": 9,
+        "chars": 48,
+        "text": "It just sits there, keeping the space we allowed"
+      },
+      {
+        "scene": 8,
+        "words": 9,
+        "chars": 43,
+        "text": "So the gap wasn't sudden, it was paid daily"
+      },
+      {
+        "scene": 9,
+        "words": 10,
+        "chars": 54,
+        "text": "By the time we noticed, the whole cushion was distance"
+      }
+    ],
+    "holds": [
+      "object-churn: 4 supporting spoken props ['coat', 'cushion', 'far', 'time'] (max 2 besides anchor 'sofa')"
+    ],
+    "argument_holds": [
+      "object-churn: 4 supporting spoken props ['coat', 'cushion', 'far', 'time'] (max 2 besides anchor 'sofa')"
+    ],
+    "visual_holds": [],
+    "holds_episode": true,
+    "word_count": 81,
+    "estimated_spoken_s": 27.0,
+    "target_duration_s": 27.0,
+    "over_cap_lines": [
+      {
+        "scene": 9,
+        "words": 10,
+        "chars": 54,
+        "text": "By the time we noticed, the whole cushion was distance"
+      }
+    ],
+    "theme_drift": {
+      "hits": [],
+      "fails": []
+    },
+    "clause_flags": [],
+    "corpus_echo_monologue": [],
+    "corpus_echo_captions": []
+  },
+  {
+    "theme": "self_respect",
+    "pattern": "learning_to_hold_it",
+    "writer": "claude",
+    "thesis": "Self respect costs something before it stays.",
+    "anchor": {
+      "name": "closed door from inside",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "source_monologue": "Nobody tells you self respect isn't free at first I shut this door and my hand kept shaking It cost more than I had, that first time Later I closed it and my breath stayed even So the door didn't get lighter, I got steadier I used to think refusing them would feel like winning It felt like nothing, just a door, closed Now it stays shut without me guarding it I live here, door closed, and still breathe easy",
+    "captions": [
+      "Nobody tells you self respect isn't free at first",
+      "I shut this door and my hand kept shaking",
+      "It cost more than I had, that first time",
+      "Later I closed it and my breath stayed even",
+      "So the door didn't get lighter, I got steadier",
+      "I used to think refusing them would feel like winning",
+      "It felt like nothing, just a door, closed",
+      "Now it stays shut without me guarding it",
+      "I live here, door closed, and still breathe easy"
+    ],
+    "line_stats": [
+      {
+        "scene": 1,
+        "words": 9,
+        "chars": 49,
+        "text": "Nobody tells you self respect isn't free at first"
+      },
+      {
+        "scene": 2,
+        "words": 9,
+        "chars": 41,
+        "text": "I shut this door and my hand kept shaking"
+      },
+      {
+        "scene": 3,
+        "words": 9,
+        "chars": 40,
+        "text": "It cost more than I had, that first time"
+      },
+      {
+        "scene": 4,
+        "words": 9,
+        "chars": 43,
+        "text": "Later I closed it and my breath stayed even"
+      },
+      {
+        "scene": 5,
+        "words": 9,
+        "chars": 46,
+        "text": "So the door didn't get lighter, I got steadier"
+      },
+      {
+        "scene": 6,
+        "words": 10,
+        "chars": 53,
+        "text": "I used to think refusing them would feel like winning"
+      },
+      {
+        "scene": 7,
+        "words": 8,
+        "chars": 41,
+        "text": "It felt like nothing, just a door, closed"
+      },
+      {
+        "scene": 8,
+        "words": 8,
+        "chars": 40,
+        "text": "Now it stays shut without me guarding it"
+      },
+      {
+        "scene": 9,
+        "words": 9,
+        "chars": 48,
+        "text": "I live here, door closed, and still breathe easy"
+      }
+    ],
+    "holds": [
+      "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+      "episode_variety hold: settings=8/9 distinct; compositions={'woman': 4, 'silhouette': 3, 'object_focus': 2}; objects=8 distinct; palette_arc_ok=true; notes=['variety_shots=5 above target 4', 'setting_repeats=parkx2', 'object_over_cap=chairx2']"
+    ],
+    "argument_holds": [
+      "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)"
+    ],
+    "visual_holds": [
+      "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+      "episode_variety hold: settings=8/9 distinct; compositions={'woman': 4, 'silhouette': 3, 'object_focus': 2}; objects=8 distinct; palette_arc_ok=true; notes=['variety_shots=5 above target 4', 'setting_repeats=parkx2', 'object_over_cap=chairx2']"
+    ],
+    "holds_episode": true,
+    "word_count": 80,
+    "estimated_spoken_s": 26.67,
+    "target_duration_s": 27.0,
+    "over_cap_lines": [
+      {
+        "scene": 6,
+        "words": 10,
+        "chars": 53,
+        "text": "I used to think refusing them would feel like winning"
+      }
+    ],
+    "theme_drift": {
+      "hits": [],
+      "fails": []
+    },
+    "clause_flags": [],
+    "corpus_echo_monologue": [],
+    "corpus_echo_captions": []
+  },
+  {
+    "theme": "attachment",
+    "pattern": "the_light_you_grow_yourself",
+    "writer": "claude",
+    "thesis": "Attachment costs something before it stays.",
+    "anchor": {
+      "name": "empty sidewalk",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "source_monologue": "I used to watch the sidewalk for someone arriving. That waiting cost me hours I never got back. The sidewalk stayed empty more nights than not. So I stopped paying attention with my whole chest. I still looked, but I no longer bled for it. That's a smaller price for the same window view. Attachment held anyway, quieter, cheaper, still mine. The sidewalk is still empty, and I'm still here. It cost less this time, and it stayed longer.",
+    "captions": [
+      "I used to watch the sidewalk for someone arriving.",
+      "That waiting cost me hours I never got back.",
+      "The sidewalk stayed empty more nights than not.",
+      "So I stopped paying attention with my whole chest.",
+      "I still looked, but I no longer bled for it.",
+      "That's a smaller price for the same window view.",
+      "Attachment held anyway, quieter, cheaper, still mine.",
+      "The sidewalk is still empty, and I'm still here.",
+      "It cost less this time, and it stayed longer."
+    ],
+    "line_stats": [
+      {
+        "scene": 1,
+        "words": 9,
+        "chars": 50,
+        "text": "I used to watch the sidewalk for someone arriving."
+      },
+      {
+        "scene": 2,
+        "words": 9,
+        "chars": 44,
+        "text": "That waiting cost me hours I never got back."
+      },
+      {
+        "scene": 3,
+        "words": 8,
+        "chars": 47,
+        "text": "The sidewalk stayed empty more nights than not."
+      },
+      {
+        "scene": 4,
+        "words": 9,
+        "chars": 50,
+        "text": "So I stopped paying attention with my whole chest."
+      },
+      {
+        "scene": 5,
+        "words": 10,
+        "chars": 44,
+        "text": "I still looked, but I no longer bled for it."
+      },
+      {
+        "scene": 6,
+        "words": 9,
+        "chars": 48,
+        "text": "That's a smaller price for the same window view."
+      },
+      {
+        "scene": 7,
+        "words": 7,
+        "chars": 53,
+        "text": "Attachment held anyway, quieter, cheaper, still mine."
+      },
+      {
+        "scene": 8,
+        "words": 9,
+        "chars": 48,
+        "text": "The sidewalk is still empty, and I'm still here."
+      },
+      {
+        "scene": 9,
+        "words": 9,
+        "chars": 45,
+        "text": "It cost less this time, and it stayed longer."
+      }
+    ],
+    "holds": [
+      "still-align scene 7 object_focus 'unmade empty bed' is not in caption 'Attachment held anyway, quieter, cheaper, still mine.'",
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption \"The sidewalk is still empty, and I'm still here.\""
+    ],
+    "argument_holds": [],
+    "visual_holds": [
+      "still-align scene 7 object_focus 'unmade empty bed' is not in caption 'Attachment held anyway, quieter, cheaper, still mine.'",
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption \"The sidewalk is still empty, and I'm still here.\""
+    ],
+    "holds_episode": true,
+    "word_count": 79,
+    "estimated_spoken_s": 26.33,
+    "target_duration_s": 27.0,
+    "over_cap_lines": [
+      {
+        "scene": 5,
+        "words": 10,
+        "chars": 44,
+        "text": "I still looked, but I no longer bled for it."
+      }
+    ],
+    "theme_drift": {
+      "hits": [],
+      "fails": []
+    },
+    "clause_flags": [],
+    "corpus_echo_monologue": [],
+    "corpus_echo_captions": []
+  }
+]

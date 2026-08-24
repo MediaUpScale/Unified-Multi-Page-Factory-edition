@@ -15,7 +15,7 @@
     "final_state": "set down on the bench",
     "setting": "park path, open bench"
   },
-  "monologue": "Don't make them earn it first. You set the heavy bag down. You place the river stone. Put the weight down. You open the old letter. You walk the dusk river wall. You unclench in the doorway. The bag sits empty now. You walk away empty-handed.",
+  "monologue": "Don't make them earn it first. Because they will never earn it from you. You place the river stone. Set the bag down since they never earn it. You leave the letter open. You walk the dusk river wall. You unclench in the doorway. Yet the bag you set down sits empty. You walk away empty-handed.",
   "lines": [
     {
       "scene": 1,
@@ -39,8 +39,8 @@
     },
     {
       "scene": 2,
-      "text": "You set the heavy bag down.",
-      "beat_text": "You set the heavy bag down.",
+      "text": "Because they will never earn it from you.",
+      "beat_text": "Because they will never earn it from you.",
       "emotion": "quiet_sorrowful",
       "arc_position": "act1",
       "beat_function": "complication",
@@ -71,8 +71,8 @@
     },
     {
       "scene": 4,
-      "text": "Put the weight down.",
-      "beat_text": "Put the weight down.",
+      "text": "Set the bag down since they never earn it.",
+      "beat_text": "Set the bag down since they never earn it.",
       "emotion": "realization",
       "arc_position": "act2",
       "beat_function": "insight",
@@ -87,8 +87,8 @@
     },
     {
       "scene": 5,
-      "text": "You open the old letter.",
-      "beat_text": "You open the old letter.",
+      "text": "You leave the letter open.",
+      "beat_text": "You leave the letter open.",
       "emotion": "doubt",
       "arc_position": "act2",
       "beat_function": "turn",
@@ -138,8 +138,8 @@
     },
     {
       "scene": 8,
-      "text": "The bag sits empty now.",
-      "beat_text": "The bag sits empty now.",
+      "text": "Yet the bag you set down sits empty.",
+      "beat_text": "Yet the bag you set down sits empty.",
       "emotion": "acceptance",
       "arc_position": "act3",
       "beat_function": "complication",

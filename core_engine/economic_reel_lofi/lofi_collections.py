@@ -152,17 +152,28 @@ RHETORIC_APHORISM_PATTERNS = frozenset(
 _RHETORIC_LIB_CACHE: dict[str, Any] | None = None
 
 
+def reset_structure_library_cache() -> None:
+    global _RHETORIC_LIB_CACHE
+    _RHETORIC_LIB_CACHE = None
+
+
 def load_structure_library() -> dict[str, Any]:
-    """Read data/structure_library.json (shapes only; examples are never spoken)."""
+    """Prefer v2 continuous-prose library; fall back to v1 caption examples."""
     global _RHETORIC_LIB_CACHE
     if _RHETORIC_LIB_CACHE is not None:
         return _RHETORIC_LIB_CACHE
-    path = lofi_cfg.DATA_DIR / "structure_library.json"
+    v2 = lofi_cfg.DATA_DIR / "structure_library_v2.json"
+    v1 = lofi_cfg.DATA_DIR / "structure_library.json"
+    path = v2 if v2.is_file() else v1
     raw = _read_json(path, {})
     if not isinstance(raw, dict):
         raw = {}
     patterns = [p for p in (raw.get("patterns") or []) if isinstance(p, dict) and p.get("name")]
-    _RHETORIC_LIB_CACHE = {"version": raw.get("version") or 1, "patterns": patterns}
+    _RHETORIC_LIB_CACHE = {
+        "version": raw.get("version") or 1,
+        "patterns": patterns,
+        "source": str(path.name),
+    }
     return _RHETORIC_LIB_CACHE
 
 
@@ -203,28 +214,40 @@ def pick_rhetoric_pattern(
     """
     lib = load_structure_library()
     by_name = {str(p.get("name") or ""): dict(p) for p in (lib.get("patterns") or [])}
+    high_names = [
+        n for n, p in by_name.items()
+        if str(p.get("tool_strength") or "").lower() == "high"
+    ] or [n for n in RHETORIC_HIGH if n in by_name]
+    med_names = [
+        n for n, p in by_name.items()
+        if str(p.get("tool_strength") or "").lower() == "medium"
+    ] or [n for n in RHETORIC_MEDIUM if n in by_name]
+    low_names = [
+        n for n, p in by_name.items()
+        if str(p.get("tool_strength") or "").lower() == "low"
+    ] or [n for n in RHETORIC_LOW if n in by_name]
     forced = str(force or os.getenv("LOFI_FORCE_RHETORIC_PATTERN") or "").strip()
     overlay_req = str(
         force_hook_overlay or os.getenv("LOFI_FORCE_HOOK_OVERLAY") or ""
     ).strip()
     recent = recent_rhetoric_patterns(module, RHETORIC_HISTORY_N)
     last = recent[-1] if recent else ""
-    low_in_window = sum(1 for p in recent[-6:] if p in RHETORIC_LOW)
+    low_in_window = sum(1 for p in recent[-6:] if p in set(low_names))
 
     chosen: dict[str, Any] | None = None
     if forced and forced in by_name:
         chosen = dict(by_name[forced])
     else:
-        high = [n for n in RHETORIC_HIGH if n in by_name and n != last]
-        med = [n for n in RHETORIC_MEDIUM if n in by_name and n != last]
+        high = [n for n in high_names if n != last]
+        med = [n for n in med_names if n != last]
         low = (
-            [n for n in RHETORIC_LOW if n in by_name and n != last]
+            [n for n in low_names if n != last]
             if low_in_window < 1
             else []
         )
         if not high and not med and not low:
-            high = [n for n in RHETORIC_HIGH if n in by_name]
-            med = [n for n in RHETORIC_MEDIUM if n in by_name]
+            high = list(high_names)
+            med = list(med_names)
         roll = random.random()
         if roll < 0.70 and high:
             pool = high
@@ -715,6 +738,27 @@ def recent_setting_archetypes(
         if isinstance(beats, list) and beats:
             out.append(sorted({str(x).strip() for x in beats if str(x).strip()}))
     return out
+
+
+def recent_dominant_lighting(module: str, n: int = 5) -> list[str]:
+    """Dominant lighting condition IDs from the last N history + performance rows."""
+    out: list[str] = []
+    for row in _recent_history_rows(module, max(n, 8)):
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        lid = str((meta or {}).get("dominant_lighting") or "").strip()
+        if lid:
+            out.append(lid)
+    events = _read_json(_store_path("lofi_performance_events"), [])
+    if isinstance(events, list):
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            if str(ev.get("module") or "") != module:
+                continue
+            lid = str(ev.get("dominant_lighting") or "").strip()
+            if lid:
+                out.append(lid)
+    return out[-max(1, int(n)) :]
 
 
 def recent_used_anchors(module: str, n: int = _PHRASE_HISTORY_N) -> set[str]:
@@ -1437,6 +1481,8 @@ def record_video_performance(
     close_target: str | None = None,
     eye_close_context: str | None = None,
     close_character: str | None = None,
+    dominant_lighting: str | None = None,
+    lighting_beats: list[str] | None = None,
 ) -> None:
     """
     Map a published video back onto theme+subtheme+anchor_object.
@@ -1479,6 +1525,8 @@ def record_video_performance(
             "close_target": close_target,
             "eye_close_context": eye_close_context,
             "close_character": close_character,
+            "dominant_lighting": dominant_lighting,
+            "lighting_beats": list(lighting_beats or []),
             "retrieved_details": [
                 str(d.get("detail") or d) if isinstance(d, dict) else str(d)
                 for d in (retrieved_details or [])
@@ -1660,62 +1708,66 @@ def recent_close_characters(module: str, n: int = 12) -> list[str]:
 
 def pick_optional_close(theme: str, module: str) -> dict[str, str] | None:
     """
-    Rotation preference, not a quota. ~1 in 3 episodes skip a close.
+    Rotate silhouette vs portrait_close. eye_close is retired.
 
-    Silhouette-only medium scenes are independent of this choice.
+    Quota: at least 3 of the last 5 episodes must use portrait_close on
+    the turn/insight beat. Skip is allowed only after that quota is met.
     """
-    recent = recent_close_variants(module, 8)
+    forced = str(os.getenv("LOFI_FORCE_CLOSE_VARIANT") or "").strip().lower()
+    recent_raw = recent_close_variants(module, 8)
+    recent = [
+        "silhouette" if v == "eye_close" else v
+        for v in recent_raw
+        if v
+    ]
+    last5 = recent[-5:]
+    n_portrait = last5.count("portrait_close")
     last = recent[-1] if recent else ""
-    seed = f"{theme}|{module}|{','.join(recent[-3:])}"
-    roll = sum(ord(c) for c in seed) % 3
-    # After silhouette, next owes portrait. After portrait, next owes
-    # silhouette (or eye). Do not skip that rotation.
-    if last and roll == 0 and last not in {"silhouette", "portrait_close"}:
-        print(f"[LOFI close] skip-optional last={last or 'none'} recent={recent[-4:]}")
-        return None
     chars = recent_close_characters(module, 8)
     last_char = chars[-1] if chars else ""
     next_char = "man" if last_char == "woman" else "woman"
-    if last == "eye_close":
-        variant = "portrait_close" if roll == 1 else "silhouette"
-    elif last == "portrait_close":
-        variant = "silhouette" if roll == 1 else (
-            "eye_close" if should_use_eye_close(theme, module) else "silhouette"
+    if forced in {"portrait_close", "silhouette", "none", "skip"}:
+        if forced in {"none", "skip"}:
+            print(f"[LOFI close] force-skip last={last or 'none'}")
+            return None
+        print(
+            f"[LOFI close] force variant={forced} character={next_char} "
+            f"last={last or 'none'} quota={n_portrait}/5"
         )
-    elif last == "silhouette":
+        return {"variant": forced, "character": next_char}
+    if n_portrait < 3:
         variant = "portrait_close"
-        next_char = "woman"
-    else:
+        print(
+            f"[LOFI close] quota portrait_close ({n_portrait}/5 last) "
+            f"character={next_char} last={last or 'none'}"
+        )
+        return {"variant": variant, "character": next_char}
+    seed = f"{theme}|{module}|{','.join(recent[-3:])}"
+    roll = sum(ord(c) for c in seed) % 3
+    if last == "portrait_close":
+        if roll == 0:
+            print(f"[LOFI close] skip-optional last={last} recent={recent[-4:]}")
+            return None
         variant = "silhouette"
-    if variant == "eye_close" and not should_use_eye_close(theme, module):
+    elif last == "silhouette":
+        if roll == 0:
+            print(f"[LOFI close] skip-optional last={last} recent={recent[-4:]}")
+            return None
+        variant = "portrait_close"
+        next_char = "woman" if next_char != "woman" else next_char
+    else:
         variant = "portrait_close"
     print(
         f"[LOFI close] pick variant={variant} character={next_char} "
-        f"last={last or 'none'}"
+        f"last={last or 'none'} quota={n_portrait}/5"
     )
     return {"variant": variant, "character": next_char}
 
 
 def should_use_eye_close(theme: str, module: str) -> bool:
-    """
-    Occasional exception: ~1 in 3 fitting themes (grief/longing/release).
-
-    Never consecutive eye_close. Silhouette stays the default.
-    """
-    if not theme_fits_eye_close(theme):
-        return False
-    rows = [
-        r
-        for r in _close_history_rows(module, 12)
-        if theme_fits_eye_close(str(r.get("theme") or ""))
-    ]
-    last_fit = [str(r.get("close_variant") or "") for r in rows]
-    if last_fit and last_fit[-1] == "eye_close":
-        return False
-    if last_fit[-3:].count("eye_close") >= 1:
-        return False
-    print(f"[LOFI close] eye_close eligible theme={theme!r} recent_fit={last_fit[-4:]}")
-    return True
+    """Retired. Always False — eye_close is no longer assigned."""
+    del theme, module
+    return False
 
 
 def stamp_close_variant_on_script(script: dict[str, Any], lines: list[dict[str, Any]]) -> None:
@@ -1733,3 +1785,21 @@ def stamp_close_variant_on_script(script: dict[str, Any], lines: list[dict[str, 
     script["close_target"] = str(close_row.get("close_target") or "")
     script["eye_close_context"] = str(close_row.get("eye_close_context") or "")
     script["close_character"] = str(close_row.get("close_character") or "")
+
+
+def stamp_lighting_on_script(script: dict[str, Any], lines: list[dict[str, Any]]) -> None:
+    beats = [
+        str(r.get("lighting_condition") or "")
+        for r in lines
+        if isinstance(r, dict)
+    ]
+    counts: dict[str, int] = {}
+    for b in beats:
+        if b:
+            counts[b] = counts.get(b, 0) + 1
+    dominant = ""
+    if counts:
+        dominant = max(counts, key=counts.get)
+    script["dominant_lighting"] = dominant
+    script["lighting_beats"] = beats
+    script["lighting_counts"] = counts

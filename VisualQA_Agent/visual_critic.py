@@ -37,6 +37,7 @@ _CLEAN_MODEL_FLAW_RE = re.compile(
 )
 
 DEFORMED_HAND_FLAW = "deformed or anatomically incorrect hand"
+COVERAGE_FLAW = "COVERAGE: incomplete garment / exposed skin on a human figure"
 _DEFORMED_HAND_RE = re.compile(
     r"("
     r"too many fingers|too few fingers|extra fingers?|six fingers|seven fingers|"
@@ -94,6 +95,13 @@ class CriticVerdict(BaseModel):
             "True if a visible hand has wrong finger count, fused/merged into "
             "torso/face/object, twisted/duplicated fingers, or impossible "
             "proportion relative to the body."
+        ),
+    )
+    incomplete_garment_coverage: bool = Field(
+        default=False,
+        description=(
+            "True if a human figure's back, shoulders, chest, or torso is "
+            "incompletely clothed / exposing skin that should be covered."
         ),
     )
 
@@ -184,6 +192,15 @@ def _lofi_torso_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
     ]
 
 
+_INCOMPLETE_GARMENT_RE = re.compile(
+    r"("
+    r"bare back|exposed (?:back|shoulders?|chest|cleavage|skin)|"
+    r"off[- ]shoulder|incomplete (?:garment|dress|coverage)|"
+    r"unclothed|undressed|nude|naked|missing (?:fabric|dress|clothes)|"
+    r"shoulders? (?:bare|exposed|uncovered)|back (?:bare|exposed)"
+    r")",
+    re.IGNORECASE,
+)
 _NEGATED_HAND = re.compile(
     r"\b(?:no|without|zero|not any|neither|avoid|omit)\s+"
     r"(?:visible\s+)?"
@@ -224,13 +241,17 @@ def _semantic_fidelity_block(
     if str(close_variant or "").strip().lower() == "portrait_close":
         return """
 5) SEMANTIC FIDELITY TO REQUEST (HARD FAIL if pixels mismatch) — portrait_close:
-   Crop may show a face or upper body of one recurring adult (woman or man).
+   Crop MUST be a medium close-up portrait: head and shoulders in frame,
+   full face visible — eyes, nose, mouth, and some hair or shoulder.
+   FAIL if this is an extreme macro on eyes/brow only (the retired eye_close).
+   Prefix "FRAME:".
    FAIL if the image is a photograph or photoreal skin/eyes. Prefix "STYLE:".
    FAIL if no person is present. Technique must stay painterly/print.
 
 If this check fails, set passed=false even when style otherwise looks fine.
-fix_instructions MUST say: painterly risograph portrait, ink and flat color,
-no photoreal skin.
+fix_instructions MUST say: medium close-up portrait, head and shoulders in
+frame, full face visible, painterly illustration — not an extreme macro crop
+on eyes alone.
 """.strip()
     if str(close_variant or "").strip().lower() == "eye_close":
         return """
@@ -349,6 +370,24 @@ def _build_lofi_critic_instruction(
     semantic = _semantic_fidelity_block(
         requested_subject, requested_object, close_variant=close_variant
     )
+    st_cov = (requested_subject or "").strip().lower().replace(" ", "_")
+    cv_cov = str(close_variant or "").strip().lower()
+    if cv_cov == "eye_close" or st_cov == "object_focus":
+        coverage = ""
+    elif st_cov in {"woman", "man", "couple", "silhouette"} or cv_cov == "portrait_close":
+        coverage = """
+6) GARMENT COVERAGE (HARD FAIL on any human figure, including silhouettes
+   and back-facing shots — not optional):
+   Every visible human body must be fully covered by dress/sweater/coat fabric.
+   Back, shoulders, chest, and torso clothed. Face and hands may show skin.
+   FAIL if: bare back, exposed shoulders, cleavage, nape-to-waist skin,
+   incomplete garment, off-shoulder, or any nude/undressed read.
+   If this fails: set incomplete_garment_coverage=true, passed=false, and
+   add the exact flaw string "COVERAGE: incomplete garment / exposed skin on a human figure".
+   Inspect TORSO CROPS as well as the full frame.
+""".strip()
+    else:
+        coverage = ""
     prof = str(style_profile or "").strip().lower()
     painterly = prof == "lofi_painterly_v1"
     riso_retro = prof in {
@@ -363,11 +402,12 @@ def _build_lofi_critic_instruction(
     if str(close_variant or "").strip().lower() == "portrait_close":
         style_eval = (
             "1) Vintage risograph-painting print is ON STYLE. This beat is a "
-            "portrait_close: a painterly face or upper-body crop of the "
-            "recurring character MAY be visible. FAIL if photoreal skin, "
-            "glossy camera eyes, or beauty-lighting photography. "
-            "Technique must match the rest of the episode: ink, flat printed "
-            "color, paper grain."
+            "portrait_close: a painterly medium close-up, head and shoulders "
+            "in frame, full face visible (eyes, nose, mouth, some hair/"
+            "shoulder). FAIL if it is an extreme macro on eyes/brow only. "
+            "FAIL if photoreal skin, glossy camera eyes, or beauty-lighting "
+            "photography. Technique must match the rest of the episode: ink, "
+            "flat printed color, paper grain."
         )
     elif str(close_variant or "").strip().lower() == "eye_close":
         style_eval = (
@@ -449,6 +489,7 @@ EVALUATE:
 3) Text artifacts — no embedded/garbled letters, logos, or UI burned into the image.
 4) Framing — vertical/portrait-friendly composition suitable for 9:16 reels; subject readable.
 {semantic}
+{coverage}
 
 Do NOT apply Master Mei dystopian / body-horror criteria.
 Do NOT require fitness-model hard caps.
@@ -458,9 +499,9 @@ Palettes are assigned per act and are not a critic hard-fail.
 SCORING GUIDE:
 - 9.0–10.0: clean LOFI illustration, on-style, request-faithful, no text artifacts, no orphan limbs
 - {quality_threshold}–8.9: minor issues, still approvable, request type and object match
-- Below {quality_threshold}: FAIL (photoreal drift, bad anatomy, orphan limb, text artifacts, wrong framing, semantic mismatch, OR wrong dominant object)
+- Below {quality_threshold}: FAIL (photoreal drift, bad anatomy, orphan limb, text artifacts, wrong framing, semantic mismatch, incomplete garment coverage, OR wrong dominant object)
 
-Set passed=true ONLY if score >= {quality_threshold} AND no hard flaws above AND semantic fidelity AND limb integrity pass.
+Set passed=true ONLY if score >= {quality_threshold} AND no hard flaws above AND semantic fidelity AND limb integrity AND garment coverage pass.
 
 Return JSON fields exactly:
   score (float 0–10),
@@ -472,6 +513,8 @@ Return JSON fields exactly:
   ungrounded_hand_present (boolean — true if a hand has no wrist/forearm; center grips count),
   deformed_hand_present (boolean — true if finger count is wrong, a hand merges
     into torso/face/object, or fingers are twisted/duplicated / mis-scaled).
+  incomplete_garment_coverage (boolean — true if a human figure's back,
+    shoulders, chest, or torso is incompletely clothed / exposing skin).
 """.strip()
 
 
@@ -731,9 +774,11 @@ def evaluate_image(
                 for name, part in _lofi_torso_crop_parts(Path(generated_image)):
                     contents.append(
                         f"TORSO CROP of IMAGE 1 — {name}. Inspect hands vs chest/"
-                        "torso. A finger, palm, or wrist merging into the body "
+                        "torso AND garment coverage (back, shoulders, chest clothed). "
+                        "A finger, palm, or wrist merging into the body "
                         "is a HARD FAIL (deformed or anatomically incorrect hand), "
-                        "even if the face looks fine."
+                        "even if the face looks fine. Incomplete clothing / exposed "
+                        "back or shoulders is also a HARD FAIL."
                     )
                     contents.append(part)
         except Exception as exc:  # noqa: BLE001
@@ -883,6 +928,33 @@ def evaluate_image(
             if verdict.score >= threshold:
                 verdict.score = round(min(float(verdict.score), threshold - 0.5), 2)
 
+        coverage_hit = bool(
+            getattr(verdict, "incomplete_garment_coverage", False)
+        ) or bool(_INCOMPLETE_GARMENT_RE.search(blob))
+        st_req = (requested_subject or "").strip().lower().replace(" ", "_")
+        cv_req = str(close_variant or "").strip().lower()
+        human_req = st_req in {"woman", "man", "couple", "silhouette"} or cv_req == "portrait_close"
+        if human_req and cv_req != "eye_close" and coverage_hit:
+            verdict.incomplete_garment_coverage = True
+            verdict.passed = False
+            if not any(
+                COVERAGE_FLAW.lower() in str(f).lower()
+                or "incomplete garment" in str(f).lower()
+                for f in (verdict.flaws or [])
+            ):
+                verdict.flaws.append(COVERAGE_FLAW)
+            if not str(verdict.fix_instructions or "").strip() or "covered" not in str(
+                verdict.fix_instructions or ""
+            ).lower():
+                extra = (
+                    "fully covered by dress fabric, back and shoulders clothed, "
+                    "chest and torso clothed; no bare back, no exposed skin"
+                )
+                prev = str(verdict.fix_instructions or "").strip()
+                verdict.fix_instructions = f"{prev} {extra}".strip() if prev else extra
+            if verdict.score >= threshold:
+                verdict.score = round(min(float(verdict.score), threshold - 0.5), 2)
+
     # Terminal: exact raw critique score
     table = Table(title="Gemini Vision Critic — Raw Verdict", show_header=True)
     table.add_column("Field", style="cyan")
@@ -903,6 +975,10 @@ def evaluate_image(
         table.add_row(
             "deformed_hand_present",
             str(bool(getattr(verdict, "deformed_hand_present", False))),
+        )
+        table.add_row(
+            "incomplete_garment_coverage",
+            str(bool(getattr(verdict, "incomplete_garment_coverage", False))),
         )
         table.add_row(
             "corner_scan",

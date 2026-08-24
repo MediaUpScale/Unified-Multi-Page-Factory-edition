@@ -1,0 +1,1387 @@
+{
+  "manual_accept_scenes": [],
+  "work_dir": "outputs/wonder_feed/assets/lofi_run_20260823_044007_01",
+  "scene_images": [
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_01.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_02.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_03.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_04.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/_regen_scene_05",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_06.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_07.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_08.png",
+    "outputs/wonder_feed/assets/lofi_run_20260823_044007_01/scene_09.png"
+  ],
+  "script": {
+    "hook_type": "bold_claim",
+    "theme": "loss",
+    "module": "relationship",
+    "subtheme": "what_the_leaving_took",
+    "arc_template": "thematic_arc",
+    "structure_id": "nested_belief",
+    "thesis": "What left still occupies the room until you leave the gap named.",
+    "close_variant": "silhouette",
+    "close_character": "man",
+    "close_target": "object",
+    "anchor_object": {
+      "name": "empty hanger",
+      "initial_state": "still in the closet gap",
+      "final_state": "alone on the rod",
+      "setting": "closet with the light on"
+    },
+    "monologue": "Don't name the gap later. You open the half-packed box. You touch the empty hanger. Leave the space named. You set the unused key down. You walk the empty path. You stop in the kitchen dark. The hanger hangs alone now. You face the empty tide path.",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "Don't name the gap later.",
+        "beat_text": "Don't name the gap later.",
+        "emotion": "opening_hook",
+        "arc_position": "act1",
+        "beat_function": "hook",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "stopped, charged",
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "lone man halted under a glowing streetlamp",
+        "episode_theme": "loss",
+        "episode_module": "relationship",
+        "episode_anchor_stem": "hanger",
+        "episode_anchor_name": "empty hanger",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "streetlamp",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 1,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 1,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": false,
+            "has_character": true,
+            "high_contrast": true,
+            "empty_still_life": false,
+            "striking": true,
+            "note": "The image features a man standing, looking out at a vibrant sunset with strong backlighting and a glowing street lamp, creating high contrast. It is visually striking and meets all positive criteria."
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "streetlamp",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 1,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 1,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": false,
+                "has_character": true,
+                "high_contrast": true,
+                "empty_still_life": false,
+                "striking": true,
+                "note": "The image features a man standing, looking out at a vibrant sunset with strong backlighting and a glowing street lamp, creating high contrast. It is visually striking and meets all positive criteria."
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 2,
+        "text": "You open the half-packed box.",
+        "beat_text": "You open the half-packed box.",
+        "emotion": "quiet_sorrowful",
+        "arc_position": "act1",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "still",
+        "setting": "living room floor at dusk",
+        "key_object": "half-packed box",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "half-packed box open on an apartment floor",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "half-packed box",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.8376,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 2,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 533,
+            "lap_var": 769.3,
+            "edge": 10.32,
+            "std": 53.3,
+            "hard": 0.1079
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 2,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "half-packed box",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.8376,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 533,
+                "lap_var": 769.3,
+                "edge": 10.32,
+                "std": 53.3,
+                "hard": 0.1079
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 3,
+        "text": "You touch the empty hanger.",
+        "beat_text": "You touch the empty hanger.",
+        "emotion": "melancholic_quiet",
+        "arc_position": "act1",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "woman",
+        "subject_expression": "reaching",
+        "setting": "hallway closet doorway",
+        "key_object": "empty hanger",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "woman at a closet doorway and empty hanger",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "empty hanger",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 3,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "empty hanger",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 3,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 4,
+        "text": "Leave the space named.",
+        "beat_text": "Leave the space named.",
+        "emotion": "realization",
+        "arc_position": "act2",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "still, heavy",
+        "setting": "empty train platform at night",
+        "key_object": "empty platform",
+        "time_of_day": "night",
+        "visual_anchor_hint": "man alone on a night train platform",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "empty platform",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 4,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 4,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "empty platform",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 4,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 5,
+        "text": "You set the unused key down.",
+        "beat_text": "You set the unused key down.",
+        "emotion": "doubt",
+        "arc_position": "act2",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "still",
+        "setting": "empty train platform at night",
+        "key_object": "bare metal key",
+        "time_of_day": "night",
+        "visual_anchor_hint": "a single bare metal key on empty ground, no paper, no text",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "abandoned ticket",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.3278,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 5,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 269,
+            "lap_var": 1254.1,
+            "edge": 13.13,
+            "std": 59.8,
+            "hard": 0.1022
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 5,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "garbled typography on the ticket"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "abandoned ticket",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.2163,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 5,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 311,
+                "lap_var": 1691.2,
+                "edge": 11.84,
+                "std": 52.0,
+                "hard": 0.0947
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "garbled typography on the ticket"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "abandoned ticket",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.3278,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 5,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 269,
+                "lap_var": 1254.1,
+                "edge": 13.13,
+                "std": 59.8,
+                "hard": 0.1022
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "garbled typography on the ticket"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 6,
+        "text": "You walk the empty path.",
+        "beat_text": "You walk the empty path.",
+        "emotion": "longing",
+        "arc_position": "act2",
+        "beat_function": "complication",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "empty park path at dusk",
+        "key_object": "park path",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "empty park path at dusk, no figure",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "park path",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.2432,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 6,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 402,
+            "lap_var": 1153.1,
+            "edge": 13.56,
+            "std": 71.4,
+            "hard": 0.1412
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 6,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "park path",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.2432,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 402,
+                "lap_var": 1153.1,
+                "edge": 13.56,
+                "std": 71.4,
+                "hard": 0.1412
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 7,
+        "text": "You stop in the kitchen dark.",
+        "beat_text": "You stop in the kitchen dark.",
+        "emotion": "realization",
+        "arc_position": "act3",
+        "beat_function": "turn",
+        "shot_scale": "close",
+        "composition_type": "figure_centered",
+        "subject_type": "man",
+        "subject_expression": "still, tired",
+        "setting": "kitchen at dawn",
+        "key_object": "empty mug",
+        "time_of_day": "dawn",
+        "close_variant": "silhouette",
+        "close_target": "object",
+        "close_character": "man",
+        "visual_anchor_hint": "silhouette of the man in a dawn kitchen",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "empty mug",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 7,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 7,
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "empty mug",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 7,
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 8,
+        "text": "The hanger hangs alone now.",
+        "beat_text": "The hanger hangs alone now.",
+        "emotion": "acceptance",
+        "arc_position": "act3",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "composition_type": "object_focus",
+        "subject_type": "object_focus",
+        "subject_expression": "open",
+        "setting": "hallway closet doorway",
+        "key_object": "empty hanger",
+        "time_of_day": "night",
+        "visual_anchor_hint": "empty hanger alone on the rod",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "empty hanger",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.2056,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 8,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 332,
+            "lap_var": 545.5,
+            "edge": 6.71,
+            "std": 33.1,
+            "hard": 0.053
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 8,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty hanger",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.2056,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 8,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 332,
+                "lap_var": 545.5,
+                "edge": 6.71,
+                "std": 33.1,
+                "hard": 0.053
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 8,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 9,
+        "text": "You face the empty tide path.",
+        "beat_text": "You face the empty tide path.",
+        "emotion": "resolution_warmth",
+        "arc_position": "act3",
+        "beat_function": "close",
+        "shot_scale": "wide",
+        "composition_type": "wide_environment",
+        "subject_type": "object_focus",
+        "subject_expression": "waiting",
+        "setting": "coastline path above the tide",
+        "key_object": "distant horizon",
+        "time_of_day": "dusk",
+        "visual_anchor_hint": "wide empty coastline path, no figure",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "distant horizon",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.1231,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 9,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 304,
+            "lap_var": 243.8,
+            "edge": 5.73,
+            "std": 37.5,
+            "hard": 0.0409
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 9,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "distant horizon",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.1231,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 304,
+                "lap_var": 243.8,
+                "edge": 5.73,
+                "std": 37.5,
+                "hard": 0.0409
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      }
+    ]
+  }
+}

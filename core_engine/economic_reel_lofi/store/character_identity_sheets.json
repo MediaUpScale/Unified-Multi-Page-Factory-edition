@@ -1,0 +1,21 @@
+{
+  "version": "v1",
+  "woman": {
+    "id": "wf_recurring_woman_v1",
+    "label": "WOMAN",
+    "hair": "long near-black or very dark brown hair, slightly wavy, usually loose or half-up, often falling across part of the face at profile angles",
+    "build": "slim build, average height",
+    "eyes": "dark or hazel-green expressive eyes, defined brow — the same eyes used on the grief eye_close still",
+    "wardrobe": "recurring neutral and earth-tone clothes: sweaters, midi dresses, long coats; no patterns",
+    "prompt_block": "the same recurring woman: long near-black or very dark brown slightly wavy hair, loose or half-up, often falling across part of the face in profile; slim, average height; dark or hazel-green expressive eyes and a defined brow; wardrobe in quiet neutrals and earth tones — sweater, midi dress, or long coat, no patterns"
+  },
+  "man": {
+    "id": "wf_recurring_man_v1",
+    "label": "MAN",
+    "hair": "short-to-medium dark hair, slightly disheveled, unstyled",
+    "build": "taller, broad-shouldered, slightly hunched posture from fatigue or emotional weight",
+    "face": "light two-to-three-day stubble when the face is visible; more closed, introspective expression than the woman",
+    "wardrobe": "recurring dark and cool neutrals: simple shirts, dark coats; no patterns",
+    "prompt_block": "the same recurring man: short-to-medium dark hair, slightly disheveled and unstyled; taller, broad-shouldered, slightly hunched; light two-to-three-day stubble when the face is visible; closed introspective expression; wardrobe in dark cool neutrals — a simple shirt or dark coat, no patterns"
+  }
+}

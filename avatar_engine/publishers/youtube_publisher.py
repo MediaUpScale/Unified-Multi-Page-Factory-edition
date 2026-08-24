@@ -108,6 +108,8 @@ _PAGE_DEFAULT_PLAYLISTS: dict[str, str] = {
     "master_mei": _MASTER_MEI_PLAYLIST_TITLE,
     "wonder_feed": "",
     "anna_protocol": "",
+    # Three ACT playlists are created by wealth_main.py — do not auto-dump here.
+    "principles_of_wealth_finance_economics": "",
 }
 
 _PAGE_PLAYLIST_DESCRIPTIONS: dict[str, str] = {
@@ -119,6 +121,7 @@ _PAGE_PLAYLIST_DESCRIPTIONS: dict[str, str] = {
 _PAGE_EXPECTED_CHANNEL_HINTS: dict[str, str] = {
     "master_mei": "Master Mei",
     "ancient_knowledge": "Ancient Knowledge",
+    "principles_of_wealth_finance_economics": "Principles of Wealth",
 }
 
 # Legacy Master Mei playlist titles — never assign new uploads here.
@@ -678,31 +681,92 @@ def get_or_create_playlist(
     return found_id
 
 
-def add_video_to_playlist(youtube, video_id: str, playlist_id: str) -> None:
-    """Insert *video_id* into *playlist_id* via ``playlistItems().insert()``."""
+def add_video_to_playlist(
+    youtube,
+    video_id: str,
+    playlist_id: str,
+    position: Optional[int] = None,
+) -> None:
+    """Insert *video_id* into *playlist_id* via ``playlistItems().insert()``.
+
+    When *position* is set (0-based), the item is placed at that index so
+    chronological learning-journey order is preserved instead of newest-first.
+    If the video is already in the playlist, its position is updated.
+    """
     from googleapiclient.errors import HttpError  # type: ignore[import]
 
+    existing_item_id: Optional[str] = None
     try:
+        page_token: Optional[str] = None
+        while True:
+            params: dict = dict(
+                part="snippet",
+                playlistId=playlist_id,
+                maxResults=50,
+            )
+            if page_token:
+                params["pageToken"] = page_token
+            resp = youtube.playlistItems().list(**params).execute()
+            for item in resp.get("items", []):
+                rid = (item.get("snippet") or {}).get("resourceId") or {}
+                if rid.get("videoId") == video_id:
+                    existing_item_id = item.get("id")
+                    break
+            if existing_item_id:
+                break
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning(
+            "Could not list playlist %s before insert (%s) — inserting anyway.",
+            playlist_id,
+            exc,
+        )
+
+    snippet: dict = {
+        "playlistId": playlist_id,
+        "resourceId": {
+            "kind": "youtube#video",
+            "videoId": video_id,
+        },
+    }
+    if position is not None:
+        snippet["position"] = max(0, int(position))
+
+    try:
+        if existing_item_id and position is not None:
+            youtube.playlistItems().update(
+                part="snippet",
+                body={"id": existing_item_id, "snippet": snippet},
+            ).execute()
+            _LOG.info(
+                "Playlist position updated | video_id=%s playlist_id=%s pos=%s",
+                video_id,
+                playlist_id,
+                position,
+            )
+            return
+        if existing_item_id:
+            _LOG.info(
+                "Playlist already contains video | video_id=%s playlist_id=%s",
+                video_id,
+                playlist_id,
+            )
+            return
         youtube.playlistItems().insert(
             part="snippet",
-            body={
-                "snippet": {
-                    "playlistId": playlist_id,
-                    "resourceId": {
-                        "kind": "youtube#video",
-                        "videoId": video_id,
-                    },
-                }
-            },
+            body={"snippet": snippet},
         ).execute()
         _LOG.info(
-            "Playlist assignment OK | video_id=%s playlist_id=%s",
+            "Playlist assignment OK | video_id=%s playlist_id=%s pos=%s",
             video_id,
             playlist_id,
+            position,
         )
     except HttpError as exc:
         _LOG.warning(
-            "playlistItems.insert failed for video %s → playlist %s: %s",
+            "playlistItems insert/update failed for video %s → playlist %s: %s",
             video_id,
             playlist_id,
             exc,
@@ -735,6 +799,12 @@ def sanitize_youtube_title(
     tags = _extract_hashtags(raw)
     clean = _re.sub(r"#\w+", " ", raw)
     slug = _sanitize_page_name(page_name)
+    # Principles of Wealth keeps the SEO pipe template and #shorts marker.
+    if slug == "principles_of_wealth_finance_economics":
+        clean = _re.sub(r"\s{2,}", " ", (title or "").strip())
+        if not clean:
+            clean = "Ray Dalio's Framework Analyzed (Financial Education)"
+        return clean[:100], tags
     if slug == "master_mei":
         clean = _re.sub(r"(?i)\bMASTER\s*MEI\b", " ", clean)
         clean = _re.sub(r"(?i)\bMaster\s*Mei\b", " ", clean)
@@ -772,6 +842,24 @@ def _default_tags_for_page(page_name: str) -> list[str]:
             "executive mindset",
             "personal finance",
             "shorts",
+        ]
+    if slug == "principles_of_wealth_finance_economics":
+        try:
+            from channels_config.principles_of_wealth_finance_economics import (  # type: ignore
+                page_config as _pow_cfg,
+            )
+
+            tags = getattr(_pow_cfg, "YOUTUBE_DEFAULT_TAGS", None)
+            if isinstance(tags, list) and tags:
+                return [str(t) for t in tags]
+        except Exception:  # noqa: BLE001
+            pass
+        return [
+            "financial education",
+            "wealth building",
+            "macroeconomics",
+            "investing",
+            "ray dalio analysis",
         ]
     defaults: dict[str, list[str]] = {
         "ancient_knowledge": [
@@ -883,10 +971,18 @@ def upload_short(
     playlist_title: Optional[str] = None,
     playlist_description: Optional[str] = None,
     youtube=None,
+    related_video_id: Optional[str] = None,
+    skip_playlist: bool = False,
+    preserve_title: bool = False,
+    thumbnail_path: Optional[str | Path] = None,
 ) -> tuple[str, str, Optional[datetime]]:
     """Upload *video_path* to the page-isolated YouTube channel.
 
     Returns ``(video_id, "https://youtu.be/{video_id}", publish_at_or_None)``.
+
+    *related_video_id* is sent as ``snippet.relatedVideoId`` when the API
+    accepts it (Shorts → long-form link). If the field is rejected the upload
+    retries without it; callers should also put the long URL in the description.
     """
     from googleapiclient.http import MediaFileUpload  # type: ignore[import]
     from googleapiclient.errors import HttpError  # type: ignore[import]
@@ -897,7 +993,11 @@ def upload_short(
 
     page_slug = _sanitize_page_name(page_name)
     # High-CTR title: strip #hashtags + MASTER MEI brand; move tags to description
-    safe_title, title_hashtags = sanitize_youtube_title(title, page_slug)
+    if preserve_title:
+        safe_title = (title or "").strip()[:100] or "Untitled"
+        title_hashtags = _extract_hashtags(title or "")
+    else:
+        safe_title, title_hashtags = sanitize_youtube_title(title, page_slug)
     # Sanitize to a plain string + truncate to 4000 chars BEFORE any further
     # string-only processing below — prevents HttpError 400 (invalidDescription)
     # from raw JSON structures or oversized text leaking into the API payload.
@@ -978,13 +1078,17 @@ def upload_short(
     if scheduled_str:
         status_body["publishAt"] = scheduled_str
 
+    snippet_body: dict = {
+        "title": safe_title,
+        "description": description or "",
+        "tags": tag_list,
+        "categoryId": category_id,
+    }
+    if related_video_id:
+        snippet_body["relatedVideoId"] = related_video_id
+
     body: dict = {
-        "snippet": {
-            "title": safe_title,
-            "description": description or "",
-            "tags": tag_list,
-            "categoryId": category_id,
-        },
+        "snippet": snippet_body,
         "status": status_body,
     }
 
@@ -1022,6 +1126,15 @@ def upload_short(
                 status_body.pop("containsSyntheticMedia", None)
                 _LOG.warning(
                     "containsSyntheticMedia rejected by API — retrying upload without it."
+                )
+                request = _insert(youtube, body)
+                continue
+            if related_video_id and "relatedvideoid" in err_txt:
+                snippet_body.pop("relatedVideoId", None)
+                related_video_id = None
+                _LOG.warning(
+                    "relatedVideoId rejected by API — retrying upload without it "
+                    "(long-form URL remains in the description)."
                 )
                 request = _insert(youtube, body)
                 continue
@@ -1074,30 +1187,41 @@ def upload_short(
         _LOG.info("YouTube upload OK | id=%s  url=%s", video_id, yt_url)
         print(f"[YouTube] ✓ Published → {yt_url}")
 
-    _default_title, _default_desc = _resolve_page_playlist_meta(page_slug)
-    _pl_title = playlist_title if playlist_title is not None else _default_title
-    _pl_desc = (
-        playlist_description
-        if playlist_description is not None
-        else _default_desc
-    )
-    if _pl_title and video_id:
+    if thumbnail_path and video_id:
         try:
-            _pl_id = get_or_create_playlist(
-                youtube,
-                _pl_title,
-                playlist_description=_pl_desc,
-                page_name=page_slug,
-            )
-            add_video_to_playlist(youtube, video_id, _pl_id)
-            print(f'[YouTube] ✓ Added video {video_id} to playlist: "{_pl_title}"')
-        except Exception as _pl_exc:
+            set_video_thumbnail(youtube, video_id, thumbnail_path)
+        except Exception as thumb_exc:  # noqa: BLE001
             _LOG.warning(
-                "Playlist assignment failed for %s → '%s': %s — upload itself succeeded.",
+                "Thumbnail upload failed for %s (%s) — video itself succeeded.",
                 video_id,
-                _pl_title,
-                _pl_exc,
+                thumb_exc,
             )
+
+    if not skip_playlist:
+        _default_title, _default_desc = _resolve_page_playlist_meta(page_slug)
+        _pl_title = playlist_title if playlist_title is not None else _default_title
+        _pl_desc = (
+            playlist_description
+            if playlist_description is not None
+            else _default_desc
+        )
+        if _pl_title and video_id:
+            try:
+                _pl_id = get_or_create_playlist(
+                    youtube,
+                    _pl_title,
+                    playlist_description=_pl_desc,
+                    page_name=page_slug,
+                )
+                add_video_to_playlist(youtube, video_id, _pl_id)
+                print(f'[YouTube] ✓ Added video {video_id} to playlist: "{_pl_title}"')
+            except Exception as _pl_exc:
+                _LOG.warning(
+                    "Playlist assignment failed for %s → '%s': %s — upload itself succeeded.",
+                    video_id,
+                    _pl_title,
+                    _pl_exc,
+                )
 
     return video_id, yt_url, publish_at
 
@@ -1156,6 +1280,74 @@ def update_video_metadata(
         len(existing_snippet.get("tags") or []),
     )
     return updated_id
+
+
+def set_video_thumbnail(youtube, video_id: str, thumbnail_path: str | Path) -> None:
+    """Upload a custom thumbnail via ``thumbnails().set()``."""
+    from googleapiclient.http import MediaFileUpload  # type: ignore[import]
+    from googleapiclient.errors import HttpError  # type: ignore[import]
+
+    path = Path(thumbnail_path)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    suffix = path.suffix.lower()
+    mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(suffix, "image/jpeg")
+    media = MediaFileUpload(str(path), mimetype=mime, resumable=False)
+    try:
+        youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
+    except HttpError as exc:
+        _LOG.warning("thumbnails.set failed for %s: %s", video_id, exc)
+        raise
+    print(f"[YouTube] ✓ Thumbnail set → {path.name} on {video_id}")
+
+
+def link_short_to_related_long(
+    youtube,
+    short_video_id: str,
+    long_video_id: str,
+) -> bool:
+    """Best-effort Short → long-form link.
+
+    Tries ``snippet.relatedVideoId`` on ``videos.update``. YouTube Studio is
+    still the official UI for this field; if the API rejects it, the Short
+    description must already contain ``https://youtu.be/{long_id}``.
+    Returns True when the API accepted the field.
+    """
+    from googleapiclient.errors import HttpError  # type: ignore[import]
+
+    if not short_video_id or not long_video_id:
+        return False
+    try:
+        list_resp = youtube.videos().list(
+            part="snippet", id=short_video_id
+        ).execute()
+        items = list_resp.get("items") or []
+        if not items:
+            return False
+        snippet = items[0].get("snippet") or {}
+        snippet["relatedVideoId"] = long_video_id
+        youtube.videos().update(
+            part="snippet",
+            body={"id": short_video_id, "snippet": snippet},
+        ).execute()
+        print(
+            f"[YouTube] ✓ relatedVideoId {long_video_id} → Short {short_video_id}"
+        )
+        return True
+    except HttpError as exc:
+        _LOG.warning(
+            "relatedVideoId update rejected for Short %s → %s (%s). "
+            "Description URL remains the guaranteed link.",
+            short_video_id,
+            long_video_id,
+            exc,
+        )
+        return False
 
 
 # ---------------------------------------------------------------------------

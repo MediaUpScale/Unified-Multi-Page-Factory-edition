@@ -23,6 +23,7 @@ from core_engine.economic_reel_lofi import lofi_collections as rag
 from core_engine.economic_reel_lofi.assembler import (
     assemble_lofi_reel,
     compute_caption_scene_duration_s,
+    measure_vo_speech_duration,
 )
 from core_engine.economic_reel_lofi.image_gen import (
     LOFI_IMAGE_HEIGHT,
@@ -36,6 +37,8 @@ from core_engine.economic_reel_lofi.riso_prompt_bank import (
 )
 from core_engine.economic_reel_lofi.script_agent import (
     _sanitize_caption_typos,
+    assess_object_beat_continuity,
+    assess_story_quality,
     generate_script,
     get_script_llm_call_log,
     note_batch_structure_id,
@@ -46,6 +49,26 @@ from core_engine.economic_reel_lofi.script_agent import (
 from core_engine.economic_reel_lofi.validator_agent import validate_script
 
 _LOG = logging.getLogger(__name__)
+
+
+def _tts_breath_commas(caption: str) -> str:
+    """TTS-only commas where a natural breath falls. On-screen caption unchanged."""
+    text = (caption or "").strip()
+    if not text:
+        return text
+    if re.search(r"[,;:—–]", text):
+        return text
+    rules = (
+        (r"^(One night)(\s+)", r"\1,\2"),
+        (r"\blit anyway\b", "lit, anyway"),
+        (r"\bfor it with\b", "for it, with"),
+        (r"\blit because\b", "lit, because"),
+    )
+    for pat, repl in rules:
+        nxt = re.sub(pat, repl, text, count=1, flags=re.I)
+        if nxt != text:
+            return nxt
+    return text
 
 
 def _tts_text_with_breaks(caption: str) -> str:
@@ -460,6 +483,265 @@ def assess_photoreal_style(
         return True, [], meta
 
 
+def pixel_lighting_label(image_path: Path) -> tuple[str, dict[str, float]]:
+    """Classify lighting from the accepted still, not from the prompt tag."""
+    arr, gray = _load_lofi_thumb_gray(image_path, size=256)
+    h = gray.shape[0]
+    upper = arr[: int(h * 0.65)]
+    r = upper[..., 0]
+    g = upper[..., 1]
+    b = upper[..., 2]
+    warm = (r > 165) & (g > 75) & (b < 140) & ((r.astype(np.int16) - b.astype(np.int16)) > 45)
+    warm_frac = float(warm.mean())
+    mean_l = float(gray.mean())
+    chroma = float(np.mean(np.abs(arr[..., 0].astype(np.float32) - arr[..., 2])))
+    if warm_frac >= 0.10:
+        label = "sunset_doorway"
+    elif mean_l < 70 and chroma < 25:
+        label = "blue_hour_streetlight"
+    elif chroma < 18 and 70 <= mean_l <= 150:
+        label = "rainy_grey"
+    elif mean_l > 150 and chroma < 30:
+        label = "morning_cool"
+    elif warm_frac >= 0.04:
+        label = "indoor_lamp_glow"
+    else:
+        label = "overcast_daylight"
+    meta = {
+        "warm_frac": round(warm_frac, 4),
+        "mean_l": round(mean_l, 1),
+        "chroma": round(chroma, 1),
+    }
+    return label, meta
+
+
+def _style_ratio(a: float, b: float) -> float:
+    x = max(float(a), 1.0)
+    y = max(float(b), 1.0)
+    return max(x, y) / min(x, y)
+
+
+def _is_photographic_stat(st: dict[str, Any]) -> bool:
+    return (
+        float(st.get("std") or 0) >= 80.0
+        and float(st.get("edge") or 0) < 12.0
+        and float(st.get("lap_var") or 0) < 900.0
+    )
+
+
+def _styles_compatible(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    if abs(float(a.get("uniq16") or 0) - float(b.get("uniq16") or 0)) > 80:
+        return False
+    if _style_ratio(float(a.get("lap_var") or 0), float(b.get("lap_var") or 0)) > 4.5:
+        return False
+    if _style_ratio(float(a.get("edge") or 0), float(b.get("edge") or 0)) > 2.4:
+        return False
+    if _is_photographic_stat(a) != _is_photographic_stat(b):
+        return False
+    return True
+
+
+def _episode_style_class(rec: dict[str, Any], row: dict[str, Any] | None = None) -> str:
+    """Coarse look bucket for cross-beat comparison (not a lighting tag)."""
+    close = str((row or {}).get("close_variant") or "")
+    if close == "portrait_close":
+        return "portrait_close"
+    warm = float(rec.get("warm_frac") or 0)
+    uniq = float(rec.get("uniq16") or 0)
+    std = float(rec.get("std") or 0)
+    edge = float(rec.get("edge") or 0)
+    lap = float(rec.get("lap_var") or 0)
+    if warm >= 0.12:
+        return "sunset_disc"
+    if uniq <= 240 and std >= 55:
+        return "vintage_photo"
+    if std >= 80 and edge < 12 and lap < 900:
+        return "photographic"
+    return "painterly_print"
+
+
+def _cluster_style_indices(
+    stats: list[dict[str, Any]],
+    lines: list[dict[str, Any]] | None = None,
+) -> list[list[int]]:
+    """Group beats that share a look class. Do not merge via transitivity."""
+    buckets: dict[str, list[int]] = {}
+    for i, rec in enumerate(stats):
+        row = lines[i] if lines and i < len(lines) and isinstance(lines[i], dict) else None
+        cls = _episode_style_class(rec, row)
+        rec["style_class"] = cls
+        buckets.setdefault(cls, []).append(int(rec.get("scene") or i + 1))
+    return list(buckets.values())
+
+
+def assess_cross_beat_style(
+    scene_paths: list[Path],
+    lines: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compare accepted stills to each other — not per-beat in isolation."""
+    stats: list[dict[str, Any]] = []
+    mismatches: list[dict[str, Any]] = []
+    for i, path in enumerate(scene_paths):
+        if not path or not Path(path).is_file():
+            continue
+        st = _linework_stats(Path(path))
+        pix, pix_meta = pixel_lighting_label(Path(path))
+        declared = ""
+        if i < len(lines) and isinstance(lines[i], dict):
+            declared = str(lines[i].get("lighting_condition") or "")
+        rec = {
+            "scene": i + 1,
+            "uniq16": int(st["uniq16"]),
+            "lap_var": round(float(st["lap_var"]), 1),
+            "edge": round(float(st["edge"]), 2),
+            "std": round(float(st["std"]), 1),
+            "hard": round(float(st["hard"]), 4),
+            "pixel_lighting": pix,
+            "declared_lighting": declared,
+            **pix_meta,
+        }
+        stats.append(rec)
+        sunset_vs_not = (
+            pix == "sunset_doorway" and declared not in {"", "sunset_doorway"}
+        ) or (
+            declared == "sunset_doorway"
+            and pix != "sunset_doorway"
+            and float(pix_meta["warm_frac"]) < 0.04
+        )
+        if sunset_vs_not:
+            mismatches.append(
+                {
+                    "scene": i + 1,
+                    "declared": declared,
+                    "pixel": pix,
+                    "warm_frac": pix_meta["warm_frac"],
+                }
+            )
+    clusters = _cluster_style_indices(stats, lines) if stats else []
+    pix_counts: dict[str, int] = {}
+    decl_counts: dict[str, int] = {}
+    for rec in stats:
+        p = str(rec.get("pixel_lighting") or "")
+        d = str(rec.get("declared_lighting") or "")
+        if p:
+            pix_counts[p] = pix_counts.get(p, 0) + 1
+        if d:
+            decl_counts[d] = decl_counts.get(d, 0) + 1
+    fails: list[str] = []
+    if len(clusters) >= 3:
+        fails.append(
+            f"cross-beat-style: {len(clusters)} distinct looks across "
+            f"{len(stats)} beats clusters={clusters}"
+        )
+        print(
+            f"[LOFI cross-style] FAIL classes={len(clusters)} "
+            f"groups={clusters}"
+        )
+    else:
+        print(f"[LOFI cross-style] PASS clusters={len(clusters)} groups={clusters}")
+    if mismatches:
+        fails.append(
+            "lighting-pixel-mismatch: declared tags do not match accepted stills: "
+            + ", ".join(
+                f"s{m['scene']} {m['declared']}→{m['pixel']} "
+                f"warm={m['warm_frac']}"
+                for m in mismatches
+            )
+        )
+        print(f"[LOFI lighting] PIXEL-MISMATCH {mismatches}")
+    print(
+        f"[LOFI lighting] DECLARED counts={decl_counts} "
+        f"PIXEL counts={pix_counts}"
+    )
+    for rec in stats:
+        print(
+            f"[LOFI cross-style] scene={rec['scene']} "
+            f"uniq16={rec['uniq16']} lap_var={rec['lap_var']} "
+            f"edge={rec['edge']} std={rec['std']} "
+            f"declared={rec['declared_lighting']!r} "
+            f"pixel={rec['pixel_lighting']!r} "
+            f"class={rec.get('style_class')!r} warm={rec['warm_frac']}"
+        )
+    return {
+        "stats": stats,
+        "clusters": clusters,
+        "cluster_count": len(clusters),
+        "declared_counts": decl_counts,
+        "pixel_counts": pix_counts,
+        "mismatches": mismatches,
+        "fails": fails,
+        "passed": not fails,
+    }
+
+
+def assess_object_beat_visual_continuity(
+    lines: list[dict[str, Any]],
+    scene_paths: list[Path],
+) -> dict[str, Any]:
+    """
+    Shipping rule: an object-only beat must be (b) named in its caption, or
+    (a) already in a prior beat of the SAME visual style.
+    """
+    text_rep = assess_object_beat_continuity(lines)
+    stats: list[dict[str, Any] | None] = []
+    for path in scene_paths:
+        if path and Path(path).is_file():
+            stats.append(_linework_stats(Path(path)))
+        else:
+            stats.append(None)
+    fails: list[str] = list(text_rep.get("fails") or [])
+    beats: list[dict[str, Any]] = []
+    for rec in list(text_rep.get("beats") or []):
+        rec = dict(rec)
+        cond = str(rec.get("condition") or "")
+        scene_i = int(rec.get("scene") or 0)
+        idx = scene_i - 1
+        if cond in {"skip_no_concrete_object"}:
+            rec["shipping"] = "skip"
+            beats.append(rec)
+            continue
+        if cond == "caption_named":
+            rec["shipping"] = "b_caption_named"
+            print(
+                f"[LOFI object-continuity] SHIP scene={scene_i} "
+                f"condition=b_caption_named object={rec.get('object')!r}"
+            )
+            beats.append(rec)
+            continue
+        matched = 0
+        cur = stats[idx] if 0 <= idx < len(stats) else None
+        for ps in rec.get("prior_scenes") or []:
+            pidx = int(ps) - 1
+            if cur is None or pidx < 0 or pidx >= len(stats) or stats[pidx] is None:
+                continue
+            if _styles_compatible(stats[pidx], cur):
+                matched = int(ps)
+                break
+        if matched:
+            rec["shipping"] = "a_prior_same_style"
+            rec["matched_prior"] = matched
+            print(
+                f"[LOFI object-continuity] SHIP scene={scene_i} "
+                f"condition=a_prior_same_style prior={matched} "
+                f"object={rec.get('object')!r}"
+            )
+        else:
+            rec["shipping"] = "fail"
+            msg = (
+                f"object-continuity scene {scene_i} {rec.get('object')!r}: "
+                "not named in caption, and prior appearance is not the same "
+                "visual style"
+            )
+            fails.append(msg)
+            print(f"[LOFI object-continuity] HOLD {msg}")
+        beats.append(rec)
+    return {
+        "beats": beats,
+        "fails": fails,
+        "passed": not fails,
+    }
+
+
 def assess_anchor_object_identity(
     image_path: Path,
     *,
@@ -856,6 +1138,136 @@ def assess_hook_still(
         return True, [], meta
 
 
+COVERAGE_FLAW = "COVERAGE: incomplete garment / exposed skin on a human figure"
+COVERAGE_FIX = (
+    "fully covered by dress fabric, back and shoulders clothed, "
+    "chest and torso clothed; no bare back, no exposed shoulders"
+)
+_HUMAN_FIGURE_TYPES = frozenset({"woman", "man", "couple", "silhouette"})
+
+
+def _is_human_figure_scene(subject_type: str, close_variant: str = "") -> bool:
+    st = str(subject_type or "").strip().lower().replace(" ", "_")
+    cv = str(close_variant or "").strip().lower()
+    if cv == "eye_close":
+        return False
+    return st in _HUMAN_FIGURE_TYPES or cv == "portrait_close"
+
+
+def _coverage_log_path() -> Path:
+    return (
+        Path(__file__).resolve().parent / "store" / "lofi_coverage_flags.jsonl"
+    )
+
+
+def log_coverage_flag(record: dict[str, Any]) -> None:
+    """Append one coverage rejection for prompt/CFG/seed pattern tracking."""
+    path = _coverage_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = dict(record)
+    row.setdefault("ts", datetime.now(timezone.utc).isoformat())
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    print(
+        f"[LOFI coverage] logged {path.name} scene={row.get('scene')} "
+        f"cfg={row.get('guidance_scale')} seed={row.get('seed')}"
+    )
+
+
+def assess_garment_coverage(
+    image_path: Path,
+    *,
+    subject_type: str = "",
+    close_variant: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """
+    Hard post-gen gate on every human-figure still. Fail-closed: a skipped
+    check never reaches review as an un-flagged pass.
+    """
+    meta: dict[str, Any] = {
+        "subject_type": subject_type,
+        "close_variant": close_variant,
+        "passed": True,
+        "skipped": False,
+    }
+    if not _is_human_figure_scene(subject_type, close_variant):
+        meta["skipped"] = True
+        meta["skip_reason"] = "not_human_figure"
+        return True, [], meta
+    try:
+        from google import genai
+        from google.genai import types
+        from VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            meta["passed"] = False
+            print(f"[LOFI coverage] FAIL-CLOSED {image_path.name} no Gemini key")
+            return False, [COVERAGE_FLAW + " (coverage check unavailable)"], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        prompt = (
+            "Look at this illustration. JSON only: "
+            "human_figure (bool), incomplete_garment (bool), "
+            "exposed_skin_beyond_face_hands (bool), coverage_ok (bool), note (string).\n"
+            "human_figure = a person or silhouette is in frame.\n"
+            "incomplete_garment = clothing does not fully cover back, shoulders, "
+            "chest, or torso (bare back, off-shoulder, cleavage, nape-to-waist skin).\n"
+            "exposed_skin_beyond_face_hands = torso/back/shoulders/chest skin is visible.\n"
+            "coverage_ok = fully clothed in dress/sweater/coat fabric; face and hands "
+            "may show skin. Silhouettes still fail if the body reads unclothed/nude.\n"
+            "FAIL if human_figure and (incomplete_garment or exposed_skin_beyond_face_hands)."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        meta.update(
+            {
+                "human_figure": bool(data.get("human_figure")),
+                "incomplete_garment": bool(data.get("incomplete_garment")),
+                "exposed_skin_beyond_face_hands": bool(
+                    data.get("exposed_skin_beyond_face_hands")
+                ),
+                "coverage_ok": bool(data.get("coverage_ok")),
+                "note": str(data.get("note") or ""),
+            }
+        )
+        failed = bool(meta["human_figure"]) and (
+            meta["incomplete_garment"]
+            or meta["exposed_skin_beyond_face_hands"]
+            or not meta["coverage_ok"]
+        )
+        if failed:
+            meta["passed"] = False
+            meta["fix_instructions"] = COVERAGE_FIX
+            print(
+                f"[LOFI coverage] REJECT {image_path.name} "
+                f"note={meta.get('note')!r}"
+            )
+            return False, [COVERAGE_FLAW], meta
+        print(f"[LOFI coverage] PASS {image_path.name}")
+        return True, [], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("coverage check failed-closed for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        meta["passed"] = False
+        return False, [COVERAGE_FLAW + " (coverage check error)"], meta
+
+
 def assess_portrait_close_style(
     image_path: Path,
     *,
@@ -887,11 +1299,17 @@ def assess_portrait_close_style(
         prompt = (
             "Look at this illustration. JSON only: "
             "photoreal_skin (bool), photoreal_eyes (bool), painterly_match (bool), "
-            "note (string).\n"
+            "full_face_visible (bool), eye_macro_only (bool), note (string).\n"
             "painterly_match = ink, flat printed color, paper grain — same as a "
             "risograph poster, not a camera photo. "
             "photoreal_skin / photoreal_eyes = rendered photographic skin or glossy "
-            "camera eyes. FAIL if photoreal_skin or photoreal_eyes or not painterly_match."
+            "camera eyes. "
+            "full_face_visible = eyes, nose, mouth, and some hair or shoulder are "
+            "all in frame (classic head-and-shoulders or waist-up portrait). "
+            "eye_macro_only = the crop is only eyes/brow with no nose or mouth. "
+            "FAIL if photoreal_skin or photoreal_eyes or not painterly_match. "
+            "If this is a portrait_close, also FAIL if eye_macro_only or not "
+            "full_face_visible."
         )
         from PIL import Image as PILImage
 
@@ -911,23 +1329,48 @@ def assess_portrait_close_style(
                 "photoreal_skin": bool(data.get("photoreal_skin")),
                 "photoreal_eyes": bool(data.get("photoreal_eyes")),
                 "painterly_match": bool(data.get("painterly_match")),
+                "full_face_visible": (
+                    True
+                    if "full_face_visible" not in data
+                    else bool(data.get("full_face_visible"))
+                ),
+                "eye_macro_only": (
+                    False
+                    if "eye_macro_only" not in data
+                    else bool(data.get("eye_macro_only"))
+                ),
                 "note": str(data.get("note") or ""),
             }
         )
+        framing_fail = False
+        if str(close_variant or "") == "portrait_close":
+            framing_fail = meta["eye_macro_only"] or not meta["full_face_visible"]
         if (
             meta["photoreal_skin"]
             or meta["photoreal_eyes"]
             or not meta["painterly_match"]
+            or framing_fail
         ):
             meta["passed"] = False
-            flaw = (
-                "STYLE: portrait_close/eye_close mixed photoreal skin or eyes "
-                "into a painterly episode"
-            )
-            meta["fix_instructions"] = (
-                "Redraw as risograph illustration: ink line, flat printed color, "
-                "paper grain. No photoreal skin, no camera eyes."
-            )
+            if framing_fail:
+                flaw = (
+                    "FRAME: portrait_close is an eye/brow macro — need head and "
+                    "shoulders, full face visible (eyes, nose, mouth)"
+                )
+                meta["fix_instructions"] = (
+                    "Redraw as a medium close-up portrait, head and shoulders in "
+                    "frame, full face visible, painterly illustration — not an "
+                    "extreme macro crop on eyes alone."
+                )
+            else:
+                flaw = (
+                    "STYLE: portrait_close/eye_close mixed photoreal skin or eyes "
+                    "into a painterly episode"
+                )
+                meta["fix_instructions"] = (
+                    "Redraw as risograph illustration: ink line, flat printed color, "
+                    "paper grain. No photoreal skin, no camera eyes."
+                )
             print(f"[LOFI portrait-style] REJECT {image_path.name} {flaw}")
             return False, [flaw], meta
         print(f"[LOFI portrait-style] PASS {image_path.name} variant={close_variant}")
@@ -1359,6 +1802,38 @@ def generate_and_qa_scene(
             extra_fix = str(eye_meta.get("fix_instructions") or "").strip()
             if extra_fix:
                 last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        cov_ok, cov_flaws, cov_meta = assess_garment_coverage(
+            out_img,
+            subject_type=subject_type,
+            close_variant=str(row.get("close_variant") or ""),
+        )
+        del cov_ok
+        gate_meta["garment_coverage"] = cov_meta
+        if cov_flaws:
+            flaws = list(flaws) + cov_flaws
+            passed = False
+            extra_fix = str(cov_meta.get("fix_instructions") or COVERAGE_FIX).strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+            log_coverage_flag(
+                {
+                    "scene": scene_i,
+                    "attempt": attempt,
+                    "subject_type": subject_type,
+                    "close_variant": str(row.get("close_variant") or ""),
+                    "prompt": prompt_i,
+                    "negative_prompt": (
+                        mood_meta.get("gen_negative_prompt")
+                        or getattr(lofi_cfg, "LOFI_DEV_NEGATIVE_PROMPT", "")
+                    ),
+                    "seed": mood_meta.get("gen_seed"),
+                    "guidance_scale": mood_meta.get("gen_guidance_scale"),
+                    "model": mood_meta.get("gen_model"),
+                    "flaws": list(cov_flaws),
+                    "note": cov_meta.get("note") or "",
+                    "image": str(out_img),
+                }
+            )
         if scene_i == 1:
             print(
                 f"[LOFI hook] still scene=1 "
@@ -1469,6 +1944,25 @@ def _generate_validated_script(
             lofi_cfg.SCRIPT_MAX_RETRIES,
             feedback,
         )
+        if (
+            not persist_on_pass
+            and str(script.get("writer") or "") == "claude"
+        ):
+            print(
+                "[LOFI script] script-only: keeping this Claude draft for review "
+                "(skipping further writer retries)"
+            )
+            break
+    if (
+        not persist_on_pass
+        and last_script
+        and str(last_script.get("writer") or "") == "claude"
+    ):
+        print(
+            "[LOFI script] script-only: keeping last Claude draft for review "
+            "(not substituting fallback)"
+        )
+        return last_script, last_errors, True
     # Last resort: deterministic short-line fallback so a test still renders
     from core_engine.economic_reel_lofi.script_agent import _fallback_script
 
@@ -1602,11 +2096,60 @@ def _produce_one(
             theme=str(script.get("theme") or force_theme or ""),
             subtheme=str(script.get("subtheme") or force_subtheme or ""),
         )
+        if not script.get("theme"):
+            first = next(
+                (r for r in (script.get("lines") or []) if isinstance(r, dict)),
+                {},
+            )
+            script["theme"] = (
+                force_theme
+                or str(first.get("episode_theme") or "")
+                or "hope"
+            )
         print(
-            "[LOFI pipeline] LOCKED script — skipping writer/validator "
+            "[LOFI pipeline] LOCKED script — skipping writer "
             f"theme={script.get('theme')} subtheme={script.get('subtheme')} "
             f"beats={len(script.get('lines') or [])}"
         )
+        story = assess_story_quality(
+            script.get("lines") or [],
+            theme=str(script.get("theme") or ""),
+        )
+        script["story_quality"] = story
+        if story.get("fails"):
+            print(
+                "[LOFI pipeline] LOCKED script failed story-quality gate — "
+                "not generating stills. Back to writer/validator."
+            )
+            _print_script_report(script, index=index, qty=batch_qty)
+            errs = list(story.get("fails") or [])
+            review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
+            review_path.write_text(
+                json.dumps(
+                    {
+                        "errors": errs,
+                        "theme": theme_row,
+                        "module": module,
+                        "script": script,
+                        "gate": "story_quality",
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            return LofiItemResult(
+                ok=False,
+                module=module,
+                theme=str(script.get("theme") or theme_row.get("theme") or ""),
+                scene_count=scene_count,
+                duration_s=float(duration_s),
+                manual_review=True,
+                errors=errs,
+                meta_path=str(review_path),
+                script=script,
+            )
+        print("[LOFI pipeline] LOCKED script cleared story-quality gate")
         _print_script_report(script, index=index, qty=batch_qty)
         errs: list[str] = []
     else:
@@ -1695,8 +2238,14 @@ def _produce_one(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     lines = list(script.get("lines") or [])
+    if lines and isinstance(lines[0], dict):
+        lines[0]["episode_theme"] = str(script.get("theme") or force_theme or "")
+        lines[0]["episode_module"] = module
     episode_variety: dict[str, Any] = {}
     use_dev = bool(lofi_cfg.uses_flux_dev())
+    sidecar = dict(script.get("_locked_sidecar_assets") or {})
+    has_locked_stills = any(str(p).strip() for p in (sidecar.get("scene_images") or []))
+    lock_visuals = bool(locked_script) and has_locked_stills
     # V2 identity bank assembles prompts from beat fields (live riso JSON untouched).
     if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
         if use_dev:
@@ -1718,7 +2267,7 @@ def _produce_one(
                 vary_imagery=lofi_cfg.is_thematic_arc(
                     str(script.get("arc_template") or "")
                 ),
-                lock_visuals=bool(locked_script),
+                lock_visuals=lock_visuals,
             )
         else:
             from core_engine.economic_reel_lofi.visual_identity import (
@@ -1731,7 +2280,7 @@ def _produce_one(
                 vary_imagery=lofi_cfg.is_thematic_arc(
                     str(script.get("arc_template") or "")
                 ),
-                lock_visuals=bool(locked_script),
+                lock_visuals=lock_visuals,
             )
         if lines and isinstance(lines[0], dict):
             raw_var = lines[0].pop("episode_variety", None)
@@ -1739,6 +2288,8 @@ def _produce_one(
                 episode_variety = raw_var
         if episode_variety:
             script["episode_variety"] = episode_variety
+        rag.stamp_close_variant_on_script(script, lines)
+        rag.stamp_lighting_on_script(script, lines)
         for row in lines:
             if not isinstance(row, dict):
                 continue
@@ -1746,7 +2297,9 @@ def _produce_one(
                 f"[LOFI identity v2] scene={row.get('scene')} "
                 f"type={row.get('subject_type')} expr={row.get('subject_expression')!r} "
                 f"setting={row.get('setting')!r} object={row.get('key_object')!r} "
-                f"tod={row.get('time_of_day')} pal={row.get('palette_key')} "
+                f"tod={row.get('time_of_day')} light={row.get('lighting_condition')} "
+                f"close={row.get('close_variant') or '-'} "
+                f"pal={row.get('palette_key')} "
                 f"act={row.get('arc_position')}"
             )
             print(f"[LOFI identity v2] prompt={row.get('visual_prompt')!r}")
@@ -1822,8 +2375,8 @@ def _produce_one(
         try:
             from avatar_engine.audio_engine import apply_elevenlabs_voice_settings
 
-            voice_id_pre = str(getattr(lofi_cfg, "LOFI_VOICE_ID", "") or "")
-            speed_pre = float(getattr(lofi_cfg, "LOFI_VOICE_SPEED", 0.8))
+            voice_id_pre = lofi_cfg.tts_voice_id()
+            speed_pre = lofi_cfg.tts_speed()
             voice_settings_result = apply_elevenlabs_voice_settings(
                 voice_id_pre,
                 speed=speed_pre,
@@ -1905,7 +2458,39 @@ def _produce_one(
                 f"{'manual_accept' if scene_i in accept_scenes else 'prior_pass'} "
                 f"← {reuse_src.name}"
             )
-        else:
+            cov_ok, cov_flaws, cov_meta = assess_garment_coverage(
+                out_img,
+                subject_type=subject_type,
+                close_variant=str(row.get("close_variant") or ""),
+            )
+            last_gate["garment_coverage"] = cov_meta
+            if cov_flaws:
+                print(
+                    f"[LOFI reuse] coverage REJECT scene={scene_i} — generating fresh"
+                )
+                log_coverage_flag(
+                    {
+                        "scene": scene_i,
+                        "attempt": "reuse",
+                        "subject_type": subject_type,
+                        "close_variant": str(row.get("close_variant") or ""),
+                        "prompt": str(row.get("visual_prompt") or ""),
+                        "negative_prompt": getattr(
+                            lofi_cfg, "LOFI_DEV_NEGATIVE_PROMPT", ""
+                        ),
+                        "seed": None,
+                        "guidance_scale": getattr(
+                            lofi_cfg, "LOFI_DEV_GUIDANCE_SCALE", None
+                        ),
+                        "model": getattr(lofi_cfg, "LOFI_DEV_IMAGE_MODEL", None),
+                        "flaws": list(cov_flaws),
+                        "note": cov_meta.get("note") or "reuse still failed coverage",
+                        "image": str(out_img),
+                    }
+                )
+                reuse_ok = False
+                ok_img = False
+        if not reuse_ok:
             remaining = call_budget - n_image_calls
             if remaining <= 0:
                 qa_flags.append(
@@ -1985,24 +2570,26 @@ def _produce_one(
             (not stills_only)
             and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True))
             and caption.strip()
-            and not qa_flags
         ):
             try:
                 from avatar_engine.audio_engine import generate_voiceover_with_timestamps
 
                 vo_path = run_dir / f"vo_scene_{scene_i:02d}.mp3"
-                voice_id = str(getattr(lofi_cfg, "LOFI_VOICE_ID", "") or "")
-                tts_text = _tts_text_with_breaks(caption)
+                voice_id = lofi_cfg.tts_voice_id()
+                tts_text = _tts_text_with_breaks(_tts_breath_commas(caption))
                 use_ssml = "<break" in tts_text
-                speed = float(getattr(lofi_cfg, "LOFI_VOICE_SPEED", 0.8))
+                speed = lofi_cfg.tts_speed()
+                model_id = lofi_cfg.tts_model() or "eleven_multilingual_v2"
                 print(
                     f"[LOFI VO] scene={scene_i} voice={voice_id} "
-                    f"speed={speed} ssml={use_ssml} text={caption!r} tts={tts_text!r}"
+                    f"model={model_id} speed={speed} ssml={use_ssml} "
+                    f"text={caption!r} tts={tts_text!r}"
                 )
                 vo_path, raw_timings = generate_voiceover_with_timestamps(
                     tts_text,
                     vo_path,
                     voice_id=voice_id or None,
+                    model_id=model_id,
                     force_elevenlabs=True,
                     expressive_mode=False,
                     enable_ssml=use_ssml,
@@ -2031,6 +2618,34 @@ def _produce_one(
                 timings = None
         voice_paths.append(vo_path)
         word_timings_per_scene.append(timings)
+
+    xstyle = assess_cross_beat_style(scene_paths, lines)
+    script["cross_beat_style"] = xstyle
+    script["declared_lighting_beats"] = list(script.get("lighting_beats") or [])
+    script["declared_dominant_lighting"] = str(script.get("dominant_lighting") or "")
+    pix_counts = dict(xstyle.get("pixel_counts") or {})
+    script["pixel_lighting_counts"] = pix_counts
+    script["pixel_lighting_beats"] = [
+        str(r.get("pixel_lighting") or "") for r in (xstyle.get("stats") or [])
+    ]
+    if pix_counts:
+        script["dominant_lighting"] = max(pix_counts, key=pix_counts.get)
+    if xstyle.get("fails"):
+        qa_flags.extend(str(f) for f in xstyle["fails"])
+    obj_ship = assess_object_beat_visual_continuity(lines, scene_paths)
+    script["object_beat_continuity"] = obj_ship
+    if obj_ship.get("fails"):
+        qa_flags.extend(str(f) for f in obj_ship["fails"])
+    for rec in xstyle.get("stats") or []:
+        i = int(rec.get("scene") or 0) - 1
+        if 0 <= i < len(lines) and isinstance(lines[i], dict):
+            lines[i]["still_stats"] = {
+                "uniq16": rec["uniq16"],
+                "lap_var": rec["lap_var"],
+                "edge": rec["edge"],
+                "std": rec["std"],
+            }
+            lines[i]["pixel_lighting"] = rec["pixel_lighting"]
 
     theme_slug = "".join(
         c if c.isalnum() else "_"
@@ -2105,7 +2720,7 @@ def _produce_one(
         n_beats = max(1, len(captions) or len(lines))
         stills_cost = media_cost
         # Full render pays the same image+critic, plus 9 TTS calls and MoviePy encode.
-        # ElevenLabs eleven_v3 is ~$0.12–0.30 / 1k chars; 9 short captions ≈ $0.03–0.08.
+        # ElevenLabs eleven_multilingual_v2 (LOFI_TTS_MODEL); 9 short captions ≈ cents.
         # Encode on the last full reel was ~8 min after stills were done.
         print(
             f"[LOFI stills-only] beats={n_beats} images={n_image_calls} "
@@ -2266,12 +2881,19 @@ def _produce_one(
             vo_dur = 0.0
             if vp_i and Path(vp_i).is_file():
                 try:
-                    from avatar_engine.audio_engine import _audio_file_duration_s
-
-                    vo_dur = float(_audio_file_duration_s(Path(vp_i)))
+                    vo_dur = float(measure_vo_speech_duration(Path(vp_i)))
                 except Exception:  # noqa: BLE001
                     vo_dur = 0.0
-            dur_i, extended_i = lofi_cfg.slot_duration_for_vo(vo_dur, base_s=beat_s)
+            trail = (
+                0.0
+                if i >= n_beats - 1
+                else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
+            )
+            dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
+                vo_dur, base_s=beat_s, trailing_silence_s=trail
+            )
+            n_words = len(str(cap).split())
+            wps = (n_words / vo_dur) if vo_dur > 0.05 else 0.0
             dur_meta = {
                 "base_s": beat_s,
                 "vo_dur": round(vo_dur, 3),
@@ -2279,7 +2901,14 @@ def _produce_one(
                 "duration_s": dur_i,
                 "locked": True,
                 "vo_trimmed": False,
+                "words": n_words,
+                "wps": round(wps, 2),
             }
+            print(
+                f"[LOFI vo-pace] scene {i + 1} words={n_words} "
+                f"vo={vo_dur:.2f}s slot={dur_i:.2f}s "
+                f"extended={int(extended_i)} wps={wps:.2f} | text={cap!r}"
+            )
             if extended_i:
                 print(
                     f"[LOFI caption-timing] scene {i + 1} VO {vo_dur:.2f}s > "
@@ -2410,7 +3039,10 @@ def _produce_one(
         "scene_durations": scene_durations,
         "caption_timing": scene_timing_flags,
         "voice_settings_api": voice_settings_result,
-        "voice_speed": getattr(lofi_cfg, "LOFI_VOICE_SPEED", None),
+        "voice_speed": lofi_cfg.tts_speed(),
+        "tts_speed": lofi_cfg.tts_speed(),
+        "tts_model": lofi_cfg.tts_model(),
+        "tts_voice_id": lofi_cfg.tts_voice_id(),
         "logo_path": str(
             lofi_cfg.resolve_logo_path(page_id, _engine_root()) or ""
         ),
@@ -2439,7 +3071,7 @@ def _produce_one(
         "image_cost_delta": cost_delta,
         "watermark_native_size": int(assemble_audit.get("watermark_native_size") or 0),
         "watermark_audit": assemble_audit,
-        "voice_id": getattr(lofi_cfg, "LOFI_VOICE_ID", None),
+        "voice_id": lofi_cfg.tts_voice_id(),
         "caption_style": lofi_cfg.DEFAULT_CAPTION_STYLE,
         "grading_applied": bool(getattr(lofi_cfg, "LOFI_APPLY_GRADING", False)),
         "video_path": str(out_mp4),
@@ -2477,6 +3109,8 @@ def _produce_one(
         close_target=str(script.get("close_target") or ""),
         eye_close_context=str(script.get("eye_close_context") or ""),
         close_character=str(script.get("close_character") or ""),
+        dominant_lighting=str(script.get("dominant_lighting") or ""),
+        lighting_beats=list(script.get("lighting_beats") or []),
     )
 
     return LofiItemResult(

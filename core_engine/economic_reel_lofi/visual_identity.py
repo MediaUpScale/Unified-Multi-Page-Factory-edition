@@ -8,6 +8,7 @@ until a full render is approved.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -109,14 +110,18 @@ def character_sheet_prompt(who: str) -> str:
 
 
 def portrait_close_identity_clause(who: str) -> str:
-    """Painterly portrait_close using the locked identity sheet."""
+    """Painterly head-and-shoulders portrait — not an eye-only macro."""
     sheet = character_sheet_prompt(who)
     return (
-        f"Portrait close of {sheet}. Partial face or body may be visible. "
+        f"Medium close-up portrait of {sheet}, head and shoulders in frame, "
+        "full face visible — eyes, nose, mouth, and some hair. "
+        "Classic portrait shot, waist-up or head-and-shoulders, painterly "
+        "illustration — not an extreme macro crop on eyes alone. "
+        "Shoulders and chest fully covered by dress or sweater fabric. "
         "Same painterly risograph illustration as the rest of the episode: "
         "ink line, flat printed color, paper grain, canvas tooth. "
         "Not photoreal skin, not a camera portrait, not glossy beauty lighting, "
-        "not a rendered-eye close-up. Tight crop, not a wide establishing shot."
+        "not a rendered-eye close-up, not the retired eye_close crop."
     )
 
 
@@ -1445,8 +1450,10 @@ _CLOSE_POSE_HINT: dict[str, str] = {
         "falling into shadow or out of frame. No nose, no mouth, no chin."
     ),
     "portrait": (
-        "Tight portrait crop on face or upper body of the recurring "
-        "character. Painterly print, not photoreal skin."
+        "Medium close-up portrait, head and shoulders in frame, full face "
+        "visible (eyes, nose, mouth, some hair and shoulder). Classic "
+        "painterly illustration — not an extreme macro crop on eyes alone. "
+        "Not photoreal skin."
     ),
 }
 _EYE_CLOSE_SCENE = (
@@ -1614,6 +1621,53 @@ def assign_beat_functions(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return lines
 
 
+def _stamp_close_pick(
+    row: dict[str, Any],
+    pick: dict[str, str],
+    *,
+    idx: int,
+    theme: str,
+    module: str,
+    seed: str,
+) -> None:
+    """Apply silhouette or portrait_close to one turn/insight beat. eye_close is retired."""
+    from core_engine.economic_reel_lofi import lofi_collections as rag
+
+    variant = str(pick.get("variant") or "silhouette")
+    who = str(pick.get("character") or "woman")
+    if variant == "eye_close":
+        variant = "silhouette"
+    st = str(row.get("subject_type") or "").strip().lower().replace(" ", "_")
+    if variant == "portrait_close":
+        row["subject_type"] = who if who in {"woman", "man"} else "woman"
+        row["close_character"] = row["subject_type"]
+        row["shot_scale"] = "close"
+        row["close_variant"] = "portrait_close"
+        row["close_target"] = "portrait"
+        row["eye_close_context"] = ""
+        row["pose_hint"] = _CLOSE_POSE_HINT["portrait"]
+        print(
+            f"[LOFI close] variant=portrait_close scene={idx + 1} "
+            f"character={row['close_character']} fn={row.get('beat_function')}"
+        )
+        return
+    target = rag.next_silhouette_close_target(module, seed)
+    if st == "object_focus":
+        row["subject_type"] = "silhouette"
+        row["subject_remap"] = (str(row.get("subject_remap") or "") + "+close_beat").strip("+")
+        st = "silhouette"
+    row["shot_scale"] = "close"
+    row["close_variant"] = "silhouette"
+    row["close_character"] = ""
+    row["close_target"] = target
+    row["eye_close_context"] = ""
+    row["pose_hint"] = _CLOSE_POSE_HINT.get(target) or _CLOSE_POSE_HINT["shoulders"]
+    print(
+        f"[LOFI close] variant=silhouette scene={idx + 1} "
+        f"target={target} fn={row.get('beat_function')}"
+    )
+
+
 def assign_close_beat(
     lines: list[dict[str, Any]],
     *,
@@ -1623,9 +1677,9 @@ def assign_close_beat(
     """
     Optional close on a turn/insight beat.
 
-    A script may ship with zero closes. When a close is used, rotate
-    silhouette / portrait_close / eye_close and woman / man. Silhouette-only
-    medium scenes are unchanged.
+    Rotate silhouette / portrait_close (eye_close is retired). Portrait is
+    required on at least 3 of every 5 episodes. Silhouette-only medium
+    scenes are unchanged.
     """
     from core_engine.economic_reel_lofi import lofi_collections as rag
 
@@ -1651,19 +1705,14 @@ def assign_close_beat(
             row["shot_scale"] = "medium"
             if str(row.get("close_variant") or "") and i != keep:
                 row["close_variant"] = ""
-    if keep >= 0:
-        row = lines[keep]
-        if not str(row.get("close_variant") or "").strip():
-            row["close_variant"] = "silhouette"
-            row["close_target"] = row.get("close_target") or "shoulders"
-        print(
-            f"[LOFI close] keep scene={keep + 1} "
-            f"variant={row.get('close_variant')} "
-            f"fn={row.get('beat_function')}"
-        )
-        return keep
     pick = rag.pick_optional_close(theme, module)
     if not pick:
+        if keep >= 0:
+            row = lines[keep]
+            row["shot_scale"] = "medium"
+            row["close_variant"] = ""
+            row["close_target"] = ""
+            row["pose_hint"] = ""
         print("[LOFI close] none — optional close skipped")
         return -1
     candidates = [
@@ -1673,77 +1722,33 @@ def assign_close_beat(
         and str(row.get("beat_function") or "") in {"turn", "insight"}
         and 1 <= i <= max(1, n - 3)
     ]
-    if not candidates:
+    if keep >= 0:
+        idx = keep
+    elif not candidates:
         print("[LOFI close] none — no turn/insight slot")
         return -1
-    variant = str(pick.get("variant") or "silhouette")
-    who = str(pick.get("character") or "woman")
-    idx = candidates[0]
-    if variant in {"portrait_close", "eye_close"}:
-        hits = [
-            i
-            for i in candidates
-            if str(lines[i].get("subject_type") or "").strip().lower() == who
-        ]
-        idx = hits[0] if hits else candidates[0]
     else:
-        for i in candidates:
-            st = str(lines[i].get("subject_type") or "").strip().lower()
-            if st != "object_focus":
-                idx = i
-                break
+        variant = str(pick.get("variant") or "silhouette")
+        who = str(pick.get("character") or "woman")
+        idx = candidates[0]
+        if variant == "portrait_close":
+            hits = [
+                i
+                for i in candidates
+                if str(lines[i].get("subject_type") or "").strip().lower() == who
+            ]
+            idx = hits[0] if hits else candidates[0]
+        else:
+            for i in candidates:
+                st = str(lines[i].get("subject_type") or "").strip().lower()
+                if st != "object_focus":
+                    idx = i
+                    break
     row = lines[idx]
     if not isinstance(row, dict):
         return -1
     seed = f"{theme}|{lines[0].get('text') if isinstance(lines[0], dict) else ''}"
-    st = str(row.get("subject_type") or "").strip().lower().replace(" ", "_")
-    if variant == "eye_close":
-        row["subject_type"] = "woman"
-        row["close_character"] = "woman"
-        if st != "woman":
-            row["subject_remap"] = (
-                str(row.get("subject_remap") or "") + "+eye_close"
-            ).strip("+")
-        ctx = rag.pick_eye_close_context(module)
-        row["shot_scale"] = "close"
-        row["close_variant"] = "eye_close"
-        row["close_target"] = "eyes"
-        row["eye_close_context"] = ctx
-        row["setting"] = ctx
-        row["pose_hint"] = _CLOSE_POSE_HINT["eyes"]
-        print(
-            f"[LOFI close] variant=eye_close scene={idx + 1} "
-            f"fn={row.get('beat_function')} context={ctx!r}"
-        )
-        return idx
-    if variant == "portrait_close":
-        row["subject_type"] = who if who in {"woman", "man"} else "woman"
-        row["close_character"] = row["subject_type"]
-        row["shot_scale"] = "close"
-        row["close_variant"] = "portrait_close"
-        row["close_target"] = "portrait"
-        row["eye_close_context"] = ""
-        row["pose_hint"] = _CLOSE_POSE_HINT["portrait"]
-        print(
-            f"[LOFI close] variant=portrait_close scene={idx + 1} "
-            f"character={row['close_character']} fn={row.get('beat_function')}"
-        )
-        return idx
-    target = rag.next_silhouette_close_target(module, seed)
-    if st == "object_focus":
-        row["subject_type"] = "silhouette"
-        row["subject_remap"] = (str(row.get("subject_remap") or "") + "+close_beat").strip("+")
-        st = "silhouette"
-    row["shot_scale"] = "close"
-    row["close_variant"] = "silhouette"
-    row["close_character"] = ""
-    row["close_target"] = target
-    row["eye_close_context"] = ""
-    row["pose_hint"] = _CLOSE_POSE_HINT[target]
-    print(
-        f"[LOFI close] variant=silhouette scene={idx + 1} "
-        f"type={st} target={target} fn={row.get('beat_function')}"
-    )
+    _stamp_close_pick(row, pick, idx=idx, theme=theme, module=module, seed=seed)
     return idx
 
 
@@ -2336,6 +2341,7 @@ def assemble_v2_prompt(
         palette_sentence,
         _SATURATION_GUARD,
         _TEXT_LEGIBILITY_GUARD,
+        garment_coverage_clause(st, str(beat.get("close_variant") or "")),
         mood_b,
         fmt_b,
     ]
@@ -2362,6 +2368,19 @@ def apply_v2_prompts_to_lines(
         lines, pool=pool, vary_imagery=vary_imagery, lock_visuals=lock_visuals
     )
     _apply_setting_archetype_pass(lines, pool, lock_visuals=lock_visuals)
+    theme = ""
+    module = "relationship"
+    if lines and isinstance(lines[0], dict):
+        theme = str(lines[0].get("episode_theme") or "")
+        module = str(lines[0].get("episode_module") or "relationship") or "relationship"
+    has_close = any(
+        isinstance(r, dict)
+        and str(r.get("close_variant") or "") in {"portrait_close", "silhouette"}
+        for r in lines
+    )
+    if not has_close:
+        assign_close_beat(lines, theme=theme, module=module)
+    assign_episode_lighting(lines, module=module, theme=theme)
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue
@@ -2394,11 +2413,36 @@ _DEV_TOD_ATMOSPHERE: dict[str, str] = {
     "dusk": "Painted dusk: warm amber against cooler shadow, not a photograph.",
     "evening": "Painted evening: lamp-warm interiors, window as a dark plane.",
     "night": "Painted night: indigo and charcoal, small warm windows.",
+    "overcast": "Painted overcast: sage grey and cream flats, even daylight, no amber sunset.",
+    "rain": "Painted rain: cool grey wet flats, streaked glass, no amber sunset.",
 }
 _DEV_PERSON_MOOD = (
-    "Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, "
+    "Quiet melancholic mood, not glamorous. Everyday clothes, fully covered by "
+    "dress or sweater fabric: back, shoulders, chest, and torso clothed; "
     "not off-shoulder, not a fashion or beauty close-up, not a sensual pose."
 )
+HUMAN_FIGURE_TYPES = frozenset({"woman", "man", "couple", "silhouette"})
+GARMENT_COVERAGE_DIRECTIVE = (
+    "fully covered by dress fabric, back and shoulders clothed, chest and torso "
+    "clothed; no bare back, no exposed shoulders, no cleavage, no nape-to-waist "
+    "skin, not off-shoulder"
+)
+
+
+def garment_coverage_clause(
+    subject_type: str,
+    close_variant: str = "",
+) -> str:
+    """Positive-prompt coverage steer. Flux CFG often ignores negatives."""
+    st = str(subject_type or "").strip().lower().replace(" ", "_")
+    cv = str(close_variant or "").strip().lower()
+    if cv == "eye_close":
+        return ""
+    if st not in HUMAN_FIGURE_TYPES and cv != "portrait_close":
+        return ""
+    return GARMENT_COVERAGE_DIRECTIVE
+
+
 # No frontal / three-quarter close face. Rotate so woman/man beats vary.
 _DEV_AVERT_FRAMINGS: tuple[str, ...] = (
     "Seen from behind, face not visible, looking into the space.",
@@ -2409,15 +2453,16 @@ _DEV_AVERT_FRAMINGS: tuple[str, ...] = (
 _DEV_CHAR_OVERRIDE: dict[str, str] = {
     "woman": (
         "a woman with long dark hair in a simple high-neck sweater, "
-        "[expression] posture, shoulders covered"
+        "[expression] posture, fully covered by dress fabric, back and shoulders clothed"
     ),
     "man": (
         "a quiet man with dark hair in a plain everyday sweater, "
-        "[expression] posture"
+        "[expression] posture, fully covered by fabric, back and shoulders clothed"
     ),
     "couple": (
         "a man and a woman in simple everyday clothes, both dark-haired, "
-        "[expression] postures, not posed for a camera"
+        "[expression] postures, fully covered by fabric, back and shoulders clothed, "
+        "not posed for a camera"
     ),
 }
 # Locked style-riso_painting_retro_vintage (risograph-on-Dev). Woman/man only:
@@ -2437,6 +2482,13 @@ _RISO_RETRO_TOD: dict[str, str] = {
         "Night print: indigo and charcoal flats, small warm windows, "
         "no neon photography."
     ),
+    "overcast": (
+        "Overcast print: sage grey and cream flats, flat daylight, "
+        "no amber sunset, no doorway backlight."
+    ),
+    "rain": (
+        "Rain print: cool grey wet flats, streaked glass, no amber sunset."
+    ),
 }
 _RISO_RETRO_BACKLIT_FIGURE = (
     "Positioned against a bright window, sunset, or open doorway so the body "
@@ -2444,6 +2496,226 @@ _RISO_RETRO_BACKLIT_FIGURE = (
     "features, no glossy portrait, no beauty lighting, not a glamour close-up. "
     "Three-quarter or full-figure silhouette in the middle of the frame."
 )
+# Cross-run lighting bank. sunset_doorway is the overused default to cap.
+LIGHTING_SUNSET_ID = "sunset_doorway"
+MAX_DOMINANT_LIGHTING_BEATS = 6
+MIN_DOMINANT_LIGHTING_BEATS = 5
+LIGHTING_CONDITION_ORDER: tuple[str, ...] = (
+    "sunset_doorway",
+    "overcast_daylight",
+    "blue_hour_streetlight",
+    "indoor_lamp_glow",
+    "rainy_grey",
+    "morning_cool",
+)
+LIGHTING_CONDITIONS: dict[str, dict[str, str]] = {
+    "sunset_doorway": {
+        "label": "warm sunset backlight through doorway/window",
+        "tod": "dusk",
+        "figure_framing": _RISO_RETRO_BACKLIT_FIGURE,
+        "atmos": (
+            "Dusk print: warm amber flats against cooler shadow blocks, "
+            "not a photographed sunset."
+        ),
+    },
+    "overcast_daylight": {
+        "label": "overcast daylight",
+        "tod": "overcast",
+        "figure_framing": (
+            "Even overcast daylight, no hard backlight, figure readable as a "
+            "printed shape in grey-cream air. Not a sunset doorway silhouette. "
+            "No rendered skin, no facial features, no glossy portrait. "
+            "Three-quarter or full-figure in the middle of the frame."
+        ),
+        "atmos": (
+            "Overcast print: sage grey and cream flats, flat daylight, "
+            "no amber sunset, no doorway backlight."
+        ),
+    },
+    "blue_hour_streetlight": {
+        "label": "blue-hour / night streetlight",
+        "tod": "night",
+        "figure_framing": (
+            "Blue-hour streetlight: cool indigo ground, a small warm lamp as a "
+            "hard color plane — not sunset through a doorway. No rendered skin, "
+            "no facial features, no glossy portrait. "
+            "Three-quarter or full-figure in the middle of the frame."
+        ),
+        "atmos": (
+            "Night print: indigo and charcoal flats, small warm windows, "
+            "no neon photography."
+        ),
+    },
+    "indoor_lamp_glow": {
+        "label": "indoor lamp glow",
+        "tod": "evening",
+        "figure_framing": (
+            "Indoor lamp glow, a warm pool of light on a table or wall, figure "
+            "in a furnished room — not a sunset silhouette in a doorway. "
+            "No rendered skin, no facial features, no glossy portrait. "
+            "Three-quarter or full-figure in the middle of the frame."
+        ),
+        "atmos": (
+            "Evening print: lamp-warm interiors as flat color, window as a dark plane."
+        ),
+    },
+    "rainy_grey": {
+        "label": "rainy grey light",
+        "tod": "rain",
+        "figure_framing": (
+            "Rainy grey light, wet glass, cool paper sky — not warm sunset "
+            "backlight. No rendered skin, no facial features, no glossy portrait. "
+            "Three-quarter or full-figure in the middle of the frame."
+        ),
+        "atmos": (
+            "Rain print: cool grey wet flats, streaked glass, no amber sunset."
+        ),
+    },
+    "morning_cool": {
+        "label": "early morning cool light",
+        "tod": "dawn",
+        "figure_framing": (
+            "Early morning cool light, pale paper sky, long quiet shadows — "
+            "not sunset orange. No rendered skin, no facial features, "
+            "no glossy portrait. Three-quarter or full-figure in the middle "
+            "of the frame."
+        ),
+        "atmos": (
+            "Dawn print: pale paper sky, long quiet shadow blocks, not a photograph."
+        ),
+    },
+}
+
+
+def suggest_lighting_for_setting(setting: str, key_object: str = "") -> str:
+    blob = f"{setting} {key_object}".lower()
+    if any(w in blob for w in ("rain", "wet", "streak")):
+        return "rainy_grey"
+    if any(w in blob for w in ("kitchen", "sofa", "desk", "bedroom", "table", "counter")):
+        return "indoor_lamp_glow"
+    if any(w in blob for w in ("streetlamp", "streetlight", "street", "platform", "night")):
+        return "blue_hour_streetlight"
+    if any(w in blob for w in ("dawn", "morning", "stoop")):
+        return "morning_cool"
+    if any(w in blob for w in ("park", "path", "horizon", "coast")):
+        return "overcast_daylight"
+    if any(w in blob for w in ("doorway", "dusk", "sunset")):
+        return "sunset_doorway"
+    return ""
+
+
+def lighting_spec(condition: str) -> dict[str, str]:
+    return dict(LIGHTING_CONDITIONS.get(condition) or LIGHTING_CONDITIONS["overcast_daylight"])
+
+
+def lighting_figure_framing(beat: dict[str, Any]) -> str:
+    spec = lighting_spec(str(beat.get("lighting_condition") or ""))
+    return str(spec.get("figure_framing") or _RISO_RETRO_BACKLIT_FIGURE)
+
+
+def lighting_atmos(beat: dict[str, Any]) -> str:
+    spec = lighting_spec(str(beat.get("lighting_condition") or ""))
+    return str(spec.get("atmos") or "")
+
+
+def apply_lighting_to_beat(row: dict[str, Any], condition: str) -> None:
+    spec = lighting_spec(condition)
+    row["lighting_condition"] = condition
+    row["lighting_label"] = spec.get("label") or condition
+    row["time_of_day"] = spec.get("tod") or row.get("time_of_day") or "dusk"
+
+
+def assign_episode_lighting(
+    lines: list[dict[str, Any]],
+    *,
+    module: str = "relationship",
+    theme: str = "",
+) -> str:
+    """
+    Pick one dominant lighting look, cap it at 5–6 of 9 beats, and bias
+    away from sunset-doorway when the last two episodes already used it.
+    """
+    n = len([r for r in lines if isinstance(r, dict)])
+    if n <= 0:
+        return ""
+    from core_engine.economic_reel_lofi import lofi_collections as rag
+
+    pre = [
+        str(r.get("lighting_condition") or "").strip()
+        for r in lines
+        if isinstance(r, dict)
+    ]
+    if pre and all(c in LIGHTING_CONDITIONS for c in pre):
+        counts: dict[str, int] = {}
+        for c in pre:
+            counts[c] = counts.get(c, 0) + 1
+        dominant = max(counts, key=counts.get)
+        print(
+            f"[LOFI lighting] keep stamped dominant={dominant} "
+            f"n={counts.get(dominant, 0)}/{n} beats={pre}"
+        )
+        return dominant
+
+    forced = str(os.getenv("LOFI_FORCE_LIGHTING_DOMINANT") or "").strip().lower()
+    if forced in LIGHTING_CONDITIONS:
+        dominant = forced
+    else:
+        prev = rag.recent_dominant_lighting(module, 5)
+        if not prev:
+            # Pre-stamp era defaulted to sunset-doorway; treat as already used.
+            prev = [LIGHTING_SUNSET_ID, LIGHTING_SUNSET_ID]
+        last2 = prev[-2:]
+        avoid_sunset = len(last2) >= 2 and all(x == LIGHTING_SUNSET_ID for x in last2)
+        bank = [
+            c
+            for c in LIGHTING_CONDITION_ORDER
+            if not (avoid_sunset and c == LIGHTING_SUNSET_ID)
+        ]
+        if not bank:
+            bank = [c for c in LIGHTING_CONDITION_ORDER if c != LIGHTING_SUNSET_ID]
+        seed = f"{theme}|{module}|{','.join(prev[-3:])}"
+        dominant = bank[sum(ord(c) for c in seed) % len(bank)]
+    n_dom = min(MAX_DOMINANT_LIGHTING_BEATS, max(MIN_DOMINANT_LIGHTING_BEATS, n - 3))
+    others = [c for c in LIGHTING_CONDITION_ORDER if c != dominant]
+    assigned: list[str] = []
+    used_dom = 0
+    other_i = 0
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("lighting_condition") or "").strip() in LIGHTING_CONDITIONS:
+            cond = str(row.get("lighting_condition") or "")
+            assigned.append(cond)
+            if cond == dominant:
+                used_dom += 1
+            continue
+        hinted = suggest_lighting_for_setting(
+            str(row.get("setting") or ""),
+            str(row.get("key_object") or ""),
+        )
+        remaining = n - i
+        need_dom = n_dom - used_dom
+        if i == 0:
+            cond = dominant
+        elif hinted and hinted != dominant and (need_dom < remaining):
+            cond = hinted
+        elif used_dom < n_dom:
+            cond = dominant
+        else:
+            cond = others[other_i % len(others)] if others else dominant
+            other_i += 1
+        if cond == dominant:
+            used_dom += 1
+        apply_lighting_to_beat(row, cond)
+        assigned.append(cond)
+    print(
+        f"[LOFI lighting] dominant={dominant} "
+        f"n={assigned.count(dominant)}/{n} "
+        f"beats={assigned}"
+    )
+    return dominant
+
+
 _RISO_RETRO_BACKLIT_COUPLE = (
     "Both figures are backlit into flat unlit silhouette shapes against the "
     "lamp, sky, or open light. No rendered skin, no facial features, no glossy "
@@ -2453,15 +2725,16 @@ _RISO_RETRO_BACKLIT_COUPLE = (
 _RISO_RETRO_CHAR: dict[str, str] = {
     "woman": (
         "a lone woman as a flat unlit clothed silhouette, [expression] posture, "
-        "shoulders covered, no visible face or skin"
+        "fully covered by dress fabric, back and shoulders clothed, no visible face or skin"
     ),
     "man": (
         "a lone man as a flat unlit clothed silhouette, [expression] posture, "
-        "no visible face or skin"
+        "fully covered by fabric, back and shoulders clothed, no visible face or skin"
     ),
     "couple": (
         "two clothed figures as flat unlit silhouettes, a man and a woman, "
-        "[expression] postures, no visible faces or skin"
+        "[expression] postures, fully covered by fabric, back and shoulders clothed, "
+        "no visible faces or skin"
     ),
 }
 _RISO_RETRO_EXPANSION: dict[str, str] = {
@@ -2680,7 +2953,8 @@ def _dev_expanded_scene_detail(
     else:
         body = table.get(st) or table.get("woman") or ""
     tod = str(beat.get("time_of_day") or "dusk").strip().lower()
-    atmos = tod_table.get(tod) or tod_table.get("dusk") or ""
+    spec_atmos = lighting_atmos(beat)
+    atmos = spec_atmos or tod_table.get(tod) or tod_table.get("dusk") or ""
     return f"{body} {atmos}".strip()
 
 
@@ -2852,11 +3126,9 @@ def assemble_v2_prompt_dev(
         couple_bit = f" {_COUPLE_SEPARATION}" if st == "couple" else ""
         env_stem = _object_stem(key_object)
         if backlit:
-            framing = (
-                _RISO_RETRO_BACKLIT_COUPLE
-                if st == "couple"
-                else _RISO_RETRO_BACKLIT_FIGURE
-            )
+            framing = lighting_figure_framing(beat)
+            if st == "couple":
+                framing = f"{_RISO_RETRO_BACKLIT_COUPLE} {framing}"
             beat["dev_scene_builder"] = f"{st}_backlit_silhouette"
         elif env_stem in {"rain", "window", "horizon", "platform"}:
             framing = (
@@ -2910,6 +3182,7 @@ def assemble_v2_prompt_dev(
         palette_sentence,
         sat_g,
         text_g,
+        garment_coverage_clause(st, str(beat.get("close_variant") or "")),
         mood_b,
         fmt_b,
     ]
@@ -2946,6 +3219,19 @@ def apply_v2_prompts_to_lines_dev(
         lines, pool=pool, vary_imagery=vary_imagery, lock_visuals=lock_visuals
     )
     _apply_setting_archetype_pass(lines, pool, lock_visuals=lock_visuals)
+    theme = ""
+    module = "relationship"
+    if lines and isinstance(lines[0], dict):
+        theme = str(lines[0].get("episode_theme") or "")
+        module = str(lines[0].get("episode_module") or "relationship") or "relationship"
+    has_close = any(
+        isinstance(r, dict)
+        and str(r.get("close_variant") or "") in {"portrait_close", "silhouette"}
+        for r in lines
+    )
+    if not has_close:
+        assign_close_beat(lines, theme=theme, module=module)
+    assign_episode_lighting(lines, module=module, theme=theme)
     for i, row in enumerate(lines):
         if not isinstance(row, dict):
             continue

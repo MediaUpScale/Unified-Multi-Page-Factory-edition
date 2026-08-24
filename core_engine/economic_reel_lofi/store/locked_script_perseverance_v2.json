@@ -1,0 +1,1048 @@
+{
+  "script": {
+    "hook_type": "bold_claim",
+    "theme": "perseverance",
+    "module": "relationship",
+    "arc_template": "thematic_arc",
+    "structure_id": "nested_belief",
+    "thesis": "Perseverance in love is not about grand gestures but the small, unglamorous act of continuing to show up, even when the bed feels empty.",
+    "anchor_object": {
+      "name": "kettle just starting",
+      "initial_state": "cold and untouched",
+      "final_state": "steaming, just boiled",
+      "setting": "kitchen before sunrise"
+    },
+    "monologue": "You think you're done. The fight was louder than anything you've said in years. You wake at dawn, bracing for silence. But the kettle clicks on, just before you ask. You don't have to believe in forever. You leave the kettle sitting cold. You just have to start.",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "You think you're done.",
+        "beat_text": "You think you're done.",
+        "emotion": "opening_hook",
+        "arc_position": "act1",
+        "beat_function": "hook",
+        "shot_scale": "medium",
+        "subject_type": "man",
+        "subject_expression": "exhausted, closed off",
+        "setting": "street corner under a streetlamp",
+        "key_object": "streetlamp",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "lone man under a streetlamp at dawn",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone man as a flat unlit clothed silhouette, exhausted, closed off posture, no visible face or skin in bedroom, unmade empty bed, dawn. unmade empty bed is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Dawn print: pale paper sky, long quiet shadow blocks, not a photograph. The image must visually embody: tangled sheets on the bed, morning light through blinds. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "episode_theme": "perseverance",
+        "episode_module": "relationship",
+        "episode_anchor_stem": "kettle",
+        "episode_anchor_name": "kettle just starting",
+        "visual_fallback": "caption_anchored_pool",
+        "palette_key": "WARM",
+        "dev_scene_builder": "man_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_man_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "image_ok": false,
+          "qa_passed": false
+        }
+      },
+      {
+        "scene": 2,
+        "text": "The fight was louder than anything",
+        "beat_text": "The fight was louder than anything",
+        "emotion": "quiet_sorrowful",
+        "arc_position": "act1",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "subject_type": "silhouette",
+        "subject_expression": "slumped shoulders",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "fight louder than anything",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a slumped shoulders posture in hallway near an open door, open doorway is the only object, dawn. Hands empty at the sides or out of frame. Only open doorway is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Close portrait, face and torso filling the frame, not a wide establishing shot. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Dawn print: pale paper sky, long quiet shadow blocks, not a photograph. The image must visually embody: fight louder than anything. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "caption_anchored_pool",
+        "palette_key": "WARM",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "place_kept",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "open doorway",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.6523,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 2,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "place_kept",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "open doorway",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.6523,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 3,
+        "text": "you've said in years.",
+        "beat_text": "you've said in years.",
+        "emotion": "melancholic_quiet",
+        "arc_position": "act1",
+        "beat_function": "turn",
+        "shot_scale": "close",
+        "subject_type": "woman",
+        "subject_expression": "pained, eyes down",
+        "setting": "rain-streaked window at dusk",
+        "key_object": "rain on the window",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "you've said years",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, pained, eyes down posture, shoulders covered, no visible face or skin in rain-streaked window at dusk, dawn. Tight crop on the named object in the foreground; figure only a shoulder or hand edge — no face in frame.. rain on the window is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Dawn print: pale paper sky, long quiet shadow blocks, not a photograph. The image must visually embody: you've said years. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function_remap": "consecutive_shift",
+        "close_variant": "silhouette",
+        "close_target": "object",
+        "eye_close_context": "",
+        "pose_hint": "Tight crop on the named object in the foreground; figure only a shoulder or hand edge — no face in frame.",
+        "palette_key": "WARM",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "rain on the window",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "rain on the window",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 4,
+        "text": "You wake at dawn, bracing for silence.",
+        "beat_text": "You wake at dawn, bracing for silence.",
+        "emotion": "longing",
+        "arc_position": "act2",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "subject_type": "man",
+        "subject_expression": "tensed jaw",
+        "setting": "kitchen at dawn",
+        "key_object": "kettle just clicked off",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "wake dawn bracing silence",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone man as a flat unlit clothed silhouette, tensed jaw posture, no visible face or skin in kitchen at dawn, dawn. kettle just clicked off is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Dawn print: pale paper sky, long quiet shadow blocks, not a photograph. The image must visually embody: wake dawn bracing silence. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function_remap": "consecutive_shift",
+        "palette_key": "COLD",
+        "dev_scene_builder": "man_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_man_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "man",
+          "key_object": "kettle just clicked off",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 4,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "man",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "man",
+              "key_object": "kettle just clicked off",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "man",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_man_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 5,
+        "text": "But the kettle clicks on,",
+        "beat_text": "But the kettle clicks on,",
+        "emotion": "bittersweet",
+        "arc_position": "act2",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "subject_type": "object_focus",
+        "subject_expression": "steam rising",
+        "setting": "kitchen before sunrise",
+        "key_object": "kettle just starting",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "kettle just starting, cold and untouched",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A painterly risograph still-life of kettle just starting in kitchen before sunrise. The object sits in a real environment with paper grain, color gradient, and canvas texture — not a woodcut, not a flat ink diagram on blank paper, not isolated linework. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only kettle just starting is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. The kettle just starting must be drawn as that real object, recognizable by: spout, lid, handle, rounded metal body. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Same painterly-photographic risograph atmosphere as a furnished room or rainy street — paper tooth, color gradient, canvas texture, dusk light. Not a flat woodcut, not isolated ink-diagram linework on blank paper, not a poster still-life on an empty cream wall. Printed atmosphere: visible paper tooth and a slight riso color offset. The street, rain, wall, and wet pavement keep full painterly detail, color gradient, and canvas texture. No person, no face, no hands, no silhouette figure. Dawn print: pale paper sky, long quiet shadow blocks, not a photograph. The image must visually embody: kettle just starting, cold and untouched. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "anchor_beat": "introduce",
+        "episode_anchor_name": "kettle just starting",
+        "palette_key": "COLD",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "painterly_setting",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act2",
+        "riso_palette": "COLD",
+        "close_variant": "",
+        "default_object_gate": {
+          "image_ok": false,
+          "qa_passed": false
+        }
+      },
+      {
+        "scene": 6,
+        "text": "just before you ask.",
+        "beat_text": "just before you ask.",
+        "emotion": "realization",
+        "arc_position": "act2",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "subject_type": "woman",
+        "subject_expression": "softening, surprised",
+        "setting": "coat hook by the door",
+        "key_object": "two coats hanging",
+        "time_of_day": "dawn",
+        "visual_anchor_hint": "just before ask",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, softening, surprised posture, shoulders covered, no visible face or skin in coat hook by the door, dawn. two coats hanging is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Dawn print: pale paper sky, long quiet shadow blocks, not a photograph. The image must visually embody: just before ask. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "signage_trap_remap",
+        "beat_function_remap": "consecutive_shift",
+        "palette_key": "COLD",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "two coats hanging",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 6,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "two coats hanging",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 7,
+        "text": "You don't have to believe in forever.",
+        "beat_text": "You don't have to believe in forever.",
+        "emotion": "acceptance",
+        "arc_position": "act3",
+        "beat_function": "close",
+        "shot_scale": "medium",
+        "subject_type": "silhouette",
+        "subject_expression": "calm, resolved",
+        "setting": "hallway with a closed suitcase on the floor",
+        "key_object": "closed suitcase on the floor",
+        "time_of_day": "morning",
+        "visual_anchor_hint": "don't have believe forever",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a calm, resolved posture in hallway with a closed suitcase on the floor, closed suitcase on the floor is the only object, morning. Hands empty at the sides or out of frame. Only closed suitcase on the floor is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Close portrait, face and torso filling the frame, not a wide establishing shot. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: don't have believe forever. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function_remap": "consecutive_shift",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "place_kept",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "closed suitcase on the floor",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.168,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 7,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "place_kept",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "closed suitcase on the floor",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.168,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 8,
+        "text": "You leave the kettle sitting cold.",
+        "beat_text": "You leave the kettle sitting cold.",
+        "emotion": "hopeful_bittersweet",
+        "arc_position": "act3",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "subject_type": "object_focus",
+        "subject_expression": "tentative, connected",
+        "setting": "kitchen before sunrise",
+        "key_object": "kettle just starting",
+        "time_of_day": "morning",
+        "visual_anchor_hint": "kettle just starting, steaming, just boiled",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. Two clothed figures as flat unlit silhouettes, a man and a woman, tentative, connected postures, no visible faces or skin in kitchen before sunrise, morning. Two separate distinct people: one man and one woman, two distinct faces, two distinct bodies, not fused into one figure, no phantom extra hands. kettle just starting is part of the environment, not held in any hand. Both figures are backlit into flat unlit silhouette shapes against the lamp, sky, or open light. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a photographed couple. The environment around them keeps full painterly detail. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. The kettle just starting must be drawn as that real object, recognizable by: spout, lid, handle, rounded metal body. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Wide printed landscape: two small unlit silhouette figures, a hard horizon, empty ground as a flat color field. Distance between them is the subject. No rendered skin or faces on either figure. The street, lamp, sky, and buildings keep full painterly detail and paper texture. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: kettle just starting, steaming, just boiled. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "object_stem_rotate",
+        "anchor_beat": "callback",
+        "episode_anchor_name": "kettle just starting",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "couple_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_couple_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "image_ok": false,
+          "qa_passed": false
+        }
+      },
+      {
+        "scene": 9,
+        "text": "You just have to start.",
+        "beat_text": "You just have to start.",
+        "emotion": "resolution_warmth",
+        "arc_position": "act3",
+        "beat_function": "close",
+        "shot_scale": "medium",
+        "subject_type": "couple",
+        "subject_expression": "quiet, hopeful",
+        "setting": "empty park path at dusk",
+        "key_object": "distant horizon",
+        "time_of_day": "morning",
+        "visual_anchor_hint": "just have start",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A wide melancholic silhouette of two figures, a man and a woman standing apart in empty park path at dusk, morning. Open plane, small in the frame, not a close portrait. Hands empty at their sides, not holding anything. No small objects near the faces. Both figures are backlit into flat unlit silhouette shapes against the lamp, sky, or open light. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a photographed couple. The environment around them keeps full painterly detail. Wide printed landscape: two small unlit silhouette figures, a hard horizon, empty ground as a flat color field. Distance between them is the subject. No rendered skin or faces on either figure. The street, lamp, sky, and buildings keep full painterly detail and paper texture. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: just have start. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_fallback": "signage_trap_remap",
+        "palette_key": "CONTRAST",
+        "silhouette_framing": "wide_couple",
+        "dev_scene_builder": "couple_wide_backlit_silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "wide_place",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_couple_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "couple",
+          "key_object": "distant horizon",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 9,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "wide_place",
+          "style_gate": {
+            "subject_type": "couple",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "couple",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "couple",
+              "key_object": "distant horizon",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "wide_place",
+              "style_gate": {
+                "subject_type": "couple",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "couple",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_couple_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      }
+    ],
+    "retrieved_details": [
+      {
+        "detail": "untied shoes waiting on the stoop at dawn",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "the kettle just starting before sunrise",
+        "sensory_type": "object"
+      },
+      {
+        "detail": "a work bag still by the door",
+        "sensory_type": "object"
+      }
+    ],
+    "seed_hooks": [
+      {
+        "text": "Getting up anyway is still a kind of love."
+      },
+      {
+        "text": "The day does not wait for you to feel ready."
+      }
+    ],
+    "close_variant": "silhouette",
+    "close_target": "shoulders",
+    "eye_close_context": "",
+    "insight_agency": {
+      "insights": [
+        {
+          "scene": 4,
+          "text": "You wake at dawn, bracing for silence.",
+          "prev": "you've said in years.",
+          "status": "pass",
+          "reason": "you+wake",
+          "here": {
+            "status": "pass",
+            "reason": "you+wake",
+            "subject": "you",
+            "verb": "wake"
+          },
+          "before": {
+            "status": "fail",
+            "reason": "no-character-concrete:unknown:youve",
+            "subject": "",
+            "verb": "youve"
+          }
+        },
+        {
+          "scene": 6,
+          "text": "just before you ask.",
+          "prev": "But the kettle clicks on,",
+          "status": "borderline",
+          "reason": "infinitive:ask",
+          "here": {
+            "status": "borderline",
+            "reason": "infinitive:ask",
+            "subject": "",
+            "verb": "ask"
+          },
+          "before": {
+            "status": "fail",
+            "reason": "no-character-concrete:unknown:kettle",
+            "subject": "",
+            "verb": "kettle"
+          }
+        },
+        {
+          "scene": 8,
+          "text": "The kettle has gone cold.",
+          "prev": "You don't have to believe in forever.",
+          "status": "borderline",
+          "reason": "infinitive:go",
+          "here": {
+            "status": "borderline",
+            "reason": "infinitive:go",
+            "subject": "",
+            "verb": "go"
+          },
+          "before": {
+            "status": "fail",
+            "reason": "cognitive-only:believe",
+            "subject": "you",
+            "verb": "believe"
+          }
+        }
+      ],
+      "fails": []
+    },
+    "anchor_beats": [
+      5,
+      8
+    ],
+    "isnt_y_count": 0,
+    "intra_dedup_pass": true,
+    "cross_run_dedup_pass": true,
+    "episode_variety": {
+      "beat_count": 9,
+      "distinct_settings": 6,
+      "setting_stems": {
+        "bedroom": 1,
+        "hallway": 2,
+        "window": 1,
+        "kitchen": 3,
+        "coat": 1,
+        "park": 1
+      },
+      "setting_repeats": {
+        "hallway": 2,
+        "kitchen": 3
+      },
+      "distinct_compositions": 5,
+      "compositions": {
+        "man": 2,
+        "silhouette": 2,
+        "woman": 2,
+        "object_focus": 1,
+        "couple": 2
+      },
+      "person_shots": 6,
+      "variety_shots": 3,
+      "distinct_object_stems": 7,
+      "object_stems": {
+        "bed": 1,
+        "door": 1,
+        "rain": 1,
+        "kettle": 3,
+        "coat": 1,
+        "suitcase": 1,
+        "horizon": 1
+      },
+      "object_repeats": {
+        "kettle": 3
+      },
+      "object_over_cap": {},
+      "palette_sequence": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_expected": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_arc_ok": true,
+      "palette_mismatches": [],
+      "notes": [
+        "setting_repeats=hallwayx2,kitchenx3"
+      ],
+      "summary": "settings=6/9 distinct; compositions={'man': 2, 'silhouette': 2, 'woman': 2, 'object_focus': 1, 'couple': 2}; objects=7 distinct; palette_arc_ok=true; notes=['setting_repeats=hallwayx2,kitchenx3']",
+      "holds_episode": false
+    },
+    "holds_episode": false,
+    "narrative_holds": [],
+    "subtheme": "getting_up_anyway"
+  },
+  "scene_images": [
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_01.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_02.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_03.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_04.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_05.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_06.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_07.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_08.png",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01\\scene_09.png"
+  ],
+  "work_dir": "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\outputs\\wonder_feed\\assets\\lofi_run_20260823_001556_01",
+  "manual_accept_scenes": []
+}

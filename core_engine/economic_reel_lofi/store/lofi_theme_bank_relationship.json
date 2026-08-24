@@ -53,59 +53,59 @@
       {
         "detail": "an unmade bed left empty",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a closed suitcase resting on the floor",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the same scuffed shoes on the stoop after work",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an unopened envelope left on the windowsill",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a grocery list still stuck to the fridge",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the kettle started without being asked",
         "sensory_type": "gesture",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a receipt taped at eye level, never thrown away",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "rain streaking an empty window",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Trust is not a feeling.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "It is a pattern you notice later.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "Watch what they do after the promise.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
@@ -270,53 +270,60 @@
     "concrete_details": [
       {
         "detail": "the door closed from the inside and left that way",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a streetlamp on a quiet corner",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a half-written reply never sent from the table",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a suitcase packed and left on the porch steps",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a bill for one still sitting in the cafe booth",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the chain lock slid across after midnight",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a second chair pushed back under the table",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "two coats hanging on one hook",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Your softness is not a flaw to edit.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "Love that asks you to disappear is not love.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "You do not owe anyone a smaller self.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ]
@@ -370,53 +377,60 @@
     "concrete_details": [
       {
         "detail": "an empty passenger seat watched from the curb",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "read receipts checked on a dark screen",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "shoes left on in the hallway, ready to go back",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the same street corner waited under a streetlamp",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a doorbell pressed once, then again",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an empty passenger seat watched from the curb",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a jacket grabbed, then hung back on the hook",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a streetlamp on a quiet corner",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Chasing them will not make them stay.",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "The more you reach, the further they stand.",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "Anxiety is not a proof of love.",
-        "last_used_date": "2026-08-21",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
@@ -504,59 +518,59 @@
       {
         "detail": "two plates left in the sink after the argument",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a towel held out without a speech",
         "sensory_type": "gesture",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the bedroom lamp turned back on after the dark",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a kettle that just clicked off",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the door opened a few inches and left open",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a chair pulled back to the table",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the same blanket spread over both laps again",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "an empty passenger seat watched from the curb",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "The fight is not the whole story.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Repair is what they remember.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Coming back matters more than being right.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
@@ -602,17 +616,17 @@
       {
         "detail": "the volume turned down on the kitchen radio",
         "sensory_type": "sound",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "curtains drawn against the street noise",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a single place set, not two",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a folded blanket on the sofa",
@@ -644,12 +658,12 @@
     "hooks": [
       {
         "text": "Peace can feel boring after chaos.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "That boredom is often safety arriving.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
@@ -711,53 +725,60 @@
     "concrete_details": [
       {
         "detail": "a sweater draped over a chair without folding it tight",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "an open doorway with no one in it",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the lamp dimmed instead of switched off",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a hand resting on the table, palm open",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the front door unlocked for someone expected",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a blanket left unfolded at the end of the bed",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "wet dishes left to air instead of slammed away",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a folded blanket on the sofa",
         "sensory_type": "gesture",
-        "last_used_date": null,
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Looks fade. Character doesn't.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "The cover is not the book.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Stay for what doesn't expire.",
-        "last_used_date": "2026-08-20",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
@@ -801,59 +822,59 @@
       {
         "detail": "two umbrellas on a corner, not touching",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a suitcase standing alone on the platform",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an unused place setting at the long table",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a closed bedroom door in the apartment hallway",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the radio playing to an empty room",
         "sensory_type": "sound",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "rain streaking an empty window",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an unmade bed left empty",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "an open doorway with no one in it",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Some silences are the whole answer.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "You don't have to narrate your leaving.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
         "text": "Misunderstanding is not always yours to correct.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ],
@@ -1221,49 +1242,53 @@
       {
         "detail": "untied shoes waiting on the stoop at dawn",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the kettle just starting before sunrise",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a work bag still by the door",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "cold water splashed on a face at the sink",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the same weekly pass taken from the coat",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "laces pulled tight with both hands",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the front door opened onto early light",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-24"
       }
     ],
     "hooks": [
       {
         "text": "Getting up anyway is still a kind of love.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "The day does not wait for you to feel ready.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Small returns still count as returning.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
@@ -1481,47 +1506,54 @@
     "concrete_details": [
       {
         "detail": "an empty extra chair at the edge of the porch",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "an untouched drink left in the party kitchen",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a place setting not claimed at the long table",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "neighbors' closed doors in the stairwell",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a picnic blanket with a gap at the edge",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a coat kept on indoors",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "shoes never kicked off at the gathering",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-24"
       }
     ],
     "hooks": [
       {
         "text": "Belonging is not a room you perform into.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Some places only fit if you shrink.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Home should not require a costume.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ]
@@ -1563,15 +1595,18 @@
     "concrete_details": [
       {
         "detail": "clock and cooling tea on the afternoon sill",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "sun moving off the kitchen floor",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "a calendar with days already crossed",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-08-23"
       },
       {
         "detail": "the same daily route in the bus window",
@@ -1599,7 +1634,7 @@
     "hooks": [
       {
         "text": "Time does not announce itself when it leaves.",
-        "last_used_date": "2026-08-19",
+        "last_used_date": "2026-08-23",
         "performance_score": null
       },
       {
@@ -1609,7 +1644,7 @@
       },
       {
         "text": "You will miss what felt too small to keep.",
-        "last_used_date": null,
+        "last_used_date": "2026-08-23",
         "performance_score": null
       }
     ]
@@ -1702,7 +1737,7 @@
     "theme": "hope",
     "subtheme": "after_the_worst_night",
     "status": "used",
-    "last_used_date": "2026-08-22",
+    "last_used_date": "2026-08-24",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "first pale light on a quiet street, one window lit, mid shot",
@@ -1732,65 +1767,66 @@
       {
         "detail": "one window still lit on a quiet street",
         "sensory_type": "place",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the kettle beginning to steam at pale dawn",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "first stripe of sun on the bedroom curtains",
         "sensory_type": "place",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "a clearing sky over the bus stop after rain",
         "sensory_type": "place",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "an unopened morning paper on the front steps",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "the porch light switched off in daylight",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "an unmade bed left empty",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-08-24"
       },
       {
         "detail": "rain streaking an empty window",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "After the worst night, the kettle still boils.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Hope is often just first light on a quiet street.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       },
       {
         "text": "Morning does not ask if you are ready.",
-        "last_used_date": "2026-08-22",
+        "last_used_date": "2026-08-24",
         "performance_score": null
       }
     ],
     "arc_template_dates": {
-      "thematic_arc": "2026-08-22"
-    }
+      "thematic_arc": "2026-08-24"
+    },
+    "last_anchor_object": "bed"
   },
   {
     "theme": "betrayal",

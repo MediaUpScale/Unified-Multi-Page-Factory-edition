@@ -1,0 +1,796 @@
+{
+  "theme": "time",
+  "module": "relationship",
+  "thesis": "Time costs something before it stays.",
+  "anchor_object": {
+    "name": "unmade empty bed",
+    "initial_state": "first seen",
+    "final_state": "changed by the last beats"
+  },
+  "monologue": "I don't make the bed for you. You leave the bed untouched. I don't keep the worn side warm. I don't turn the clock to your hour. I don't trace your shape in dust. Let me press each corner tight. I neaten the blanket's fold. The bed has gone cold. I own every minute now.",
+  "lines": [
+    {
+      "scene": 1,
+      "text": "I don't make the bed for you.",
+      "beat_text": "I don't make the bed for you.",
+      "emotion": "opening_hook",
+      "arc_position": "act1",
+      "beat_function": "hook",
+      "shot_scale": "medium",
+      "subject_type": "woman",
+      "subject_expression": "distant, still",
+      "setting": "bedroom, unmade empty bed",
+      "key_object": "unmade empty bed",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "unmade empty bed, sheets twisted, cold",
+      "visual_prompt": "story beat 1",
+      "episode_theme": "time",
+      "episode_module": "relationship",
+      "episode_anchor_stem": "bed",
+      "episode_anchor_name": "unmade empty bed",
+      "anchor_beat": "introduce",
+      "setting_archetype": "interior-domestic",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 2,
+      "text": "You leave the bed untouched.",
+      "beat_text": "You leave the bed untouched.",
+      "emotion": "continued",
+      "arc_position": "act1",
+      "beat_function": "complication",
+      "shot_scale": "medium",
+      "subject_type": "object_focus",
+      "subject_expression": "calm",
+      "setting": "bedroom, unmade empty bed",
+      "key_object": "unmade empty bed",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "rain tracks",
+      "visual_prompt": "story beat 2",
+      "visual_fallback": "retie_after_rewrite",
+      "subject_remap": "framing_variety",
+      "cross_run_rewrite": true,
+      "setting_archetype": "interior-domestic",
+      "composition_type": "object_focus"
+    },
+    {
+      "scene": 3,
+      "text": "I don't keep the worn side warm.",
+      "beat_text": "I don't keep the worn side warm.",
+      "emotion": "continued",
+      "arc_position": "act1",
+      "beat_function": "turn",
+      "shot_scale": "close",
+      "subject_type": "silhouette",
+      "subject_expression": "resolute",
+      "setting": "parked car at evening, door open",
+      "key_object": "empty passenger seat of a car",
+      "time_of_day": "night",
+      "visual_anchor_hint": "flickering sign",
+      "visual_prompt": "story beat 3",
+      "visual_fallback": "signage_trap_remap",
+      "subject_remap": "framing_variety",
+      "close_variant": "silhouette",
+      "close_character": "",
+      "close_target": "hands",
+      "eye_close_context": "",
+      "pose_hint": "Tight crop on empty hands and wrists only — no face in frame.",
+      "setting_archetype": "transit",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 4,
+      "text": "I don't turn the clock to your hour.",
+      "beat_text": "I don't turn the clock to your hour.",
+      "emotion": "escalation",
+      "arc_position": "act2",
+      "beat_function": "insight",
+      "shot_scale": "medium",
+      "subject_type": "object_focus",
+      "subject_expression": "firm",
+      "setting": "hallway with a closed suitcase on the floor",
+      "key_object": "closed suitcase on the floor",
+      "time_of_day": "night",
+      "visual_anchor_hint": "suitcase handle",
+      "visual_prompt": "story beat 4",
+      "pose_hint": "body turned mid-step toward the door, hands empty, not seated",
+      "subject_remap": "framing_variety",
+      "setting_archetype": "threshold",
+      "composition_type": "object_focus"
+    },
+    {
+      "scene": 5,
+      "text": "I don't trace your shape in dust.",
+      "beat_text": "I don't trace your shape in dust.",
+      "emotion": "continued",
+      "arc_position": "act2",
+      "beat_function": "complication",
+      "shot_scale": "medium",
+      "subject_type": "woman",
+      "subject_expression": "blank",
+      "setting": "empty park path at dusk",
+      "key_object": "distant horizon",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "evening light",
+      "visual_prompt": "story beat 5",
+      "visual_fallback": "caption_anchored_pool",
+      "setting_archetype": "exterior-landscape",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 6,
+      "text": "Let me press each corner tight.",
+      "beat_text": "Let me press each corner tight.",
+      "emotion": "softening",
+      "arc_position": "act2",
+      "beat_function": "turn",
+      "shot_scale": "medium",
+      "subject_type": "woman",
+      "subject_expression": "determined",
+      "setting": "coat hook by the door",
+      "key_object": "two coats hanging",
+      "time_of_day": "evening",
+      "visual_anchor_hint": "sleeves brushed",
+      "visual_prompt": "story beat 6",
+      "setting_archetype": "threshold",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 7,
+      "text": "I neaten the blanket's fold.",
+      "beat_text": "I neaten the blanket's fold.",
+      "emotion": "continued",
+      "arc_position": "act3",
+      "beat_function": "insight",
+      "shot_scale": "close-up",
+      "subject_type": "woman",
+      "subject_expression": "purposeful",
+      "setting": "empty train platform at night",
+      "key_object": "empty platform",
+      "time_of_day": "night",
+      "visual_anchor_hint": "street lamp glow",
+      "visual_prompt": "story beat 7",
+      "visual_fallback": "caption_anchored_pool",
+      "setting_archetype": "transit",
+      "setting_archetype_remap": "interior-domestic->transit",
+      "composition_type": "wide_environment",
+      "composition_remap": "figure_centered->wide_environment"
+    },
+    {
+      "scene": 8,
+      "text": "The bed has gone cold.",
+      "beat_text": "The bed has gone cold.",
+      "emotion": "callback",
+      "arc_position": "act3",
+      "beat_function": "close",
+      "shot_scale": "medium",
+      "subject_type": "object_focus",
+      "subject_expression": "neutral",
+      "setting": "cafe table after closing",
+      "key_object": "two chairs still out",
+      "time_of_day": "dawn-light",
+      "visual_anchor_hint": "unmade empty bed, sheets smoothed, still",
+      "visual_prompt": "story beat 8",
+      "visual_fallback": "caption_anchored_pool",
+      "anchor_beat": "callback",
+      "setting_archetype": "public-interior",
+      "setting_archetype_remap": "interior-domestic->public-interior",
+      "composition_type": "object_focus",
+      "composition_remap": "figure_centered->object_focus"
+    },
+    {
+      "scene": 9,
+      "text": "I own every minute now.",
+      "beat_text": "I own every minute now.",
+      "emotion": "release",
+      "arc_position": "act3",
+      "beat_function": "insight",
+      "shot_scale": "long shot",
+      "subject_type": "woman",
+      "subject_expression": "free",
+      "setting": "street corner under a streetlamp",
+      "key_object": "streetlamp",
+      "time_of_day": "dawn",
+      "visual_anchor_hint": "lamp dimming",
+      "visual_prompt": "story beat 9",
+      "setting_archetype": "exterior-urban",
+      "composition_type": "wide_environment",
+      "composition_remap": "figure_centered->wide_environment"
+    }
+  ],
+  "hook_type": "",
+  "retrieved_details": [
+    {
+      "detail": "an unmade bed left empty",
+      "sensory_type": "object"
+    },
+    {
+      "detail": "a closed suitcase resting on the floor",
+      "sensory_type": "object"
+    },
+    {
+      "detail": "the same scuffed shoes on the stoop after work",
+      "sensory_type": "object"
+    }
+  ],
+  "arc_template": "thematic_arc",
+  "structure_id": "anaphora",
+  "rhetoric_pattern": "negation_list_to_permission",
+  "rhetoric_hook_overlay": "",
+  "seed_hooks": [
+    {
+      "text": "Trust is not a feeling."
+    },
+    {
+      "text": "It is a pattern you notice later."
+    }
+  ],
+  "close_variant": "silhouette",
+  "close_target": "hands",
+  "eye_close_context": "",
+  "close_character": "",
+  "hook_gate": {
+    "scene": 1,
+    "status": "fail",
+    "reason": "hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+    "text": "I don't make the bed for you.",
+    "subject_type": "woman",
+    "setting": "bedroom, unmade empty bed",
+    "object": "unmade empty bed"
+  },
+  "insight_agency": {
+    "insights": [
+      {
+        "scene": 4,
+        "text": "I don't turn the clock to your hour.",
+        "prev": "I don't keep the worn side warm.",
+        "status": "pass",
+        "reason": "i+turn",
+        "here": {
+          "status": "pass",
+          "reason": "i+turn",
+          "subject": "i",
+          "verb": "turn"
+        },
+        "before": {
+          "status": "pass",
+          "reason": "i+keep",
+          "subject": "i",
+          "verb": "keep"
+        }
+      },
+      {
+        "scene": 7,
+        "text": "I neaten the blanket's fold.",
+        "prev": "Let me press each corner tight.",
+        "status": "pass",
+        "reason": "i+fold",
+        "here": {
+          "status": "pass",
+          "reason": "i+fold",
+          "subject": "i",
+          "verb": "fold"
+        },
+        "before": {
+          "status": "pass",
+          "reason": "you+let",
+          "subject": "you",
+          "verb": "let"
+        }
+      },
+      {
+        "scene": 9,
+        "text": "I own every minute now.",
+        "prev": "The bed has gone cold.",
+        "status": "fail",
+        "reason": "no-character-concrete:character:own",
+        "here": {
+          "status": "fail",
+          "reason": "no-character-concrete:character:own",
+          "subject": "i",
+          "verb": "own"
+        },
+        "before": {
+          "status": "fail",
+          "reason": "noncharacter-subject:bed+has",
+          "subject": "bed",
+          "verb": "has"
+        }
+      }
+    ],
+    "fails": [
+      "insight scene 9 has no character-performed concrete verb (no-character-concrete:character:own): 'I own every minute now.'"
+    ]
+  },
+  "principle_voice": {
+    "lines": [
+      {
+        "scene": 1,
+        "beat_function": "hook",
+        "text": "I don't make the bed for you.",
+        "status": "fail",
+        "reason": "not-quotable-advice",
+        "kind": "other"
+      },
+      {
+        "scene": 4,
+        "beat_function": "insight",
+        "text": "I don't turn the clock to your hour.",
+        "status": "fail",
+        "reason": "not-quotable-advice",
+        "kind": "other"
+      },
+      {
+        "scene": 7,
+        "beat_function": "insight",
+        "text": "I neaten the blanket's fold.",
+        "status": "fail",
+        "reason": "not-quotable-advice",
+        "kind": "other"
+      },
+      {
+        "scene": 9,
+        "beat_function": "insight",
+        "text": "I own every minute now.",
+        "status": "fail",
+        "reason": "not-quotable-advice",
+        "kind": "other"
+      }
+    ],
+    "fails": [
+      "principle hook scene 1 (not-quotable-advice): \"I don't make the bed for you.\"",
+      "principle insight scene 4 (not-quotable-advice): \"I don't turn the clock to your hour.\"",
+      "principle insight scene 7 (not-quotable-advice): \"I neaten the blanket's fold.\"",
+      "principle insight scene 9 (not-quotable-advice): 'I own every minute now.'"
+    ]
+  },
+  "principle_scope": {
+    "hits": [
+      {
+        "scene": 6,
+        "beat_function": "turn",
+        "text": "Let me press each corner tight.",
+        "reason": "imperative"
+      }
+    ],
+    "count": 1,
+    "fails": []
+  },
+  "connective_development": {
+    "hits": [],
+    "count": 0,
+    "fails": [
+      "connective-development: 0 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)"
+    ]
+  },
+  "insight_answers_hook": {
+    "status": "fail",
+    "fails": [
+      "insight scene 7 does not answer/reverse the hook claim \"I don't make the bed for you.\": \"I neaten the blanket's fold.\""
+    ],
+    "insights": [
+      {
+        "scene": 4,
+        "text": "I don't turn the clock to your hour.",
+        "hook": "I don't make the bed for you.",
+        "shared": [
+          "dont"
+        ],
+        "status": "pass"
+      },
+      {
+        "scene": 7,
+        "text": "I neaten the blanket's fold.",
+        "hook": "I don't make the bed for you.",
+        "shared": [],
+        "status": "fail"
+      },
+      {
+        "scene": 9,
+        "text": "I own every minute now.",
+        "hook": "I don't make the bed for you.",
+        "shared": [],
+        "status": "pass"
+      }
+    ]
+  },
+  "recipe_pattern": {
+    "bare_scenes": [
+      2,
+      3,
+      5
+    ],
+    "developed_scenes": [
+      4
+    ],
+    "fails": [
+      "sentence-variety: 1 developed line(s) (need 2+ at 8–9 words or connective+7)"
+    ]
+  },
+  "object_churn": {
+    "anchor": "bed",
+    "supporting": [
+      "blanket",
+      "clock",
+      "hour",
+      "shape",
+      "worn"
+    ],
+    "by_scene": [
+      {
+        "scene": 1,
+        "props": [
+          "bed"
+        ]
+      },
+      {
+        "scene": 2,
+        "props": [
+          "bed"
+        ]
+      },
+      {
+        "scene": 3,
+        "props": [
+          "worn"
+        ]
+      },
+      {
+        "scene": 4,
+        "props": [
+          "clock",
+          "hour"
+        ]
+      },
+      {
+        "scene": 5,
+        "props": [
+          "shape"
+        ]
+      },
+      {
+        "scene": 7,
+        "props": [
+          "blanket"
+        ]
+      },
+      {
+        "scene": 8,
+        "props": [
+          "bed"
+        ]
+      }
+    ],
+    "fails": [
+      "object-churn: 5 supporting spoken props ['blanket', 'clock', 'hour', 'shape', 'worn'] (max 2 besides anchor 'bed')"
+    ]
+  },
+  "connective_cross_run": {
+    "map": [],
+    "sequence": [],
+    "fails": []
+  },
+  "pronoun_continuity": {
+    "beats": [
+      {
+        "scene": 1,
+        "text": "I don't make the bed for you.",
+        "dangling": []
+      },
+      {
+        "scene": 2,
+        "text": "You leave the bed untouched.",
+        "dangling": []
+      },
+      {
+        "scene": 3,
+        "text": "I don't keep the worn side warm.",
+        "dangling": []
+      },
+      {
+        "scene": 4,
+        "text": "I don't turn the clock to your hour.",
+        "dangling": []
+      },
+      {
+        "scene": 5,
+        "text": "I don't trace your shape in dust.",
+        "dangling": []
+      },
+      {
+        "scene": 6,
+        "text": "Let me press each corner tight.",
+        "dangling": []
+      },
+      {
+        "scene": 7,
+        "text": "I neaten the blanket's fold.",
+        "dangling": []
+      },
+      {
+        "scene": 8,
+        "text": "The bed has gone cold.",
+        "dangling": []
+      },
+      {
+        "scene": 9,
+        "text": "I own every minute now.",
+        "dangling": []
+      }
+    ],
+    "fails": []
+  },
+  "caption_still_align": {
+    "fails": [
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The bed has gone cold.'"
+    ]
+  },
+  "connective_coherence": {
+    "beats": [
+      {
+        "scene": 1,
+        "text": "I don't make the bed for you.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 2,
+        "text": "You leave the bed untouched.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 3,
+        "text": "I don't keep the worn side warm.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 4,
+        "text": "I don't turn the clock to your hour.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 5,
+        "text": "I don't trace your shape in dust.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 6,
+        "text": "Let me press each corner tight.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 7,
+        "text": "I neaten the blanket's fold.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 8,
+        "text": "The bed has gone cold.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 9,
+        "text": "I own every minute now.",
+        "word": null,
+        "decorative": ""
+      }
+    ],
+    "fails": []
+  },
+  "close_beat_count": 1,
+  "setting_archetypes": {
+    "beats": [
+      "interior-domestic",
+      "interior-domestic",
+      "transit",
+      "threshold",
+      "exterior-landscape",
+      "threshold",
+      "transit",
+      "public-interior",
+      "exterior-urban"
+    ],
+    "counts": {
+      "interior-domestic": 2,
+      "transit": 2,
+      "threshold": 2,
+      "exterior-landscape": 1,
+      "public-interior": 1,
+      "exterior-urban": 1
+    },
+    "unique": [
+      "transit",
+      "public-interior",
+      "threshold",
+      "exterior-landscape",
+      "exterior-urban",
+      "interior-domestic"
+    ],
+    "overflow": {},
+    "holds_episode": false,
+    "summary": "archetypes={'interior-domestic': 2, 'transit': 2, 'threshold': 2, 'exterior-landscape': 1, 'public-interior': 1, 'exterior-urban': 1} overflow=none unique=['transit', 'public-interior', 'threshold', 'exterior-landscape', 'exterior-urban', 'interior-domestic']",
+    "max_per_episode": 2
+  },
+  "setting_archetype_cross": {
+    "previous": [
+      "exterior-landscape",
+      "exterior-urban",
+      "interior-domestic",
+      "public-interior",
+      "threshold",
+      "transit"
+    ],
+    "used": [
+      "exterior-landscape",
+      "exterior-urban",
+      "interior-domestic",
+      "public-interior",
+      "threshold",
+      "transit"
+    ],
+    "fresh": [],
+    "needed": 0,
+    "leftover_bank": [],
+    "passed": true,
+    "reason": "fresh=[] prev=['exterior-landscape', 'exterior-urban', 'interior-domestic', 'public-interior', 'threshold', 'transit'] leftover=[]"
+  },
+  "composition_types": {
+    "beats": [
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "figure_centered",
+      "wide_environment",
+      "object_focus",
+      "wide_environment"
+    ],
+    "counts": {
+      "figure_centered": 4,
+      "object_focus": 3,
+      "wide_environment": 2
+    },
+    "figure_centered": 4,
+    "non_figure": 5,
+    "holds_episode": false,
+    "max_figure_centered": 4,
+    "min_non_figure": 5,
+    "summary": "figure_centered=4/4 non_figure=5 {'figure_centered': 4, 'object_focus': 3, 'wide_environment': 2}"
+  },
+  "anchor_beats": [
+    1,
+    2,
+    8
+  ],
+  "isnt_y_count": 0,
+  "intra_dedup_pass": true,
+  "cross_run_dedup_pass": true,
+  "episode_variety": {
+    "beat_count": 9,
+    "distinct_settings": 7,
+    "setting_stems": {
+      "bedroom": 2,
+      "park": 2,
+      "hallway": 1,
+      "coat": 1,
+      "platform": 1,
+      "table": 1,
+      "street": 1
+    },
+    "setting_repeats": {
+      "bedroom": 2,
+      "park": 2
+    },
+    "distinct_compositions": 3,
+    "compositions": {
+      "woman": 5,
+      "object_focus": 3,
+      "silhouette": 1
+    },
+    "person_shots": 5,
+    "variety_shots": 4,
+    "distinct_object_stems": 8,
+    "object_stems": {
+      "bed": 2,
+      "seat": 1,
+      "suitcase": 1,
+      "horizon": 1,
+      "coat": 1,
+      "platform": 1,
+      "chair": 1,
+      "streetlamp": 1
+    },
+    "object_repeats": {
+      "bed": 2
+    },
+    "object_over_cap": {},
+    "palette_sequence": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "palette_expected": [
+      "WARM",
+      "WARM",
+      "WARM",
+      "COLD",
+      "COLD",
+      "COLD",
+      "CONTRAST",
+      "CONTRAST",
+      "CONTRAST"
+    ],
+    "palette_arc_ok": true,
+    "palette_mismatches": [],
+    "notes": [
+      "setting_repeats=bedroomx2,parkx2"
+    ],
+    "summary": "settings=7/9 distinct; compositions={'woman': 5, 'object_focus': 3, 'silhouette': 1}; objects=8 distinct; palette_arc_ok=true; notes=['setting_repeats=bedroomx2,parkx2']",
+    "holds_episode": false,
+    "setting_archetypes": {
+      "interior-domestic": 2,
+      "transit": 2,
+      "threshold": 2,
+      "exterior-landscape": 1,
+      "public-interior": 1,
+      "exterior-urban": 1
+    },
+    "setting_archetype_beats": [
+      "interior-domestic",
+      "interior-domestic",
+      "transit",
+      "threshold",
+      "exterior-landscape",
+      "threshold",
+      "transit",
+      "public-interior",
+      "exterior-urban"
+    ],
+    "setting_archetype_overflow": {},
+    "composition_types": {
+      "figure_centered": 4,
+      "object_focus": 3,
+      "wide_environment": 2
+    },
+    "composition_beats": [
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "figure_centered",
+      "wide_environment",
+      "object_focus",
+      "wide_environment"
+    ],
+    "figure_centered": 4
+  },
+  "holds_episode": true,
+  "narrative_holds": [
+    "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+    "insight scene 9 has no character-performed concrete verb (no-character-concrete:character:own): 'I own every minute now.'",
+    "principle hook scene 1 (not-quotable-advice): \"I don't make the bed for you.\"",
+    "principle insight scene 4 (not-quotable-advice): \"I don't turn the clock to your hour.\"",
+    "principle insight scene 7 (not-quotable-advice): \"I neaten the blanket's fold.\"",
+    "principle insight scene 9 (not-quotable-advice): 'I own every minute now.'",
+    "connective-development: 0 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)",
+    "insight scene 7 does not answer/reverse the hook claim \"I don't make the bed for you.\": \"I neaten the blanket's fold.\"",
+    "sentence-variety: 1 developed line(s) (need 2+ at 8–9 words or connective+7)",
+    "object-churn: 5 supporting spoken props ['blanket', 'clock', 'hour', 'shape', 'worn'] (max 2 besides anchor 'bed')",
+    "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The bed has gone cold.'"
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "notes": "22 reference pieces (Whisprs / Periodicity / soulxsigh style corpus), dropped in by the user for structure_library_v2 re-seeding. These are used as CONTINUOUS-PROSE structural references only — never to be quoted, paraphrased closely, or shipped verbatim in any generated script. Note: pieces 15 and 17 are a near-identical A/B variant pair (one 'wasn't', one 'was') from the same source video — kept as two separate entries since both were supplied as distinct texts.",
+  "pieces": [
+    {
+      "id": "corpus_01",
+      "text": "Let people lose you. Let them misunderstand you. Let them create their own stories. Don't rush to fix them. Let time answer what you never needed to explain. Every truth reveals itself when the right time comes."
+    },
+    {
+      "id": "corpus_02",
+      "text": "Never ask a liar why they lied. To explain it, they would have to lie again. One lie is never born alone. It always needs another to keep alive, then another to protect the last, until even they forget where the truth ended and the lie becomes the only story they remember."
+    },
+    {
+      "id": "corpus_03",
+      "text": "If someone values you, they make time for you. Genuine love is easy to recognize because it shows up in simple ways. It's a text to check in, a callback when they said they would, a plan that actually happens. Even on busy days, they still find a moment because you matter to them, because they want to stay connected. Even when life is full, with the right person, there's no confusion, no guessing. You feel included, remembered, and respected. Love doesn't need constant explaining. It becomes clear through consistent effort and time given, on purpose, again and again."
+    },
+    {
+      "id": "corpus_04",
+      "text": "A beautiful face will age and a perfect body will change. But a beautiful soul will always be a beautiful soul. Faces are just the cover. Souls are the story."
+    },
+    {
+      "id": "corpus_05",
+      "text": "I kept my words to myself, but I saw everything and noticed everything. When I stay quiet, it doesn't mean I'm clueless. Not everything needs an immediate response, and sometimes the best approach is to let people reveal themselves over time."
+    },
+    {
+      "id": "corpus_06",
+      "text": "The best decision I ever made was to be quiet. I have nothing to prove. I'm not convincing anyone that I'm a great person. I'm not fixing what I didn't break. I'm not fighting for anyone to see my worth. Whatever you do is on you. Just make sure the choices you make today are ones you can live with."
+    },
+    {
+      "id": "corpus_07",
+      "text": "When there are more tears than smiles, leave. When there are more fights than jokes, leave. When it hurts more than it feels good, leave. When you have to leave what you love just to live, leave."
+    },
+    {
+      "id": "corpus_08",
+      "text": "Once the rain is over, an umbrella becomes a burden to everyone. The day a blind man sees, the first thing he throws away is the stick that helped him all his life. When the sun returns, the first thing people extinguish is the candle that guided them through the dark. That's how loyalty ends. When benefits stop."
+    },
+    {
+      "id": "corpus_09",
+      "text": "Value the people who give you their time. Because time is the one thing they can never get back. Money can be earned again. Opportunities can return. But a moment shared with you is gone forever. When someone chooses to listen, to stay, or simply to be there for you, they are giving a part of their life away. And there is no greater gift than that."
+    },
+    {
+      "id": "corpus_10",
+      "text": "Just detach, let it end, accept whatever life will send, because not everything is meant to stay, and not every story finds its way. So loosen your grip, make peace with the ending, just breathe."
+    },
+    {
+      "id": "corpus_11",
+      "text": "You would message me. Ask me, how am I? What I'm doing? To think that I probably don't go through your mind at all."
+    },
+    {
+      "id": "corpus_12",
+      "text": "As kids, we loved the heroes. But as adults, we understand the villains. Life teaches us that people aren't simply good or bad. Sometimes, the villain is just someone who got tired of being heard. Someone who stopped explaining themselves. Someone who chose themselves after being forgotten. Maybe they had a reason too."
+    },
+    {
+      "id": "corpus_13",
+      "text": "It is not your fault, but your healing is your responsibility. No one can rewrite your past, but you can decide how your story continues. Heal so the pain ends with you, not with the people you love."
+    },
+    {
+      "id": "corpus_14",
+      "text": "This is my unsent message to you. I'm sorry for falling for you. I never planned. I simply found a home in someone who was never meant to be mine. I know you'll probably never know, somehow."
+    },
+    {
+      "id": "corpus_15",
+      "text": "You look back and realize I wasn't the one who tried, the one who stayed, the one who cared when you didn't. And that's the part that'll hurt the most. You didn't lose me. You lost the version of me you'll never get again."
+    },
+    {
+      "id": "corpus_16",
+      "text": "I tried to forget you, but memories don't ask permission. They arrive quietly, sit beside me, and remind me love once lived here. They come in the smell of rain, in songs I can no longer listen to, in the empty space next to me that still feels warm. I don't know how to unlove someone who taught me what love could be. So I carry you gently now, not as pain, but as proof that I was alive once."
+    },
+    {
+      "id": "corpus_17",
+      "text": "You look back and realize I was the one who tried, the one who stayed, the one who cared when you didn't. And that's the part that'll hurt the most. You didn't lose me. You lost the version of me you'll never get again."
+    },
+    {
+      "id": "corpus_18",
+      "text": "Dostoyevsky said, perhaps it is better to suffer and know the truth than to be happy in a delusion. But Franz Kafka said, I would rather keep my illusions for they are often kinder than the truth. So the question is, do you want the truth or do you want the illusion?"
+    },
+    {
+      "id": "corpus_19",
+      "text": "Sometimes I wonder, am I really hard to love? Or did I just give my heart to the wrong people? I'm not cold. I just learned that not everyone deserves the softest parts of me. Maybe I'm not broken. Maybe I simply feel too deeply for a world that feels too little. And one day, someone will understand that I was never difficult to love."
+    },
+    {
+      "id": "corpus_20",
+      "text": "I used to explain myself to everyone. Now I don't. Not because I stopped caring. But because I finally understood something. Peace doesn't come from being understood. It comes from no longer needing to be. So I let people think what they want. I let them leave if they want. I just don't chase anymore."
+    },
+    {
+      "id": "corpus_21",
+      "text": "Silence taught me something. Not everything deserves a response. Some truths reveal themselves when no one is speaking. I used to wait for words. Now I listen to absence. Not bitter, just aware."
+    },
+    {
+      "id": "corpus_22",
+      "text": "Once Kafka said, what is love? After all, it is quite simple. Love is everything which enhances, widens and enriches our life. In its heights and in its depths, it makes every moment of life worth living."
+    },
+    {
+      "id": "corpus_23",
+      "text": "Nobody wakes you up in the morning, and nobody waits for you at night, and you can do whatever you want. What do you call it? Freedom or loneliness."
+    }
+  ]
+}

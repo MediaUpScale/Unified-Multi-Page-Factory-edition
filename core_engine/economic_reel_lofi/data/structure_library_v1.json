@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "notes": "Abstract rhetorical shapes only. In-house examples are original and must never be copied at generation time. No third-party phrasing is stored.",
+  "patterns": [
+    {
+      "name": "anaphora_to_universal_law",
+      "tool_strength": "medium",
+      "hook_device": true,
+      "shape": "Repeat one imperative construction three or four times. Each repetition grants a different permission or names a different thing to release. Close the run with one general-principle statement that the repetitions were building toward. Strongest as a hook device: the rhythm lands in the first seconds. Weakest as a whole-script structure.",
+      "in_house_example": [
+        "Stay when the spark is gone.",
+        "Stay when nobody is watching.",
+        "Stay when the morning is dull.",
+        "Habit is the love that remains.",
+        "You wash the same two plates.",
+        "You hang the same two towels.",
+        "The kettle clicks off again.",
+        "You fold the dry towel anyway.",
+        "You meet the ordinary there."
+      ]
+    },
+    {
+      "name": "domino_chain",
+      "tool_strength": "high",
+      "hook_device": false,
+      "shape": "Show one action or choice necessitating the next, which necessitates the next. Escalate stakes or scale until the chain reaches a collapse or a moment of clarity about the whole mechanism. The payoff is causal insight into why something perpetuates, not mood alone.",
+      "in_house_example": [
+        "Don't check the phone first.",
+        "Since you check, you reread the thread.",
+        "You draft a reply you will not send.",
+        "Stop before the next refresh.",
+        "You lock the screen face-down.",
+        "Therefore you leave the kitchen dark.",
+        "You stand by the silent fridge.",
+        "Though the phone stays dark, you wait.",
+        "You walk out without picking it up."
+      ]
+    },
+    {
+      "name": "definition_then_evidence",
+      "tool_strength": "high",
+      "hook_device": false,
+      "shape": "State a clear definition of what the real or authentic version of a thing looks like. Then give two or three concrete, checkable signs of it, implicitly or explicitly contrasted with a false version. Functions as a diagnostic: the viewer can compare their own situation against the listed signs.",
+      "in_house_example": [
+        "Patience starts after the second ask.",
+        "You pour the tea and sit down.",
+        "Because they talk, you keep the cup still.",
+        "Stay after the urge to fix it.",
+        "You let the spoon rest on the saucer.",
+        "You watch the steam thin out.",
+        "You unclench on the kitchen stool.",
+        "The cup you kept still sits warm.",
+        "You listen until they finish."
+      ]
+    },
+    {
+      "name": "contrast_metaphor_resolution",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "shape": "State two things that appear equivalent. Use one concrete metaphor to show why one is durable and the other is not. Resolve in a short payoff line that reframes the initial contrast.",
+      "in_house_example": [
+        "Intensity and steadiness look the same at first.",
+        "But rust and patina are not kin.",
+        "You touch the old iron rail.",
+        "Keep the dull metal that holds.",
+        "Rain beads on the unpainted bar.",
+        "You walk the wet pier slowly.",
+        "Even then the rail does not flake.",
+        "The iron you trusted stays dark.",
+        "You hold the rail, not the shine."
+      ]
+    },
+    {
+      "name": "negation_list_to_permission",
+      "tool_strength": "high",
+      "hook_device": false,
+      "shape": "A sequence of first-person or second-person refusals (I am not X / I don't do Y), each naming a different abandoned posture. The list builds to a claimed boundary or reclaimed agency. Functions as a rehearsable self-talk script the viewer can internally repeat.",
+      "in_house_example": [
+        "Don't swallow the heat to keep peace.",
+        "I don't laugh the insult off.",
+        "Even if it shakes, I don't nod along.",
+        "Put the glass down and leave.",
+        "So I set the drink on the bar.",
+        "I don't stay for the next joke.",
+        "You walk the wet sidewalk out.",
+        "Still the glass sits where you left it.",
+        "You go home with your name intact."
+      ]
+    },
+    {
+      "name": "parable_triad",
+      "tool_strength": "high",
+      "hook_device": false,
+      "shape": "Present two or three short, independent micro-analogies back to back. Each uses a different concrete image with the same underlying shape, and none explains itself. They converge on a single abstract lesson stated only in the final argumentative line.",
+      "in_house_example": [
+        "Don't keep watering a dead plant.",
+        "A cracked pot still sits in the sun.",
+        "Although the soil stays pale and dry.",
+        "A hose still coils toward the stem.",
+        "You shut the tap at the wall.",
+        "Because the root has already gone.",
+        "You stand in the garden dark.",
+        "Leave the pot. Stop the water.",
+        "You walk inside anyway."
+      ]
+    },
+    {
+      "name": "retrospective_reversal",
+      "tool_strength": "low",
+      "hook_device": false,
+      "shape": "Address a past reading of events, correct it, and reframe a perceived loss as actually belonging to the other party, not the speaker. Strong for identification and mood, weak for an actionable takeaway. Use sparingly.",
+      "in_house_example": [
+        "Don't call that year a waste.",
+        "You thought you lost the better years.",
+        "They left with the performance, not you.",
+        "Keep the quiet that stayed yours.",
+        "You fold the old ticket stub away.",
+        "You walk the same evening street.",
+        "You pause under the shop awning.",
+        "The years they spent pretending are theirs.",
+        "You keep the unperformed life."
+      ]
+    },
+    {
+      "name": "personification_sensory",
+      "tool_strength": "low",
+      "hook_device": false,
+      "shape": "Treat an abstract force as an active agent. Build through two or three concrete sensory details. Resolve in acceptance-as-meaning rather than a directive. This is a mood and atmosphere device, not a tool-delivery device.",
+      "in_house_example": [
+        "Winter keeps a key to the house.",
+        "It tastes the metal of the latch.",
+        "It sits in the coat you left out.",
+        "Let the cold have the hallway.",
+        "You hear it in the floorboards.",
+        "You smell the wet wool by the door.",
+        "You stand in the unheated kitchen.",
+        "The season you feared just lives here.",
+        "You make tea in its company."
+      ]
+    },
+    {
+      "name": "thinker_juxtaposition",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "shape": "Present two opposing stances framed as differing philosophies or attitudes. Do not attribute either stance to a real named person. Close with a direct question to the viewer or a single stated resolution. An unattributed aphorism may open the pair.",
+      "in_house_example": [
+        "One mind says leave at the first chill.",
+        "The other says weather the season.",
+        "You button the thinner coat anyway.",
+        "Stay and test which voice is fear.",
+        "You step into the wind without flinching.",
+        "You walk the exposed ridge path.",
+        "You stop where the two views split.",
+        "Which voice do you dress for now.",
+        "You take the ridge, not the shortcut."
+      ]
+    },
+    {
+      "name": "before_after_transformation",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "shape": "State a former posture, then the current one (I used to X, now Y). Explain the cause of the shift in one or two lines. Close by inviting the viewer to recognize themselves in the shift.",
+      "in_house_example": [
+        "Don't answer every late ping.",
+        "I used to keep the thread alive.",
+        "Now I let the morning have it.",
+        "Sleep first. Reply after light.",
+        "You turn the phone face-down.",
+        "Because the night never needed you.",
+        "You stand at the dawn window.",
+        "The thread you dropped stays quiet.",
+        "You recognize the old hunger, then rest."
+      ]
+    },
+    {
+      "name": "open_question",
+      "tool_strength": "low",
+      "hook_device": false,
+      "shape": "Present a dilemma or paradox and deliberately leave it unresolved. End on the question itself rather than an answer. Use only as an occasional register change, not a default.",
+      "in_house_example": [
+        "Is staying kind, or only delayed leaving.",
+        "You pack one drawer and stop.",
+        "The suitcase sits half-closed all week.",
+        "Hold both truths in the same room.",
+        "You leave the ticket on the dresser.",
+        "You walk the hallway and return.",
+        "You pause with your hand on the latch.",
+        "The bag you packed still waits.",
+        "Do you open the door, or the drawer."
+      ]
+    }
+  ]
+}

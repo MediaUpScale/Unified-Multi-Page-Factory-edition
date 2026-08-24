@@ -1,0 +1,37 @@
+[
+  {
+    "theme": "healing",
+    "holds": [
+      "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+      "insight scene 7 has no character-performed concrete verb (no-character-concrete:character:used): 'footstep is lighter where you used to hollow the'",
+      "principle insight scene 4 (not-quotable-advice): 'love, you gave up a habit of leaning. You'",
+      "principle-scope: 3 beats read as advice (max 2): s1 'The still-sore place is where you dared to move.'; s7 'footstep is lighter where you used to hollow the'; s9 'stay here, learn to let it rain without giving'",
+      "connective-development: 2 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)",
+      "insight scene 4 does not answer/reverse the hook claim 'The still-sore place is where you dared to move.': 'love, you gave up a habit of leaning. You'",
+      "insight scene 9 does not answer/reverse the hook claim 'The still-sore place is where you dared to move.': 'stay here, learn to let it rain without giving'",
+      "object-churn: 4 supporting spoken props ['habit', 'night', 'shape', 'sore'] (max 2 besides anchor 'bed')",
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The bed has gone cold.'",
+      "decorative connective scene 1 (still): still has no prior beat to persist against — 'The still-sore place is where you dared to move.'"
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_healing_format_test.json",
+    "polished": false
+  },
+  {
+    "theme": "time",
+    "holds": [
+      "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+      "insight scene 9 has no character-performed concrete verb (no-character-concrete:character:own): 'I own every minute now.'",
+      "principle hook scene 1 (not-quotable-advice): \"I don't make the bed for you.\"",
+      "principle insight scene 4 (not-quotable-advice): \"I don't turn the clock to your hour.\"",
+      "principle insight scene 7 (not-quotable-advice): \"I neaten the blanket's fold.\"",
+      "principle insight scene 9 (not-quotable-advice): 'I own every minute now.'",
+      "connective-development: 0 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)",
+      "insight scene 7 does not answer/reverse the hook claim \"I don't make the bed for you.\": \"I neaten the blanket's fold.\"",
+      "sentence-variety: 1 developed line(s) (need 2+ at 8–9 words or connective+7)",
+      "object-churn: 5 supporting spoken props ['blanket', 'clock', 'hour', 'shape', 'worn'] (max 2 besides anchor 'bed')",
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The bed has gone cold.'"
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_time_format_test.json",
+    "polished": false
+  }
+]

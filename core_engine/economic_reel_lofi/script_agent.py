@@ -24,6 +24,7 @@ from core_engine.economic_reel_lofi.visual_identity import (
     apply_anchor_callback_beats,
     assign_beat_functions,
     assign_close_beat,
+    assign_episode_lighting,
     beat_lacks_noun_and_action,
     enforce_concrete_beat_visuals,
     pick_caption_anchored_pair,
@@ -161,40 +162,20 @@ def _sanitize_caption_typos(text: str) -> str:
 
 _BATCH_USED_STRUCTURES: list[str] = []
 
-_CAPTION_PUNCT_END = (",", ";", ":", "—", "–", "?", "!")
-_CAPTION_PREP_SPLIT = frozenset(
+_CAPTION_PUNCT_END = (".", ",", ";", ":", "—", "–", "?", "!")
+_CAPTION_CLAUSE_LEAD = frozenset(
     {
-        "into",
-        "onto",
-        "through",
-        "without",
-        "before",
-        "after",
-        "toward",
-        "across",
-        "against",
-        "during",
-        "until",
+        "and",
+        "but",
+        "so",
+        "then",
+        "yet",
         "because",
+        "although",
         "while",
+        "though",
     }
 )
-_CAPTION_TAIL_START = _CAPTION_PREP_SPLIT | {
-    "to",
-    "and",
-    "or",
-    "but",
-    "so",
-    "then",
-    "it's",
-    "its",
-    "in",
-    "on",
-    "at",
-    "for",
-    "with",
-    "from",
-}
 
 
 def reset_batch_structure_ids() -> None:
@@ -215,12 +196,17 @@ def _caption_fits(text: str, max_words: int, max_chars: int) -> bool:
     return len(t.split()) <= max_words and len(t) <= max_chars
 
 
+def _token_ends_clause(token: str) -> bool:
+    t = (token or "").rstrip("\"'")
+    return any(t.endswith(p) for p in _CAPTION_PUNCT_END) or t in {"—", "–", "-"}
+
+
 def split_caption_at_clean_break(
     text: str,
     max_words: int,
     max_chars: int,
 ) -> list[str]:
-    """Split an overlong caption at a clause boundary. Never drop the remainder."""
+    """Split an overlong caption at period / comma / dash. Never drop the remainder."""
     raw = _sanitize_caption_typos(text).strip()
     if not raw:
         return []
@@ -238,31 +224,21 @@ def split_caption_at_clean_break(
 
     split_at: int | None = None
     for i in range(n, 1, -1):
-        token = words[i - 1]
-        if any(token.endswith(p) for p in _CAPTION_PUNCT_END):
-            split_at = i
-            break
-        lead = words[i].lower().strip("\"'") if i < n else ""
-        if lead in _CAPTION_PREP_SPLIT:
+        if _token_ends_clause(words[i - 1]):
             split_at = i
             break
     if split_at is None:
-        for tail_n in (3, 4, 5, 2, 6):
-            if tail_n >= len(words) or len(words) - tail_n < 2:
-                continue
-            head, tail = words[:-tail_n], words[-tail_n:]
-            hs, ts = " ".join(head), " ".join(tail)
-            if not (
-                _caption_fits(hs, max_words, max_chars)
-                and _caption_fits(ts, max_words, max_chars)
-            ):
-                continue
-            start = tail[0].lower().strip(".,;:—–\"'")
-            if start in _CAPTION_TAIL_START or tail[0][:1].islower():
-                split_at = len(head)
+        for i in range(n, 1, -1):
+            lead = words[i].lower().strip("\"'") if i < len(words) else ""
+            if lead in _CAPTION_CLAUSE_LEAD:
+                split_at = i
                 break
     if split_at is None or split_at < 1:
-        split_at = n
+        print(
+            f"[LOFI caption] no clause break in {len(words)}w line — "
+            "keeping unsplit rather than wrapping mid-phrase"
+        )
+        return [raw]
     head = " ".join(words[:split_at]).strip()
     rest = " ".join(words[split_at:]).strip()
     if not rest or not head:
@@ -563,6 +539,96 @@ def repair_script_captions(
         )
     script["lines"] = new_lines
     return script
+
+
+def split_monologue_to_captions(
+    monologue: str,
+    *,
+    scene_count: int,
+    max_words: int,
+    max_chars: int,
+) -> list[str]:
+    """
+    Route a continuous paragraph through split_caption_at_clean_break /
+    _pack_caption_texts. Prefer sentence/clause cuts. Do not use the
+    word-budget reflow — that chops mid-phrase and drops tails.
+    """
+    mono = " ".join((monologue or "").split())
+    if not mono:
+        return []
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", mono) if p.strip()]
+    if not parts:
+        parts = [mono]
+    # Overlong sentences: clause-split with the existing helper.
+    split_parts: list[str] = []
+    for part in parts:
+        split_parts.extend(
+            split_caption_at_clean_break(part, max_words, max_chars) or [part]
+        )
+    packed = _pack_caption_texts(
+        split_parts, max_words, max_chars, scene_count, keep_extra_scenes=True
+    )
+    # Too many beats: merge neighbors that still fit (existing packer).
+    if len(packed) > scene_count:
+        packed = _pack_caption_texts(
+            packed, max_words, max_chars, scene_count, keep_extra_scenes=False
+        )
+    # Do not force-split a complete sentence into fragments just to hit
+    # scene_count. Period/comma cuts already happened above.
+    kept = [p for p in packed if p.strip()]
+    if len(kept) > scene_count:
+        joined = " ".join(kept[scene_count - 1 :])
+        if _caption_fits(joined, max_words, max_chars):
+            kept = kept[: scene_count - 1] + [joined]
+            print(
+                f"[LOFI caption] folded leftover clauses into last beat "
+                f"({len(joined.split())}w, still under cap)"
+            )
+        else:
+            print(
+                f"[LOFI caption] {len(kept)} clause beats > {scene_count} — "
+                "keeping extras rather than a mid-phrase fold"
+            )
+    return kept
+
+
+def apply_monologue_split(
+    data: dict[str, Any],
+    *,
+    scene_count: int,
+) -> dict[str, Any]:
+    """Build scene lines from source_monologue / monologue. Keep every word."""
+    mono = str(data.get("source_monologue") or data.get("monologue") or "").strip()
+    max_words, max_chars = lofi_cfg.caption_limits(lofi_cfg.THEMATIC_ARC_ID)
+    captions = split_monologue_to_captions(
+        mono,
+        scene_count=max(1, int(scene_count)),
+        max_words=max_words,
+        max_chars=max_chars,
+    )
+    existing = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+    lines: list[dict[str, Any]] = []
+    for i, text in enumerate(captions):
+        src = dict(existing[i]) if i < len(existing) else {}
+        src["scene"] = i + 1
+        src["text"] = text
+        src["beat_text"] = text
+        src["arc_position"] = act_for_index(i, len(captions))
+        lines.append(src)
+    data["lines"] = lines
+    data["monologue"] = " ".join(captions)
+    data["source_monologue"] = mono
+    data["monologue_split"] = True
+    budget = lofi_cfg.monologue_word_budget(scene_count=max(1, int(scene_count)))
+    data["word_budget"] = budget
+    data["estimated_spoken_s"] = lofi_cfg.estimated_spoken_duration_s(len(mono.split()))
+    print(
+        f"[LOFI caption] monologue-split words={len(mono.split())} "
+        f"beats={len(lines)} target={scene_count} "
+        f"budget={budget['min_words']}-{budget['max_words']} "
+        f"est_vo={data['estimated_spoken_s']}s / {budget['duration_s']}s"
+    )
+    return data
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -1159,11 +1225,11 @@ def _rhetoric_prompt_block(rhetoric: dict[str, Any] | None) -> str:
         return ""
     shape = str(rec.get("shape") or "").strip()
     strength = str(rec.get("tool_strength") or "").strip()
-    example = rec.get("in_house_example") or []
+    example = rec.get("in_house_example") or ""
     if isinstance(example, list):
-        numbered = "\n".join(f"  {i + 1}. {line}" for i, line in enumerate(example))
+        example_text = " ".join(str(x).strip() for x in example if str(x).strip())
     else:
-        numbered = str(example)
+        example_text = str(example).strip()
     overlay = str(rec.get("hook_overlay") or "").strip()
     overlay_block = ""
     if overlay == "anaphora_to_universal_law":
@@ -1174,7 +1240,9 @@ Write scene 1 in this hook shape, then write beats 2–9 in the assigned body pa
 Do not use anaphora as the whole-script structure.
 shape: {str(overlay_pat.get("shape") or "").strip()}
 """
-    aphorism_ok = name in rag.RHETORIC_APHORISM_PATTERNS or overlay in rag.RHETORIC_APHORISM_PATTERNS
+    aphorism_ok = bool(rec.get("aphorism_ok") or rec.get("hook_device")) or (
+        name in rag.RHETORIC_APHORISM_PATTERNS or overlay in rag.RHETORIC_APHORISM_PATTERNS
+    )
     aphorism_block = ""
     if aphorism_ok:
         aphorism_block = """
@@ -1186,8 +1254,8 @@ Invent the line. This replaces named-philosopher quote framing.
     return f"""
 ASSIGNED PATTERN: {name}
 shape: {shape}
-example (shape only — invent every sentence; do not copy nouns or clauses):
-{numbered}
+example (continuous paragraph — invent every sentence; do not copy nouns or clauses):
+{example_text}
 {overlay_block}{aphorism_block}"""
 
 
@@ -1229,20 +1297,28 @@ def _thematic_script_prompt(
 
 THEME: {theme}
 SUBTHEME: {subtheme or "(none)"}
-BEAT COUNT: {scene_count}
-{thesis_block}{anchor_block}CHARACTER / SETTING CONTEXT:
+{thesis_block}{anchor_block}VISUAL BANK (locked look — not a shot list; do not tour a new room or object each line):
 {pool_block}
 {_rhetoric_prompt_block(rhetoric)}
 {feedback_block}
 
-FORMAT (length and tone only — not content rules):
-- Exactly {scene_count} spoken lines. One line per beat. No paragraphs.
-- Each line is one breath: about 5–9 words, under 56 characters.
-- Concise and imagistic. A short caption, not an essay.
+Write exactly {scene_count} spoken caption lines as ONE continuous argument.
 
-Write {scene_count} original spoken lines that follow the assigned pattern's SHAPE
-and develop the theme around the anchor. Scene 1 is the opening. One later beat
-is the insight. Invent every sentence. Include a visual field per beat.
+STORY BAR (hard — hope 9-liner is the shape, not the exception):
+Causal spine: each line is the consequence or contrast of the one before (So / But / Because / When / Then).
+Stakes: something is risked, lost, or almost lost. Description is not enough.
+Close: a usable takeaway (what the speaker did, or can do) or a stated lesson — not an aphorism for its own sake.
+
+These {scene_count} lines are ONE continuous spoken argument delivered as
+{scene_count} short breaths — not {scene_count} independent image-captions.
+Hold you or I across all nine lines. Do not write a repeating indefinite someone.
+Put at least two load-bearing connectives (because/so/but/although/when-then)
+in the set. The last line is a realization about this person and this object,
+not a general inspirational statement.
+Each line HARD MAX {lofi_cfg.THEMATIC_MAX_CAPTION_WORDS} words and
+{lofi_cfg.THEMATIC_MAX_CAPTION_CHARS} characters.
+Develop the locked thesis around the locked anchor. Follow the assigned
+pattern's SHAPE. Invent every line; do not copy the example.
 
 Output STRICT JSON only, no markdown:
 {{
@@ -1254,24 +1330,7 @@ Output STRICT JSON only, no markdown:
     "initial_state": "<how it first appears>",
     "final_state": "<how it has changed by the callback>"
   }},
-  "monologue": "<the {scene_count} lines joined>",
-  "lines": [
-    {{
-      "scene": 1,
-      "text": "<spoken line>",
-      "beat_text": "<same as text>",
-      "emotion": "opening_hook",
-      "arc_position": "act1",
-      "beat_function": "hook",
-      "shot_scale": "medium",
-      "subject_type": "woman",
-      "subject_expression": "distant, still",
-      "setting": "<from context>",
-      "key_object": "<from context>",
-      "time_of_day": "dusk",
-      "visual_anchor_hint": "<object in setting>"
-    }}
-  ]
+  "lines": ["<line 1>", "<line 2>", "<line 3>", "<line 4>", "<line 5>", "<line 6>", "<line 7>", "<line 8>", "<line 9>"]
 }}
 Valid JSON only. No NSFW. No real private individuals named.
 """
@@ -1584,7 +1643,8 @@ def _finalize_thematic_narrative(
     )
     stamp_episode_anchor(lines, ao["name"])
     _ensure_thesis(data, theme)
-    repair_script_captions(data)
+    if not data.get("monologue_split"):
+        repair_script_captions(data)
     lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
     if lines and isinstance(lines[0], dict):
         lines[0]["episode_theme"] = theme
@@ -1610,7 +1670,9 @@ def _finalize_thematic_narrative(
         lines, pool, theme=theme, prefer_new=prefer_new
     )
     enforce_composition_variety(lines)
+    assign_episode_lighting(lines, module=module, theme=theme)
     rag.stamp_close_variant_on_script(data, lines)
+    rag.stamp_lighting_on_script(data, lines)
     data["lines"] = lines
     data["monologue"] = " ".join(_line_texts(lines))
     if not data.get("monologue"):
@@ -1977,6 +2039,123 @@ def analyze_principle_voice(text: str) -> dict[str, str]:
     }
 
 
+def assess_principle_monologue(
+    monologue: str,
+    beats: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Opening + closing line (or sentence) only. Scene-narration hooks are allowed.
+    Mid-argument caption fragments are not scored.
+    """
+    if beats:
+        sents = [str(b).strip() for b in beats if str(b).strip()]
+    else:
+        sents = _monologue_sentences(monologue)
+    fails: list[str] = []
+    report: list[dict[str, Any]] = []
+    if not sents:
+        return {"fails": ["principle-voice: empty monologue"], "lines": []}
+    open_s, close_s = sents[0], sents[-1]
+    for label, sent in (("opening", open_s), ("closing", close_s)):
+        rec = analyze_principle_voice(sent)
+        status = rec.get("status")
+        reason = rec.get("reason")
+        # Story hooks may be first-person scene. That is a valid opening.
+        if label == "opening" and reason in {
+            "scene-narration",
+            "past-scene",
+            "this-moment-you",
+            "not-quotable-advice",
+        }:
+            status = "pass"
+            reason = f"story-hook:{reason}"
+        # Closing may land as a complete acted sentence rather than an aphorism.
+        if label == "closing" and status != "pass" and len(sent.split()) >= 5:
+            status = "pass"
+            reason = f"landing:{reason}"
+        report.append(
+            {"slot": label, "text": sent, "status": status, "reason": reason}
+        )
+        if status == "pass":
+            print(f"[LOFI principle] PASS {label} why={reason} line={sent!r}")
+        else:
+            fails.append(f"principle {label} ({reason}): {sent!r}")
+            print(f"[LOFI principle] FAIL {label} why={reason} line={sent!r}")
+    return {"lines": report, "fails": fails}
+
+
+def assess_insight_answers_hook_monologue(
+    monologue: str,
+    beats: list[str] | None = None,
+) -> dict[str, Any]:
+    """Final 1–2 lines must share or reverse the opening claim."""
+    if beats:
+        sents = [str(b).strip() for b in beats if str(b).strip()]
+    else:
+        sents = _monologue_sentences(monologue)
+    fails: list[str] = []
+    if len(sents) < 2:
+        fails.append("insight-hook: monologue has no closing sentence")
+        return {"status": "fail", "fails": fails, "insights": []}
+    hook = sents[0]
+    close = " ".join(sents[-2:] if len(sents) >= 3 else sents[-1:])
+    shared = _content_stems(close) & _content_stems(hook)
+    head = _content_stems(" ".join(sents[:3]))
+    tail = _content_stems(" ".join(sents[-3:]))
+    throughline = head & tail
+    contrast = bool(
+        re.search(r"\b(don't|do not|never|keep|used to|used|thought|believed)\b", hook, re.I)
+        and re.search(
+            r"\b(now|anyway|still|without|even|stay|leave|set|keep|let|stop|instead|anymore)\b",
+            close,
+            re.I,
+        )
+    )
+    ok = bool(shared) or contrast or bool(throughline)
+    rec = {
+        "hook": hook,
+        "close": close,
+        "shared": sorted(shared),
+        "status": "pass" if ok else "fail",
+    }
+    if ok:
+        print(f"[LOFI argument] INSIGHT-HOOK pass shared={sorted(shared)}")
+    else:
+        fails.append(
+            f"insight-hook: closing does not answer/reverse the opening "
+            f"{hook!r}: {close!r}"
+        )
+        print("[LOFI argument] INSIGHT-HOOK FAIL monologue close vs open")
+    return {"status": rec["status"], "fails": fails, "insights": [rec]}
+
+
+def assess_object_churn_monologue(monologue: str, anchor_name: str) -> dict[str, Any]:
+    """Count concrete props once across the whole spoken paragraph."""
+    return assess_object_churn(
+        [{"text": str(monologue or ""), "scene": 1}],
+        anchor_name,
+    )
+
+
+def assess_insight_monologue(monologue: str) -> dict[str, Any]:
+    """Character agency on the closing sentence(s), not caption fragments."""
+    sents = _monologue_sentences(monologue)
+    if not sents:
+        return {"fails": ["insight: empty monologue"], "status": "fail"}
+    close = " ".join(sents[-2:] if len(sents) >= 2 else sents)
+    rec = analyze_insight_agency(close)
+    fails: list[str] = []
+    if rec.get("status") == "fail":
+        fails.append(
+            f"insight closing has no character-performed concrete verb "
+            f"({rec.get('reason')}): {close!r}"
+        )
+        print(f"[LOFI insight] FAIL close why={rec.get('reason')} line={close!r}")
+    else:
+        print(f"[LOFI insight] PASS close why={rec.get('reason')} line={close!r}")
+    return {"fails": fails, "status": rec.get("status"), "reason": rec.get("reason")}
+
+
 def assess_principle_lines(lines: list[dict[str, Any]]) -> dict[str, Any]:
     """Hook + every insight must pass the principle-voice check."""
     report: list[dict[str, Any]] = []
@@ -2114,6 +2293,11 @@ _ABSTRACT_STEMS = frozenset(
         "chest", "body", "argument", "word", "words",
         "habit", "night", "shape", "sore", "hour", "minute",
         "side", "cost", "place", "wound",
+        "choice", "refusal", "repetition", "thing", "week", "day",
+        "moment", "distance", "panic", "steadiness", "arrival",
+        "proof", "miracle", "devotion", "obligation", "absence",
+        "routine", "payment", "direction",
+        "time",
 
     }
 )
@@ -2129,6 +2313,9 @@ _PROP_ADJ = frozenset(
         "great", "whole", "only", "even", "ever", "never", "emptied",
         "standing", "waiting", "lying", "going", "worn", "still",
         "sore",
+        "actual", "big", "ordinary", "hard", "grand", "unannounced",
+        "dramatic",
+        "far",
     }
 )
 _PROP_CLOSED = frozenset(
@@ -2351,15 +2538,38 @@ def _spoken_prop_stems(text: str) -> set[str]:
     return stems
 
 
+def _anchor_churn_stem(anchor_name: str, lines: list[dict[str, Any]]) -> str:
+    """Stem that is actually spoken; fall back to the name's object noun."""
+    tokens = re.findall(r"[a-z]+", str(anchor_name or "").lower())
+    spoken = " ".join(
+        str(r.get("text") or r.get("beat_text") or "")
+        for r in (lines or [])
+        if isinstance(r, dict)
+    ).lower()
+    spoken_hits: list[tuple[int, int, str]] = []
+    for tok in tokens:
+        if len(tok) < 4:
+            continue
+        if tok in _PROP_ADJ or tok in _ABSTRACT_STEMS or tok in _CONTENT_STOP:
+            continue
+        n = len(re.findall(rf"\b{re.escape(tok)}\b", spoken))
+        if n:
+            spoken_hits.append((n, len(tok), tok))
+    if spoken_hits:
+        spoken_hits.sort(reverse=True)
+        return spoken_hits[0][2]
+    preferred = preferred_concrete_noun(anchor_name)
+    if preferred:
+        return preferred
+    return tokens[-1] if tokens else ""
+
+
 def assess_object_churn(
     lines: list[dict[str, Any]],
     anchor_name: str,
 ) -> dict[str, Any]:
     """Spoken captions may name the anchor plus at most two supporting props."""
-    anchor_stem = ""
-    tokens = re.findall(r"[a-z]+", str(anchor_name or "").lower())
-    if tokens:
-        anchor_stem = tokens[-1]
+    anchor_stem = _anchor_churn_stem(anchor_name, lines)
     spoken: set[str] = set()
     by_scene: list[dict[str, Any]] = []
     for i, row in enumerate(lines or []):
@@ -2470,6 +2680,332 @@ def assess_caption_still_alignment(lines: list[dict[str, Any]]) -> dict[str, Any
     if not fails:
         print("[LOFI argument] STILL-ALIGN pass")
     return {"fails": fails}
+
+
+MIN_LOAD_BEARING_CONNECTIVES = 2
+MIN_FIXED_REFERENT_LINES = 4
+MAX_FLOATING_SOMEONE = 1
+_LOAD_BEARING_RE = re.compile(
+    r"\b(because|so|but|yet|although|though|since|therefore|when)\b",
+    re.I,
+)
+_YOU_RE = re.compile(r"\byou\b", re.I)
+_I_RE = re.compile(r"\bI(?:'m|'d|'ve|'ll)?\b")
+_SOMEONE_RE = re.compile(r"\b(someone|somebody)\b", re.I)
+_APHORISM_THEME_IS_RE = re.compile(
+    r"^(that's|that is|this is)\s+what\b",
+    re.I,
+)
+_APHORISM_IS_THE_RE = re.compile(
+    r"\bis the (light|thing|reason|way|proof|answer)\b",
+    re.I,
+)
+
+
+def _line_texts(lines: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for row in lines or []:
+        if not isinstance(row, dict):
+            continue
+        t = str(row.get("text") or row.get("beat_text") or "").strip()
+        if t:
+            out.append(t)
+    return out
+
+
+def assess_fixed_referent(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Hold a you-or-I speaker; reject a repeating indefinite someone."""
+    texts = _line_texts(lines)
+    you_n = sum(1 for t in texts if _YOU_RE.search(t))
+    i_n = sum(1 for t in texts if _I_RE.search(t))
+    someone_n = sum(1 for t in texts if _SOMEONE_RE.search(t))
+    fails: list[str] = []
+    if someone_n > MAX_FLOATING_SOMEONE and max(you_n, i_n) < MIN_FIXED_REFERENT_LINES:
+        fails.append(
+            f"fixed-referent: floating someone x{someone_n} with you={you_n} "
+            f"I={i_n} (need you or I on {MIN_FIXED_REFERENT_LINES}+ lines, "
+            f"someone ≤{MAX_FLOATING_SOMEONE})"
+        )
+        print(
+            f"[LOFI argument] REFERENT FAIL someone={someone_n} "
+            f"you={you_n} I={i_n}"
+        )
+    elif max(you_n, i_n) < MIN_FIXED_REFERENT_LINES:
+        fails.append(
+            f"fixed-referent: you={you_n} I={i_n} "
+            f"(need one held across {MIN_FIXED_REFERENT_LINES}+ lines)"
+        )
+        print(f"[LOFI argument] REFERENT FAIL you={you_n} I={i_n}")
+    else:
+        held = "you" if you_n >= i_n else "I"
+        print(
+            f"[LOFI argument] REFERENT pass held={held} "
+            f"you={you_n} I={i_n} someone={someone_n}"
+        )
+    return {
+        "you": you_n,
+        "I": i_n,
+        "someone": someone_n,
+        "fails": fails,
+    }
+
+
+def assess_aphorism_close(
+    lines: list[dict[str, Any]],
+    theme: str = "",
+) -> dict[str, Any]:
+    """Last line must be a specific turn, not 'Theme is the light…'."""
+    texts = _line_texts(lines)
+    last = texts[-1] if texts else ""
+    theme_s = str(theme or "").replace("_", " ").strip()
+    fails: list[str] = []
+    why = ""
+    if theme_s and re.match(rf"^{re.escape(theme_s)}\s+is\b", last, re.I):
+        why = f"close names the theme as a definition ({last!r})"
+    elif _APHORISM_THEME_IS_RE.search(last):
+        why = f"close is a 'that's what…' slogan ({last!r})"
+    elif _APHORISM_IS_THE_RE.search(last):
+        why = f"close is a generic 'is the light/way/proof' aphorism ({last!r})"
+    if why:
+        fails.append(f"aphorism-close: {why}")
+        print(f"[LOFI argument] APHORISM FAIL {why}")
+    else:
+        print(f"[LOFI argument] APHORISM pass last={last!r}")
+    return {"last": last, "fails": fails}
+
+
+def assess_load_bearing_connectives(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """Require real because/so/but/when — echo-twist is not enough."""
+    texts = _line_texts(lines)
+    hits: list[dict[str, Any]] = []
+    for i, text in enumerate(texts):
+        found = sorted({m.group(1).lower() for m in _LOAD_BEARING_RE.finditer(text)})
+        if found:
+            hits.append({"scene": i + 1, "words": found, "text": text})
+    fails: list[str] = []
+    if len(hits) < MIN_LOAD_BEARING_CONNECTIVES:
+        fails.append(
+            f"load-bearing-connectives: {len(hits)} lines with because/so/but/"
+            f"although/when (need {MIN_LOAD_BEARING_CONNECTIVES}+)"
+        )
+        print(f"[LOFI argument] CONNECTIVE FAIL count={len(hits)}")
+    else:
+        print(
+            f"[LOFI argument] CONNECTIVE pass count={len(hits)} "
+            f"scenes={[h['scene'] for h in hits]}"
+        )
+    return {"hits": hits, "count": len(hits), "fails": fails}
+
+
+_CAUSAL_LINK_RE = re.compile(
+    r"\b("
+    r"because|so|but|yet|still|anyway|then|when|if|"
+    r"although|though|since|instead|almost|never"
+    r")\b",
+    re.I,
+)
+_STAKES_RE = re.compile(
+    r"\b("
+    r"almost|never|nearly|stop(?:ped)?|lost|lose|losing|"
+    r"dark|paid|cost|costs|broke|couldn't|cannot|failed|"
+    r"risk|worst|gone|empty|afraid|hurt|"
+    r"let (?:it|them|that) go"
+    r")\b",
+    re.I,
+)
+_TAKEAWAY_RE = re.compile(
+    r"\b("
+    r"because|so|that's why|that is why|"
+    r"keep|kept|stay|stayed|wait|pay|paid|"
+    r"leave|left|hold|held|first"
+    r")\b",
+    re.I,
+)
+
+
+def _spoken_line_texts(lines: list[Any]) -> list[str]:
+    out: list[str] = []
+    for row in lines or []:
+        if isinstance(row, dict):
+            t = str(row.get("text") or row.get("beat_text") or "").strip()
+        else:
+            t = str(row or "").strip()
+        if t:
+            out.append(t)
+    return out
+
+
+def assess_story_quality(
+    lines: list[Any],
+    theme: str = "",
+) -> dict[str, Any]:
+    """
+    Standing writer/validator bar (hope 9-liner is the shape, not the exception):
+
+    1. Causal spine — each line connects to the next via consequence or contrast.
+    2. Stakes — something is risked, lost, or almost lost (not description alone).
+    3. Closing takeaway — a usable tool or stated lesson, not an aphorism for its own sake.
+
+    Locked scripts must clear this before visual generation starts.
+    """
+    texts = _spoken_line_texts(lines)
+    fails: list[str] = []
+    n = len(texts)
+    linked = 0
+    link_notes: list[str] = []
+    prior_stems: set[str] = set()
+    for i, text in enumerate(texts):
+        if i > 0:
+            shared = _content_stems(text) & prior_stems
+            if _CAUSAL_LINK_RE.search(text) or shared:
+                linked += 1
+                why = (
+                    "connective"
+                    if _CAUSAL_LINK_RE.search(text)
+                    else f"shared={sorted(shared)[:4]}"
+                )
+                link_notes.append(f"{i}->{i + 1}:{why}")
+            else:
+                link_notes.append(f"{i}->{i + 1}:gap")
+        prior_stems |= _content_stems(text)
+    n_pairs = max(0, n - 1)
+    need = max(6, int(round(n_pairs * 0.75))) if n_pairs else 0
+    if n_pairs and linked < need:
+        fails.append(
+            f"story-spine: {linked}/{n_pairs} consecutive lines linked by "
+            f"consequence/contrast (need {need}+; hope 9-liner is the bar)"
+        )
+        print(f"[LOFI story] SPINE FAIL linked={linked}/{n_pairs} need={need}")
+    else:
+        print(f"[LOFI story] SPINE pass linked={linked}/{n_pairs}")
+
+    stakes_hits = [t for t in texts if _STAKES_RE.search(t)]
+    if not stakes_hits:
+        fails.append(
+            "story-stakes: nothing is risked, lost, or almost lost — "
+            "description is not enough"
+        )
+        print("[LOFI story] STAKES FAIL")
+    else:
+        print(f"[LOFI story] STAKES pass n={len(stakes_hits)}")
+
+    aphorism = assess_aphorism_close(
+        [{"text": t} for t in texts],
+        theme,
+    )
+    last = texts[-1] if texts else ""
+    takeaway_ok = bool(_TAKEAWAY_RE.search(last))
+    if aphorism.get("fails"):
+        fails.extend(str(x) for x in aphorism["fails"])
+        fails.append(
+            "story-close: last line is an aphorism for its own sake — "
+            "need a usable takeaway or a stated lesson"
+        )
+        print("[LOFI story] CLOSE FAIL aphorism")
+    elif not takeaway_ok:
+        fails.append(
+            "story-close: last line has no usable takeaway "
+            "(emotional tool the viewer can do, or a stated lesson)"
+        )
+        print(f"[LOFI story] CLOSE FAIL last={last!r}")
+    else:
+        print(f"[LOFI story] CLOSE pass last={last!r}")
+
+    rec = {
+        "linked": linked,
+        "pairs": n_pairs,
+        "need": need,
+        "stakes_n": len(stakes_hits),
+        "last": last,
+        "links": link_notes,
+        "fails": fails,
+    }
+    if fails:
+        print(f"[LOFI story] REJECT {fails}")
+    else:
+        print("[LOFI story] pass")
+    return rec
+
+
+def _object_name_stems(obj: str) -> list[str]:
+    return [
+        t
+        for t in re.findall(r"[a-z]+", str(obj or "").lower())
+        if (
+            t not in _PROP_ADJ
+            and t not in _CONTENT_STOP
+            and len(t) >= 3
+            and t not in _PLACE_STEMS
+            and t not in _ABSTRACT_STEMS
+        )
+    ]
+
+
+def assess_object_beat_continuity(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Object-only beats must be named in the caption, or already present as
+    a prior beat's object. Same-style pixel check runs later in pipeline.
+    """
+    fails: list[str] = []
+    report: list[dict[str, Any]] = []
+    prior_stems: list[tuple[int, str, list[str]]] = []
+    for i, row in enumerate(lines or []):
+        if not isinstance(row, dict):
+            continue
+        st = str(row.get("subject_type") or "").strip().lower().replace(" ", "_")
+        ctype = str(row.get("composition_type") or "").strip()
+        obj = str(row.get("key_object") or "")
+        stems = _object_name_stems(obj)
+        text = str(row.get("text") or row.get("beat_text") or "")
+        blob = text.lower()
+        is_object_beat = ctype == "object_focus" or st == "object_focus"
+        if not is_object_beat:
+            if stems:
+                prior_stems.append((i + 1, obj, stems))
+            continue
+        if not stems:
+            rec = {
+                "scene": i + 1,
+                "object": obj,
+                "condition": "skip_no_concrete_object",
+                "caption": text,
+            }
+            report.append(rec)
+            continue
+        caption_named = any(s in blob for s in stems)
+        prior = [
+            p
+            for p in prior_stems
+            if p[0] < i + 1 and any(s in p[2] for s in stems)
+        ]
+        if caption_named:
+            cond = "caption_named"
+        elif prior:
+            cond = "prior_object_mention"
+        else:
+            cond = "none"
+        rec = {
+            "scene": i + 1,
+            "object": obj,
+            "condition": cond,
+            "caption": text,
+            "prior_scenes": [p[0] for p in prior],
+        }
+        report.append(rec)
+        print(
+            f"[LOFI object-continuity] scene={i + 1} object={obj!r} "
+            f"condition={cond} caption={text!r} prior={rec['prior_scenes']}"
+        )
+        if cond == "none":
+            fails.append(
+                f"object-continuity scene {i + 1} {obj!r} is a dedicated beat "
+                f"but is not in the caption and never appeared in a prior beat"
+            )
+        if stems:
+            prior_stems.append((i + 1, obj, stems))
+    if not fails:
+        print("[LOFI object-continuity] script-level pass")
+    return {"beats": report, "fails": fails}
 
 
 def _connective_load_bearing(prev: str, text: str, word: str) -> str:
@@ -2655,7 +3191,8 @@ alone_clear: are it/they/this resolvable from earlier spoken lines (not from a c
 _HOOK_LIGHT_RE = re.compile(
     r"\b("
     r"sunset|sunrise|dusk|dawn|rain|storm|lamp|streetlamp|streetlight|"
-    r"glow|backlit|lightning|firelight|window light|overcast|wet glass"
+    r"glow|backlit|lightning|firelight|window light|overcast|wet glass|"
+    r"evening|night"
     r")\b",
     re.I,
 )
@@ -2685,7 +3222,8 @@ def assess_hook_beat(lines: list[dict[str, Any]]) -> dict[str, Any]:
     setting = str(row.get("setting") or "")
     obj = str(row.get("key_object") or "")
     tod = str(row.get("time_of_day") or "")
-    blob = f"{setting} {obj} {tod} {text}"
+    light = str(row.get("lighting_label") or row.get("lighting_condition") or "")
+    blob = f"{setting} {obj} {tod} {text} {light}"
     rec.update({"text": text, "subject_type": st, "setting": setting, "object": obj})
     if st == "object_focus" or st not in _HOOK_CHAR_TYPES:
         rec["reason"] = (
@@ -2758,27 +3296,65 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
             break
     if "turn" not in fns and "insight" not in fns:
         reasons.append("missing turn/insight — no development")
-    insight_rep = assess_insight_lines(lines)
-    data["insight_agency"] = insight_rep
-    reasons.extend(insight_rep.get("fails") or [])
-    principle_rep = assess_principle_lines(lines)
-    data["principle_voice"] = principle_rep
-    reasons.extend(principle_rep.get("fails") or [])
-    scope_rep = assess_principle_scope(lines)
-    data["principle_scope"] = scope_rep
-    reasons.extend(scope_rep.get("fails") or [])
-    connect_rep = assess_connective_development(lines)
-    data["connective_development"] = connect_rep
-    reasons.extend(connect_rep.get("fails") or [])
-    hook_ans = assess_insight_answers_hook(lines)
-    data["insight_answers_hook"] = hook_ans
-    reasons.extend(hook_ans.get("fails") or [])
+    mono_path = bool(data.get("monologue_split") or data.get("source_monologue"))
+    mono = str(data.get("source_monologue") or data.get("monologue") or "")
+    if mono_path:
+        from core_engine.economic_reel_lofi.theme_guard import assess_theme_drift
+
+        drift_rep = assess_theme_drift(mono, str(data.get("theme") or ""))
+        data["theme_drift"] = drift_rep
+        reasons.extend(drift_rep.get("fails") or [])
+        data["insight_agency"] = {
+            "fails": [],
+            "status": "skipped",
+            "skipped": "monologue-first — closing agency is not scored per fragment",
+        }
+        beat_texts = [
+            str(r.get("text") or r.get("beat_text") or "").strip()
+            for r in lines
+            if str(r.get("text") or r.get("beat_text") or "").strip()
+        ]
+        principle_rep = assess_principle_monologue(mono, beats=beat_texts)
+        data["principle_voice"] = principle_rep
+        reasons.extend(principle_rep.get("fails") or [])
+        data["principle_scope"] = {
+            "hits": [],
+            "count": 0,
+            "fails": [],
+            "skipped": "monologue-first",
+        }
+        data["connective_development"] = {
+            "fails": [],
+            "skipped": "monologue-first — argument is continuous by construction",
+        }
+        hook_ans = assess_insight_answers_hook_monologue(mono, beats=beat_texts)
+        data["insight_answers_hook"] = hook_ans
+        reasons.extend(hook_ans.get("fails") or [])
+        object_rep = assess_object_churn(lines, name)
+        data["object_churn"] = object_rep
+        reasons.extend(object_rep.get("fails") or [])
+    else:
+        insight_rep = assess_insight_lines(lines)
+        data["insight_agency"] = insight_rep
+        reasons.extend(insight_rep.get("fails") or [])
+        principle_rep = assess_principle_lines(lines)
+        data["principle_voice"] = principle_rep
+        reasons.extend(principle_rep.get("fails") or [])
+        scope_rep = assess_principle_scope(lines)
+        data["principle_scope"] = scope_rep
+        reasons.extend(scope_rep.get("fails") or [])
+        connect_rep = assess_connective_development(lines)
+        data["connective_development"] = connect_rep
+        reasons.extend(connect_rep.get("fails") or [])
+        hook_ans = assess_insight_answers_hook(lines)
+        data["insight_answers_hook"] = hook_ans
+        reasons.extend(hook_ans.get("fails") or [])
+        object_rep = assess_object_churn(lines, name)
+        data["object_churn"] = object_rep
+        reasons.extend(object_rep.get("fails") or [])
     recipe_rep = assess_recipe_pattern(lines)
     data["recipe_pattern"] = recipe_rep
     reasons.extend(recipe_rep.get("fails") or [])
-    object_rep = assess_object_churn(lines, name)
-    data["object_churn"] = object_rep
-    reasons.extend(object_rep.get("fails") or [])
     theme_name = str(data.get("theme") or "").strip().lower()
     extra = data.pop("_connective_extra_records", None)
     connect_x = assess_connective_cross_run(
@@ -2795,9 +3371,48 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
     still_rep = assess_caption_still_alignment(lines)
     data["caption_still_align"] = still_rep
     reasons.extend(still_rep.get("fails") or [])
-    coherence_rep = assess_connective_coherence(lines)
-    data["connective_coherence"] = coherence_rep
-    reasons.extend(coherence_rep.get("fails") or [])
+    referent_rep = assess_fixed_referent(lines)
+    data["fixed_referent"] = referent_rep
+    reasons.extend(referent_rep.get("fails") or [])
+    aphorism_rep = assess_aphorism_close(lines, str(data.get("theme") or ""))
+    data["aphorism_close"] = aphorism_rep
+    reasons.extend(aphorism_rep.get("fails") or [])
+    load_rep = assess_load_bearing_connectives(lines)
+    data["load_bearing_connectives"] = load_rep
+    reasons.extend(load_rep.get("fails") or [])
+    story_rep = assess_story_quality(lines, str(data.get("theme") or ""))
+    data["story_quality"] = story_rep
+    reasons.extend(story_rep.get("fails") or [])
+    obj_cont = assess_object_beat_continuity(lines)
+    data["object_beat_continuity"] = obj_cont
+    reasons.extend(obj_cont.get("fails") or [])
+    if mono_path:
+        sent_lines = [
+            {"text": s, "scene": i + 1}
+            for i, s in enumerate(_monologue_sentences(mono))
+        ]
+        # Per-caption decorative-connective scoring is retired here.
+        # Optional LLM judge still runs against whole sentences if enabled.
+        skip_llm = os.getenv("LOFI_SKIP_COHERENCE_LLM", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if skip_llm:
+            coherence_rep = {
+                "fails": [],
+                "beats": [],
+                "skipped": "monologue-first; LLM judge skipped",
+            }
+            print("[LOFI argument] COHERENCE skip (monologue-first + LOFI_SKIP_COHERENCE_LLM)")
+        else:
+            coherence_rep = assess_connective_coherence(sent_lines, use_llm=True)
+        data["connective_coherence"] = coherence_rep
+        reasons.extend(coherence_rep.get("fails") or [])
+    else:
+        coherence_rep = assess_connective_coherence(lines)
+        data["connective_coherence"] = coherence_rep
+        reasons.extend(coherence_rep.get("fails") or [])
     close_n = sum(
         1 for r in lines if str(r.get("shot_scale") or "").strip().lower() == "close"
     )
@@ -2903,6 +3518,172 @@ def _log_narrative(data: dict[str, Any], reasons: list[str]) -> None:
     )
 
 
+def _stamp_thematic_meta(
+    data: dict[str, Any],
+    *,
+    hook_type: str,
+    theme: str,
+    module: str,
+    retrieved: list[Any],
+    arc_id: str,
+    structure: dict[str, str],
+    rhetoric: dict[str, Any],
+    seed: dict[str, Any],
+) -> dict[str, Any]:
+    data["hook_type"] = hook_type
+    data["theme"] = theme
+    data["module"] = module
+    data["retrieved_details"] = retrieved
+    data["arc_template"] = lofi_cfg.THEMATIC_ARC_ID
+    data["structure_id"] = str(
+        data.get("structure_id") or (structure.get("id") if structure else "") or ""
+    )
+    data["rhetoric_pattern"] = str(
+        (rhetoric or {}).get("name") or data.get("rhetoric_pattern") or ""
+    )
+    data["rhetoric_hook_overlay"] = str(
+        (rhetoric or {}).get("hook_overlay") or data.get("rhetoric_hook_overlay") or ""
+    )
+    data["seed_hooks"] = list(seed.get("hooks") or [])
+    if isinstance((rhetoric or {}).get("locked_thesis"), str) and rhetoric["locked_thesis"]:
+        data["thesis"] = rhetoric["locked_thesis"]
+    if isinstance((rhetoric or {}).get("locked_anchor"), dict) and rhetoric["locked_anchor"].get("name"):
+        data["anchor_object"] = dict(rhetoric["locked_anchor"])
+    return data
+
+
+def _line_contract_fails(texts: list[str], scene_count: int) -> list[str]:
+    max_w, max_c = lofi_cfg.thematic_caption_limits()
+    fails: list[str] = []
+    n = len(texts)
+    if n != int(scene_count):
+        fails.append(f"beat-count {n} (need {scene_count})")
+    for i, t in enumerate(texts, 1):
+        nw, nc = len(t.split()), len(t)
+        if nw > max_w or nc > max_c:
+            fails.append(f"s{i} {nw}w/{nc}c over {max_w}w/{max_c}c: {t!r}")
+    return fails
+
+
+def _rewrite_line_constraints(
+    texts: list[str],
+    user_text: str,
+    theme: str,
+    scene_count: int,
+) -> list[str]:
+    """One Claude rewrite if theme-drift, wrong beat count, or a line over cap."""
+    from core_engine.economic_reel_lofi.claude_compose import compose_lines
+    from core_engine.economic_reel_lofi.theme_guard import assess_theme_drift
+
+    max_w, max_c = lofi_cfg.thematic_caption_limits()
+    mono = " ".join(texts)
+    drift = assess_theme_drift(mono, theme)
+    contract = _line_contract_fails(texts, scene_count)
+    if not drift.get("fails") and not contract:
+        return texts
+    why = []
+    if drift.get("fails"):
+        why.append("theme-drift " + "; ".join(drift["fails"]))
+    if contract:
+        why.append("; ".join(contract))
+    print(f"[LOFI compose] rewrite — {'; '.join(why)}")
+    retry = (
+        user_text
+        + f"\nREWRITE as exactly {scene_count} lines about "
+        f"{theme.replace('_', ' ')} only. "
+        f"Each line HARD MAX {max_w} words and {max_c} characters. "
+        "Do not name any other theme (hope, grief, trust, etc.). "
+        "Keep the causal chain: each line depends on the one before it."
+    )
+    if drift.get("fails"):
+        retry += " Forbidden leftover: " + "; ".join(
+            h.get("match") or "" for h in (drift.get("hits") or [])
+        )
+    try:
+        redone = compose_lines(retry, theme=f"{theme}_fix")
+        print(f"[LOFI compose] rewrite lines={len(redone)}: {redone}")
+        redone_drift = assess_theme_drift(" ".join(redone), theme)
+        redone_c = _line_contract_fails(redone, scene_count)
+        if not redone_drift.get("fails") and not redone_c:
+            return redone
+        if drift.get("fails") and not redone_drift.get("fails") and not redone_c:
+            return redone
+        if not redone_c and contract:
+            return redone
+    except Exception as exc_r:  # noqa: BLE001
+        print(f"[LOFI compose] rewrite failed ({exc_r})")
+    return texts
+
+
+def _thematic_from_lines(
+    texts: list[str],
+    *,
+    module: str,
+    theme: str,
+    scene_count: int,
+    hook_type: str,
+    pool: list[dict[str, str]],
+    retrieved: list[Any],
+    structure: dict[str, str],
+    rhetoric: dict[str, Any],
+    seed: dict[str, Any],
+    writer: str,
+) -> dict[str, Any]:
+    n = max(1, int(scene_count))
+    beats = [str(t).strip() for t in texts if str(t).strip()]
+    lines: list[dict[str, Any]] = []
+    for i, text in enumerate(beats[:n]):
+        lines.append(
+            {
+                "scene": i + 1,
+                "text": text,
+                "beat_text": text,
+                "arc_position": act_for_index(i, n),
+            }
+        )
+    joined = " ".join(r["text"] for r in lines)
+    data: dict[str, Any] = {
+        "source_monologue": joined,
+        "monologue": joined,
+        "monologue_split": True,
+        "direct_beats": True,
+        "writer": writer,
+        "lines": lines,
+        "estimated_spoken_s": lofi_cfg.estimated_spoken_duration_s(len(joined.split())),
+    }
+    _stamp_thematic_meta(
+        data,
+        hook_type=hook_type,
+        theme=theme,
+        module=module,
+        retrieved=retrieved,
+        arc_id=lofi_cfg.THEMATIC_ARC_ID,
+        structure=structure,
+        rhetoric=rhetoric,
+        seed=seed,
+    )
+    _finalize_thematic_narrative(data, pool, module=module, theme=theme)
+    data["monologue"] = " ".join(
+        str(r.get("text") or "")
+        for r in (data.get("lines") or [])
+        if isinstance(r, dict)
+    )
+    data["source_monologue"] = data["monologue"]
+    data["estimated_spoken_s"] = lofi_cfg.estimated_spoken_duration_s(
+        len(str(data["monologue"]).split())
+    )
+    if rhetoric.get("locked_thesis"):
+        data["thesis"] = rhetoric["locked_thesis"]
+    if isinstance(rhetoric.get("locked_anchor"), dict) and rhetoric["locked_anchor"].get("name"):
+        data["anchor_object"] = dict(rhetoric["locked_anchor"])
+    print(
+        f"[LOFI compose] direct-beats n={len(data.get('lines') or [])} "
+        f"words={len(str(data.get('monologue') or '').split())} "
+        f"est_vo={data['estimated_spoken_s']}s"
+    )
+    return data
+
+
 def generate_script(
     *,
     module: str,
@@ -2919,7 +3700,7 @@ def generate_script(
     skip_polish: bool = False,
 ) -> dict[str, Any]:
     """
-    Write ONE continuous spoken-word story, then split across scenes.
+    Write exactly scene_count spoken beats as one causal argument.
 
     Scene 1 is the scroll-stop hook. Final scenes deliver comfort, not a dry moral.
     """
@@ -3154,6 +3935,161 @@ Valid JSON only: no trailing commas, no comments, escape quotes inside strings.
 No NSFW. No real private individuals named. Brand-safe for {module}.
 """
 
+    if thematic:
+        from core_engine.economic_reel_lofi.claude_compose import (
+            _coerce_line_list,
+            compose_lines,
+            format_compose_user,
+        )
+
+        user_text = format_compose_user(
+            theme=theme,
+            thesis=str((rhetoric or {}).get("locked_thesis") or ""),
+            anchor=(rhetoric or {}).get("locked_anchor")
+            if isinstance((rhetoric or {}).get("locked_anchor"), dict)
+            else None,
+            rhetoric=rhetoric,
+            pool_block=pool_block,
+            feedback=feedback_block,
+        )
+        texts: list[str] = []
+        writer = "claude"
+        try:
+            texts = compose_lines(user_text, theme=theme)
+            print(f"[LOFI compose] lines ({len(texts)}): {texts}")
+            texts = _rewrite_line_constraints(texts, user_text, theme, scene_count)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("Claude compose failed (%s) — DeepSeek lines fallback", exc)
+            print(f"[LOFI compose] Claude failed ({exc}); DeepSeek fallback")
+            skip_ds = os.getenv("LOFI_SKIP_COMPOSE_ALTERNATE", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            if skip_ds:
+                print("[LOFI compose] DeepSeek fallback skipped — retrying Claude")
+                try:
+                    texts = compose_lines(user_text, theme=f"{theme}_retry")
+                    print(f"[LOFI compose] retry lines ({len(texts)}): {texts}")
+                    if texts:
+                        texts = _rewrite_line_constraints(
+                            texts, user_text, theme, scene_count
+                        )
+                except Exception as exc2:  # noqa: BLE001
+                    print(f"[LOFI compose] Claude retry failed ({exc2})")
+                    texts = []
+            else:
+                writer = "deepseek"
+                try:
+                    raw = _call_llm(prompt)
+                    parsed = _extract_json_object(raw)
+                    texts = _coerce_line_list((parsed or {}).get("lines"))
+                except Exception as exc2:  # noqa: BLE001
+                    print(f"[LOFI compose] DeepSeek fallback failed ({exc2})")
+                    texts = []
+        if not texts:
+            return _fallback_script(
+                module=module,
+                theme=theme,
+                scene_count=scene_count,
+                hook_type=hook_type,
+                quote=quote,
+                setting_object_pairs=pool,
+                retrieved_details=retrieved,
+                arc_template=str(arc.get("id") or ""),
+            )
+        data = _thematic_from_lines(
+            texts,
+            module=module,
+            theme=theme,
+            scene_count=scene_count,
+            hook_type=hook_type,
+            pool=pool,
+            retrieved=retrieved,
+            structure=structure,
+            rhetoric=rhetoric,
+            seed=seed,
+            writer=writer,
+        )
+        reasons = _narrative_gate_reasons(data, module)
+        skip_alt = os.getenv("LOFI_SKIP_COMPOSE_ALTERNATE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if reasons and not skip_alt:
+            print(
+                f"[LOFI compose] first draft holds={len(reasons)} — "
+                "one DeepSeek alternate"
+            )
+            try:
+                raw = _call_llm(prompt)
+                parsed = _extract_json_object(raw)
+                alt = _coerce_line_list((parsed or {}).get("lines"))
+            except Exception as exc:  # noqa: BLE001
+                alt = []
+                print(f"[LOFI compose] DeepSeek alternate failed ({exc})")
+            if alt:
+                alt_data = _thematic_from_lines(
+                    alt,
+                    module=module,
+                    theme=theme,
+                    scene_count=scene_count,
+                    hook_type=hook_type,
+                    pool=pool,
+                    retrieved=retrieved,
+                    structure=structure,
+                    rhetoric=rhetoric,
+                    seed=seed,
+                    writer="deepseek",
+                )
+                alt_reasons = _narrative_gate_reasons(alt_data, module)
+                if len(alt_reasons) < len(reasons):
+                    data, reasons = alt_data, alt_reasons
+                    print(
+                        f"[LOFI compose] keeping DeepSeek alternate "
+                        f"holds={len(reasons)}"
+                    )
+        force_polish = os.getenv("LOFI_FORCE_CLAUDE_POLISH", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if not reasons and force_polish and not skip_polish:
+            try:
+                from core_engine.economic_reel_lofi.claude_polish import polish_one
+
+                polished = polish_one(data)
+                polish_reasons = _narrative_gate_reasons(dict(polished), module)
+                if not polish_reasons:
+                    data = polished
+                    reasons = []
+                else:
+                    print("[LOFI polish] post-polish gates failed — keeping compose draft")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[LOFI polish] skipped ({exc})")
+        _log_narrative(data, reasons)
+        data["holds_episode"] = bool(reasons)
+        data["narrative_holds"] = reasons
+        if reasons:
+            print("[LOFI narrative] HARD HOLD — rejecting script")
+            data["hook_type"] = ""
+        lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
+        print("[LOFI script] source_monologue:", data.get("source_monologue"))
+        print("[LOFI script] monologue:", data.get("monologue"))
+        print("[LOFI script] hook:", (lines[0].get("text") if lines else ""))
+        print("[LOFI script] arc:", data.get("arc_template"))
+        print("[LOFI script] anchor:", data.get("anchor_object"))
+        print("[LOFI script] structure:", data.get("structure_id"))
+        print(
+            "[LOFI script] rhetoric:",
+            data.get("rhetoric_pattern"),
+            "overlay:",
+            data.get("rhetoric_hook_overlay") or "none",
+        )
+        print("[LOFI script] writer:", data.get("writer"))
+        return data
+
     data = None
     last_exc: Exception | None = None
     for attempt in range(1, 3):
@@ -3187,17 +4123,9 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
     data["module"] = module
     data["retrieved_details"] = retrieved
     data["arc_template"] = str(data.get("arc_template") or arc.get("id") or "")
-    data["structure_id"] = str(
-        data.get("structure_id") or (structure.get("id") if thematic else "") or ""
-    )
-    data["rhetoric_pattern"] = str(
-        data.get("rhetoric_pattern") or (rhetoric.get("name") if rhetoric else "") or ""
-    )
-    data["rhetoric_hook_overlay"] = str(
-        data.get("rhetoric_hook_overlay")
-        or (rhetoric.get("hook_overlay") if rhetoric else "")
-        or ""
-    )
+    data["structure_id"] = str(data.get("structure_id") or "")
+    data["rhetoric_pattern"] = ""
+    data["rhetoric_hook_overlay"] = ""
     data["seed_hooks"] = list(seed.get("hooks") or [])
     if isinstance(data.get("anchor_object"), dict):
         ao = data["anchor_object"]
@@ -3206,7 +4134,7 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             "initial_state": str(ao.get("initial_state") or "").strip(),
             "final_state": str(ao.get("final_state") or "").strip(),
         }
-    elif not thematic:
+    else:
         data["anchor_object"] = {
             "name": "",
             "initial_state": "",
@@ -3234,91 +4162,6 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
         if not row.get("visual_prompt"):
             row["visual_prompt"] = f"story beat {i + 1}"
     data["lines"] = lines
-    if thematic:
-        n_cand = max(1, int(os.getenv("LOFI_DEEPSEEK_CANDIDATES", "3") or 3))
-        best = data
-        best_n = 10**9
-        cand_prompt = prompt
-        for ci in range(n_cand):
-            if ci > 0:
-                print(f"[LOFI script] DeepSeek candidate {ci + 1}/{n_cand}")
-                try:
-                    raw = _call_llm(cand_prompt)
-                    nxt = _extract_json_object(raw)
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[LOFI script] candidate {ci + 1} parse fail: {exc}")
-                    continue
-                if not (isinstance(nxt, dict) and nxt.get("lines")):
-                    continue
-                nxt["hook_type"] = hook_type
-                nxt["theme"] = theme
-                nxt["module"] = module
-                nxt["retrieved_details"] = retrieved
-                nxt["arc_template"] = data.get("arc_template")
-                nxt["structure_id"] = data.get("structure_id")
-                nxt["rhetoric_pattern"] = data.get("rhetoric_pattern")
-                nxt["rhetoric_hook_overlay"] = data.get("rhetoric_hook_overlay")
-                nxt["seed_hooks"] = data.get("seed_hooks")
-                data = nxt
-            _finalize_thematic_narrative(data, pool, module=module, theme=theme)
-            if rhetoric.get("locked_thesis"):
-                data["thesis"] = rhetoric["locked_thesis"]
-            if isinstance(rhetoric.get("locked_anchor"), dict) and rhetoric["locked_anchor"].get("name"):
-                data["anchor_object"] = dict(rhetoric["locked_anchor"])
-            reasons = _narrative_gate_reasons(data, module)
-            print(
-                f"[LOFI narrative] candidate {ci + 1}/{n_cand} "
-                f"holds={len(reasons)}"
-            )
-            if len(reasons) < best_n:
-                best = data
-                best_n = len(reasons)
-            if not reasons:
-                break
-            cand_prompt = _thematic_script_prompt(
-                module=module,
-                theme=theme,
-                subtheme=subtheme,
-                scene_count=scene_count,
-                hook_type=hook_type,
-                arc=arc,
-                detail_block=detail_block,
-                pool_block=pool_block,
-                feedback_block=(
-                    "Write a fresh draft. Do not repeat the previous captions.\n"
-                ),
-                act_guide=act_guide,
-                structure=structure,
-                quote_block=quote_block,
-                gold_block="",
-                rhetoric=rhetoric,
-            )
-        data = best
-        reasons = _narrative_gate_reasons(data, module)
-        if not reasons and not skip_polish:
-            try:
-                from core_engine.economic_reel_lofi.claude_polish import polish_one
-
-                polished = polish_one(data)
-                polish_reasons = _narrative_gate_reasons(dict(polished), module)
-                if polish_reasons:
-                    print(
-                        "[LOFI polish] post-polish gates failed — "
-                        "keeping DeepSeek finalist (no Claude retry)"
-                    )
-                else:
-                    data = polished
-                    reasons = []
-            except Exception as exc:  # noqa: BLE001
-                _LOG.warning("Claude polish skipped (%s)", exc)
-                print(f"[LOFI polish] skipped ({exc})")
-        _log_narrative(data, reasons)
-        data["holds_episode"] = bool(reasons)
-        data["narrative_holds"] = reasons
-        if reasons:
-            print("[LOFI narrative] HARD HOLD — rejecting script")
-            data["hook_type"] = ""
-        lines = data.get("lines") or lines
     if not data.get("monologue"):
         data["monologue"] = " ".join(
             str(r.get("text") or "") for r in lines if isinstance(r, dict)

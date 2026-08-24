@@ -1,0 +1,2286 @@
+{
+  "manual_accept_scenes": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8
+  ],
+  "work_dir": "outputs/wonder_feed/assets/lofi_run_20260824_022828_03",
+  "scene_images": [
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_01.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_02.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_03.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_04.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_05.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_06.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_07.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_08.png",
+    "outputs/wonder_feed/assets/lofi_run_20260824_022828_03/scene_09.png"
+  ],
+  "script": {
+    "source_monologue": "I used to watch the sidewalk for someone arriving. That waiting cost me hours I never got back. The sidewalk stayed empty more nights than not. So I stopped paying attention with my whole chest. I still looked, but I no longer bled for it. That's a smaller price for the same window view. Attachment held anyway, quieter, cheaper, still mine. The sidewalk is still empty, and I'm still here. It cost less this time, and it stayed longer.",
+    "monologue": "I used to watch the sidewalk for someone arriving. That waiting cost me hours I never got back. The sidewalk stayed empty more nights than not. So I stopped paying attention with my whole chest. I still looked, but I no longer bled for it. That's a smaller price for the same window view. Attachment held anyway, quieter, cheaper, still mine. The sidewalk is still empty, and I'm still here. It cost less this time, and it stayed longer.",
+    "monologue_split": true,
+    "direct_beats": true,
+    "writer": "claude",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "I used to watch the sidewalk for someone arriving.",
+        "beat_text": "I used to watch the sidewalk for someone arriving.",
+        "arc_position": "act1",
+        "episode_theme": "attachment",
+        "episode_module": "relationship",
+        "episode_anchor_stem": "sidewalk",
+        "episode_anchor_name": "empty sidewalk",
+        "subject_type": "woman",
+        "subject_expression": "sad",
+        "setting": "window overlooking the street",
+        "key_object": "empty sidewalk",
+        "time_of_day": "dusk",
+        "beat_function": "hook",
+        "visual_anchor_hint": "empty sidewalk, first seen",
+        "anchor_beat": "introduce",
+        "setting_archetype": "threshold",
+        "composition_type": "figure_centered",
+        "palette_key": "WARM",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, sad posture, shoulders covered, no visible face or skin in window overlooking the street, dusk. empty sidewalk is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. The empty sidewalk must be drawn as that real object, recognizable by: the recognizable shape of empty sidewalk. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — is painted as flat gouache color blocks with hard printed edges and visible paper grain, not photo-grain. No photographic light falloff, no depth-of-field, no lens glow. Only the human figure is a silhouette; the room stays readable as poster shapes. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: empty sidewalk, first seen. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "empty sidewalk",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 1,
+          "attempt": 2,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "anchor_identity": {
+            "object_name": "empty sidewalk",
+            "shape_parts": [
+              "the recognizable shape of empty sidewalk"
+            ],
+            "want_open_closed": false,
+            "passed": false,
+            "skipped": false,
+            "object_present": false,
+            "visible_parts": [],
+            "missing_parts": [],
+            "substitute_object": "rug",
+            "fix_instructions": "The empty sidewalk must be drawn as that real object, recognizable by: the recognizable shape of empty sidewalk. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Center the empty sidewalk so those parts fill the frame."
+          },
+          "painterly_lock": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_anchor_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 1,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": false,
+            "has_character": true,
+            "high_contrast": true,
+            "empty_still_life": false,
+            "striking": true,
+            "note": "A person is silhouetted against a vibrant orange sunset, creating a high-contrast and striking image with a contemplative mood."
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: requested 'empty sidewalk' not in pixels (got rug)"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "empty sidewalk",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 1,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "anchor_identity": {
+                "object_name": "empty sidewalk",
+                "shape_parts": [
+                  "the recognizable shape of empty sidewalk"
+                ],
+                "want_open_closed": false,
+                "passed": false,
+                "skipped": false,
+                "object_present": false,
+                "visible_parts": [],
+                "missing_parts": [
+                  "recognizable shape of empty sidewalk"
+                ],
+                "substitute_object": "bed/blankets",
+                "fix_instructions": "The empty sidewalk must be drawn as that real object, recognizable by: the recognizable shape of empty sidewalk. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Center the empty sidewalk so those parts fill the frame."
+              },
+              "painterly_lock": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_anchor_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 1,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": false,
+                "has_character": true,
+                "high_contrast": true,
+                "empty_still_life": false,
+                "striking": true,
+                "note": "The image features a striking silhouette of a character against a vibrant sunset, creating high contrast and strong visual appeal. It successfully meets all criteria for a good first frame."
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "POSE: figure is on the mattress, not standing on the floor or sitting on the edge with feet on the floor.",
+                "OBJECT: requested 'empty sidewalk' not in pixels (got bed/blankets)"
+              ]
+            },
+            {
+              "subject_type": "woman",
+              "key_object": "empty sidewalk",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 1,
+              "attempt": 2,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "anchor_identity": {
+                "object_name": "empty sidewalk",
+                "shape_parts": [
+                  "the recognizable shape of empty sidewalk"
+                ],
+                "want_open_closed": false,
+                "passed": false,
+                "skipped": false,
+                "object_present": false,
+                "visible_parts": [],
+                "missing_parts": [],
+                "substitute_object": "rug",
+                "fix_instructions": "The empty sidewalk must be drawn as that real object, recognizable by: the recognizable shape of empty sidewalk. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Center the empty sidewalk so those parts fill the frame."
+              },
+              "painterly_lock": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_anchor_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 1,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": false,
+                "has_character": true,
+                "high_contrast": true,
+                "empty_still_life": false,
+                "striking": true,
+                "note": "A person is silhouetted against a vibrant orange sunset, creating a high-contrast and striking image with a contemplative mood."
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: requested 'empty sidewalk' not in pixels (got rug)"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 2,
+        "text": "That waiting cost me hours I never got back.",
+        "beat_text": "That waiting cost me hours I never got back.",
+        "arc_position": "act1",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "empty park path at dusk",
+        "key_object": "distant horizon",
+        "time_of_day": "dusk",
+        "visual_fallback": "signage_trap_remap",
+        "beat_function": "complication",
+        "setting_archetype": "exterior-landscape",
+        "composition_type": "figure_centered",
+        "palette_key": "WARM",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "place_kept",
+        "visual_anchor_hint": "waiting cost me hours never got back",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a sad posture in empty park path at dusk, distant horizon is the only object, dusk. Hands empty at the sides or out of frame. Only distant horizon is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Close portrait, face and torso filling the frame, not a wide establishing shot. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: waiting cost me hours never got back. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "distant horizon",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.3271,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 2,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "place_kept",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 2,
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "distant horizon",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.3271,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 2,
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 3,
+        "text": "The sidewalk stayed empty more nights than not.",
+        "beat_text": "The sidewalk stayed empty more nights than not.",
+        "arc_position": "act1",
+        "subject_type": "woman",
+        "subject_expression": "sad",
+        "setting": "parked car at evening, door open",
+        "key_object": "empty passenger seat of a car",
+        "time_of_day": "dusk",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function": "turn",
+        "close_character": "woman",
+        "shot_scale": "close",
+        "close_variant": "portrait_close",
+        "close_target": "portrait",
+        "eye_close_context": "",
+        "pose_hint": "Tight portrait crop on face or upper body of the recurring character. Painterly print, not photoreal skin.",
+        "setting_archetype": "transit",
+        "composition_type": "figure_centered",
+        "palette_key": "WARM",
+        "dev_scene_builder": "portrait_close",
+        "object_focus_step": 0,
+        "object_focus_framing": "portrait_close",
+        "visual_anchor_hint": "sidewalk stayed empty more nights than",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. Portrait close of the same recurring woman: long near-black or very dark brown slightly wavy hair, loose or half-up, often falling across part of the face in profile; slim, average height; dark or hazel-green expressive eyes and a defined brow; wardrobe in quiet neutrals and earth tones — sweater, midi dress, or long coat, no patterns. Partial face or body may be visible. Same painterly risograph illustration as the rest of the episode: ink line, flat printed color, paper grain, canvas tooth. Not photoreal skin, not a camera portrait, not glossy beauty lighting, not a rendered-eye close-up. Tight crop, not a wide establishing shot. parked car at evening, door open, dusk. Tight portrait crop on face or upper body of the recurring character. Painterly print, not photoreal skin. empty passenger seat of a car, seen through the open car door is atmosphere only, not held in any hand. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere around the portrait: paper tooth, flat printed color, canvas texture. Same illustration technique as the episode. No photoreal skin, no camera portrait. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: sidewalk stayed empty more nights than. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "empty passenger seat of a car",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "portrait_close",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 3,
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "portrait_close",
+            "passed": true,
+            "skipped": false,
+            "photoreal_skin": false,
+            "photoreal_eyes": false,
+            "painterly_match": true,
+            "note": "The illustration does not contain photorealistic skin or eyes and matches the painterly style criteria. It does not FAIL."
+          },
+          "eye_close": {
+            "close_variant": "portrait_close",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "empty passenger seat of a car",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "portrait_close",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 3,
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "portrait_close",
+                "passed": true,
+                "skipped": false,
+                "photoreal_skin": false,
+                "photoreal_eyes": false,
+                "painterly_match": true,
+                "note": "The illustration does not contain photorealistic skin or eyes and matches the painterly style criteria. It does not FAIL."
+              },
+              "eye_close": {
+                "close_variant": "portrait_close",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          }
+        }
+      },
+      {
+        "scene": 4,
+        "text": "So I stopped paying attention with my whole chest.",
+        "beat_text": "So I stopped paying attention with my whole chest.",
+        "arc_position": "act2",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
+        "time_of_day": "dusk",
+        "beat_function": "insight",
+        "setting_archetype": "threshold",
+        "composition_type": "figure_centered",
+        "palette_key": "COLD",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "place_kept",
+        "visual_anchor_hint": "stopped paying attention my whole chest",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a sad posture in hallway near an open door, open doorway is the only object, dusk. Hands empty at the sides or out of frame. Only open doorway is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Close portrait, face and torso filling the frame, not a wide establishing shot. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: stopped paying attention my whole chest. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "open doorway",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.3591,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 4,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "place_kept",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 4,
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "open doorway",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.3591,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 4,
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 5,
+        "text": "I still looked, but I no longer bled for it.",
+        "beat_text": "I still looked, but I no longer bled for it.",
+        "arc_position": "act2",
+        "subject_type": "object_focus",
+        "subject_expression": "sad",
+        "setting": "kitchen at dawn",
+        "key_object": "kettle just clicked off",
+        "time_of_day": "dusk",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function": "complication",
+        "setting_archetype": "interior-domestic",
+        "composition_type": "object_focus",
+        "composition_remap": "figure_centered->object_focus",
+        "palette_key": "COLD",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "macro_no_setting",
+        "visual_anchor_hint": "kettle just clicked off alone, filling the frame",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A bold hand-inked illustration of kettle just clicked off filling the frame, drawn flat with visible ink outlines, not photographed. Printed halftone background, no named room, no furniture, no other objects. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only kettle just clicked off is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: kettle just clicked off alone, filling the frame. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "kettle just clicked off",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.189,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 5,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 373,
+            "lap_var": 722.1,
+            "edge": 8.24,
+            "std": 51.0,
+            "hard": 0.0753
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 5,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "kettle just clicked off",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.189,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 5,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 373,
+                "lap_var": 722.1,
+                "edge": 8.24,
+                "std": 51.0,
+                "hard": 0.0753
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 5,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 6,
+        "text": "That's a smaller price for the same window view.",
+        "beat_text": "That's a smaller price for the same window view.",
+        "arc_position": "act2",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "empty train platform at night",
+        "key_object": "empty platform",
+        "time_of_day": "dusk",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function": "turn",
+        "setting_archetype": "transit",
+        "setting_archetype_remap": "threshold->transit",
+        "composition_type": "wide_environment",
+        "shot_scale": "medium",
+        "composition_remap": "figure_centered->wide_environment",
+        "palette_key": "COLD",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 1,
+        "object_focus_framing": "empty_light",
+        "visual_anchor_hint": "That's smaller price same window view",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a sad posture against empty light, empty platform is the only object. Hands empty. No furniture, no room clutter. Only empty platform is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: That's smaller price same window view. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "empty platform",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.7321,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 1,
+          "scene": 6,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "empty_light",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 6,
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.207 area_frac=0.049 ratio=0.70 vs requested 'empty platform'"
+          ],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "empty platform",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.2069,
+              "intruder_area_frac": 0.0486,
+              "intended_bbox_frac": 0.2951,
+              "ratio": 0.701,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only empty platform filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.207 area_frac=0.049 ratio=0.70 vs requested 'empty platform'"
+              ]
+            },
+            {
+              "subject_type": "silhouette",
+              "key_object": "empty platform",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.7321,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 1,
+              "scene": 6,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "empty_light",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 6,
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          }
+        }
+      },
+      {
+        "scene": 7,
+        "text": "Attachment held anyway, quieter, cheaper, still mine.",
+        "beat_text": "Attachment held anyway, quieter, cheaper, still mine.",
+        "arc_position": "act3",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "street corner under a streetlamp",
+        "key_object": "empty sidewalk",
+        "time_of_day": "dusk",
+        "visual_fallback": "caption_anchored_pool",
+        "beat_function": "insight",
+        "setting_archetype": "exterior-urban",
+        "composition_type": "wide_environment",
+        "composition_remap": "figure_centered->object_focus",
+        "palette_key": "CONTRAST",
+        "object_focus_step": 1,
+        "object_focus_framing": "empty_light",
+        "visual_anchor_hint": "empty sidewalk under a streetlamp, no signage",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "empty sidewalk",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.7749,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 7,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "empty_light",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 7,
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "garbled letters/symbols on left wall"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "empty sidewalk",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.2295,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 7,
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "SEMANTIC: silhouette requested, but a detailed figure is present"
+              ]
+            },
+            {
+              "subject_type": "silhouette",
+              "key_object": "empty sidewalk",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.7749,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 7,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "empty_light",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 7,
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "garbled letters/symbols on left wall"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "reused": false
+        },
+        "pose_hint": "figure on the corner, empty sidewalk stretching away, no wall signs, no letters"
+      },
+      {
+        "scene": 8,
+        "text": "The sidewalk is still empty, and I'm still here.",
+        "beat_text": "The sidewalk is still empty, and I'm still here.",
+        "arc_position": "act3",
+        "subject_type": "object_focus",
+        "subject_expression": "sad",
+        "setting": "window overlooking the street",
+        "key_object": "empty sidewalk",
+        "time_of_day": "night",
+        "visual_fallback": "object_stem_rotate",
+        "beat_function": "close",
+        "visual_anchor_hint": "empty sidewalk, changed by the last beats",
+        "anchor_beat": "callback",
+        "setting_archetype": "exterior-urban",
+        "setting_archetype_remap": "threshold->public-interior",
+        "composition_type": "object_focus",
+        "composition_remap": "figure_centered->object_focus",
+        "episode_anchor_name": "empty sidewalk",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "painterly_setting",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A painterly risograph still-life of empty sidewalk in window overlooking the street. The object sits in a real environment with paper grain, color gradient, and canvas texture — not a woodcut, not a flat ink diagram on blank paper, not isolated linework. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only empty sidewalk is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. The empty sidewalk must be drawn as that real object, recognizable by: the recognizable shape of empty sidewalk. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Same flat gouache risograph atmosphere as a furnished room or rainy street — paper tooth, hard color blocks, printed dusk. Not a photograph, not volumetric glow, not isolated ink-diagram linework on blank paper. Flat gouache / riso-poster illustration: hard-edged color planes, paper tooth, slight ink offset. Not a photograph, not cinematic lighting, not volumetric sunset glow, not lens falloff, not depth-of-field. Printed atmosphere: visible paper tooth and a slight riso color offset. The street, rain, wall, and wet pavement are flat gouache color blocks with paper grain — not photo-grain, not a color gradient, not lens light. No person, no face, no hands, no silhouette figure. Night print: indigo and charcoal flats, small warm windows, no neon photography. The image must visually embody: empty sidewalk, changed by the last beats. Bold flat gouache color blocks, fine hand-inked linework, and paper-grain halftone with hard-edged color shading. No smooth photographic gradients, no lens falloff, no cinematic bloom. Paper grain, not photo-grain. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "empty sidewalk",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.7511,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 8,
+          "attempt": 2,
+          "focus_step": 0,
+          "framing": "painterly_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 540,
+            "lap_var": 644.0,
+            "edge": 11.61,
+            "std": 34.0,
+            "hard": 0.1003
+          },
+          "anchor_identity": {
+            "object_name": "empty sidewalk",
+            "shape_parts": [
+              "the recognizable shape of empty sidewalk"
+            ],
+            "want_open_closed": false,
+            "passed": true,
+            "skipped": false,
+            "object_present": true,
+            "visible_parts": [
+              "sidewalk surface",
+              "curb",
+              "trees",
+              "streetlights"
+            ],
+            "missing_parts": [],
+            "substitute_object": ""
+          },
+          "painterly_lock": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "style_kind": "flat_gouache_riso",
+            "note": "The image features distinct, flat color blocks with a visible paper-like grain and hard edges. It presents a clear, readable urban environment, consistent with a stylized print or illustration rather than a photograph."
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 8,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: wooden box dominates, requested empty sidewalk"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty sidewalk",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.123,
+              "intruder_area_frac": 0.0345,
+              "intended_bbox_frac": 0.1273,
+              "ratio": 0.966,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only empty sidewalk filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 8,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "painterly_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 705,
+                "lap_var": 778.3,
+                "edge": 11.64,
+                "std": 40.7,
+                "hard": 0.1037
+              },
+              "anchor_identity": {
+                "object_name": "empty sidewalk",
+                "shape_parts": [
+                  "the recognizable shape of empty sidewalk"
+                ],
+                "want_open_closed": false,
+                "passed": true,
+                "skipped": false,
+                "object_present": true,
+                "visible_parts": [
+                  "paved surface",
+                  "curb",
+                  "wet patches",
+                  "extends into distance"
+                ],
+                "missing_parts": [],
+                "substitute_object": ""
+              },
+              "painterly_lock": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "style_kind": "painterly_photographic",
+                "note": "The image displays photographic depth with clear perspective and atmospheric lighting, including a cinematic glow from the windows and streetlights reflecting on the wet ground. It has a painted quality with subtle grain and blending, mimicking a photograph rather than flat color blocks or isolated linework."
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 8,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.123 area_frac=0.034 ratio=0.97 vs requested 'empty sidewalk'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "empty sidewalk",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.7511,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 8,
+              "attempt": 2,
+              "focus_step": 0,
+              "framing": "painterly_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 540,
+                "lap_var": 644.0,
+                "edge": 11.61,
+                "std": 34.0,
+                "hard": 0.1003
+              },
+              "anchor_identity": {
+                "object_name": "empty sidewalk",
+                "shape_parts": [
+                  "the recognizable shape of empty sidewalk"
+                ],
+                "want_open_closed": false,
+                "passed": true,
+                "skipped": false,
+                "object_present": true,
+                "visible_parts": [
+                  "sidewalk surface",
+                  "curb",
+                  "trees",
+                  "streetlights"
+                ],
+                "missing_parts": [],
+                "substitute_object": ""
+              },
+              "painterly_lock": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "style_kind": "flat_gouache_riso",
+                "note": "The image features distinct, flat color blocks with a visible paper-like grain and hard edges. It presents a clear, readable urban environment, consistent with a stylized print or illustration rather than a photograph."
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 8,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: wooden box dominates, requested empty sidewalk"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          }
+        }
+      },
+      {
+        "scene": 9,
+        "text": "It cost less this time, and it stayed longer.",
+        "beat_text": "It cost less this time, and it stayed longer.",
+        "arc_position": "act3",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "window overlooking the street",
+        "key_object": "empty sidewalk",
+        "time_of_day": "dusk",
+        "visual_fallback": "object_stem_rotate",
+        "beat_function": "insight",
+        "setting_archetype": "public-interior",
+        "setting_archetype_remap": "threshold->public-interior",
+        "composition_type": "wide_environment",
+        "composition_remap": "figure_centered->object_focus",
+        "palette_key": "CONTRAST",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_anchor_hint": "window view of an empty sidewalk, no car, no box",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "unclaimed program",
+          "passed": false,
+          "skipped": false,
+          "intruder_bbox_frac": 0.237,
+          "intruder_area_frac": 0.0602,
+          "intended_bbox_frac": 0.237,
+          "ratio": 1.0,
+          "n_intruders": 1,
+          "n_hardware": 0,
+          "fix_instructions": "Draw only unclaimed program filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 9,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 471,
+            "lap_var": 647.5,
+            "edge": 8.11,
+            "std": 56.1,
+            "hard": 0.0788
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "hook": {
+            "scene": 9,
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_hook"
+          },
+          "portrait_style": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_portrait_or_eye_close"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": false,
+          "qa_flaws": [
+            "OBJECT: car dominates, requested unclaimed program",
+            "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.237 area_frac=0.060 ratio=1.00 vs requested 'unclaimed program'"
+          ],
+          "image_ok": false,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "unclaimed program",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.1776,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 716,
+                "lap_var": 2476.7,
+                "edge": 17.56,
+                "std": 56.6,
+                "hard": 0.1927
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: keyboard dominates, requested unclaimed program"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "unclaimed program",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.237,
+              "intruder_area_frac": 0.0602,
+              "intended_bbox_frac": 0.237,
+              "ratio": 1.0,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only unclaimed program filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 9,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 471,
+                "lap_var": 647.5,
+                "edge": 8.11,
+                "std": 56.1,
+                "hard": 0.0788
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "hook": {
+                "scene": 9,
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_hook"
+              },
+              "portrait_style": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_portrait_or_eye_close"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "OBJECT: car dominates, requested unclaimed program",
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.237 area_frac=0.060 ratio=1.00 vs requested 'unclaimed program'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "reused": false
+        },
+        "pose_hint": "figure at the window, empty sidewalk clearly visible below"
+      }
+    ],
+    "estimated_spoken_s": 26.33,
+    "hook_type": "definition",
+    "theme": "attachment",
+    "module": "relationship",
+    "retrieved_details": [],
+    "arc_template": "thematic_arc",
+    "structure_id": "",
+    "rhetoric_pattern": "the_light_you_grow_yourself",
+    "rhetoric_hook_overlay": "",
+    "seed_hooks": [],
+    "thesis": "Attachment costs something before it stays.",
+    "anchor_object": {
+      "name": "empty sidewalk",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "close_variant": "portrait_close",
+    "close_target": "portrait",
+    "eye_close_context": "",
+    "close_character": "woman",
+    "hook_gate": {
+      "scene": 1,
+      "status": "pass",
+      "reason": "character=woman light=ok",
+      "text": "I used to watch the sidewalk for someone arriving.",
+      "subject_type": "woman",
+      "setting": "window overlooking the street",
+      "object": "empty sidewalk"
+    },
+    "theme_drift": {
+      "hits": [],
+      "fails": []
+    },
+    "insight_agency": {
+      "fails": [],
+      "status": "skipped",
+      "skipped": "monologue-first — closing agency is not scored per fragment"
+    },
+    "principle_voice": {
+      "lines": [
+        {
+          "slot": "opening",
+          "text": "I used to watch the sidewalk for someone arriving.",
+          "status": "pass",
+          "reason": "story-hook:not-quotable-advice"
+        },
+        {
+          "slot": "closing",
+          "text": "It cost less this time, and it stayed longer.",
+          "status": "pass",
+          "reason": "landing:not-quotable-advice"
+        }
+      ],
+      "fails": []
+    },
+    "principle_scope": {
+      "hits": [],
+      "count": 0,
+      "fails": [],
+      "skipped": "monologue-first"
+    },
+    "connective_development": {
+      "fails": [],
+      "skipped": "monologue-first — argument is continuous by construction"
+    },
+    "insight_answers_hook": {
+      "status": "pass",
+      "fails": [],
+      "insights": [
+        {
+          "hook": "I used to watch the sidewalk for someone arriving.",
+          "close": "The sidewalk is still empty, and I'm still here. It cost less this time, and it stayed longer.",
+          "shared": [
+            "sidewalk"
+          ],
+          "status": "pass"
+        }
+      ]
+    },
+    "object_churn": {
+      "anchor": "sidewalk",
+      "supporting": [
+        "smaller"
+      ],
+      "by_scene": [
+        {
+          "scene": 1,
+          "props": [
+            "sidewalk"
+          ]
+        },
+        {
+          "scene": 3,
+          "props": [
+            "sidewalk"
+          ]
+        },
+        {
+          "scene": 6,
+          "props": [
+            "smaller"
+          ]
+        },
+        {
+          "scene": 8,
+          "props": [
+            "sidewalk"
+          ]
+        }
+      ],
+      "fails": []
+    },
+    "recipe_pattern": {
+      "bare_scenes": [],
+      "developed_scenes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "fails": []
+    },
+    "connective_cross_run": {
+      "map": [
+        {
+          "scene": 4,
+          "word": "so",
+          "family": "consequence",
+          "text": "So I stopped paying attention with my whole chest."
+        },
+        {
+          "scene": 5,
+          "word": "still",
+          "family": "persist",
+          "text": "I still looked, but I no longer bled for it."
+        },
+        {
+          "scene": 7,
+          "word": "anyway",
+          "family": "anyway",
+          "text": "Attachment held anyway, quieter, cheaper, still mine."
+        },
+        {
+          "scene": 8,
+          "word": "still",
+          "family": "persist",
+          "text": "The sidewalk is still empty, and I'm still here."
+        }
+      ],
+      "sequence": [
+        "consequence",
+        "persist",
+        "anyway",
+        "persist"
+      ],
+      "fails": []
+    },
+    "pronoun_continuity": {
+      "beats": [
+        {
+          "scene": 1,
+          "text": "I used to watch the sidewalk for someone arriving.",
+          "dangling": []
+        },
+        {
+          "scene": 2,
+          "text": "That waiting cost me hours I never got back.",
+          "dangling": []
+        },
+        {
+          "scene": 3,
+          "text": "The sidewalk stayed empty more nights than not.",
+          "dangling": []
+        },
+        {
+          "scene": 4,
+          "text": "So I stopped paying attention with my whole chest.",
+          "dangling": []
+        },
+        {
+          "scene": 5,
+          "text": "I still looked, but I no longer bled for it.",
+          "dangling": []
+        },
+        {
+          "scene": 6,
+          "text": "That's a smaller price for the same window view.",
+          "dangling": []
+        },
+        {
+          "scene": 7,
+          "text": "Attachment held anyway, quieter, cheaper, still mine.",
+          "dangling": []
+        },
+        {
+          "scene": 8,
+          "text": "The sidewalk is still empty, and I'm still here.",
+          "dangling": []
+        },
+        {
+          "scene": 9,
+          "text": "It cost less this time, and it stayed longer.",
+          "dangling": []
+        }
+      ],
+      "fails": []
+    },
+    "caption_still_align": {
+      "fails": []
+    },
+    "connective_coherence": {
+      "fails": [],
+      "beats": [],
+      "skipped": "monologue-first; LLM judge skipped"
+    },
+    "close_beat_count": 1,
+    "setting_archetypes": {
+      "beats": [
+        "threshold",
+        "exterior-landscape",
+        "transit",
+        "threshold",
+        "interior-domestic",
+        "transit",
+        "exterior-urban",
+        "exterior-urban",
+        "public-interior"
+      ],
+      "counts": {
+        "threshold": 2,
+        "exterior-landscape": 1,
+        "transit": 2,
+        "interior-domestic": 1,
+        "exterior-urban": 2,
+        "public-interior": 1
+      },
+      "unique": [
+        "transit",
+        "public-interior",
+        "threshold",
+        "exterior-landscape",
+        "exterior-urban",
+        "interior-domestic"
+      ],
+      "overflow": {},
+      "holds_episode": false,
+      "summary": "archetypes={'threshold': 2, 'exterior-landscape': 1, 'transit': 2, 'interior-domestic': 1, 'exterior-urban': 2, 'public-interior': 1} overflow=none unique=['transit', 'public-interior', 'threshold', 'exterior-landscape', 'exterior-urban', 'interior-domestic']",
+      "max_per_episode": 2
+    },
+    "setting_archetype_cross": {
+      "previous": [
+        "exterior-landscape",
+        "exterior-urban",
+        "interior-domestic",
+        "public-interior",
+        "threshold",
+        "transit"
+      ],
+      "used": [
+        "exterior-landscape",
+        "exterior-urban",
+        "interior-domestic",
+        "public-interior",
+        "threshold",
+        "transit"
+      ],
+      "fresh": [],
+      "needed": 0,
+      "leftover_bank": [],
+      "passed": true,
+      "reason": "fresh=[] prev=['exterior-landscape', 'exterior-urban', 'interior-domestic', 'public-interior', 'threshold', 'transit'] leftover=[]"
+    },
+    "composition_types": {
+      "beats": [
+        "figure_centered",
+        "figure_centered",
+        "figure_centered",
+        "figure_centered",
+        "object_focus",
+        "wide_environment",
+        "wide_environment",
+        "object_focus",
+        "object_focus"
+      ],
+      "counts": {
+        "figure_centered": 4,
+        "object_focus": 3,
+        "wide_environment": 2
+      },
+      "figure_centered": 4,
+      "non_figure": 5,
+      "holds_episode": false,
+      "max_figure_centered": 4,
+      "min_non_figure": 5,
+      "summary": "figure_centered=4/4 non_figure=5 {'figure_centered': 4, 'object_focus': 3, 'wide_environment': 2}"
+    },
+    "anchor_beats": [
+      1,
+      3,
+      8
+    ],
+    "isnt_y_count": 0,
+    "intra_dedup_pass": true,
+    "cross_run_dedup_pass": true,
+    "episode_variety": {
+      "beat_count": 9,
+      "distinct_settings": 6,
+      "setting_stems": {
+        "street": 3,
+        "park": 2,
+        "hallway": 1,
+        "kitchen": 1,
+        "platform": 1,
+        "theater lobby": 1
+      },
+      "setting_repeats": {
+        "street": 3,
+        "park": 2
+      },
+      "distinct_compositions": 3,
+      "compositions": {
+        "woman": 2,
+        "silhouette": 4,
+        "object_focus": 3
+      },
+      "person_shots": 2,
+      "variety_shots": 7,
+      "distinct_object_stems": 7,
+      "object_stems": {
+        "sidewalk": 3,
+        "horizon": 1,
+        "seat": 1,
+        "door": 1,
+        "kettle": 1,
+        "platform": 1,
+        "program": 1
+      },
+      "object_repeats": {
+        "sidewalk": 3
+      },
+      "object_over_cap": {},
+      "palette_sequence": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_expected": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_arc_ok": true,
+      "palette_mismatches": [],
+      "notes": [
+        "variety_shots=7 above target 4",
+        "setting_repeats=streetx3,parkx2"
+      ],
+      "summary": "settings=6/9 distinct; compositions={'woman': 2, 'silhouette': 4, 'object_focus': 3}; objects=7 distinct; palette_arc_ok=true; notes=['variety_shots=7 above target 4', 'setting_repeats=streetx3,parkx2']",
+      "holds_episode": false,
+      "setting_archetypes": {
+        "threshold": 2,
+        "exterior-landscape": 1,
+        "transit": 2,
+        "interior-domestic": 1,
+        "exterior-urban": 2,
+        "public-interior": 1
+      },
+      "setting_archetype_beats": [
+        "threshold",
+        "exterior-landscape",
+        "transit",
+        "threshold",
+        "interior-domestic",
+        "transit",
+        "exterior-urban",
+        "exterior-urban",
+        "public-interior"
+      ],
+      "setting_archetype_overflow": {},
+      "composition_types": {
+        "figure_centered": 4,
+        "object_focus": 3,
+        "wide_environment": 2
+      },
+      "composition_beats": [
+        "figure_centered",
+        "figure_centered",
+        "figure_centered",
+        "figure_centered",
+        "object_focus",
+        "wide_environment",
+        "wide_environment",
+        "object_focus",
+        "object_focus"
+      ],
+      "figure_centered": 4
+    },
+    "holds_episode": false,
+    "narrative_holds": []
+  }
+}

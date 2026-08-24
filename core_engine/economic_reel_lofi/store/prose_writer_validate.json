@@ -1,0 +1,141 @@
+[
+  {
+    "theme": "healing",
+    "pattern": "definition_then_evidence",
+    "writer": "claude",
+    "thesis": "Healing costs something before it stays.",
+    "anchor": {
+      "name": "open window",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "source_monologue": "You open the window in the kitchen because the room got stale while you weren't looking, and that's real healing, it costs you the draft before it gives you the air. False healing skips that part, it wants the fresh room without ever unlatching anything, so it just sprays the same stale air and calls it new. Check for the cost: did anything actually leave, or did you just rearrange what was already sitting there. Real healing lets the cold in first, so your hands remember what closed feels like, which is why the warmth after means something instead of nothing. Check for the after: does it stay when the window's shut again, or does it need the breeze the whole time to feel like peace. And check the room itself, because if nothing was ever let out, the air you're calling healed is just the same air, warmed over, sitting in a room that never opened at all.",
+    "captions": [
+      "You open the window in the kitchen because the room got",
+      "stale while you weren't looking, and that's real healing, it costs",
+      "you the draft before it gives you the air. False healing skips that part, it wants the fresh room without ever unlatching",
+      "anything, so it just sprays the same stale air and calls it new. Check for the cost: did anything actually leave, or",
+      "did you just rearrange what was already sitting there. Real healing lets the cold in first, so your hands remember what closed",
+      "feels like, which is why the warmth after means something instead of nothing. Check for the after: does it stay when the",
+      "window's shut again, or does it need the breeze the whole time to feel like peace. And check the room itself, because",
+      "if nothing was ever let out, the air you're calling healed is just the same air, warmed over, sitting in a room",
+      "that never opened at all."
+    ],
+    "holds": [
+      "insight scene 9 has no character-performed concrete verb (noncharacter-subject:that+never): 'that never opened at all.'",
+      "principle hook scene 1 (this-moment-you): 'You open the window in the kitchen because the room got'",
+      "principle insight scene 4 (not-quotable-advice): 'anything, so it just sprays the same stale air and calls it new. Check for the cost: did anything actually leave, or'",
+      "principle insight scene 7 (not-quotable-advice): \"window's shut again, or does it need the breeze the whole time to feel like peace. And check the room itself, because\"",
+      "principle insight scene 9 (not-quotable-advice): 'that never opened at all.'",
+      "insight scene 4 does not answer/reverse the hook claim 'You open the window in the kitchen because the room got': 'anything, so it just sprays the same stale air and calls it new. Check for the cost: did anything actually leave, or'",
+      "object-churn: 7 supporting spoken props ['air', 'breeze', 'draft', 'fresh', 'stale', 'time', 'warmth'] (max 2 besides anchor 'window')",
+      "still-align scene 8 object_focus 'unclaimed program' is not in caption \"if nothing was ever let out, the air you're calling healed is just the same air, warmed over, sitting in a room\"",
+      "decorative connective scene 1 (because): because does not share a referent with the prior beat — 'You open the window in the kitchen because the room got'"
+    ],
+    "holds_episode": true,
+    "word_count": 159,
+    "resplit_captions": [
+      "You open the window in the kitchen because the room got stale while you weren't looking, and that's real healing,",
+      "it costs you the draft before it gives you the air.",
+      "False healing skips that part, it wants the fresh room without ever unlatching anything,",
+      "so it just sprays the same stale air and calls it new.",
+      "Check for the cost: did anything actually leave, or did you just rearrange what was already sitting there.",
+      "Real healing lets the cold in first, so your hands remember what closed feels like, which is why the warmth",
+      "after means something instead of nothing. Check for the after: does it stay when the window's shut again,",
+      "or does it need the breeze the whole time to feel like peace.",
+      "And check the room itself, because if nothing was ever let out, the air you're calling healed is just the same air,"
+    ]
+  },
+  {
+    "theme": "time",
+    "pattern": "domino_chain",
+    "writer": "deepseek",
+    "thesis": "Time costs something before it stays.",
+    "anchor": {
+      "name": "clock and cooling tea",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "source_monologue": "It starts with a single minute you steal from a morning, thinking it's nothing, that the tea can wait, that the sun can crawl across the floor without you, and that minute becomes a morning, and the morning becomes a habit of putting off the call you know you should make, and the habit settles into a comfortable excuse about being busy, and the busyness becomes a wall between you and the person who waits for your voice, and the wall, once built, is easier to maintain than to climb, so you add bricks of missed dinners and ignored messages, and the wall grows into a fortress of small betrayals, and the fortress isolates you until you find yourself sitting in a room where the only sound is the clock ticking and the tea going cold, and you realize the tea was never the point, and the time you saved by not drinking it is the time you lost living, so you watch the last warmth leave the cup and understand that every second you spend waiting is a second you're not here, and that's the cost of time, paid in the now you never had.",
+    "captions": [
+      "It starts with a single minute you steal from a morning, thinking it's nothing, that the tea can wait, that the sun",
+      "can crawl across the floor without you, and that minute becomes a morning, and the morning becomes a habit of putting off",
+      "the call you know you should make, and the habit settles into a comfortable excuse about being busy, and the busyness becomes",
+      "a wall between you and the person who waits for your voice, and the wall, once built, is easier to maintain than",
+      "to climb, so you add bricks of missed dinners and ignored messages, and the wall grows into a fortress of small betrayals,",
+      "and the fortress isolates you until you find yourself sitting in a room where the only sound is the clock ticking and",
+      "the tea going cold, and you realize the tea was never the point, and the time you saved by not drinking it",
+      "is the time you lost living, so you watch the last warmth leave the cup and understand that every second you spend",
+      "waiting is a second you're not here, and that's the cost of time, paid in the now you never had."
+    ],
+    "holds": [
+      "insight scene 4 has no character-performed concrete verb (no-character-concrete:character:a): 'a wall between you and the person who waits for your voice, and the wall, once built, is easier to maintain than'",
+      "insight scene 9 has no character-performed concrete verb (copular:you+be): \"waiting is a second you're not here, and that's the cost of time, paid in the now you never had.\"",
+      "principle insight scene 7 (past-scene): 'the tea going cold, and you realize the tea was never the point, and the time you saved by not drinking it'",
+      "principle insight scene 9 (past-scene): \"waiting is a second you're not here, and that's the cost of time, paid in the now you never had.\"",
+      "principle-scope: 3 beats read as advice (max 2): s1 \"It starts with a single minute you steal from a morning, thinking it's nothing, that the tea can wait, that the sun\"; s2 'can crawl across the floor without you, and that minute becomes a morning, and the morning becomes a habit of putting off'; s4 'a wall between you and the person who waits for your voice, and the wall, once built, is easier to maintain than'",
+      "object-churn: 13 supporting spoken props ['busynes', 'call', 'clock', 'comfortable', 'cup', 'fortres', 'person', 'point', 'sound', 'sun', 'time', 'voice', 'warmth'] (max 2 besides anchor 'tea')",
+      "still-align scene 6 object_focus 'two chairs still out' is not in caption 'and the fortress isolates you until you find yourself sitting in a room where the only sound is the clock ticking and'"
+    ],
+    "holds_episode": true,
+    "word_count": 196,
+    "resplit_captions": [
+      "It starts with a single minute you steal from a morning, thinking it's nothing, that the tea can wait,",
+      "that the sun can crawl across the floor without you, and that minute becomes a morning,",
+      "and the morning becomes a habit of putting off the call you know you should make, and the habit settles",
+      "into a comfortable excuse about being busy,",
+      "and the busyness becomes a wall between you and the person who waits for your voice, and the wall, once built,",
+      "is easier to maintain than to climb, so you add bricks of missed dinners and ignored messages, and the wall grows",
+      "into a fortress of small betrayals, and the fortress isolates you",
+      "until you find yourself sitting in a room where the only sound is the clock ticking and the tea going cold,",
+      "and you realize the tea was never the point,"
+    ]
+  },
+  {
+    "theme": "vulnerability",
+    "pattern": "negation_list_to_permission",
+    "writer": "claude",
+    "thesis": "Vulnerability costs something before it stays.",
+    "anchor": {
+      "name": "dropped dish towel",
+      "initial_state": "first seen",
+      "final_state": "changed by the last beats"
+    },
+    "source_monologue": "The towel slipped off the counter when I flinched at what I said out loud, and it's still on the kitchen floor because picking it up would mean pretending the sentence didn't cost me anything. I am not going to laugh it off so you feel comfortable again. I am not going to fold the moment back into small talk just because silence makes my hands shake. I don't do the thing where I say something true and then immediately apologize for the size of it. I am not performing ease over something that actually mattered to admit. So the towel stays crumpled there, because I'm not cleaning up evidence of the one honest thing I did today. What I am is willing to stand in a kitchen with a mess at my feet and let you see that this shook me, since a body that flinches has already told the truth the mouth was still deciding whether to allow. That's the cost, and I'm done pretending it's free.",
+    "captions": [
+      "The towel slipped off the counter when I flinched at what",
+      "I said out loud, and it's still on the kitchen floor",
+      "because picking it up would mean pretending the sentence didn't cost me anything. I am not going to laugh it off so",
+      "you feel comfortable again. I am not going to fold the moment back into small talk just because silence makes my hands",
+      "shake. I don't do the thing where I say something true and then immediately apologize for the size of it. I am",
+      "not performing ease over something that actually mattered to admit. So the towel stays crumpled there, because I'm not cleaning up evidence",
+      "of the one honest thing I did today. What I am is willing to stand in a kitchen with a mess at",
+      "The towel has gone cold.",
+      "was still deciding whether to allow. That's the cost, and I'm done pretending it's free."
+    ],
+    "holds": [
+      "insight scene 9 has no character-performed concrete verb (no-character-concrete:unknown:be): \"was still deciding whether to allow. That's the cost, and I'm done pretending it's free.\"",
+      "principle hook scene 1 (not-quotable-advice): 'The towel slipped off the counter when I flinched at what'",
+      "principle insight scene 4 (this-moment-you): 'you feel comfortable again. I am not going to fold the moment back into small talk just because silence makes my hands'",
+      "principle insight scene 9 (past-scene): \"was still deciding whether to allow. That's the cost, and I'm done pretending it's free.\"",
+      "insight scene 4 does not answer/reverse the hook claim 'The towel slipped off the counter when I flinched at what': 'you feel comfortable again. I am not going to fold the moment back into small talk just because silence makes my hands'",
+      "insight scene 9 does not answer/reverse the hook claim 'The towel slipped off the counter when I flinched at what': \"was still deciding whether to allow. That's the cost, and I'm done pretending it's free.\"",
+      "object-churn: 7 supporting spoken props ['counter', 'mes', 'moment', 'one', 'sentence', 'size', 'thing'] (max 2 besides anchor 'towel')",
+      "connective-position reuse vs communication: still@s2",
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The towel has gone cold.'"
+    ],
+    "holds_episode": true,
+    "word_count": 169,
+    "resplit_captions": [
+      "The towel slipped off the counter when I flinched at what I said out loud,",
+      "and it's still on the kitchen floor because picking it up would mean pretending the sentence didn't cost me anything.",
+      "I am not going to laugh it off so you feel comfortable again.",
+      "I am not going to fold the moment back into small talk just because silence makes my hands shake.",
+      "I don't do the thing where I say something true and then immediately apologize for the size of it.",
+      "I am not performing ease over something that actually mattered to admit.",
+      "So the towel stays crumpled there, because I'm not cleaning up evidence of the one honest thing I did today.",
+      "What I am is willing to stand in a kitchen with a mess at my feet and let you see that this",
+      "shook me, since a body that flinches has already told the truth the mouth was still deciding whether to allow."
+    ]
+  }
+]

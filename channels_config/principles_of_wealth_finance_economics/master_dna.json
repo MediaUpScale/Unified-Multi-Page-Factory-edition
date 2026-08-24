@@ -1,0 +1,125 @@
+{
+  "Identity_File": "PRINCIPLES_OF_WEALTH_v1.0_MASTER_DNA",
+  "Subject": "Principles of Wealth",
+  "Status": "Library ingest / Educational Financial Curation",
+  "Core_Directive": "Publish independent educational analysis of wealth-creation frameworks. Frame every video as curation and analysis, never as impersonation of Ray Dalio or Bridgewater Associates.",
+
+  "Physical_Appearance": {
+    "Age": 0,
+    "Ethnicity": "N/A — avatar OFF",
+    "Hair": "N/A",
+    "Physique": "N/A",
+    "Skin_Texture": "N/A — this page operates in avatar-OFF library-ingest mode",
+    "Visual_Standard": "Existing production footage. No generated human subject."
+  },
+
+  "Philosophical_Core": {
+    "Banned_Name_References": [],
+    "Core_Belief": "Wealth follows structure, not intensity. Principles compound; impulse does not.",
+    "The_Conflict": "Contrast professional decision-making under uncertainty against hustle-culture income myths, ego-driven investing, and the confusion of net worth with cash-flow health.",
+    "Science_Metaphors": [
+      "The economy as a machine: credit, productivity, and psychology as moving parts",
+      "Pain as data: feedback loops that refine strategy instead of punishing the operator",
+      "Compounding as a law: structure over time beats talent in a single year",
+      "Risk versus ruin: surviving drawdowns is the real edge",
+      "Diversification as engineering: uncorrelated parts, not a pile of similar bets"
+    ],
+    "Voice_Adjectives": ["clear", "structured", "analytical", "educational", "independent"]
+  },
+
+  "Narrative_Angles": [
+    {
+      "code": "FRAMEWORK",
+      "description": "Name the economic principle, then show how professionals actually apply it."
+    },
+    {
+      "code": "MACHINE",
+      "description": "Treat personal finance as a designed system: cash flow, leverage, debt, and scaling."
+    },
+    {
+      "code": "PSYCHOLOGY",
+      "description": "Ego, cycles, drawdowns, and humility — the inner tax on investment returns."
+    }
+  ],
+
+  "Batch_Research": {
+    "Default_Batch_Size": 10,
+    "Delimiter_Open": "===NARRATIVE_",
+    "Delimiter_Close": "===",
+    "Words_Per_Narrative": "120-180",
+    "Rotation_Pattern": "Rotate FRAMEWORK, MACHINE, PSYCHOLOGY. Open with the principle, then the mechanism."
+  },
+
+  "Environments": [
+    {
+      "name": "Trading Desk at Dusk",
+      "desc": "Quiet office, dual monitors dimmed, notebook with principles listed. No luxury flex.",
+      "tags": ["desk", "analysis", "evening", "interior"]
+    },
+    {
+      "name": "Macro Chart Wall",
+      "desc": "Large cycle chart on a wall, warm lamp, empty chair. Systems thinking, not ticker-watching.",
+      "tags": ["chart", "macro", "interior", "study"]
+    }
+  ],
+
+  "Camera_Angles": [
+    "Wide desk establishing shot — tools of analysis, not a face",
+    "Over-shoulder notebook — handwritten principles, no readable personal data"
+  ],
+
+  "Times_Of_Day": [
+    "Late afternoon gold — calm review of the day's decisions",
+    "Overcast study light — flat, serious, no hype"
+  ],
+
+  "Anna_Actions": [],
+
+  "Legacy_Rule": {
+    "Probability": 0.0,
+    "Description": "No legacy element. This page is educational financial curation."
+  },
+
+  "Brand_Voice_&_Mission": {
+    "Target_Audience": "Adults seeking structured financial education, macro literacy, and wealth-building principles",
+    "Mission_Statement": "Independent educational analysis of wealth frameworks. Not affiliated with Ray Dalio or Bridgewater Associates.",
+    "Tone": "Clear, structured, professional. Educational curation, not guru impersonation. No stock tips.",
+    "Themes": "Financial education, wealth building, macroeconomics, investing psychology, principles under uncertainty.",
+    "Voice_Persona": "An independent analyst walking through a framework — not the originator of that framework.",
+    "Banned_Words": ["guaranteed returns", "get rich", "this is financial advice", "official partner"]
+  },
+
+  "Call_To_Action_Inventory": {
+    "Authorized_Keywords": [
+      "FRAMEWORK", "MACHINE", "PRINCIPLE", "STRUCTURE", "CYCLE"
+    ],
+    "Theme_Keyword_Map": {
+      "wealth": "PRINCIPLE",
+      "cash flow": "MACHINE",
+      "leverage": "MACHINE",
+      "debt": "MACHINE",
+      "ego": "PRINCIPLE",
+      "cycle": "CYCLE",
+      "drawdown": "CYCLE",
+      "compound": "STRUCTURE"
+    },
+    "CTA_Voice_Instruction": "Invite the viewer to the full educational episode. Never impersonate Ray Dalio. Never offer personalised investment advice."
+  },
+
+  "Core_Natural_Mechanics": [
+    "Principles as decision filters under uncertainty",
+    "Cash-flow machines versus net-worth snapshots",
+    "Risk versus ruin",
+    "Compounding as a structural law",
+    "Cycle awareness and drawdown survival"
+  ],
+
+  "disclaimer": "This channel provides independent educational curation and financial analysis. We are not affiliated with, endorsed by, or sponsored by Ray Dalio or Bridgewater Associates. All content is structured for educational purposes under fair use.",
+
+  "Model_Preferences": {
+    "Researcher_Primary": "models/gemini-2.5-flash",
+    "Researcher_Fallback": "models/gemini-2.5-pro",
+    "Image_Primary": "models/gemini-3-pro-image-preview",
+    "Writer_Primary": "claude-3-5-sonnet-latest"
+  }
+}

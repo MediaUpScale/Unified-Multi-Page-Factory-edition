@@ -14,10 +14,14 @@ SCENE_DURATION_S: float = 3.0
 # Thematic default: 9 beats × 3.0s = 27.0s (loss baseline). Writer may emit 8–9;
 # anything above 9 is clamped unless --duration is explicitly longer than 27s.
 LOCK_FIXED_BEAT_DURATION: bool = True
-# Never hard-trim finished VO. If a beat's VO exceeds 3.0s, that slot extends
-# (small variance, typically 3.0–3.4s). Do not add CAPTION_HOLD_S on top.
+# Never hard-trim finished VO. If a beat's VO would crowd the 3.0s slot,
+# extend instead of compressing speech. Inter-line breath is real silence
+# in the VO concat (not MoviePy slot padding that BGM fills).
 NEVER_TRIM_VOICEOVER: bool = True
-VO_SLOT_PAD_S: float = 0.05
+VO_SLOT_PAD_S: float = 0.12
+VO_SLOT_BREATH_S: float = 0.35  # retired as the gap mechanism; kept for logs
+VO_INTERLINE_SILENCE_S: float = 0.30  # exact inter-line hush at concat (trim TTS edges first)
+BGM_GAP_VOLUME: float = 0.02  # ≈ −34 dB during inter-line VO silence
 DEFAULT_DURATION_S: int = 27  # thematic default total; writer target = 9 scenes
 MIN_DURATION_S: int = 15
 MAX_DURATION_S: int = 30
@@ -29,10 +33,15 @@ THEMATIC_MAX_SCENES: int = 9
 # ── Script / validation ─────────────────────────────────────────────────────
 MAX_CAPTION_CHARS: int = 42  # object-arc one-liner
 MAX_CAPTION_WORDS: int = 7
-# Thematic beats stay short (4–9 words) but may be sentence fragments.
+# Hard per-beat spoken cap. Direct 9-line compose must satisfy this itself.
 THEMATIC_MAX_CAPTION_CHARS: int = 56
 THEMATIC_MAX_CAPTION_WORDS: int = 9
 THEMATIC_ARC_ID: str = "thematic_arc"
+# Measured 2026-08-23 from shipped caption_timing at LOFI_VOICE_SPEED=0.80:
+# loneliness 60w / 19.40s = 3.09; evening five-script mean ≈ 3.01 w/s.
+MEASURED_SPEECH_WPS: float = 3.0
+MEASURED_SPEECH_AT_VOICE_SPEED: float = 0.80
+MONOLOGUE_DURATION_SAFETY: float = 0.90
 # Wonder Feed + Momma Circle production default (object arcs remain in the bank).
 DEFAULT_ARC_BY_MODULE: dict[str, str] = {
     "relationship": "thematic_arc",
@@ -71,8 +80,118 @@ def is_thematic_arc(arc_id: str | None) -> bool:
 def caption_limits(arc_id: str | None = None) -> tuple[int, int]:
     """Return (max_words, max_chars) for this arc."""
     if is_thematic_arc(arc_id):
-        return THEMATIC_MAX_CAPTION_WORDS, THEMATIC_MAX_CAPTION_CHARS
+        return thematic_caption_limits()
     return MAX_CAPTION_WORDS, MAX_CAPTION_CHARS
+
+
+def tts_voice_id() -> str:
+    return str(TTS_VOICE_ID or LOFI_VOICE_ID or "").strip()
+
+
+def tts_model() -> str:
+    return str(TTS_MODEL or LOFI_TTS_MODEL or "eleven_multilingual_v2").strip()
+
+
+def tts_speed() -> float:
+    """Production ElevenLabs speed. Valid range 0.7–1.2."""
+    return float(TTS_SPEED if TTS_SPEED is not None else LOFI_VOICE_SPEED)
+
+
+def speech_words_per_sec(voice_speed: float | None = None) -> float:
+    """Spoken words/sec at the current (or given) ElevenLabs voice_speed."""
+    speed = float(voice_speed if voice_speed is not None else tts_speed())
+    ref = float(MEASURED_SPEECH_AT_VOICE_SPEED) or 0.80
+    return float(MEASURED_SPEECH_WPS) * (speed / ref)
+
+
+def monologue_duration_s(
+    *,
+    duration_s: int | float | None = None,
+    scene_count: int | None = None,
+) -> float:
+    """Writer runtime budget: explicit duration, else scenes × beat length."""
+    if duration_s is not None:
+        return float(duration_s)
+    n = int(scene_count if scene_count is not None else THEMATIC_DEFAULT_SCENES)
+    return float(n) * float(SCENE_DURATION_S)
+
+
+def monologue_word_budget(
+    *,
+    duration_s: int | float | None = None,
+    scene_count: int | None = None,
+    voice_speed: float | None = None,
+) -> dict[str, Any]:
+    """
+    Spoken-word target for one reel: duration × measured rate × safety.
+
+    Default 27s × 3.0 w/s × 0.90 ≈ 73 words (band 65–75).
+    """
+    n = int(scene_count if scene_count is not None else THEMATIC_DEFAULT_SCENES)
+    dur = monologue_duration_s(duration_s=duration_s, scene_count=n)
+    rate = speech_words_per_sec(voice_speed)
+    target = dur * rate * float(MONOLOGUE_DURATION_SAFETY)
+    lo = max(1, int(round(target * 0.89)))
+    hi = max(lo, int(round(target * 1.03)))
+    return {
+        "duration_s": round(dur, 3),
+        "scene_count": n,
+        "voice_speed": float(
+            voice_speed if voice_speed is not None else tts_speed()
+        ),
+        "words_per_sec": round(rate, 3),
+        "safety": float(MONOLOGUE_DURATION_SAFETY),
+        "target": int(round(target)),
+        "min_words": lo,
+        "max_words": hi,
+    }
+
+
+def monologue_word_range(
+    *,
+    duration_s: int | float | None = None,
+    scene_count: int | None = None,
+    voice_speed: float | None = None,
+) -> tuple[int, int]:
+    rec = monologue_word_budget(
+        duration_s=duration_s,
+        scene_count=scene_count,
+        voice_speed=voice_speed,
+    )
+    return int(rec["min_words"]), int(rec["max_words"])
+
+
+def estimated_spoken_duration_s(
+    word_count: int,
+    *,
+    voice_speed: float | None = None,
+) -> float:
+    rate = speech_words_per_sec(voice_speed)
+    if rate <= 0:
+        return 0.0
+    return round(float(word_count) / rate, 2)
+
+
+def thematic_caption_limits(
+    *,
+    duration_s: int | float | None = None,
+    scene_count: int | None = None,
+) -> tuple[int, int]:
+    """Hard per-beat spoken cap: 9 words / 56 characters."""
+    _ = (duration_s, scene_count)
+    return THEMATIC_MAX_CAPTION_WORDS, THEMATIC_MAX_CAPTION_CHARS
+
+
+def max_sentence_words(
+    *,
+    duration_s: int | float | None = None,
+    scene_count: int | None = None,
+) -> int:
+    """Hard max words per spoken sentence: two caption beats."""
+    max_w, _ = thematic_caption_limits(
+        duration_s=duration_s, scene_count=scene_count
+    )
+    return int(max_w) * 2
 
 
 VALID_MODULES: frozenset[str] = frozenset({"relationship", "parenting"})
@@ -450,11 +569,16 @@ BGM_DIR_REL: str = "channels_config/wonder_feed/audio/bgm"
 BGM_VOLUME: float = 0.38  # duck under VO
 BGM_EXCLUDE_PREFIXES: tuple[str, ...] = ("lofi_bed",)
 REQUIRE_BGM: bool = True
-# Voiceover (ElevenLabs)
+# Voiceover (ElevenLabs) — first-class TTS knobs (change these, not call sites).
+# Valid TTS_SPEED range: 0.7–1.2 (API floor 0.70, default 1.0). See docs/elevenlabs_tts.md.
 ENABLE_VOICEOVER: bool = True
-LOFI_VOICE_ID: str = "hNtG3AcS155nfu8sfWXk"
+TTS_VOICE_ID: str = "hNtG3AcS155nfu8sfWXk"
+TTS_MODEL: str = "eleven_multilingual_v2"  # v3 ignores voice_settings.speed; v2 applies it
+TTS_SPEED: float = 0.80
+LOFI_VOICE_ID = TTS_VOICE_ID
+LOFI_TTS_MODEL = TTS_MODEL
+LOFI_VOICE_SPEED = TTS_SPEED
 LOFI_VOICE_VOLUME: float = 1.0
-LOFI_VOICE_SPEED: float = 0.80  # ElevenLabs settings API (0.7–1.2); 0.9 still read fast
 REQUIRE_VOICEOVER: bool = True
 # Defaults = amber_dusk pair (legacy grading path only; LOFI_APPLY_GRADING=False)
 DUOTONE_SHADOW: tuple[int, int, int] = (28, 72, 88)
@@ -590,14 +714,16 @@ def slot_duration_for_vo(
     vo_dur: float,
     *,
     base_s: float | None = None,
+    trailing_silence_s: float | None = None,
 ) -> tuple[float, bool]:
-    """Return (slot_s, extended). Slot is at least 3.0s; grows to fit VO, never shrinks VO."""
-    base = float(base_s if base_s is not None else SCENE_DURATION_S)
+    """Return (slot_s, extended). Slot grows to VO + trailing inter-line silence."""
     vo = max(0.0, float(vo_dur or 0.0))
-    pad = float(VO_SLOT_PAD_S)
-    if vo > base + 0.05:
-        return round(vo + pad, 3), True
-    return base, False
+    trail = float(
+        VO_INTERLINE_SILENCE_S if trailing_silence_s is None else trailing_silence_s
+    )
+    needed = vo + trail
+    base = float(base_s if base_s is not None else SCENE_DURATION_S)
+    return round(needed, 3), needed > base + 0.02
 
 
 def duration_for_beat_count(n_beats: int) -> float:

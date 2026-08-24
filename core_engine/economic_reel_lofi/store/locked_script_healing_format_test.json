@@ -1,0 +1,826 @@
+{
+  "theme": "healing",
+  "module": "relationship",
+  "thesis": "Healing costs something before it stays.",
+  "anchor_object": {
+    "name": "unmade empty bed",
+    "initial_state": "first seen",
+    "final_state": "changed by the last beats"
+  },
+  "monologue": "The still-sore place is where you dared to move. You leave the bed untouched. it shelter? You took the last night of that love, you gave up a habit of leaning. You drank cold light from a doorway. That cost a chair you once believed your shape owned. Look down—your footstep is lighter where you used to hollow the The bed has gone cold. stay here, learn to let it rain without giving",
+  "lines": [
+    {
+      "scene": 1,
+      "text": "The still-sore place is where you dared to move.",
+      "beat_text": "The still-sore place is where you dared to move.",
+      "emotion": "opening_hook",
+      "arc_position": "act1",
+      "beat_function": "hook",
+      "shot_scale": "medium",
+      "subject_type": "woman",
+      "subject_expression": "distant, still",
+      "setting": "bedroom, unmade empty bed",
+      "key_object": "unmade empty bed",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "tangled sheets",
+      "visual_prompt": "story beat 1",
+      "episode_theme": "healing",
+      "episode_module": "relationship",
+      "episode_anchor_stem": "bed",
+      "episode_anchor_name": "unmade empty bed",
+      "setting_archetype": "interior-domestic",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 2,
+      "text": "You leave the bed untouched.",
+      "beat_text": "You leave the bed untouched.",
+      "emotion": "reflective",
+      "arc_position": "act1",
+      "beat_function": "complication",
+      "shot_scale": "close-up",
+      "subject_type": "object_focus",
+      "subject_expression": "wistful, searching",
+      "setting": "bedroom, unmade empty bed",
+      "key_object": "unmade empty bed",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "unmade empty bed, sheets tangled, one pillow dented",
+      "visual_prompt": "story beat 2",
+      "subject_remap": "framing_variety",
+      "anchor_beat": "introduce",
+      "cross_run_rewrite": true,
+      "setting_archetype": "interior-domestic",
+      "composition_type": "object_focus"
+    },
+    {
+      "scene": 3,
+      "text": "it shelter? You took the last night of that",
+      "beat_text": "it shelter? You took the last night of that",
+      "emotion": "candid_turn",
+      "arc_position": "act1",
+      "beat_function": "turn",
+      "shot_scale": "close",
+      "subject_type": "silhouette",
+      "subject_expression": "gentle, resolved",
+      "setting": "coat hook by the door",
+      "key_object": "two coats hanging",
+      "time_of_day": "late evening",
+      "visual_anchor_hint": "platform line fading away",
+      "visual_prompt": "story beat 3",
+      "visual_fallback": "signage_trap_remap",
+      "subject_remap": "framing_variety",
+      "close_variant": "silhouette",
+      "close_character": "",
+      "close_target": "hands",
+      "eye_close_context": "",
+      "pose_hint": "Tight crop on empty hands and wrists only — no face in frame.",
+      "setting_archetype": "threshold",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 4,
+      "text": "love, you gave up a habit of leaning. You",
+      "beat_text": "love, you gave up a habit of leaning. You",
+      "emotion": "shifting_tone",
+      "arc_position": "act2",
+      "beat_function": "insight",
+      "shot_scale": "extreme_close_up",
+      "subject_type": "object_focus",
+      "subject_expression": "open, quiet resolve",
+      "setting": "hallway with a closed suitcase on the floor",
+      "key_object": "closed suitcase on the floor",
+      "time_of_day": "night",
+      "visual_anchor_hint": "cool lamp spill",
+      "visual_prompt": "story beat 4",
+      "subject_remap": "framing_variety",
+      "setting_archetype": "threshold",
+      "composition_type": "object_focus"
+    },
+    {
+      "scene": 5,
+      "text": "drank cold light from a doorway. That cost a",
+      "beat_text": "drank cold light from a doorway. That cost a",
+      "emotion": "acknowledging_loss",
+      "arc_position": "act2",
+      "beat_function": "complication",
+      "shot_scale": "medium",
+      "subject_type": "woman",
+      "subject_expression": "softly sorrowful, understanding",
+      "setting": "empty train platform at night",
+      "key_object": "empty platform",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "empty park bench under a tree",
+      "visual_prompt": "story beat 5",
+      "visual_fallback": "caption_anchored_pool",
+      "setting_archetype": "transit",
+      "setting_archetype_remap": "threshold->transit",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 6,
+      "text": "chair you once believed your shape owned. Look down—your",
+      "beat_text": "chair you once believed your shape owned. Look down—your",
+      "emotion": "insight",
+      "arc_position": "act2",
+      "beat_function": "turn",
+      "shot_scale": "close_up",
+      "subject_type": "woman",
+      "subject_expression": "wry, awakening",
+      "setting": "parked car at evening, door open",
+      "key_object": "empty passenger seat of a car",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "soft light from the open door",
+      "visual_prompt": "story beat 6",
+      "visual_fallback": "caption_anchored_pool",
+      "setting_archetype": "transit",
+      "setting_archetype_remap": "threshold->transit",
+      "composition_type": "figure_centered"
+    },
+    {
+      "scene": 7,
+      "text": "footstep is lighter where you used to hollow the",
+      "beat_text": "footstep is lighter where you used to hollow the",
+      "emotion": "bitter_tender",
+      "arc_position": "act3",
+      "beat_function": "insight",
+      "shot_scale": "extreme_close_up",
+      "subject_type": "woman",
+      "subject_expression": "bitter_tender",
+      "setting": "empty park path at dusk",
+      "key_object": "distant horizon",
+      "time_of_day": "dusk",
+      "visual_anchor_hint": "empty chair by the glass",
+      "visual_prompt": "story beat 7",
+      "visual_fallback": "object_stem_rotate",
+      "setting_archetype": "exterior-landscape",
+      "composition_type": "wide_environment",
+      "composition_remap": "figure_centered->wide_environment"
+    },
+    {
+      "scene": 8,
+      "text": "The bed has gone cold.",
+      "beat_text": "The bed has gone cold.",
+      "emotion": "reverent_discovery",
+      "arc_position": "act3",
+      "beat_function": "close",
+      "shot_scale": "medium",
+      "subject_type": "object_focus",
+      "subject_expression": "reverent, discovery",
+      "setting": "cafe table after closing",
+      "key_object": "two chairs still out",
+      "time_of_day": "night",
+      "visual_anchor_hint": "unmade empty bed, blanket folded, mattress smooth",
+      "visual_prompt": "story beat 8",
+      "anchor_beat": "callback",
+      "setting_archetype": "public-interior",
+      "setting_archetype_remap": "interior-domestic->public-interior",
+      "composition_type": "object_focus",
+      "composition_remap": "figure_centered->object_focus"
+    },
+    {
+      "scene": 9,
+      "text": "stay here, learn to let it rain without giving",
+      "beat_text": "stay here, learn to let it rain without giving",
+      "emotion": "final_grounding",
+      "arc_position": "act3",
+      "beat_function": "insight",
+      "shot_scale": "wide",
+      "subject_type": "object_focus",
+      "subject_expression": "grounded, upright",
+      "setting": "theater lobby between acts",
+      "key_object": "unclaimed program",
+      "time_of_day": "dawn",
+      "visual_anchor_hint": "blanket folded, mattress smooth",
+      "visual_prompt": "story beat 9",
+      "setting_archetype": "public-interior",
+      "setting_archetype_remap": "interior-domestic->public-interior",
+      "composition_type": "object_focus",
+      "composition_remap": "figure_centered->object_focus"
+    }
+  ],
+  "hook_type": "",
+  "retrieved_details": [
+    {
+      "detail": "an unmade bed left empty",
+      "sensory_type": "object"
+    },
+    {
+      "detail": "a closed suitcase resting on the floor",
+      "sensory_type": "object"
+    },
+    {
+      "detail": "the same scuffed shoes on the stoop after work",
+      "sensory_type": "object"
+    }
+  ],
+  "arc_template": "thematic_arc",
+  "structure_id": "anaphora",
+  "rhetoric_pattern": "definition_then_evidence",
+  "rhetoric_hook_overlay": "",
+  "seed_hooks": [
+    {
+      "text": "Trust is not a feeling."
+    },
+    {
+      "text": "It is a pattern you notice later."
+    }
+  ],
+  "close_variant": "silhouette",
+  "close_target": "hands",
+  "eye_close_context": "",
+  "close_character": "",
+  "hook_gate": {
+    "scene": 1,
+    "status": "fail",
+    "reason": "hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+    "text": "The still-sore place is where you dared to move.",
+    "subject_type": "woman",
+    "setting": "bedroom, unmade empty bed",
+    "object": "unmade empty bed"
+  },
+  "insight_agency": {
+    "insights": [
+      {
+        "scene": 4,
+        "text": "love, you gave up a habit of leaning. You",
+        "prev": "it shelter? You took the last night of that",
+        "status": "pass",
+        "reason": "you+give",
+        "here": {
+          "status": "pass",
+          "reason": "you+give",
+          "subject": "you",
+          "verb": "give"
+        },
+        "before": {
+          "status": "pass",
+          "reason": "you+take",
+          "subject": "you",
+          "verb": "take"
+        }
+      },
+      {
+        "scene": 7,
+        "text": "footstep is lighter where you used to hollow the",
+        "prev": "chair you once believed your shape owned. Look down—your",
+        "status": "fail",
+        "reason": "no-character-concrete:character:used",
+        "here": {
+          "status": "fail",
+          "reason": "no-character-concrete:character:used",
+          "subject": "you",
+          "verb": "used"
+        },
+        "before": {
+          "status": "fail",
+          "reason": "no-character-concrete:character:once",
+          "subject": "you",
+          "verb": "once"
+        }
+      },
+      {
+        "scene": 9,
+        "text": "stay here, learn to let it rain without giving",
+        "prev": "The bed has gone cold.",
+        "status": "pass",
+        "reason": "you+stay",
+        "here": {
+          "status": "pass",
+          "reason": "you+stay",
+          "subject": "you",
+          "verb": "stay"
+        },
+        "before": {
+          "status": "fail",
+          "reason": "noncharacter-subject:bed+has",
+          "subject": "bed",
+          "verb": "has"
+        }
+      }
+    ],
+    "fails": [
+      "insight scene 7 has no character-performed concrete verb (no-character-concrete:character:used): 'footstep is lighter where you used to hollow the'"
+    ]
+  },
+  "principle_voice": {
+    "lines": [
+      {
+        "scene": 1,
+        "beat_function": "hook",
+        "text": "The still-sore place is where you dared to move.",
+        "status": "pass",
+        "reason": "declarative-general",
+        "kind": "declarative"
+      },
+      {
+        "scene": 4,
+        "beat_function": "insight",
+        "text": "love, you gave up a habit of leaning. You",
+        "status": "fail",
+        "reason": "not-quotable-advice",
+        "kind": "other"
+      },
+      {
+        "scene": 7,
+        "beat_function": "insight",
+        "text": "footstep is lighter where you used to hollow the",
+        "status": "pass",
+        "reason": "declarative-general",
+        "kind": "declarative"
+      },
+      {
+        "scene": 9,
+        "beat_function": "insight",
+        "text": "stay here, learn to let it rain without giving",
+        "status": "pass",
+        "reason": "imperative",
+        "kind": "imperative"
+      }
+    ],
+    "fails": [
+      "principle insight scene 4 (not-quotable-advice): 'love, you gave up a habit of leaning. You'"
+    ]
+  },
+  "principle_scope": {
+    "hits": [
+      {
+        "scene": 1,
+        "beat_function": "hook",
+        "text": "The still-sore place is where you dared to move.",
+        "reason": "declarative-general"
+      },
+      {
+        "scene": 7,
+        "beat_function": "insight",
+        "text": "footstep is lighter where you used to hollow the",
+        "reason": "declarative-general"
+      },
+      {
+        "scene": 9,
+        "beat_function": "insight",
+        "text": "stay here, learn to let it rain without giving",
+        "reason": "imperative"
+      }
+    ],
+    "count": 3,
+    "fails": [
+      "principle-scope: 3 beats read as advice (max 2): s1 'The still-sore place is where you dared to move.'; s7 'footstep is lighter where you used to hollow the'; s9 'stay here, learn to let it rain without giving'"
+    ]
+  },
+  "connective_development": {
+    "hits": [
+      {
+        "scene": 1,
+        "text": "The still-sore place is where you dared to move.",
+        "reason": "connective"
+      },
+      {
+        "scene": 9,
+        "text": "stay here, learn to let it rain without giving",
+        "reason": "connective"
+      }
+    ],
+    "count": 2,
+    "fails": [
+      "connective-development: 2 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)"
+    ]
+  },
+  "insight_answers_hook": {
+    "status": "fail",
+    "fails": [
+      "insight scene 4 does not answer/reverse the hook claim 'The still-sore place is where you dared to move.': 'love, you gave up a habit of leaning. You'",
+      "insight scene 9 does not answer/reverse the hook claim 'The still-sore place is where you dared to move.': 'stay here, learn to let it rain without giving'"
+    ],
+    "insights": [
+      {
+        "scene": 4,
+        "text": "love, you gave up a habit of leaning. You",
+        "hook": "The still-sore place is where you dared to move.",
+        "shared": [],
+        "status": "fail"
+      },
+      {
+        "scene": 7,
+        "text": "footstep is lighter where you used to hollow the",
+        "hook": "The still-sore place is where you dared to move.",
+        "shared": [
+          "where"
+        ],
+        "status": "pass"
+      },
+      {
+        "scene": 9,
+        "text": "stay here, learn to let it rain without giving",
+        "hook": "The still-sore place is where you dared to move.",
+        "shared": [],
+        "status": "fail"
+      }
+    ]
+  },
+  "recipe_pattern": {
+    "bare_scenes": [
+      2
+    ],
+    "developed_scenes": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+    ],
+    "fails": []
+  },
+  "object_churn": {
+    "anchor": "bed",
+    "supporting": [
+      "habit",
+      "night",
+      "shape",
+      "sore"
+    ],
+    "by_scene": [
+      {
+        "scene": 1,
+        "props": [
+          "sore"
+        ]
+      },
+      {
+        "scene": 2,
+        "props": [
+          "bed"
+        ]
+      },
+      {
+        "scene": 3,
+        "props": [
+          "night"
+        ]
+      },
+      {
+        "scene": 4,
+        "props": [
+          "habit"
+        ]
+      },
+      {
+        "scene": 6,
+        "props": [
+          "shape"
+        ]
+      },
+      {
+        "scene": 8,
+        "props": [
+          "bed"
+        ]
+      }
+    ],
+    "fails": [
+      "object-churn: 4 supporting spoken props ['habit', 'night', 'shape', 'sore'] (max 2 besides anchor 'bed')"
+    ]
+  },
+  "connective_cross_run": {
+    "map": [
+      {
+        "scene": 1,
+        "word": "still",
+        "family": "persist",
+        "text": "The still-sore place is where you dared to move."
+      },
+      {
+        "scene": 9,
+        "word": "without",
+        "family": "exception",
+        "text": "stay here, learn to let it rain without giving"
+      }
+    ],
+    "sequence": [
+      "persist",
+      "exception"
+    ],
+    "fails": []
+  },
+  "pronoun_continuity": {
+    "beats": [
+      {
+        "scene": 1,
+        "text": "The still-sore place is where you dared to move.",
+        "dangling": []
+      },
+      {
+        "scene": 2,
+        "text": "You leave the bed untouched.",
+        "dangling": []
+      },
+      {
+        "scene": 3,
+        "text": "it shelter? You took the last night of that",
+        "dangling": []
+      },
+      {
+        "scene": 4,
+        "text": "love, you gave up a habit of leaning. You",
+        "dangling": []
+      },
+      {
+        "scene": 5,
+        "text": "drank cold light from a doorway. That cost a",
+        "dangling": []
+      },
+      {
+        "scene": 6,
+        "text": "chair you once believed your shape owned. Look down—your",
+        "dangling": []
+      },
+      {
+        "scene": 7,
+        "text": "footstep is lighter where you used to hollow the",
+        "dangling": []
+      },
+      {
+        "scene": 8,
+        "text": "The bed has gone cold.",
+        "dangling": []
+      },
+      {
+        "scene": 9,
+        "text": "stay here, learn to let it rain without giving",
+        "dangling": []
+      }
+    ],
+    "fails": []
+  },
+  "caption_still_align": {
+    "fails": [
+      "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The bed has gone cold.'"
+    ]
+  },
+  "connective_coherence": {
+    "beats": [
+      {
+        "scene": 1,
+        "text": "The still-sore place is where you dared to move.",
+        "word": "still",
+        "decorative": "still has no prior beat to persist against"
+      },
+      {
+        "scene": 2,
+        "text": "You leave the bed untouched.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 3,
+        "text": "it shelter? You took the last night of that",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 4,
+        "text": "love, you gave up a habit of leaning. You",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 5,
+        "text": "drank cold light from a doorway. That cost a",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 6,
+        "text": "chair you once believed your shape owned. Look down—your",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 7,
+        "text": "footstep is lighter where you used to hollow the",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 8,
+        "text": "The bed has gone cold.",
+        "word": null,
+        "decorative": ""
+      },
+      {
+        "scene": 9,
+        "text": "stay here, learn to let it rain without giving",
+        "word": "without",
+        "decorative": ""
+      }
+    ],
+    "fails": [
+      "decorative connective scene 1 (still): still has no prior beat to persist against — 'The still-sore place is where you dared to move.'"
+    ]
+  },
+  "close_beat_count": 1,
+  "setting_archetypes": {
+    "beats": [
+      "interior-domestic",
+      "interior-domestic",
+      "threshold",
+      "threshold",
+      "transit",
+      "transit",
+      "exterior-landscape",
+      "public-interior",
+      "public-interior"
+    ],
+    "counts": {
+      "interior-domestic": 2,
+      "threshold": 2,
+      "transit": 2,
+      "exterior-landscape": 1,
+      "public-interior": 2
+    },
+    "unique": [
+      "transit",
+      "public-interior",
+      "threshold",
+      "exterior-landscape",
+      "interior-domestic"
+    ],
+    "overflow": {},
+    "holds_episode": false,
+    "summary": "archetypes={'interior-domestic': 2, 'threshold': 2, 'transit': 2, 'exterior-landscape': 1, 'public-interior': 2} overflow=none unique=['transit', 'public-interior', 'threshold', 'exterior-landscape', 'interior-domestic']",
+    "max_per_episode": 2
+  },
+  "setting_archetype_cross": {
+    "previous": [
+      "exterior-landscape",
+      "exterior-urban",
+      "interior-domestic",
+      "public-interior",
+      "threshold",
+      "transit"
+    ],
+    "used": [
+      "exterior-landscape",
+      "interior-domestic",
+      "public-interior",
+      "threshold",
+      "transit"
+    ],
+    "fresh": [],
+    "needed": 0,
+    "leftover_bank": [],
+    "passed": true,
+    "reason": "fresh=[] prev=['exterior-landscape', 'exterior-urban', 'interior-domestic', 'public-interior', 'threshold', 'transit'] leftover=[]"
+  },
+  "composition_types": {
+    "beats": [
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "figure_centered",
+      "wide_environment",
+      "object_focus",
+      "object_focus"
+    ],
+    "counts": {
+      "figure_centered": 4,
+      "object_focus": 4,
+      "wide_environment": 1
+    },
+    "figure_centered": 4,
+    "non_figure": 5,
+    "holds_episode": false,
+    "max_figure_centered": 4,
+    "min_non_figure": 5,
+    "summary": "figure_centered=4/4 non_figure=5 {'figure_centered': 4, 'object_focus': 4, 'wide_environment': 1}"
+  },
+  "anchor_beats": [
+    2,
+    8
+  ],
+  "isnt_y_count": 0,
+  "intra_dedup_pass": true,
+  "cross_run_dedup_pass": true,
+  "episode_variety": {
+    "beat_count": 9,
+    "distinct_settings": 7,
+    "setting_stems": {
+      "bedroom": 2,
+      "coat": 1,
+      "hallway": 1,
+      "platform": 1,
+      "park": 2,
+      "table": 1,
+      "theater lobby": 1
+    },
+    "setting_repeats": {
+      "bedroom": 2,
+      "park": 2
+    },
+    "distinct_compositions": 3,
+    "compositions": {
+      "woman": 4,
+      "object_focus": 4,
+      "silhouette": 1
+    },
+    "person_shots": 4,
+    "variety_shots": 5,
+    "distinct_object_stems": 8,
+    "object_stems": {
+      "bed": 2,
+      "coat": 1,
+      "suitcase": 1,
+      "platform": 1,
+      "seat": 1,
+      "horizon": 1,
+      "chair": 1,
+      "program": 1
+    },
+    "object_repeats": {
+      "bed": 2
+    },
+    "object_over_cap": {},
+    "palette_sequence": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "palette_expected": [
+      "WARM",
+      "WARM",
+      "WARM",
+      "COLD",
+      "COLD",
+      "COLD",
+      "CONTRAST",
+      "CONTRAST",
+      "CONTRAST"
+    ],
+    "palette_arc_ok": true,
+    "palette_mismatches": [],
+    "notes": [
+      "variety_shots=5 above target 4",
+      "setting_repeats=bedroomx2,parkx2"
+    ],
+    "summary": "settings=7/9 distinct; compositions={'woman': 4, 'object_focus': 4, 'silhouette': 1}; objects=8 distinct; palette_arc_ok=true; notes=['variety_shots=5 above target 4', 'setting_repeats=bedroomx2,parkx2']",
+    "holds_episode": false,
+    "setting_archetypes": {
+      "interior-domestic": 2,
+      "threshold": 2,
+      "transit": 2,
+      "exterior-landscape": 1,
+      "public-interior": 2
+    },
+    "setting_archetype_beats": [
+      "interior-domestic",
+      "interior-domestic",
+      "threshold",
+      "threshold",
+      "transit",
+      "transit",
+      "exterior-landscape",
+      "public-interior",
+      "public-interior"
+    ],
+    "setting_archetype_overflow": {},
+    "composition_types": {
+      "figure_centered": 4,
+      "object_focus": 4,
+      "wide_environment": 1
+    },
+    "composition_beats": [
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "object_focus",
+      "figure_centered",
+      "figure_centered",
+      "wide_environment",
+      "object_focus",
+      "object_focus"
+    ],
+    "figure_centered": 4
+  },
+  "holds_episode": true,
+  "narrative_holds": [
+    "HOOK: hook scene 1 is a flat establishing still (empty bed/chair/platform without rain, lamp, or sunset)",
+    "insight scene 7 has no character-performed concrete verb (no-character-concrete:character:used): 'footstep is lighter where you used to hollow the'",
+    "principle insight scene 4 (not-quotable-advice): 'love, you gave up a habit of leaning. You'",
+    "principle-scope: 3 beats read as advice (max 2): s1 'The still-sore place is where you dared to move.'; s7 'footstep is lighter where you used to hollow the'; s9 'stay here, learn to let it rain without giving'",
+    "connective-development: 2 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)",
+    "insight scene 4 does not answer/reverse the hook claim 'The still-sore place is where you dared to move.': 'love, you gave up a habit of leaning. You'",
+    "insight scene 9 does not answer/reverse the hook claim 'The still-sore place is where you dared to move.': 'stay here, learn to let it rain without giving'",
+    "object-churn: 4 supporting spoken props ['habit', 'night', 'shape', 'sore'] (max 2 besides anchor 'bed')",
+    "still-align scene 8 object_focus 'two chairs still out' is not in caption 'The bed has gone cold.'",
+    "decorative connective scene 1 (still): still has no prior beat to persist against — 'The still-sore place is where you dared to move.'"
+  ]
+}

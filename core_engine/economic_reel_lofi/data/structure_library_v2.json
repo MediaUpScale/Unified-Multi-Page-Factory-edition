@@ -1,0 +1,267 @@
+{
+  "version": 2,
+  "notes": "Continuous-prose rhetorical shapes distilled from the 23-piece reference corpus (15/17 treated as one A/B pair). In-house examples are original and must never be copied at generation time. No third-party phrasing is stored. Echo-checked for 4+ word sequences.",
+  "patterns": [
+    {
+      "name": "anaphora_to_universal_law",
+      "label": "A repeated imperative grants permission in stages before resolving into one general law.",
+      "tool_strength": "medium",
+      "hook_device": true,
+      "aphorism_ok": true,
+      "shape": "Open with one imperative construction repeated three or four times, each version releasing a different attachment or granting a different permission. Let the repetition build a rhythm that feels like momentum rather than instruction. Close the run with a single general statement that names the principle the repetitions were quietly proving. The whole thing should read like a rule of life arrived at through cadence, not argument.",
+      "in_house_example": "Let them walk. Let them go quiet for weeks and call it busy. Let them show up only when it's convenient and disappear the second it isn't. Let them think you didn't notice, even though you noticed everything. Don't perform your hurt for an audience that already decided not to watch. Don't beg a closed door to explain why it closed. Some people only reveal their real shape once you stop holding the frame steady for them, and that is not a tragedy, that is information. So let them show you, plainly, without your help. What a person does when nothing is required of them is the truest sentence they will ever write about themselves, and you don't need to edit it, you just need to read it."
+    },
+    {
+      "name": "domino_chain",
+      "label": "One small choice forces the next, until the whole mechanism collapses into a single insight.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "Open with one small, specific action or avoidance. Show how it forces a second action to protect the first, then a third to protect the second, escalating stakes or scale with each link. Let the chain reach a breaking point where the whole structure becomes visible at once. Resolve with a compressed insight into why the pattern kept feeding itself, not just a description of the fallout.",
+      "in_house_example": "It starts with one apology you didn't mean, just to end an argument faster than it deserved. But an apology you didn't mean requires a second one to explain why the first one felt hollow, and that second apology needs a story to back it up, so you build a small story, and small stories need maintenance, a detail kept straight, a timeline that has to hold. Soon you're not managing the disagreement anymore, you're managing the account of the disagreement, checking it against what you already said, patching the seams before anyone notices them fraying. Eventually the seams show anyway, because they always do, and what collapses isn't the relationship, it's the fiction you built trying to protect a relationship that would have survived the truth the first time."
+    },
+    {
+      "name": "definition_then_evidence",
+      "label": "Define the real version of a thing, then hand over the checkable signs that separate it from the fake.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "State plainly what the authentic version of the thing actually looks like in practice. Then list two or three concrete, observable behaviors that prove it, each one something the viewer can check against their own life. Let the false version stay implicit, visible only as the shadow the real signs are cutting against. End without a moral flourish; the list itself is the payoff.",
+      "in_house_example": "Real steadiness isn't loud, and it isn't occasional, it's just repeated. You can see it in small places: they follow through on the plan they suggested even after the excitement of suggesting it has worn off, they bring up something you mentioned once in passing three weeks ago because it actually stayed with them, they stay level on your bad days instead of matching your panic or punishing your mood. None of this requires a grand gesture, and that's the point, because grand gestures are easy to fake and Tuesday afternoons are not. If someone is only warm when there's an audience or a reason to perform closeness, that isn't steadiness, that's a costume. The real version shows up when nothing is being watched."
+    },
+    {
+      "name": "contrast_metaphor_resolution",
+      "label": "Two seemingly equal things are split apart by one concrete image, then reframed in a single closing line.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Name two things that look interchangeable on the surface. Introduce one concrete, physical metaphor that reveals why one holds weight over time and the other doesn't. Let the image do the separating work rather than stating the difference outright. Close with a short line that reframes the original pair in light of the metaphor.",
+      "in_house_example": "Attention and devotion can sound the same when someone offers them to you, but they don't come from the same place. Attention is a firework, dazzling for the three seconds it takes to light the whole sky, then ash falling on nothing. Devotion is a well dug by hand, unglamorous, dirt under the fingernails, easy to overlook until the drought comes and every other source has dried up and that one keeps giving water. You find out which one someone offered you by what's left after the excitement drains away, because fireworks were built to be forgotten and wells were built to be returned to. The people who really keep you rarely put on a show. They're just quietly there, again, on the ordinary Tuesday nobody else remembered to show up for."
+    },
+    {
+      "name": "negation_list_to_permission",
+      "label": "A run of refusals discards old postures one by one until a reclaimed boundary emerges.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "Open in first person with a short refusal naming an old exhausting posture. Repeat the refusal pattern two or three more times, each one dropping a different form of self-abandonment. Let the accumulation build quiet momentum rather than anger. Land on one claimed boundary or reclaimed piece of agency that the refusals were clearing space for.",
+      "in_house_example": "I don't shrink my plans to make someone else comfortable with my growth. I don't apologize for needing quiet, or for saying no without a five-minute justification attached to it. I don't stay in conversations that require me to argue for my own right to be respected, because a right you have to argue for was never actually being offered. I don't chase people who've made their distance obvious just because chasing feels more familiar than stillness. What I do now is simple: I protect my peace the way I used to protect other people's comfort, fully, and without asking permission first."
+    },
+    {
+      "name": "parable_triad",
+      "label": "Three short unexplained images converge on one lesson delivered only at the very end.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Present a short, self-contained image with a small physical detail, and don't explain what it means. Present a second, unrelated image with the same underlying shape, still unexplained. Present a third if needed, letting the pattern become recognizable through repetition alone. Only in the final line state the single abstract lesson all three images were quietly pointing toward.",
+      "in_house_example": "A river carves a canyon not by force but by refusing to stop moving. A tree bends sideways for thirty years chasing one thin line of light and never once apologizes for the shape it became. A key cut wrong will still turn in the right lock if you're patient enough to jiggle it, but it will never turn smoothly, no matter how many years pass. None of these things hurried, and none of them gave up either. Growth was never about force, it was about direction held steady for longer than anyone was willing to watch."
+    },
+    {
+      "name": "retrospective_reversal",
+      "label": "A past reading of events is corrected so the loss is quietly relocated onto the other party.",
+      "tool_strength": "low",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "Address someone directly about how they once understood a past situation. Correct that understanding with a small but decisive reversal. Reframe what looked like the speaker's loss as actually belonging to the other person. Close on mood rather than instruction, since this shape is built for identification, not for a takeaway.",
+      "in_house_example": "You probably tell yourself the distance grew on its own, that neither of us really caused it, just two people drifting the way boats drift when nobody's holding the rope. But you stopped showing up first, quietly, one missed call at a time, while I kept setting a place at the table out of habit. You think you walked away from something ordinary, a chapter you were ready to close without much cost. What you actually walked away from was the last patient part of me, the part that still believed people deserved a second chance before judgment. That part doesn't return, not for me, not for anyone after you. You didn't lose someone forgettable. You lost the gentlest shape I ever let myself become."
+    },
+    {
+      "name": "personification_sensory",
+      "label": "An abstract force is given a body and senses, arriving uninvited until its presence becomes its own meaning.",
+      "tool_strength": "low",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "Treat an abstract feeling or force as if it moves through rooms on its own. Build the image through two or three specific sensory details rather than statements. Let the force behave with its own quiet agenda instead of being summoned by the speaker. Resolve not with an instruction but with a kind of acceptance that reframes its presence as meaningful.",
+      "in_house_example": "Grief never knocks, it just lets itself in through whatever door was left unlocked. It settles into the second mug I still fill out of habit, going cold on the counter because nobody's left to drink from it. It rides along in the particular shade of certain evenings, the ones that used to mean footsteps were about to reach the porch. It rests in the passenger seat on long drives and doesn't say a word, doesn't need to, just stays there like it belongs and has nowhere better to be. I've stopped telling it to go. Some visitors are simply proof that something in you loved hard enough to leave a spare key buried in the dirt."
+    },
+    {
+      "name": "thinker_juxtaposition",
+      "label": "Two opposing unattributed philosophies are placed side by side and left for the viewer to choose between.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Open, optionally, with a short unattributed aphorism to set the register. State one stance on the dilemma as a general attitude, without naming any person. State the opposing stance with equal weight, framed as a different but equally coherent philosophy. Close with a direct question to the viewer, or a single resolving line, rather than declaring a winner.",
+      "in_house_example": "There's an old idea that it's better to face a hard truth than to rest inside a comfortable lie, because at least the truth leaves you standing on solid ground. But there's an equally old counter-idea that says some illusions are kinder than facts, and kindness has its own kind of honesty too, a gentler one, one that doesn't demand you bleed for clarity. One philosophy says clarity is worth any cost. The other says peace is sometimes the more mature choice, and chasing every hard truth can be its own form of self-harm dressed up as courage. So which are you actually chasing when you say you want honesty, the truth itself, or just permission to stop pretending?"
+    },
+    {
+      "name": "before_after_transformation",
+      "label": "A former posture is named, replaced by a current one, with the cause of the shift explained in a line.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "State a former habitual posture using a clear before-marker. State the current, contrasting posture using a clear after-marker. Explain the cause of the shift in one or two compact lines rather than a long justification. Close by inviting the viewer to recognize the same shift happening, or needing to happen, in their own life.",
+      "in_house_example": "I used to answer every accusation with a full defense, evidence and timeline included, as if my worth were something I had to keep proving in court. Now I just let the accusation sit there unanswered, since it eventually became obvious that people who've already decided who you are don't actually want your evidence, they want you to keep performing for a verdict that was written before the trial started. So I stopped submitting exhibits. I stopped rehearsing my closing argument in the shower at midnight. If you're still defending yourself to people who never intended to change their minds, ask yourself honestly whether you're protecting the truth or just still hoping to be chosen."
+    },
+    {
+      "name": "open_question",
+      "label": "A paradox is stated plainly and deliberately left open, ending on the question itself.",
+      "tool_strength": "low",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Present a dilemma or paradox in plain, unadorned terms. Give it just enough texture that both sides feel genuinely true at once. Resist resolving it or tipping toward either side. End precisely on the question, using it as the final beat rather than a setup for an answer.",
+      "in_house_example": "Nobody checks in anymore, nobody's waiting up when the lights go out, and there's a strange spaciousness to that, a whole apartment of hours that belong to no one but you. You can eat dinner at midnight, disappear for a weekend, let your phone die on purpose and feel nothing but relief. Some days that spaciousness feels like the closest thing to freedom you've ever touched, clean and quiet and entirely yours. Other days the same silence just sits in the room like proof that no one would notice which day you stopped showing up. So tell me, when nobody's checking on you anymore, is that freedom, or is that just loneliness wearing freedom's clothes?"
+    },
+    {
+      "name": "quiet_proof_inventory",
+      "label": "Builds trust by listing small, unglamorous, repeated actions instead of grand declarations.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by naming what trust is not (a speech, a promise, a big gesture). Develops through a short accumulation of small repeated actions that quietly demonstrate reliability. Turns on the idea that repetition over time is what actually builds belief. Resolves by stating that consistency, not intensity, is the real evidence of care.",
+      "in_house_example": "Trust was never going to arrive wearing a big speech, so I stopped waiting for one. It showed up instead as the same door opened at the same hour, the same voice checking in on an ordinary Tuesday for no reason at all, the same hands finishing what they said they'd finish without being reminded twice. None of it made a sound worth recording. None of it needed an audience. But every small repeated thing stacked quietly on top of the last one until, without a single grand promise ever being made, I realized I had stopped bracing for disappointment. That's the part no one warns you about — real trust is boring on purpose. It's built in a thousand unremarkable minutes, not one unforgettable night, and by the time you notice it's there, it already has a foundation."
+    },
+    {
+      "name": "calm_versus_chaos_ledger",
+      "label": "Contrasts the quiet steadiness of secure love against the addictive highs and lows of intensity, favoring the former.",
+      "tool_strength": "high",
+      "hook_device": true,
+      "aphorism_ok": true,
+      "shape": "Opens by admitting that chaos once felt like passion. Develops by describing what that chaos actually cost — exhaustion, guessing, adrenaline mistaken for love. Turns toward a description of calm as something that initially felt boring but was actually safety. Resolves by redefining real love as steady rather than thrilling.",
+      "in_house_example": "For a long time I thought love was supposed to feel like a storm, so I mistook every flash of chaos for passion and every calm moment for something missing. But storms wear you down — you spend all your energy guessing, apologizing for things you didn't do, waiting for the next shift in weather just to feel briefly relieved. Then something steady came along and at first it felt almost dull, no spikes, no rescues, no dramatic reunions to prove anything. It took months to understand that the dullness was actually safety, that a quiet room where nothing is on fire is not the same as a room where nothing is happening. Now I know the difference: intensity asks you to survive it, steadiness simply asks you to stay, and staying was never supposed to be a struggle in the first place."
+    },
+    {
+      "name": "boundary_without_apology",
+      "label": "States a personal limit plainly and refuses the reflex to soften it with guilt or over-explanation.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens with a boundary stated in plain, undecorated language. Develops by naming the old habit of apologizing for having needs. Turns on a decision to stop translating the boundary into something more palatable. Resolves with the boundary standing alone, unguilty, as simply true.",
+      "in_house_example": "I don't answer messages after a certain hour anymore, and I stopped writing three paragraphs explaining why. There used to be a version of me who felt she owed everyone a justification just for protecting her own evening, who would soften a simple no into something apologetic enough that nobody's feelings could possibly bruise. That version exhausted herself trying to make her limits comfortable for other people to hear. I don't do that translation work anymore. If a boundary needs a defense to be respected, it was never actually being respected, it was being negotiated. So now the sentence stands on its own, no cushion, no guilt attached to the end of it, just a plain fact about what I will and won't give away, and that has to be enough for both of us."
+    },
+    {
+      "name": "reaching_for_the_same_door",
+      "label": "Depicts the repetitive, self-defeating loop of chasing reassurance from someone who keeps withholding it.",
+      "tool_strength": "medium",
+      "hook_device": true,
+      "aphorism_ok": false,
+      "shape": "Opens mid-loop, describing a habitual reaching out. Develops by cataloguing the pattern's repetition — checking, waiting, reading into silence. Turns on a moment of recognizing the cycle from the outside. Resolves with the first small refusal to reach again.",
+      "in_house_example": "I keep finding myself refreshing a screen that was never going to answer, checking a doorway that stopped opening months ago, rehearsing the exact right words in case this time they finally land. It's the same loop every time — a little quiet, then a flicker of hope that the quiet means something good, then a message sent just to test the water, then the long wait that always ends the same way it ended before. I used to think the ache meant I loved harder than anyone else could. Watching it from the outside, though, it just looks like reaching for a door that was never going to open twice. So today I didn't send anything. I let the quiet stay quiet, and for the first time the loop didn't close around me — it just kept spinning without me in it."
+    },
+    {
+      "name": "the_harder_conversation",
+      "label": "Reframes conflict repair as the brave, necessary act rather than the silence that follows a fight.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by naming the easy option after conflict — walking away, going cold. Develops by describing what staying to repair actually requires. Turns on reframing repair as strength rather than weakness. Resolves by stating that the return, not the fight, is what proves the relationship.",
+      "in_house_example": "Walking away after a fight is easy — anyone can slam a door and call it dignity. What's hard is coming back into the same room an hour later, admitting the tone was wrong, and asking the question you were too proud to ask in the middle of the argument. Repair means sitting with someone's hurt without immediately defending yourself against it, means saying the sentence you'd rather swallow because swallowing it only postpones the same fight to next week. I used to think the fight itself was the test of a relationship. It isn't. The test is what happens twenty minutes later, whether anyone is willing to turn back around, sit down, and do the slower, less satisfying work of actually being understood instead of simply being right."
+    },
+    {
+      "name": "the_softness_that_remained",
+      "label": "Argues that staying gentle after being hurt is a form of strength rather than naivety.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by acknowledging reasons that could have hardened the speaker. Develops by describing the temptation to close off entirely. Turns on the choice to remain open despite the evidence against it. Resolves by naming that softness as the real display of strength.",
+      "in_house_example": "I had plenty of reasons to seal myself off for good, enough letdowns, enough proof that kindness gets read as an opening to walk through and take advantage of. There was a stretch where I nearly did it, nearly convinced myself that the safer version of me was the closed one, walls up before anyone got close enough to matter. But something in me pushed back against that trade. I kept extending trust, kept believing each new person deserved an honest chance instead of paying for someone else's damage, kept picking warmth even though distance would have cost me so much less. People assume gentleness only survives out of ignorance. Mine survived because every single time, I chose it deliberately, knowing exactly what it might cost, and decided it was still the braver thing to hold onto."
+    },
+    {
+      "name": "what_the_quiet_is_saying",
+      "label": "Treats a sudden absence of communication as itself a loud, legible message.",
+      "tool_strength": "medium",
+      "hook_device": true,
+      "aphorism_ok": true,
+      "shape": "Opens by noting the absence of contact. Develops by listing what the silence has replaced — the calls, the check-ins, the small rituals. Turns on reading the silence as an answer rather than a mystery. Resolves by accepting the message the quiet was always sending.",
+      "in_house_example": "The phone hasn't buzzed in eleven days, and somewhere in there I stopped waiting for it to. There used to be a rhythm to us, a goodnight sent without fail, a morning check-in that arrived before coffee, small rituals so constant I never had to think about them until they vanished. Now there's only the shape of where those things used to be, and honestly, that shape says more than any explanation could. Silence isn't empty — it's just a message delivered without words, and this one has been remarkably clear the entire time. I spent too long treating the quiet like a puzzle to solve. It was never a puzzle. It was an answer, and I just hadn't wanted to read it yet."
+    },
+    {
+      "name": "the_chair_still_set",
+      "label": "Uses a single domestic image of an empty space to embody ongoing loneliness without narrating events.",
+      "tool_strength": "high",
+      "hook_device": true,
+      "aphorism_ok": false,
+      "shape": "Opens on a small physical detail of an empty space. Develops by describing the daily habit of still preparing for someone who no longer comes. Turns on the moment the habit is finally noticed as strange. Resolves without fixing it, simply naming the ache of the unused space.",
+      "in_house_example": "There's a second mug still in the cabinet, front row, easiest to reach, exactly where it's always been kept even though nobody has asked for tea beside me in over a year. I set two plates out of habit sometimes, then quietly put one back, and I couldn't tell you when that started feeling normal instead of sad. The apartment isn't empty in any way a stranger would notice — the furniture's all there, the lights work, the mail still comes. But there's a particular kind of silence that lives in a space built for two people and occupied by one, a silence that doesn't announce itself, it just sits at the table like it was invited. I haven't moved the mug. I don't think I'm ready to admit what moving it would mean."
+    },
+    {
+      "name": "learning_to_hold_it",
+      "label": "Describes grief not as something resolved but as something the person learns to carry without being crushed.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by rejecting the idea that grief ends. Develops by describing the early, unbearable weight compared with a later, lighter version. Turns on the realization that the grief changed shape rather than disappearing. Resolves with an image of carrying it steadily rather than setting it down.",
+      "in_house_example": "Nobody tells you that grief doesn't leave, it just gets lighter to lift, the way a bag feels impossible on day one and merely heavy by the hundredth day of carrying it. In the beginning it filled every room, sat in the passenger seat, showed up uninvited in the middle of ordinary tasks until ordinary tasks stopped existing. I used to think healing meant the weight would eventually hit zero, that one morning I'd wake up and it would simply be gone. It doesn't work that way. What happens instead is your arms get stronger around the same weight, you learn where to hold it so it doesn't dig in, and slowly you find you can walk through a whole day with it and still laugh, still work, still love people, the grief riding quietly along instead of blocking the road."
+    },
+    {
+      "name": "counting_what_was_taken",
+      "label": "Itemizes the specific, concrete casualties of a loss beyond the obvious central one.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": false,
+      "shape": "Opens by naming the loss plainly. Develops through a short list of secondary, less obvious things that were lost alongside it. Turns on realizing the full scope was larger than first understood. Resolves by naming the hardest item on the list last.",
+      "in_house_example": "Losing him didn't just cost me him — it cost me the Sunday phone calls that used to anchor my whole week, the easy laugh I only ever gave in his company, the version of my future that had his name quietly written into it without my ever saying so out loud. It cost me a certain kind of confidence too, the specific one that comes from being fully known by somebody and not having to explain the joke. I keep discovering new rooms in the damage months later, small things I didn't think to grieve on day one because I was too busy grieving the biggest one. But the last item on the list, the one I still can't say without my voice catching, is the plain fact that I lost the person who would have known exactly what to say about losing him."
+    },
+    {
+      "name": "one_more_step_anyway",
+      "label": "Portrays perseverance as a decision repeated daily rather than a single triumphant moment.",
+      "tool_strength": "high",
+      "hook_device": true,
+      "aphorism_ok": true,
+      "shape": "Opens by admitting the exhaustion is real and ongoing. Develops by describing the temptation to stop, laid out honestly without heroics. Turns on choosing one small action anyway, not because it feels good but because stopping felt worse. Resolves by naming persistence as a quiet daily choice rather than a personality trait.",
+      "in_house_example": "Some mornings the only honest thing I can tell you is that I did not want to get out of bed, and I did it anyway, which is a much smaller and much harder story than the one people usually tell about willpower. There was no swelling music, no sudden surge of motivation, just the plain fact that hiding under the covers wouldn't pay the rent or quiet the worry, so I stood up and made toast and handled the one task in front of me. I have stopped waiting to feel prepared before I act. Feeling prepared was never going to arrive, I understand that now, and the years I spent stalling for it are years I cannot reclaim. Persistence, it turns out, isn't a trait you're born with — it's simply what you decide again each morning, whether or not it feels courageous."
+    },
+    {
+      "name": "the_light_you_grow_yourself",
+      "label": "Frames inspiration as something self-generated rather than borrowed from external validation or circumstance.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by describing the old habit of waiting for outside permission or applause to feel motivated. Develops by noting how unreliable that source turned out to be. Turns on the decision to generate the motivation internally instead. Resolves by naming that self-made light as sturdier than anything borrowed.",
+      "in_house_example": "For years I waited for someone else to switch the light on for me — a compliment, an opportunity, some outside sign that I was allowed to keep going. That kind of light is unreliable; it flickers whenever the room empties of witnesses, and I got tired of living at the mercy of other people's attention. So I started lighting the thing myself, on ordinary days when nobody was watching, using nothing more than a decision made quietly before anyone else woke up. It isn't as bright as applause. It doesn't need to be. A borrowed light goes out the moment the room does, but a light you grow yourself keeps burning through the dark stretches precisely because it was never depending on anyone else to keep it fed."
+    },
+    {
+      "name": "the_sentence_swallowed",
+      "label": "Centers on a single unspoken sentence as the carrier of regret, replaying the exact moment it went unsaid.",
+      "tool_strength": "high",
+      "hook_device": true,
+      "aphorism_ok": false,
+      "shape": "Opens by naming a specific moment when words were possible but withheld. Develops by describing the reasons for the silence at the time, which seemed sufficient then. Turns on revisiting the moment with new understanding of its weight. Resolves on the sentence itself, still carried, still unsaid.",
+      "in_house_example": "There was a hallway, a closing elevator, three seconds where I could have said the sentence and didn't, and I've replayed those three seconds more times than I can count. At the time I told myself there would be another chance, a better hallway, a slower door, so I let the moment close along with the elevator and walked away feeling almost proud of my own restraint. I understand now that restraint was just fear wearing a calmer name. The sentence I swallowed that day was short, five words, nothing complicated, and yet it's outlived every conversation we actually had. I still carry it sometimes, fully formed, going nowhere, the one thing I know exactly how to say and no longer have anywhere to send it."
+    },
+    {
+      "name": "searching_for_a_room_shaped_like_you",
+      "label": "Frames belonging as an active, ongoing search for a place that fits rather than something already found.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by admitting to trying on several places or groups that didn't fit. Develops by describing the small ways each one required shrinking or performing. Turns on recognizing what real fit would feel like by contrast. Resolves with the search continuing, undiscouraged, still open.",
+      "in_house_example": "I've tried on a few rooms that were never built for me — rooms where I had to fold parts of myself smaller just to fit through the doorway, where I left every gathering more tired than when I arrived. For a while I thought that tiredness was just the cost of belonging anywhere at all, that everyone edited themselves down to size and I was simply bad at pretending it didn't hurt. Then I noticed, once, briefly, in the wrong room at the right time, what it felt like not to edit anything — shoulders down, voice unchanged, nothing performed. That's the measurement now. I haven't found the room yet, the one shaped like the actual size of me, but I know what it feels like when I walk into it, and I'd rather keep looking than fold myself down again."
+    },
+    {
+      "name": "the_minutes_you_dont_notice_spending",
+      "label": "Reflects on time passing unnoticed through ordinary, unremarkable moments rather than dramatic milestones.",
+      "tool_strength": "medium",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by naming a mundane recurring moment. Develops by noting how many times it has quietly repeated without being marked. Turns on realizing the sum of those unmarked moments is the actual shape of a life. Resolves by choosing to notice one, right now.",
+      "in_house_example": "Nobody circles the day on a calendar when it's just another commute, another dinner reheated alone, another episode watched half-paying-attention while the evening slips by unclaimed. I used to think time was spent in the big visible moments — the birthdays, the goodbyes at airports — and that everything in between was just waiting room. But the waiting room is the whole building. It's thousands of unremarkable evenings stacked on top of each other, and one day you look up and realize that's what a decade actually was, not the three photographed moments but the several thousand ordinary ones nobody thought to record. So tonight, on purpose, I noticed this one — the kettle, the window, the quiet — before it joined all the others already forgotten."
+    },
+    {
+      "name": "setting_the_weight_down",
+      "label": "Depicts forgiveness as a physical act of releasing a burden the person has been carrying, for their own relief rather than the offender's benefit.",
+      "tool_strength": "high",
+      "hook_device": false,
+      "aphorism_ok": true,
+      "shape": "Opens by describing the burden of resentment as a physical weight carried daily. Develops by noting who actually suffers from carrying it. Turns on separating forgiveness from excusing or forgetting. Resolves with the deliberate act of setting the weight down and walking on lighter.",
+      "in_house_example": "I carried the grudge for so long it started to feel like part of my own posture, something I braced for without noticing, the way you stop feeling a bag once your shoulder's gone numb to it. But he wasn't the one losing sleep over it. I was — replaying the injury, keeping the account current, guarding a debt nobody was ever going to pay. Forgiveness didn't mean deciding it was fine, and it didn't mean pretending it didn't happen. It meant admitting I was the only one still holding the bag, and setting it down had nothing to do with him deserving it and everything to do with my own shoulders finally getting to rest. I put it down on an ordinary afternoon, no ceremony, and I swear I walked the rest of the day two inches taller."
+    },
+    {
+      "name": "the_morning_after_the_worst_one",
+      "label": "Locates hope specifically in the first ordinary morning that follows a night of collapse, not in grand recovery.",
+      "tool_strength": "high",
+      "hook_device": true,
+      "aphorism_ok": true,
+      "shape": "Opens by naming the worst night plainly, without melodrama. Develops by describing the low expectations carried into the next morning. Turns on a small, unexpected sign of continuing life. Resolves by locating hope in that ordinary sign rather than in anything resolved.",
+      "in_house_example": "The night everything fell apart, I didn't think there would be a morning worth waking up for, and I said as much out loud to an empty kitchen at two a.m. But the sun came up anyway, indifferent and exactly on schedule, and somewhere around six the birds outside started their ordinary racket like nothing catastrophic had happened at all. I made coffee out of habit more than desire. I noticed the steam. That's all hope actually was that day — not a plan, not a fix, just steam rising off a cup in a kitchen that had watched me fall apart hours earlier and hadn't judged me for it. Nothing was solved. But something in me that expected to stay broken all day noticed it was, in fact, still standing, and that was enough to start with."
+    },
+    {
+      "name": "the_story_beneath_the_smile",
+      "label": "Reveals betrayal as a second, hidden narrative running underneath a relationship that looked fine on the surface.",
+      "tool_strength": "medium",
+      "hook_device": true,
+      "aphorism_ok": false,
+      "shape": "Opens by describing the visible, pleasant surface of the relationship as it appeared. Develops by introducing a detail that didn't fit the surface story. Turns on the discovery of the second narrative running underneath the whole time. Resolves by naming which version was actually true.",
+      "in_house_example": "From where anyone else was standing, we looked like the easy kind of couple — matching laughter at dinners, photos that made other people comment on how good we were together. I believed that surface completely, right up until a message lit up a screen that wasn't supposed to be mine to read, and one detail refused to fit the picture I'd been holding. Once I pulled that thread, an entire second story unspooled underneath the one I thought I was living in, months of it, running quietly parallel the whole time I was busy admiring the photographs. The version everyone saw was never a lie exactly — it was just the smaller, prettier half of a much longer story, and I had been standing in the wrong half without knowing it existed."
+    }
+  ]
+}

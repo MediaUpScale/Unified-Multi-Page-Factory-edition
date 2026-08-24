@@ -1,0 +1,1519 @@
+{
+  "script": {
+    "theme": "grief",
+    "subtheme": "learning_to_carry_it",
+    "module": "relationship",
+    "hook_type": "definition",
+    "arc_template": "thematic_arc",
+    "structure_id": "anaphora",
+    "thesis": "Grief is not the absence of the person, but the presence of the love that has nowhere to go, and you learn to carry it by letting it change shape.",
+    "close_variant": "eye_close",
+    "close_target": "eyes",
+    "eye_close_context": "window light on wet glass",
+    "anchor_object": {
+      "name": "folded sweater",
+      "initial_state": "neatly folded on the chair, untouched",
+      "final_state": "worn to the door, held in your hands",
+      "setting": "bedroom chair"
+    },
+    "monologue": "Grief isn't the hole they left. It's the love with no address. You fold the sweater, then refold it. You press the sweater to your chest. you can hold. Not to put down, but to carry differently. So you wear it to the door. The sweater has gone cold. You walk with it, and it walks with you.",
+    "lines": [
+      {
+        "scene": 1,
+        "text": "Grief isn't the hole they left.",
+        "beat_text": "Grief isn't the hole they left.",
+        "beat_function": "hook",
+        "shot_scale": "medium",
+        "subject_type": "object_focus",
+        "subject_expression": "sad",
+        "setting": "bedroom, unmade empty bed",
+        "key_object": "unmade empty bed",
+        "time_of_day": "morning",
+        "episode_anchor_name": "folded sweater",
+        "episode_anchor_stem": "sweater",
+        "episode_theme": "grief",
+        "episode_module": "relationship",
+        "arc_position": "act1",
+        "palette_key": "WARM",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 1,
+        "object_focus_framing": "tighter_macro",
+        "visual_anchor_hint": "unmade empty bed alone, filling the frame",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. An illustrated close study of unmade empty bed alone, drawn to occupy most of the frame, not photographed. Background keeps the same grainy halftone print texture as the object, muted flat color with visible ink-dot grain, no gradient, no furniture, no room, no other objects, no distinct background shapes. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only unmade empty bed is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: unmade empty bed alone, filling the frame. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "unmade empty bed",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.352,
+          "intruder_area_frac": 0.089,
+          "intended_bbox_frac": 0.352,
+          "ratio": 1.0,
+          "n_intruders": 1,
+          "n_hardware": 0,
+          "fix_instructions": "Draw only unmade empty bed filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+          "scene": 1,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "tighter_macro",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 263,
+            "lap_var": 726.3,
+            "edge": 5.91,
+            "std": 41.8,
+            "hard": 0.0632
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "unmade empty bed",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.1938,
+              "intruder_area_frac": 0.057,
+              "intended_bbox_frac": 0.1938,
+              "ratio": 1.0,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only unmade empty bed filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 1,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 189,
+                "lap_var": 976.0,
+                "edge": 7.43,
+                "std": 43.2,
+                "hard": 0.0759
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.194 area_frac=0.057 ratio=1.00 vs requested 'unmade empty bed'"
+              ]
+            },
+            {
+              "subject_type": "object_focus",
+              "key_object": "unmade empty bed",
+              "passed": false,
+              "skipped": false,
+              "intruder_bbox_frac": 0.352,
+              "intruder_area_frac": 0.089,
+              "intended_bbox_frac": 0.352,
+              "ratio": 1.0,
+              "n_intruders": 1,
+              "n_hardware": 0,
+              "fix_instructions": "Draw only unmade empty bed filling the frame. Empty surface: no mug, no cup, no coffee cup, no glass, no laptop.",
+              "scene": 1,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "tighter_macro",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 263,
+                "lap_var": 726.3,
+                "edge": 5.91,
+                "std": 41.8,
+                "hard": 0.0632
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "INTRUDER: compact dark object (mug/laptop-class) bbox_frac=0.352 area_frac=0.089 ratio=1.00 vs requested 'unmade empty bed'"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          },
+          "manual_accept": true,
+          "manual_accept_reason": "object-gate false positive: still is a clean empty bed; bbox was the bed/pillow, not a mug/laptop"
+        }
+      },
+      {
+        "scene": 2,
+        "text": "It's the love with no address.",
+        "beat_text": "It's the love with no address.",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "coat hook by the door",
+        "key_object": "two coats hanging",
+        "time_of_day": "morning",
+        "arc_position": "act1",
+        "palette_key": "WARM",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "place_kept",
+        "visual_anchor_hint": "It's love no address",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a sad posture in coat hook by the door, two coats hanging is the only object, morning. Hands empty at the sides or out of frame. Only two coats hanging is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Close portrait, face and torso filling the frame, not a wide establishing shot. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: It's love no address. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "two coats hanging",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.5657,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 2,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "place_kept",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "two coats hanging",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.5657,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 2,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 3,
+        "text": "You fold the sweater, then refold it.",
+        "beat_text": "You fold the sweater, then refold it.",
+        "beat_function": "turn",
+        "shot_scale": "close",
+        "close_variant": "eye_close",
+        "close_target": "eyes",
+        "eye_close_context": "window light on wet glass",
+        "pose_hint": "Extreme close on eyes only, upper face cropped above the nose bridge, tearful or reflective expression, rest of face and hair falling into shadow or out of frame. No nose, no mouth, no chin.",
+        "subject_type": "woman",
+        "subject_expression": "sad",
+        "setting": "window light on wet glass",
+        "key_object": "folded sweater",
+        "time_of_day": "morning",
+        "anchor_beat": "introduce",
+        "arc_position": "act1",
+        "episode_anchor_name": "folded sweater",
+        "palette_key": "WARM",
+        "dev_scene_builder": "eye_close",
+        "object_focus_step": 0,
+        "object_focus_framing": "eye_close",
+        "visual_anchor_hint": "fold sweater then refold",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. Extreme close on a recurring woman's eyes only — long dark hair, reflective tearful eyes, brow and a fall of hair. Upper face cropped above the nose bridge. No nose, no mouth, no chin, no lower face. The rest of the face falls into shadow or out of frame. This is a partial reveal of the eyes only, never a full face. window light on wet glass, morning. Extreme close on eyes only, upper face cropped above the nose bridge, tearful or reflective expression, rest of face and hair falling into shadow or out of frame. No nose, no mouth, no chin. folded sweater is atmosphere only, not held in any hand. The folded sweater must be drawn as that real object, recognizable by: the recognizable shape of folded sweater. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Printed atmosphere around the eyes: paper tooth, color gradient, soft window or lamp light. No full-figure, no silhouette body. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: fold sweater then refold. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Nostalgic warm color palette dominated by dusty rose, warm amber highlights, and soft olive green shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act1",
+        "riso_palette": "WARM",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "folded sweater",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 3,
+          "attempt": 2,
+          "focus_step": 0,
+          "framing": "eye_close",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "anchor_identity": {
+            "object_name": "folded sweater",
+            "shape_parts": [
+              "the recognizable shape of folded sweater"
+            ],
+            "want_open_closed": false,
+            "passed": false,
+            "skipped": false,
+            "object_present": false,
+            "visible_parts": [],
+            "missing_parts": [
+              "recognizable folded shape",
+              "sleeves",
+              "body of sweater"
+            ],
+            "substitute_object": "fuzzy garment or blanket",
+            "fix_instructions": "The folded sweater must be drawn as that real object, recognizable by: the recognizable shape of folded sweater. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Center the folded sweater so those parts fill the frame."
+          },
+          "painterly_lock": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_anchor_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "eye_close",
+            "passed": true,
+            "skipped": false,
+            "eyes_present": true,
+            "nose_visible": false,
+            "mouth_visible": false,
+            "chin_visible": false,
+            "full_face": false,
+            "note": "This is an extreme crop of eyes, brows, and hair only, meeting the specified criteria."
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "folded sweater",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "eye_close",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "anchor_identity": {
+                "object_name": "folded sweater",
+                "shape_parts": [
+                  "the recognizable shape of folded sweater"
+                ],
+                "want_open_closed": false,
+                "passed": false,
+                "skipped": false,
+                "object_present": false,
+                "visible_parts": [],
+                "missing_parts": [],
+                "substitute_object": "worn sweater",
+                "fix_instructions": "The folded sweater must be drawn as that real object, recognizable by: the recognizable shape of folded sweater. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Center the folded sweater so those parts fill the frame."
+              },
+              "painterly_lock": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_anchor_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "eye_close",
+                "passed": false,
+                "skipped": false,
+                "eyes_present": true,
+                "nose_visible": true,
+                "mouth_visible": true,
+                "chin_visible": false,
+                "full_face": false,
+                "note": "Eyes, nose, and mouth are visible. The chin is covered by a red turtleneck.",
+                "fix_instructions": "Extreme close on eyes only, cropped above the nose bridge. No nose, no mouth, no chin, no lower face."
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "FACE: nose and mouth visible, not extreme close on eyes only",
+                "OBJECT: requested 'folded sweater' not in pixels (got worn sweater)",
+                "FACE: eye_close leaked nose/mouth/full face or missing eyes"
+              ]
+            },
+            {
+              "subject_type": "woman",
+              "key_object": "folded sweater",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 3,
+              "attempt": 2,
+              "focus_step": 0,
+              "framing": "eye_close",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "anchor_identity": {
+                "object_name": "folded sweater",
+                "shape_parts": [
+                  "the recognizable shape of folded sweater"
+                ],
+                "want_open_closed": false,
+                "passed": false,
+                "skipped": false,
+                "object_present": false,
+                "visible_parts": [],
+                "missing_parts": [
+                  "recognizable folded shape",
+                  "sleeves",
+                  "body of sweater"
+                ],
+                "substitute_object": "fuzzy garment or blanket",
+                "fix_instructions": "The folded sweater must be drawn as that real object, recognizable by: the recognizable shape of folded sweater. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Center the folded sweater so those parts fill the frame."
+              },
+              "painterly_lock": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_anchor_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "eye_close",
+                "passed": true,
+                "skipped": false,
+                "eyes_present": true,
+                "nose_visible": false,
+                "mouth_visible": false,
+                "chin_visible": false,
+                "full_face": false,
+                "note": "The provided image is not an extreme crop of eyes/brow/hair only, therefore nose_visible, mouth_visible, chin_visible, and full_face are set to false as per the task's specific instruction."
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "FACE: nose and mouth visible, not extreme close on eyes only",
+                "FACE: eye_close leaked nose/mouth/full face or missing eyes",
+                "OBJECT: requested 'folded sweater' not in pixels (got fuzzy garment or blanket)"
+              ]
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_woman_act1",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "WARM"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 4,
+        "text": "You press the sweater to your chest.",
+        "beat_text": "You press the sweater to your chest.",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "subject_type": "woman",
+        "subject_expression": "sad",
+        "setting": "bedroom chair by the window",
+        "key_object": "folded sweater",
+        "time_of_day": "morning",
+        "arc_position": "act2",
+        "palette_key": "COLD",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_anchor_hint": "press sweater your chest",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, sad posture, shoulders covered, no visible face or skin in bedroom chair by the window, morning. folded sweater is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: press sweater your chest. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "folded sweater",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 4,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "folded sweater",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 4,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 5,
+        "text": "you can hold.",
+        "beat_text": "you can hold.",
+        "beat_function": "complication",
+        "shot_scale": "medium",
+        "subject_type": "object_focus",
+        "subject_expression": "sad",
+        "setting": "rain-streaked window at dusk",
+        "key_object": "rain on the window",
+        "time_of_day": "dusk",
+        "arc_position": "act2",
+        "palette_key": "COLD",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "macro_no_setting",
+        "visual_anchor_hint": "rain-streaked window glass with water droplets on the pane alone, filling the frame",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A bold hand-inked illustration of rain-streaked window glass with water droplets on the pane filling the frame, drawn flat with visible ink outlines, not photographed. Printed halftone background, no named room, no furniture, no other objects. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only rain-streaked window glass with water droplets on the pane is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. The object has printed weight: ink contour, interior hatch or flat fill, paper grain around it. Isolated still-life — one object, no implied hands just out of frame. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: rain-streaked window glass with water droplets on the pane alone, filling the frame. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "rain on the window",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.5904,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 5,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "macro_no_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 320,
+            "lap_var": 1264.1,
+            "edge": 14.13,
+            "std": 65.8,
+            "hard": 0.1419
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "rain on the window",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.5904,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 5,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "macro_no_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 320,
+                "lap_var": 1264.1,
+                "edge": 14.13,
+                "std": 65.8,
+                "hard": 0.1419
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 6,
+        "text": "Not to put down, but to carry differently.",
+        "beat_text": "Not to put down, but to carry differently.",
+        "beat_function": "turn",
+        "shot_scale": "medium",
+        "subject_type": "silhouette",
+        "subject_expression": "sad",
+        "setting": "windowsill with cooling tea",
+        "key_object": "photograph face-down",
+        "time_of_day": "dusk",
+        "arc_position": "act2",
+        "palette_key": "COLD",
+        "dev_scene_builder": "silhouette",
+        "object_focus_step": 0,
+        "object_focus_framing": "place_kept",
+        "visual_anchor_hint": "put down carry differently",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone silhouetted figure, featureless against the light, in a sad posture in windowsill with cooling tea, photograph face-down is the only object, dusk. Hands empty at the sides or out of frame. Only photograph face-down is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. Close portrait, face and torso filling the frame, not a wide establishing shot. The figure stays readable against a printed sky or doorway field. The horizon or jamb is a hard color edge, not a photographed gradient. Negative space carries the mood. Dusk print: warm amber flats against cooler shadow blocks, not a photographed sunset. The image must visually embody: put down carry differently. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Cold, desaturated color palette dominated by pale silver, moody charcoal grey, and soft ash white. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_silhouette_act2",
+        "riso_palette": "COLD",
+        "default_object_gate": {
+          "subject_type": "silhouette",
+          "key_object": "photograph face-down",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.4354,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 0,
+          "scene": 6,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "place_kept",
+          "style_gate": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "silhouette",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "silhouette",
+              "key_object": "photograph face-down",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.4354,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 0,
+              "scene": 6,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "place_kept",
+              "style_gate": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "silhouette",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_silhouette_act2",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "COLD"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 7,
+        "text": "So you wear it to the door.",
+        "beat_text": "So you wear it to the door.",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "subject_type": "woman",
+        "subject_expression": "sad",
+        "setting": "hallway near an open door",
+        "key_object": "open doorway",
+        "time_of_day": "morning",
+        "arc_position": "act3",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_anchor_hint": "sad presence beside open doorway in hallway near an open door",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, sad posture, shoulders covered, no visible face or skin in hallway near an open door, morning. open doorway is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: sad presence beside open doorway in hallway near an open door. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "open doorway",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 7,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "open doorway",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 7,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_woman_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 8,
+        "text": "The sweater has gone cold.",
+        "beat_text": "The sweater has gone cold.",
+        "beat_function": "close",
+        "shot_scale": "medium",
+        "subject_type": "object_focus",
+        "subject_expression": "sad",
+        "setting": "window light on wet glass",
+        "key_object": "folded sweater",
+        "time_of_day": "morning",
+        "anchor_beat": "callback",
+        "arc_position": "act3",
+        "episode_anchor_name": "folded sweater",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "object_focus",
+        "object_focus_step": 0,
+        "object_focus_framing": "painterly_setting",
+        "visual_anchor_hint": "folded sweater alone, filling the frame",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A painterly risograph still-life of folded sweater in window light on wet glass. The object sits in a real environment with paper grain, color gradient, and canvas texture — not a woodcut, not a flat ink diagram on blank paper, not isolated linework. The object sits alone, centered, filling the frame. No hands, no fingers, no grip, no wrist, no person, no face. Only folded sweater is visible in frame, resting alone on a bare surface. Nothing else occupies the frame — no additional items of any kind, no clutter, no extra objects. The folded sweater must be drawn as that real object, recognizable by: the recognizable shape of folded sweater. Not a blanket, comforter, cushion, rolled fabric, or a different still-life. Same painterly-photographic risograph atmosphere as a furnished room or rainy street — paper tooth, color gradient, canvas texture, dusk light. Not a flat woodcut, not isolated ink-diagram linework on blank paper, not a poster still-life on an empty cream wall. Printed atmosphere: visible paper tooth and a slight riso color offset. The street, rain, wall, and wet pavement keep full painterly detail, color gradient, and canvas texture. No person, no face, no hands, no silhouette figure. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: folded sweater alone, filling the frame. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_object_focus_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "object_focus",
+          "key_object": "folded sweater",
+          "passed": true,
+          "skipped": false,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.5304,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "n_hardware": 1,
+          "scene": 8,
+          "attempt": 1,
+          "focus_step": 0,
+          "framing": "painterly_setting",
+          "style_gate": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "uniq16": 768,
+            "lap_var": 1497.3,
+            "edge": 16.34,
+            "std": 50.9,
+            "hard": 0.1832
+          },
+          "anchor_identity": {
+            "object_name": "folded sweater",
+            "shape_parts": [
+              "the recognizable shape of folded sweater"
+            ],
+            "want_open_closed": false,
+            "passed": true,
+            "skipped": false,
+            "object_present": true,
+            "visible_parts": [
+              "folded body",
+              "knitted texture",
+              "stacked form",
+              "edges of folds"
+            ],
+            "missing_parts": [
+              "sleeves",
+              "collar",
+              "neckline",
+              "cuffs",
+              "hem"
+            ],
+            "substitute_object": ""
+          },
+          "painterly_lock": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": false,
+            "style_kind": "painterly_photographic",
+            "note": "The image features atmospheric depth with rain outside a window, color gradients in the sky and reflections, and a visible grain texture, giving it the look of a painted scene."
+          },
+          "bed_pose": {
+            "subject_type": "object_focus",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "object_focus",
+              "key_object": "folded sweater",
+              "passed": true,
+              "skipped": false,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.5304,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "n_hardware": 1,
+              "scene": 8,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "painterly_setting",
+              "style_gate": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "uniq16": 768,
+                "lap_var": 1497.3,
+                "edge": 16.34,
+                "std": 50.9,
+                "hard": 0.1832
+              },
+              "anchor_identity": {
+                "object_name": "folded sweater",
+                "shape_parts": [
+                  "the recognizable shape of folded sweater"
+                ],
+                "want_open_closed": false,
+                "passed": true,
+                "skipped": false,
+                "object_present": true,
+                "visible_parts": [
+                  "folded body",
+                  "knitted texture",
+                  "stacked form",
+                  "edges of folds"
+                ],
+                "missing_parts": [
+                  "sleeves",
+                  "collar",
+                  "neckline",
+                  "cuffs",
+                  "hem"
+                ],
+                "substitute_object": ""
+              },
+              "painterly_lock": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": false,
+                "style_kind": "painterly_photographic",
+                "note": "The image features atmospheric depth with rain outside a window, color gradients in the sky and reflections, and a visible grain texture, giving it the look of a painted scene."
+              },
+              "bed_pose": {
+                "subject_type": "object_focus",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 1,
+          "mood": {
+            "id": "identity_v2_dev_object_focus_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "manual_accept": false
+        }
+      },
+      {
+        "scene": 9,
+        "text": "You walk with it, and it walks with you.",
+        "beat_text": "You walk with it, and it walks with you.",
+        "beat_function": "insight",
+        "shot_scale": "medium",
+        "subject_type": "woman",
+        "subject_expression": "sad",
+        "setting": "hallway with a closed suitcase on the floor",
+        "key_object": "closed suitcase on the floor",
+        "time_of_day": "morning",
+        "arc_position": "act3",
+        "pose_hint": "body turned mid-step toward the door, hands empty, not seated",
+        "palette_key": "CONTRAST",
+        "dev_scene_builder": "woman_backlit_silhouette",
+        "visual_anchor_hint": "sad presence beside closed suitcase on the floor in hallway with a closed suitcase on the floor",
+        "visual_identity_profile": "style-riso_painting_retro_vintage",
+        "visual_prompt": "A risograph print close up illustration in vintage poster style. A lone woman as a flat unlit clothed silhouette, sad posture, shoulders covered, no visible face or skin in hallway with a closed suitcase on the floor, morning. body turned mid-step toward the door, hands empty, not seated. closed suitcase on the floor is part of the environment, not held in any hand. Positioned against a bright window, sunset, or open doorway so the body reads as a flat unlit silhouette shape. No rendered skin, no facial features, no glossy portrait, no beauty lighting, not a glamour close-up. Three-quarter or full-figure silhouette in the middle of the frame. Hands empty and away from the face: at the sides, in the lap, or out of frame. Not holding any small object. Not raising anything toward the face. Printed atmosphere: visible paper tooth and a slight riso color offset. Quiet melancholic mood, not glamorous. Everyday clothes, shoulders covered, not off-shoulder, not a fashion or beauty close-up, not a sensual pose. The surrounding environment — sky, foliage, room, fabric, furniture — keeps full painterly detail, color gradient, and canvas texture. Do not flatten the whole image; only the human figure is a silhouette. Morning print: cream light, muted interiors as flat color planes. The image must visually embody: sad presence beside closed suitcase on the floor in hallway with a closed suitcase on the floor. Bold flat color blocks, fine hand-inked linework, and a grainy halftone texture with hard-edged color shading and no smooth gradients. Contrasting color palette dominated by warm amber highlights against cold indigo-violet shadows. Keep colors saturated and printed, not monochrome, not grayscale. Every mark anywhere in this image is either ink linework, halftone texture, or flat printed color — never a legible letter, number, or word, anywhere in the frame. This includes skin, clothing, hair, background, paper, signs, screens, and all four corners of the frame. No watermark, no signature, no caption, no logo, no small stamped text tucked in a corner — the illustration fills the frame edge to edge with scene content only, nothing else. Evoking a quiet, sorrowful mood. No photography, just illustration, vertical 9:16 composition.",
+        "visual_identity": "v2_dev",
+        "riso_id": "identity_v2_dev_woman_act3",
+        "riso_palette": "CONTRAST",
+        "default_object_gate": {
+          "subject_type": "woman",
+          "key_object": "closed suitcase on the floor",
+          "passed": true,
+          "skipped": true,
+          "intruder_bbox_frac": 0.0,
+          "intruder_area_frac": 0.0,
+          "intended_bbox_frac": 0.0,
+          "ratio": 0.0,
+          "n_intruders": 0,
+          "skip_reason": "not_object_focus_or_silhouette",
+          "scene": 9,
+          "attempt": 2,
+          "focus_step": 1,
+          "framing": "",
+          "style_gate": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "uniq16": 0,
+            "lap_var": 0.0,
+            "edge": 0.0,
+            "std": 0.0,
+            "hard": 0.0,
+            "skip_reason": "not_object_focus"
+          },
+          "bed_pose": {
+            "subject_type": "woman",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_couple_bed"
+          },
+          "eye_close": {
+            "close_variant": "",
+            "passed": true,
+            "skipped": true,
+            "skip_reason": "not_eye_close"
+          },
+          "qa_passed": true,
+          "qa_flaws": [
+            "deformed or anatomically incorrect hand"
+          ],
+          "image_ok": true,
+          "attempts": [
+            {
+              "subject_type": "woman",
+              "key_object": "closed suitcase on the floor",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 9,
+              "attempt": 1,
+              "focus_step": 0,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": false,
+              "qa_flaws": [
+                "deformed or anatomically incorrect hand"
+              ]
+            },
+            {
+              "subject_type": "woman",
+              "key_object": "closed suitcase on the floor",
+              "passed": true,
+              "skipped": true,
+              "intruder_bbox_frac": 0.0,
+              "intruder_area_frac": 0.0,
+              "intended_bbox_frac": 0.0,
+              "ratio": 0.0,
+              "n_intruders": 0,
+              "skip_reason": "not_object_focus_or_silhouette",
+              "scene": 9,
+              "attempt": 2,
+              "focus_step": 1,
+              "framing": "",
+              "style_gate": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "uniq16": 0,
+                "lap_var": 0.0,
+                "edge": 0.0,
+                "std": 0.0,
+                "hard": 0.0,
+                "skip_reason": "not_object_focus"
+              },
+              "bed_pose": {
+                "subject_type": "woman",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_couple_bed"
+              },
+              "eye_close": {
+                "close_variant": "",
+                "passed": true,
+                "skipped": true,
+                "skip_reason": "not_eye_close"
+              },
+              "qa_passed": true,
+              "qa_flaws": []
+            }
+          ],
+          "attempts_used": 2,
+          "mood": {
+            "id": "identity_v2_dev_woman_act3",
+            "lighting": "from_riso_prompt",
+            "shadow": [
+              28,
+              72,
+              88
+            ],
+            "highlight": [
+              250,
+              185,
+              105
+            ],
+            "palette": "CONTRAST"
+          },
+          "manual_accept": false
+        }
+      }
+    ],
+    "episode_variety": {
+      "beat_count": 9,
+      "distinct_settings": 4,
+      "setting_stems": {
+        "bedroom": 2,
+        "coat": 1,
+        "window": 4,
+        "hallway": 2
+      },
+      "setting_repeats": {
+        "bedroom": 2,
+        "window": 4,
+        "hallway": 2
+      },
+      "distinct_compositions": 3,
+      "compositions": {
+        "object_focus": 3,
+        "silhouette": 2,
+        "woman": 4
+      },
+      "person_shots": 4,
+      "variety_shots": 5,
+      "distinct_object_stems": 7,
+      "object_stems": {
+        "bed": 1,
+        "coat": 1,
+        "sweater": 3,
+        "rain": 1,
+        "photo": 1,
+        "door": 1,
+        "suitcase": 1
+      },
+      "object_repeats": {
+        "sweater": 3
+      },
+      "object_over_cap": {},
+      "palette_sequence": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_expected": [
+        "WARM",
+        "WARM",
+        "WARM",
+        "COLD",
+        "COLD",
+        "COLD",
+        "CONTRAST",
+        "CONTRAST",
+        "CONTRAST"
+      ],
+      "palette_arc_ok": true,
+      "palette_mismatches": [],
+      "notes": [
+        "variety_shots=5 above target 4",
+        "setting_repeats=bedroomx2,windowx4,hallwayx2"
+      ],
+      "summary": "settings=4/9 distinct; compositions={'object_focus': 3, 'silhouette': 2, 'woman': 4}; objects=7 distinct; palette_arc_ok=true; notes=['variety_shots=5 above target 4', 'setting_repeats=bedroomx2,windowx4,hallwayx2']",
+      "holds_episode": true
+    }
+  },
+  "scene_images": [
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_01.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_02.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_03.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_04.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_05.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_06.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_07.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_08.png",
+    "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01\\scene_09.png"
+  ],
+  "work_dir": "outputs\\wonder_feed\\assets\\lofi_run_20260823_000022_01",
+  "manual_accept_scenes": [
+    1
+  ]
+}

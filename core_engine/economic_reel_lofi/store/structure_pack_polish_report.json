@@ -1,0 +1,192 @@
+[
+  {
+    "theme": "forgiveness",
+    "polished": false,
+    "before": [
+      "Forgiveness starts before they earn it.",
+      "You set the bag on the table.",
+      "Because they never touch the river stone.",
+      "Set the bag down without them earning it.",
+      "You leave the letter open now.",
+      "Yet you walk the dusk river wall.",
+      "You unclench in the doorway.",
+      "The bag you set down sits empty.",
+      "You walk away empty-handed."
+    ],
+    "claude_draft": [
+      "Forgiveness starts before they've earned a single inch of it.",
+      "You set the bag down on the table, still full.",
+      "Because they never once touch the river stone.",
+      "Set the bag down and let it go unearned.",
+      "You leave the letter lying open now.",
+      "Yet you walk the dusk-lit river wall alone.",
+      "You unclench, slow, standing in the doorway.",
+      "The bag you set down sits there, empty.",
+      "You walk away with your hands finally empty."
+    ],
+    "after": [
+      "Forgiveness starts before they earn it.",
+      "You set the bag on the table.",
+      "Because they never touch the river stone.",
+      "Set the bag down without them earning it.",
+      "You leave the letter open now.",
+      "Yet you walk the dusk river wall.",
+      "You unclench in the doorway.",
+      "The bag you set down sits empty.",
+      "You walk away empty-handed."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_forgiveness_structure_polished.json"
+  },
+  {
+    "theme": "loss",
+    "polished": false,
+    "before": [
+      "Don't postpone naming what left.",
+      "I don't close the half-packed box.",
+      "Even if it aches, I leave the hanger empty.",
+      "Leave the gap named now.",
+      "So I set the unused key down.",
+      "You walk the empty path.",
+      "You stop in the kitchen dark.",
+      "Still the hanger hangs alone now.",
+      "You face the empty tide path."
+    ],
+    "claude_draft": [
+      "Don't stall on naming what's gone.",
+      "I leave the half-packed box open.",
+      "Even if it stings, I let the hanger hang bare.",
+      "Name the gap now, while it's still raw.",
+      "So I set the unused key down on the table.",
+      "You walk the emptied path.",
+      "You stand still in the kitchen's dark.",
+      "Still the hanger hangs alone.",
+      "You face the tide path, empty, and keep walking."
+    ],
+    "after": [
+      "Don't postpone naming what left.",
+      "I don't close the half-packed box.",
+      "Even if it aches, I leave the hanger empty.",
+      "Leave the gap named now.",
+      "So I set the unused key down.",
+      "You walk the empty path.",
+      "You stop in the kitchen dark.",
+      "Still the hanger hangs alone now.",
+      "You face the empty tide path."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_loss_structure_polished.json"
+  },
+  {
+    "theme": "loneliness",
+    "polished": false,
+    "before": [
+      "Don't wait for the knock.",
+      "Since you wait, two cups sit by the chair.",
+      "You leave the second place set.",
+      "Stay here even when no one knocks.",
+      "You fold the napkin for no one.",
+      "Therefore you cross the stairwell alone now.",
+      "You pause by the spare-room lamp.",
+      "Though the chair sits empty, you remain.",
+      "You leave the porch light on."
+    ],
+    "claude_draft": [
+      "Don't wait for the knock.",
+      "Since you're waiting, two cups sit by the chair, going cold together.",
+      "You leave the second place set.",
+      "Stay here even when no one ever knocks.",
+      "You fold the napkin for no one at all.",
+      "So you cross the stairwell alone now.",
+      "You pause by the spare-room lamp, unsure why your hand stopped there.",
+      "Though the chair sits empty, you remain.",
+      "You leave the porch light on."
+    ],
+    "after": [
+      "Don't wait for the knock.",
+      "Since you wait, two cups sit by the chair.",
+      "You leave the second place set.",
+      "Stay here even when no one knocks.",
+      "You fold the napkin for no one.",
+      "Therefore you cross the stairwell alone now.",
+      "You pause by the spare-room lamp.",
+      "Though the chair sits empty, you remain.",
+      "You leave the porch light on."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_loneliness_structure_polished.json"
+  },
+  {
+    "theme": "regret",
+    "polished": false,
+    "before": [
+      "Don't wait to speak later.",
+      "You touch the empty seat.",
+      "Although the path waits empty for them now.",
+      "A coat still waits unused there now.",
+      "You pause in the empty lobby.",
+      "Because they left the seat cold now.",
+      "You stand in the doorway.",
+      "Don't wait. Tell them at the seat.",
+      "You walk back to the seat anyway."
+    ],
+    "claude_draft": [
+      "Don't save the words for later.",
+      "You touch the seat where no one sits.",
+      "Though the path lies empty for them now.",
+      "A coat still hangs there, unworn, waiting.",
+      "You stop in the hollow of the lobby.",
+      "Because they left the seat cold behind them.",
+      "You stand there, in the doorway.",
+      "Don't wait. Say it at the seat.",
+      "You walk back to the seat anyway."
+    ],
+    "after": [
+      "Don't wait to speak later.",
+      "You touch the empty seat.",
+      "Although the path waits empty for them now.",
+      "A coat still waits unused there now.",
+      "You pause in the empty lobby.",
+      "Because they left the seat cold now.",
+      "You stand in the doorway.",
+      "Don't wait. Tell them at the seat.",
+      "You walk back to the seat anyway."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_regret_structure_polished.json"
+  },
+  {
+    "theme": "belonging",
+    "polished": false,
+    "before": [
+      "Stay. Sit. Remain. Belonging is not granted.",
+      "But the drink sits full, unused.",
+      "You stand at the table's edge.",
+      "Stay even if no one pours first.",
+      "Even then you lift the drink yourself.",
+      "You walk the picnic edge now.",
+      "Since you walked, you hold the drink.",
+      "The drink you lifted sits empty.",
+      "You remain at the table."
+    ],
+    "claude_draft": [
+      "Stay. Sit. Remain. No one hands you belonging.",
+      "But the drink sits there, full, untouched.",
+      "You stand at the edge of the table.",
+      "Stay even if no hand offers to pour first.",
+      "Even then, you lift the drink yourself.",
+      "Now you walk the edge of the picnic.",
+      "Since you walked, the drink is yours to hold.",
+      "The drink you lifted now sits empty.",
+      "You remain at the table."
+    ],
+    "after": [
+      "Stay. Sit. Remain. Belonging is not granted.",
+      "But the drink sits full, unused.",
+      "You stand at the table's edge.",
+      "Stay even if no one pours first.",
+      "Even then you lift the drink yourself.",
+      "You walk the picnic edge now.",
+      "Since you walked, you hold the drink.",
+      "The drink you lifted sits empty.",
+      "You remain at the table."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_belonging_structure_polished.json"
+  }
+]

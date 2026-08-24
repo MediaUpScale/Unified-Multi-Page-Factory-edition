@@ -1,0 +1,182 @@
+[
+  {
+    "theme": "forgiveness",
+    "pattern": "definition_then_evidence",
+    "overlay": "",
+    "deepseek_holds": [
+      "principle hook scene 1 (not-quotable-advice): \"Forgiveness begins when the bag leaves your shoulder; you finish it on the bench, not in your arms. You set it down and leave it sitting. You don't dig for the receipt inside.\"",
+      "object-churn: 29 supporting spoken props ['arm', 'bench', 'damp', 'edge', 'end', 'envelope', 'finger', 'frame', 'handle', 'kettle', 'last', 'ledge', 'line', 'name', 'night', 'other', 'palm', 'paper', 'receipt', 'shoe', 'shoulder', 'side', 'small', 'square', 'stone', 'stove', 'threshold', 'tie', 'zipper'] (max 2 besides anchor 'bag')",
+      "cross-run phrase/anchor reuse: anchor_reuse:bag,heavy,heavy bag"
+    ],
+    "polished": false,
+    "before": [
+      "Forgiveness begins when the bag leaves your shoulder; you finish it on the bench, not in your arms. You set it down and leave it sitting. You don't dig for the receipt inside.",
+      "The heavy bag you've carried since Tuesday finds the cafe floor. You push it under the table, away from your shoes, and you don't check that the zipper is still closed.",
+      "At the river wall, you pick one stone that fits your palm. You place it on the ledge and turn, leaving it to the damp air. You let it hold its own weight.",
+      "In the lobby, you stretch your fingers wide. You flex them once, twice, three times, and you let them hang loose at your sides. No one is watching your palm stay open.",
+      "At the kitchen table, you unfold the envelope without reading the name twice. The paper lies flat, and you trace its folded edge—you don't smooth it if it bends. You read to the end.",
+      "You lean back from the river wall when the last light arrives. The stone stays where you left it, a small dark square on the ledge. You don't go back to check its position.",
+      "By the doorway, you step over the threshold without holding the frame. The door swings halfway, then settles. You let it close on its own hinge.",
+      "At dawn, the bag sits on the floor near the stove. You leave it unzipped, the handle drooping. You watch the kettle steam, not the bag's small tear.",
+      "On the empty tracks, you stand tall, feet in the gap, and you look both ways And then east, where the line vanishes. You let the ties hold the night; you let yourself walk the other direction."
+    ],
+    "after": [
+      "Forgiveness begins when the bag leaves your shoulder; you finish it on the bench, not in your arms. You set it down and leave it sitting. You don't dig for the receipt inside.",
+      "The heavy bag you've carried since Tuesday finds the cafe floor. You push it under the table, away from your shoes, and you don't check that the zipper is still closed.",
+      "At the river wall, you pick one stone that fits your palm. You place it on the ledge and turn, leaving it to the damp air. You let it hold its own weight.",
+      "In the lobby, you stretch your fingers wide. You flex them once, twice, three times, and you let them hang loose at your sides. No one is watching your palm stay open.",
+      "At the kitchen table, you unfold the envelope without reading the name twice. The paper lies flat, and you trace its folded edge—you don't smooth it if it bends. You read to the end.",
+      "You lean back from the river wall when the last light arrives. The stone stays where you left it, a small dark square on the ledge. You don't go back to check its position.",
+      "By the doorway, you step over the threshold without holding the frame. The door swings halfway, then settles. You let it close on its own hinge.",
+      "At dawn, the bag sits on the floor near the stove. You leave it unzipped, the handle drooping. You watch the kettle steam, not the bag's small tear.",
+      "On the empty tracks, you stand tall, feet in the gap, and you look both ways And then east, where the line vanishes. You let the ties hold the night; you let yourself walk the other direction."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_forgiveness_structure_v2.json"
+  },
+  {
+    "theme": "loss",
+    "pattern": "negation_list_to_permission",
+    "overlay": "",
+    "deepseek_holds": [
+      "principle hook scene 1 (not-quotable-advice): \"I don't leave the light on for a ghost.\"",
+      "principle insight scene 4 (not-quotable-advice): \"I don't wait for the train that never comes.\"",
+      "connective-development: 0 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)",
+      "object-churn: 8 supporting spoken props ['boxe', 'ghost', 'key', 'lone', 'mug', 'name', 'rod', 'shrine'] (max 2 besides anchor 'hanger')",
+      "cross-run phrase/anchor reuse: anchor_reuse:empty hanger,hanger | phrase_reuse:don't wait for;don't wait for the;wait for the"
+    ],
+    "polished": false,
+    "before": [
+      "I don't leave the light on for a ghost.",
+      "I don't stack the boxes like a shrine.",
+      "I don't count the hangers that stay spaced.",
+      "I don't wait for the train that never comes.",
+      "I don't turn the key that opens nothing.",
+      "I don't walk the path that loops for two.",
+      "I don't toast the mug that holds no heat.",
+      "I don't keep the rod with the lone hanger.",
+      "I let the tide take the name and go."
+    ],
+    "after": [
+      "I don't leave the light on for a ghost.",
+      "I don't stack the boxes like a shrine.",
+      "I don't count the hangers that stay spaced.",
+      "I don't wait for the train that never comes.",
+      "I don't turn the key that opens nothing.",
+      "I don't walk the path that loops for two.",
+      "I don't toast the mug that holds no heat.",
+      "I don't keep the rod with the lone hanger.",
+      "I let the tide take the name and go."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_loss_structure_v2.json"
+  },
+  {
+    "theme": "loneliness",
+    "pattern": "domino_chain",
+    "overlay": "",
+    "deepseek_holds": [
+      "principle insight scene 4 (this-moment-you): \"You don't drink it, and the wet ring spreads.\"",
+      "insight scene 4 does not answer/reverse the hook claim 'Leave the chair pushed in at the table.': \"You don't drink it, and the wet ring spreads.\"",
+      "object-churn: 8 supporting spoken props ['cup', 'front', 'invite', 'keep', 'question', 'ring', 'seat', 'wet'] (max 2 besides anchor 'chair')",
+      "still-align scene 2 object_focus 'two cups' is not in caption 'So the empty seat becomes a question.'",
+      "still-align scene 5 object_focus 'folded napkin' is not in caption 'You leave the ring, then the window stays shut.'",
+      "decorative connective scene 7 (but): but does not contrast the prior beat — 'You turn the lamp low, but the dark keeps its shape.'",
+      "cross-run phrase/anchor reuse: anchor_reuse:chair,empty chair"
+    ],
+    "polished": false,
+    "before": [
+      "Leave the chair pushed in at the table.",
+      "So the empty seat becomes a question.",
+      "You pour water into the second cup.",
+      "You don't drink it, and the wet ring spreads.",
+      "You leave the ring, then the window stays shut.",
+      "You lock the front door twice, and the hallway grows narrow.",
+      "You turn the lamp low, but the dark keeps its shape.",
+      "So you sit in the chair you can't pull out.",
+      "You sit until you learn the empty seat is only an invite."
+    ],
+    "after": [
+      "Leave the chair pushed in at the table.",
+      "So the empty seat becomes a question.",
+      "You pour water into the second cup.",
+      "You don't drink it, and the wet ring spreads.",
+      "You leave the ring, then the window stays shut.",
+      "You lock the front door twice, and the hallway grows narrow.",
+      "You turn the lamp low, but the dark keeps its shape.",
+      "So you sit in the chair you can't pull out.",
+      "You sit until you learn the empty seat is only an invite."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_loneliness_structure_v2.json"
+  },
+  {
+    "theme": "regret",
+    "pattern": "parable_triad",
+    "overlay": "",
+    "deepseek_holds": [
+      "anchor_object 'empty passenger seat' mentioned in 1 beat(s) (need 2+)",
+      "insight scene 8 has no character-performed concrete verb (noncharacter-subject:platform+keep): 'The platform keeps your step in frozen air'",
+      "principle hook scene 1 (not-quotable-advice): 'The lamp hums where you once left your shadow'",
+      "principle insight scene 8 (not-quotable-advice): 'The platform keeps your step in frozen air'",
+      "connective-development: 1 beats relate to a prior idea (need 3+ because/but/so/even-then or echo-twist)",
+      "insight scene 8 does not answer/reverse the hook claim 'The lamp hums where you once left your shadow': 'The platform keeps your step in frozen air'",
+      "object-churn: 12 supporting spoken props ['chair', 'coat', 'goodbye', 'held', 'question', 'shadow', 'shape', 'sound', 'step', 'unspoken', 'wet', 'word'] (max 2 besides anchor 'seat')"
+    ],
+    "polished": false,
+    "before": [
+      "The lamp hums where you once left your shadow",
+      "The seat still holds the shape of a goodbye",
+      "A cold door stays half-open for the word",
+      "The coat waits heavy on the chair for warmth",
+      "The lobby empties into a held breath",
+      "The tide retreats with your unspoken name",
+      "The doorway frames a question that won't echo",
+      "The platform keeps your step in frozen air",
+      "The wet ground coughs the sound you should have said"
+    ],
+    "after": [
+      "The lamp hums where you once left your shadow",
+      "The seat still holds the shape of a goodbye",
+      "A cold door stays half-open for the word",
+      "The coat waits heavy on the chair for warmth",
+      "The lobby empties into a held breath",
+      "The tide retreats with your unspoken name",
+      "The doorway frames a question that won't echo",
+      "The platform keeps your step in frozen air",
+      "The wet ground coughs the sound you should have said"
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_regret_structure_v2.json"
+  },
+  {
+    "theme": "belonging",
+    "pattern": "contrast_metaphor_resolution",
+    "overlay": "anaphora_to_universal_law",
+    "deepseek_holds": [
+      "anchor_object 'untouched drink' mentioned in 0 beat(s) (need 2+)",
+      "principle insight scene 4 (this-moment-you): \"You reach for the glass at the table's edge, full and cold.\"",
+      "object-churn: 11 supporting spoken props ['chair', 'edge', 'field', 'glass', 'invite', 'napkin', 'other', 'seat', 'storm', 'tumbler', 'wind'] (max 2 besides anchor 'drink')"
+    ],
+    "polished": false,
+    "before": [
+      "Come to the edge, claim your corner, find your place, stay until you're asked to go—all the same if you never move.",
+      "But a porch light that welcomes and a porch light that warns—they both glow in the dark.",
+      "One flickers when the wind blows, the other holds steady through the storm.",
+      "You reach for the glass at the table's edge, full and cold.",
+      "You sip until it's gone, not waiting for an invite.",
+      "Even the empty tumbler keeps the table's story.",
+      "The place set that no one claims—the chair pushed in, the napkin folded.",
+      "You pull it out and sit, not because you're asked, but because the seat was there.",
+      "And the horizon bends into you like a field you finally own."
+    ],
+    "after": [
+      "Come to the edge, claim your corner, find your place, stay until you're asked to go—all the same if you never move.",
+      "But a porch light that welcomes and a porch light that warns—they both glow in the dark.",
+      "One flickers when the wind blows, the other holds steady through the storm.",
+      "You reach for the glass at the table's edge, full and cold.",
+      "You sip until it's gone, not waiting for an invite.",
+      "Even the empty tumbler keeps the table's story.",
+      "The place set that no one claims—the chair pushed in, the napkin folded.",
+      "You pull it out and sit, not because you're asked, but because the seat was there.",
+      "And the horizon bends into you like a field you finally own."
+    ],
+    "path": "core_engine\\economic_reel_lofi\\store\\locked_script_belonging_structure_v2.json"
+  }
+]

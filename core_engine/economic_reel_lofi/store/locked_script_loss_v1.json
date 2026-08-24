@@ -15,7 +15,7 @@
     "final_state": "alone on the rod",
     "setting": "closet with the light on"
   },
-  "monologue": "Don't name the gap later. You open the half-packed box. You touch the empty hanger. Leave the space named. You set the unused key down. You walk the empty path. You stop in the kitchen dark. The hanger hangs alone now. You face the empty tide path.",
+  "monologue": "Don't name the gap later. So you open the half-packed box. You touch the empty hanger. Leave the gap named now, not later. You set the unused key down. You walk the empty path. Still you stop in the kitchen dark. The hanger hangs alone now. You face the empty tide path.",
   "lines": [
     {
       "scene": 1,
@@ -39,8 +39,8 @@
     },
     {
       "scene": 2,
-      "text": "You open the half-packed box.",
-      "beat_text": "You open the half-packed box.",
+      "text": "So you open the half-packed box.",
+      "beat_text": "So you open the half-packed box.",
       "emotion": "quiet_sorrowful",
       "arc_position": "act1",
       "beat_function": "complication",
@@ -71,8 +71,8 @@
     },
     {
       "scene": 4,
-      "text": "Leave the space named.",
-      "beat_text": "Leave the space named.",
+      "text": "Leave the gap named now, not later.",
+      "beat_text": "Leave the gap named now, not later.",
       "emotion": "realization",
       "arc_position": "act2",
       "beat_function": "insight",
@@ -119,8 +119,8 @@
     },
     {
       "scene": 7,
-      "text": "You stop in the kitchen dark.",
-      "beat_text": "You stop in the kitchen dark.",
+      "text": "Still you stop in the kitchen dark.",
+      "beat_text": "Still you stop in the kitchen dark.",
       "emotion": "realization",
       "arc_position": "act3",
       "beat_function": "turn",

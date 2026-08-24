@@ -3,6 +3,18 @@
 Ready-to-copy CLI commands scanned from `main.py`, scheduler modules, and generation scripts.
 
 > **Note on flags.** `main.py` does **not** accept `--model` or `--qty`. Quantity is `--quantity` / `--count` / `-n`. Image/audio/video providers are selected with `--model-api-flow` (and optional per-media overrides). There is no `youtube_scheduler` package; YouTube uses `publish_existing.py` and `main.py --publish-youtube`.
+>
+> ElevenLabs TTS speed / `voice_settings`: see `docs/elevenlabs_tts.md`. Speed always lives inside `voice_settings`, never as a standalone client kwarg. LOFI production knobs are `TTS_VOICE_ID`, `TTS_MODEL`, `TTS_SPEED` (valid speed **0.7–1.2**) in `core_engine/economic_reel_lofi/config.py`.
+
+### ECONOMIC_REEL_LOFI story-quality gate
+
+Every locked or generated script must clear this **before** stills/TTS:
+
+1. **Causal spine** — each line connects to the next via consequence or contrast (the hope 9-liner is the bar).
+2. **Stakes** — something risked, lost, or almost lost; not description alone.
+3. **Closing takeaway** — a usable emotional tool or a stated lesson; not an aphorism for its own sake.
+
+Fail → back to writer/validator; no image budget is spent. Implemented as `assess_story_quality` in `script_agent.py`, enforced in the writer narrative gates, `validator_agent.validate_script`, and the locked-script path.
 
 Run every command from the factory root unless noted.
 
@@ -12,7 +24,7 @@ Run every command from the factory root unless noted.
 
 ### Pages (`--page` / `--channel`)
 
-`anna_protocol` · `master_mei` · `wonder_feed` · `down_dirty` · `ancient_knowledge` · `momma_circle`
+`anna_protocol` · `master_mei` · `wonder_feed` · `down_dirty` · `ancient_knowledge` · `momma_circle` · `principles_of_wealth_finance_economics`
 
 Default `--page` for `main.py`: `anna_protocol`.
 
@@ -331,6 +343,37 @@ There is no `youtube_scheduler.shorts_scheduler` module. Use `publish_existing.p
 
 `python -m avatar_engine.publishers.youtube_publisher path/to/clip.mp4 --page master_mei --title "Test Upload" --privacy unlisted --schedule`  
 *// Standalone single-file test upload. --schedule uses the smart next-slot picker; default privacy is unlisted.*
+
+### Principles of Wealth (library ingest)
+
+Source files stay on the production drive. Entry point is `wealth_main.py` (not `main.py` generation). Tokens: `credentials/tokens/youtube_token_principles_of_wealth_finance_economics.json`.
+
+`python wealth_main.py scan`  
+*// Matches `Ray Dalio epN.mp4`, `Short N`, and `ThumbN` to the 30-episode ACT catalog. Writes `outputs/principles_of_wealth_finance_economics/wealth_asset_map.json`.*
+
+`python wealth_main.py process --episodes 1-2 --dry-run`  
+*// Preview the FFmpeg uniqueness pass (2 px crop, 0.5% timing shift, metadata strip) and thumbnail re-sign.*
+
+`python wealth_main.py process --episodes 1 --hw-encode`  
+*// Re-sign episode 1 into `{source}/Processed/` using NVIDIA nvenc when available (default is libx264 ultrafast).*
+
+`python wealth_main.py publish --mode longs --privacy-long unlisted --episodes 1-10`  
+*// Upload ACT I longs as unlisted, apply SEO titles/descriptions/disclaimer, set custom thumbnails.*
+
+`python wealth_main.py publish --mode shorts --episodes 1-10`  
+*// Upload matching Shorts after longs exist; injects `relatedVideoId` plus `https://youtu.be/{longId}` in the description.*
+
+`python wealth_main.py publish --mode all --process-first --episodes 1`  
+*// One-episode end-to-end: uniqueness pass → long → Short (linked) → ACT playlist position.*
+
+`python wealth_main.py playlists`  
+*// Create/sync ACT I–III playlists and insert longs in chronological episode order (not newest-first).*
+
+`python wealth_main.py status`  
+*// Source-file match vs uploaded IDs from `wealth_publish_state.json`.*
+
+`python publish_existing.py --page principles_of_wealth_finance_economics --video path/to/clip.mp4 --privacy unlisted --dry-run`  
+*// Fallback single-file upload through the shared publisher (no ACT catalog / relatedVideoId wiring).*
 
 ---
 

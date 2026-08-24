@@ -11,6 +11,24 @@ from core_engine.economic_reel_lofi import config as lofi_cfg
 
 _LOG = logging.getLogger(__name__)
 
+
+def _stamp_gen_meta(
+    resolved: dict[str, Any] | None,
+    *,
+    prompt: str,
+    negative: str,
+    model: str,
+    guidance_scale: float | None,
+    seed: Any = None,
+) -> dict[str, Any]:
+    rec = dict(resolved or {})
+    rec["gen_prompt"] = prompt
+    rec["gen_negative_prompt"] = negative
+    rec["gen_model"] = model
+    rec["gen_guidance_scale"] = guidance_scale
+    rec["gen_seed"] = seed
+    return rec
+
 # Hard-locked provider identity for ECONOMIC_REEL_LOFI (never inherit env flow).
 LOFI_IMAGE_PROVIDER: str = "together.ai"
 LOFI_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"
@@ -136,7 +154,14 @@ def generate_scene_image(
         f"| size={width}x{height} elapsed_s={elapsed:.2f}"
     )
     _LOG.info("LOFI image OK → %s id=%s", output_path.name, resolved.get("id"))
-    return output_path, resolved
+    return output_path, _stamp_gen_meta(
+        resolved,
+        prompt=prompt,
+        negative=str(lofi_cfg.LOFI_NEGATIVE_PROMPT or ""),
+        model=LOFI_IMAGE_MODEL,
+        guidance_scale=None,
+        seed=None,
+    )
 
 
 def generate_scene_image_dev(
@@ -222,4 +247,11 @@ def generate_scene_image_dev(
         f"| size={width}x{height} elapsed_s={elapsed:.2f}"
     )
     _LOG.info("LOFI Dev image OK → %s id=%s", output_path.name, resolved.get("id"))
-    return output_path, resolved
+    return output_path, _stamp_gen_meta(
+        resolved,
+        prompt=prompt,
+        negative=negative,
+        model=model,
+        guidance_scale=guidance,
+        seed=None,
+    )

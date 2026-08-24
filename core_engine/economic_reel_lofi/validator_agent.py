@@ -249,6 +249,15 @@ def validate_script(
     if re.search(r"\b(my|our)\s+(husband|wife|ex|boyfriend|girlfriend)\s+[A-Z][a-z]{2,}\b", blob):
         reasons.append("content safety: named private individual detected")
 
+    from core_engine.economic_reel_lofi.script_agent import assess_story_quality
+
+    story = assess_story_quality(
+        lines if isinstance(lines, list) else [],
+        theme=str(script.get("theme") or ""),
+    )
+    script["story_quality"] = story
+    reasons.extend(str(x) for x in (story.get("fails") or []))
+
     if reasons:
         msg = "; ".join(reasons)
         _LOG.info("ValidatorAgent REJECT: %s", msg)
@@ -269,6 +278,9 @@ def validate_script(
                 "close_variant": script.get("close_variant"),
                 "close_target": script.get("close_target"),
                 "eye_close_context": script.get("eye_close_context"),
+                "close_character": script.get("close_character"),
+                "dominant_lighting": script.get("dominant_lighting"),
+                "lighting_beats": script.get("lighting_beats"),
                 "setting_archetypes": (
                     (script.get("setting_archetypes") or {}).get("unique")
                     if isinstance(script.get("setting_archetypes"), dict)
