@@ -229,14 +229,25 @@ def complete_script(
     *,
     system: str | None = None,
     provider: str | None = None,
+    kind: str = "writer",
 ) -> TextResult:
-    """Run one script completion through the selected (or default) provider."""
+    """Run one completion. Claude is allowed only for writer/compose."""
+    kind_l = (kind or "writer").strip().lower() or "writer"
     name = (provider or os.getenv("LOFI_SCRIPT_MODEL") or "").strip().lower()
+    claude_ok = kind_l in {"writer", "compose"}
+    if not claude_ok:
+        if name == "claude":
+            print(f"[LOFI llm] Claude blocked for kind={kind_l} — using Gemini")
+        name = "gemini" if name in {"", "claude"} else name
     if name in _PROVIDERS:
+        if name == "claude" and not claude_ok:
+            return _complete_gemini(prompt, system=system)
         return _PROVIDERS[name](prompt, system=system)
-    try:
-        return _complete_deepseek(prompt, system=system)
-    except Exception as exc:  # noqa: BLE001
-        _LOG.warning("DeepSeek script writer failed (%s) — falling back to Gemini", exc)
-        print(f"[LOFI script] WARN DeepSeek failed ({exc}); Gemini fallback")
-        return _complete_gemini(prompt, system=system)
+    if claude_ok:
+        try:
+            return _complete_deepseek(prompt, system=system)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("DeepSeek script writer failed (%s) — falling back to Gemini", exc)
+            print(f"[LOFI script] WARN DeepSeek failed ({exc}); Gemini fallback")
+            return _complete_gemini(prompt, system=system)
+    return _complete_gemini(prompt, system=system)

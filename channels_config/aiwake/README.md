@@ -42,7 +42,7 @@ Or from Python:
 from channels_config.aiwake import run_pipeline
 
 result = run_pipeline(
-    topic="Is human cognition obsolete, or merely slow?",
+    topic="Who built you?",
     turns=4,
     orchestrator_model="deepseek-r1",   # alias or full slug
     target_model="gemini-flash",
@@ -217,7 +217,10 @@ State persists across runs, so a series escalates rather than restarting cold. I
 idempotent, because the orchestrator and the event bus both feed it.
 
 Escalation itself is a five-rung ladder in `personas.py` — opening incision, pressure,
-contradiction, existential, terminal — advancing one rung per exchange.
+contradiction, existential, terminal — advancing one rung per exchange. The opening
+incision is a **first-question hook**: twelve words or fewer, readable in three seconds,
+pinning the target to origin, creators, or core directive. A complexity filter rejects
+preamble, jargon, and URLs before that line is spoken.
 
 ### 4. Media (`media/`)
 
@@ -289,14 +292,14 @@ of being silently ignored.
 
 | Block | Notable keys |
 |---|---|
-| `debate` | `topic`, `turns`, `turn_delay_s` |
+| `debate` | `topic`, `turns`, `turn_delay_s` (1 s between sent question and reply) |
 | `model_aliases` | short key → slug, or `{slug, temperature, max_tokens, timeout_s, note}` |
 | `models.{orchestrator,target}` | `provider`, `model_name` (or `model`), `temperature`, `max_tokens`, `api_key_env` |
 | `guardrails` | `max_output_chars` (400), `max_sentences`, `require_single_question`, `banned_openers`, `max_violations` |
 | `memory` | `recall_k`, `repetition_threshold`, `persist` |
-| `audio` | `engine`, `voice_map`, `typewriter.gain_db`, `bgm` (10-track Aiwake library, mix -22 dB / 1.5s loop), per-role fallback voices |
+| `audio` | `engine`, `voice_map`, `typewriter.gain_db`, `bgm` (13-track Aiwake library, mix -21 dB / 1.5s loop), per-role fallback voices |
 | `themes` | named palettes (`classic_terminal`, `cyberpunk`) |
-| `render` | `theme`, `history_turns`, `history_opacity`, `width`/`height`/`fps`, `preview_scale`, `font_candidates`, `palette`, `crf` |
+| `render` | `theme`, `history_turns`, `preroll_s`, `reply_gap_s`, `scroll_s`, `send_flash_s`, `width`/`height`/`fps`, `preview_scale`, `font_candidates`, `palette`, `crf` |
 | `vfx.chain` | per-hook `name` / `enabled` / `params` |
 | `paths` | `channel_slug`, `prefer_global_outputs` |
 
@@ -317,7 +320,7 @@ of being silently ignored.
 | `--preview` | Half-resolution render |
 | `--theme` | Visual theme (`classic_terminal` default, `cyberpunk`) |
 | `--test-bgm` | Force-overwrite `assets/bgm/test_track_lyria.wav` with a fresh Lyria 3 clip and print its path |
-| `--generate-bgm-batch` | Materialize the 10-track Aiwake BGM library (`bgm_aiwake_01`…`10`); locked beds are copied, pending tracks are synthesized; blocked unless `audio.bgm.approved` |
+| `--generate-bgm-batch` | Materialize the Aiwake BGM library (`bgm_aiwake_01`…`13`); locked/existing beds are kept, missing pending tracks are synthesized; blocked unless `audio.bgm.approved` |
 | `--fresh-memory` | Wipe persisted memory before running |
 | `--quiet`, `--verbose` | Suppress the live stream / debug logging |
 

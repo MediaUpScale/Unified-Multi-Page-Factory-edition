@@ -3311,6 +3311,129 @@ def spoken_line_licenses_window(beat: dict[str, Any]) -> bool:
     return bool(re.search(r"\bwindows?\b", cap, re.I) or beat.get("window_primary"))
 
 
+WINDOWLESS_WALL = (
+    "plain painted wall filling the frame, no openings, no furniture"
+)
+WINDOWLESS_WALL_TIGHT = (
+    "tight crop against a plain painted wall, no room beyond the wall plane"
+)
+WINDOWLESS_FIELD = (
+    "solid painted color field, no architecture, no openings"
+)
+_ROOMISH_RE = re.compile(
+    r"\b(rooms?|apartments?|hallways?|kitchens?|interiors?|indoor|"
+    r"houses?|home|furnished|doorways?|windows?|letting in)\b",
+    re.I,
+)
+
+
+def tighten_licensed_subject_frame(row: dict[str, Any]) -> bool:
+    """Close-crop the licensed object so environment cannot dominate.
+
+    Used for composition failures (person/street dominating the object), not
+    for background-window leaks. Switches landscape/wide beats onto the
+    symbolic object-focus path so Flux is asked for a still-life, not a street.
+    """
+    if not isinstance(row, dict):
+        return False
+    obj = str(row.get("key_object") or "").strip() or "the licensed subject"
+    row["subject_type"] = "object_focus"
+    row["composition_type"] = "object_focus"
+    row["framing"] = "macro_no_setting"
+    row["shot_scale"] = "close"
+    row["close_variant"] = ""
+    row["object_focus_framing"] = "macro_no_setting"
+    if str(row.get("abstract_license") or "").strip() == "landscape":
+        row["abstract_license"] = "symbolic"
+        row["visual_fallback"] = "abstract_symbolic"
+    row["setting"] = WINDOWLESS_FIELD
+    scene = (
+        f"Extreme close crop of {obj} filling most of the frame as a printed "
+        f"shape. Blank color field around it. The {obj} is the only subject."
+    )
+    row["scene_description"] = scene
+    row["visual_concept"] = scene
+    row.pop("visual_prompt", None)
+    print(
+        f"[LOFI framing] tighten licensed subject scene={row.get('scene')} "
+        f"object={obj!r} path={row.get('abstract_license')}"
+    )
+    return True
+
+
+def apply_windowless_interior_frame(row: dict[str, Any]) -> bool:
+    """Stop asking Flux for an empty room — it will invent a window.
+
+    Replace room/hallway/apartment settings with a wall plane or color field
+    that has no opening to draw. Skip beats whose spoken line licenses a window.
+    """
+    if not isinstance(row, dict):
+        return False
+    if spoken_line_licenses_window(row):
+        return False
+    blob = " ".join(
+        str(row.get(k) or "")
+        for k in (
+            "setting",
+            "scene_description",
+            "visual_concept",
+            "atmosphere_place",
+            "hook_memory_overlay",
+            "episode_place",
+        )
+    )
+    exterior_only = bool(
+        _EXTERIOR_PLACE_RE.search(blob) and not _INTERIOR_PLACE_RE.search(blob)
+    )
+    if exterior_only and not _ROOMISH_RE.search(blob):
+        return False
+    path = str(row.get("abstract_license") or "").strip()
+    st = str(row.get("subject_type") or "").strip().lower().replace(" ", "_")
+    if path == "symbolic" or (
+        st == "object_focus"
+        and str(row.get("composition_type") or "") == "object_focus"
+        and not row.get("hook_template")
+    ):
+        place = WINDOWLESS_FIELD
+    elif path == "landscape" or str(row.get("composition_type") or "") == "wide_environment":
+        place = WINDOWLESS_FIELD
+    else:
+        place = WINDOWLESS_WALL_TIGHT
+    row["setting"] = place
+    overlay = str(row.get("hook_memory_overlay") or "")
+    if overlay:
+        row["hook_memory_overlay"] = re.sub(
+            r"\b(hazy )?indistinct rooms?\b",
+            "hazy color field",
+            overlay,
+            flags=re.I,
+        )
+        row["hook_memory_overlay"] = re.sub(
+            r"\brooms?\b",
+            "color field",
+            str(row.get("hook_memory_overlay") or ""),
+            flags=re.I,
+        )
+    for key in ("scene_description", "visual_concept", "atmosphere_place"):
+        val = str(row.get(key) or "")
+        if not val:
+            continue
+        val = re.sub(r"\b(hazy )?indistinct rooms?\b", "hazy color field", val, flags=re.I)
+        val = re.sub(
+            r"\b(empty closed room|furnished apartment|apartment rooms?|"
+            r"dim (?:narrow )?hallway|apartment hallway)[^.]*",
+            place,
+            val,
+            flags=re.I,
+        )
+        row[key] = val
+    print(
+        f"[LOFI windowless] scene={row.get('scene') or '?'} "
+        f"setting={place!r} path={path or st}"
+    )
+    return True
+
+
 def spoken_line_licenses_lamp(beat: dict[str, Any]) -> bool:
     cap = str(beat.get("text") or beat.get("beat_text") or "")
     return bool(re.search(r"\b(lit|light|dark)\b", cap, re.I))
@@ -3372,15 +3495,14 @@ def spoken_line_prop_guard(beat: dict[str, Any]) -> str:
                 "as the only named object. Empty of other objects."
             )
         return (
-            f"Only this is in the picture: {place} as sky, ground, and "
-            "printed color fields. Empty of objects."
+            f"Only this is in the picture: {place}. Empty of objects."
         )
     if path == "character":
         st = str(beat.get("subject_type") or "woman").strip().lower()
         who = (
-            "two figures in side profile, looking toward off-frame light, empty floor"
+            "two figures in side profile against a solid painted wall, no openings"
             if st == "couple"
-            else "the figure in side profile, looking toward off-frame light, empty floor"
+            else "the figure in side profile against a solid painted wall, no openings"
         )
         return f"Only this is in the picture: {who}. One subject."
     st = str(beat.get("subject_type") or "").strip().lower().replace(" ", "_")
@@ -3399,13 +3521,13 @@ def spoken_line_prop_guard(beat: dict[str, Any]) -> str:
     if figure_present:
         if st == "couple":
             allowed = (
-                "two figures in side profile or three-quarter, looking toward "
-                "off-frame light, empty floor"
+                "two figures in side profile or three-quarter against a "
+                "solid painted wall, no openings"
             )
         else:
             allowed = (
-                "the figure in side profile or three-quarter, looking toward "
-                "off-frame light, empty floor"
+                "the figure in side profile or three-quarter against a "
+                "solid painted wall, no openings"
             )
     elif treat:
         allowed = treat
@@ -3420,11 +3542,11 @@ def spoken_line_prop_guard(beat: dict[str, Any]) -> str:
         allowed = "empty open road and sky only"
     else:
         allowed = (
-            "the figure in side profile or three-quarter, looking toward "
-            "off-frame light, empty floor"
+            "the figure in side profile or three-quarter against a "
+            "solid painted wall, no openings"
         )
     if interior:
-        isolation = "Empty floor. One subject."
+        isolation = "Solid painted wall, no openings. One subject."
     elif figure_only:
         isolation = "Empty floor or open sky. One subject."
     else:
@@ -4060,7 +4182,7 @@ def apply_abstract_license(
         row["framing"] = "macro_no_setting"
         row["composition_type"] = "object_focus"
         row["close_variant"] = ""
-        row["setting"] = "empty surface, negative space, printed color fields"
+        row["setting"] = WINDOWLESS_FIELD
         row["pose_hint"] = "empty gesture"
         if focus_obj:
             row["key_object"] = focus_obj
@@ -4082,7 +4204,7 @@ def apply_abstract_license(
     elif path == "landscape":
         interior = is_interior_beat({"setting": setting, "key_object": "", "text": text})
         if interior:
-            place = "empty closed room, blank walls, solid color fields"
+            place = WINDOWLESS_FIELD
         else:
             place = "open ground and sky, empty of figures"
         row["subject_type"] = "object_focus"
@@ -4138,6 +4260,7 @@ def apply_abstract_license(
         row["visual_concept"] = row["scene_description"]
         row["setting"] = setting
     stamp_shot_type(row)
+    apply_windowless_interior_frame(row)
     from core.economic_reel_lofi.licensed_objects import enforce_licensed_inventory
 
     enforce_licensed_inventory(row)
@@ -4195,6 +4318,9 @@ def restamp_abstract_licenses(lines: list[dict[str, Any]]) -> None:
         )
         if path == "symbolic":
             gesture_i += 1
+    for row in lines or []:
+        if isinstance(row, dict):
+            apply_windowless_interior_frame(row)
 
 
 def _apply_cluster_pose(row: dict[str, Any], text: str) -> None:
@@ -5765,6 +5891,7 @@ def assemble_v2_prompt_dev(
         scrub_assembled_prompt,
     )
 
+    apply_windowless_interior_frame(beat)
     enforce_licensed_inventory(beat)
     cond = str(beat.get("lighting_condition") or "").strip()
     if cond in LIGHTING_CONDITIONS:

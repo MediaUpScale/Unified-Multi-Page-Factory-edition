@@ -1116,6 +1116,187 @@ def assess_spoken_line_prop_leak(
         return True, [], meta
 
 
+# Interior/threshold archetypes where Flux's room-prior draws a background
+# window even after the prompt-text leak is closed. Not a global relaxation.
+BACKGROUND_WINDOW_ARCHETYPES: frozenset[str] = frozenset(
+    {"interior-domestic", "public-interior", "threshold"}
+)
+# Same compact-blob fail line as assess_default_object_intrusion.
+WINDOW_BG_BBOX_MAX: float = 0.08
+WINDOW_BG_RATIO_MAX: float = 0.45
+_WALL_PLANE_SETTING_RE = re.compile(
+    r"\b(painted wall|wall plane|hallway|apartment|interior|threshold|"
+    r"indoor|plain wall)\b",
+    re.I,
+)
+
+
+def _window_leak_split(leaks: list[Any] | None) -> tuple[list[str], list[str]]:
+    windows: list[str] = []
+    other: list[str] = []
+    for item in leaks or []:
+        raw = str(item or "").strip().lower()
+        if not raw:
+            continue
+        stem = re.sub(r"[^a-z]+", "", raw.split()[0])
+        if stem == "window" or "window" in raw:
+            windows.append(raw)
+        else:
+            other.append(raw)
+    return windows, other
+
+
+def interior_threshold_window_setting(beat: dict[str, Any] | None) -> bool:
+    """True for interior/threshold archetypes (or wall-plane reframes of them)."""
+    if not isinstance(beat, dict):
+        return False
+    arch = str(beat.get("setting_archetype") or "").strip().lower()
+    if arch in BACKGROUND_WINDOW_ARCHETYPES:
+        return True
+    setting = str(beat.get("setting") or "")
+    return bool(_WALL_PLANE_SETTING_RE.search(setting))
+
+
+def background_window_exception_applies(
+    *,
+    leaks: list[Any] | None,
+    beat: dict[str, Any] | None,
+    object_gate: dict[str, Any] | None = None,
+) -> bool:
+    """License a non-dominant background window as the *only* spoken_prop leak.
+
+    Does not apply when window is spoken/licensed, composition-dominant, or
+    co-occurs with another leak. Scoped to interior/threshold settings.
+    """
+    from core.economic_reel_lofi.visual_identity import spoken_line_licenses_window
+
+    windows, other = _window_leak_split(leaks)
+    if not windows or other:
+        return False
+    if not isinstance(beat, dict):
+        return False
+    if beat.get("window_primary"):
+        return False
+    if spoken_line_licenses_window(beat):
+        return False
+    ko = str(beat.get("key_object") or "").strip().lower()
+    if re.search(r"\bwindows?\b", ko):
+        return False
+    if not interior_threshold_window_setting(beat):
+        return False
+    gate = object_gate if isinstance(object_gate, dict) else {}
+    bbox = float(gate.get("intruder_bbox_frac") or 0.0)
+    ratio = float(gate.get("ratio") or 0.0)
+    if bbox >= WINDOW_BG_BBOX_MAX or ratio >= WINDOW_BG_RATIO_MAX:
+        return False
+    return True
+
+
+def apply_background_window_exception(
+    prop_meta: dict[str, Any],
+    beat: dict[str, Any] | None,
+    object_gate: dict[str, Any] | None = None,
+) -> bool:
+    """Mutate spoken_prop meta in place. Returns True if the exception fired."""
+    if not isinstance(prop_meta, dict):
+        return False
+    leaks = list(prop_meta.get("leaks") or [])
+    if not background_window_exception_applies(
+        leaks=leaks, beat=beat, object_gate=object_gate
+    ):
+        return False
+    windows, _other = _window_leak_split(leaks)
+    kept = [x for x in leaks if str(x).strip().lower() not in windows]
+    prop_meta["leaks"] = kept
+    prop_meta["background_window_licensed"] = True
+    prop_meta["passed"] = not kept
+    gate = object_gate if isinstance(object_gate, dict) else {}
+    print(
+        f"[LOFI spoken-prop] background-window licensed "
+        f"scene={beat.get('scene') if isinstance(beat, dict) else '?'} "
+        f"arch={beat.get('setting_archetype') if isinstance(beat, dict) else ''} "
+        f"bbox={gate.get('intruder_bbox_frac')} ratio={gate.get('ratio')}"
+    )
+    return True
+
+
+def _strip_window_only_spoken_prop_flaws(
+    flaws: list[Any] | None,
+    remaining_leaks: list[Any] | None,
+) -> list[str]:
+    out = [str(f) for f in (flaws or []) if not str(f).startswith("SPOKEN-PROP:")]
+    leaks = [str(x) for x in (remaining_leaks or []) if str(x).strip()]
+    if leaks:
+        out.append(f"SPOKEN-PROP: unspoken objects in pixels: {', '.join(leaks)}")
+    return out
+
+
+def rescore_episode_background_window(episode: dict[str, Any]) -> dict[str, Any]:
+    """Re-apply the background-window exception to existing gates. No image calls."""
+    script = episode.get("script") if isinstance(episode.get("script"), dict) else {}
+    lines = list(script.get("lines") or [])
+    gates = list(episode.get("object_gate_by_scene") or [])
+    report: list[dict[str, Any]] = []
+    for i, row in enumerate(lines):
+        if not isinstance(row, dict):
+            continue
+        gate = dict(row.get("default_object_gate") or {})
+        if not gate and i < len(gates) and isinstance(gates[i], dict):
+            gate = dict(gates[i])
+        prop = dict(gate.get("spoken_prop") or {})
+        before_leaks = list(prop.get("leaks") or [])
+        applied = apply_background_window_exception(prop, row, gate)
+        flaws = _strip_window_only_spoken_prop_flaws(
+            list(gate.get("qa_flaws") or []),
+            list(prop.get("leaks") or []) if applied else before_leaks,
+        ) if applied else list(gate.get("qa_flaws") or [])
+        if applied:
+            gate["spoken_prop"] = prop
+            gate["qa_flaws"] = flaws
+            still_fail = bool(flaws)
+            gate["qa_passed"] = not still_fail
+            if not still_fail:
+                gate["image_ok"] = True
+                gate["passed"] = True
+            attempts = list(gate.get("attempts") or [])
+            if attempts and isinstance(attempts[-1], dict):
+                last = dict(attempts[-1])
+                last["spoken_prop"] = prop
+                last["qa_flaws"] = flaws
+                last["qa_passed"] = not still_fail
+                attempts[-1] = last
+                gate["attempts"] = attempts
+            row["default_object_gate"] = gate
+            while len(gates) <= i:
+                gates.append({})
+            gates[i] = gate
+        scene_n = int(row.get("scene") or i + 1)
+        report.append(
+            {
+                "scene": scene_n,
+                "applied": bool(applied),
+                "qa_passed": bool(gate.get("qa_passed")),
+                "leaks": list((gate.get("spoken_prop") or {}).get("leaks") or []),
+                "qa_flaws": list(gate.get("qa_flaws") or []),
+            }
+        )
+    leftover = []
+    for g in gates:
+        if not isinstance(g, dict) or g.get("qa_passed"):
+            continue
+        scene_g = int(g.get("scene") or 0)
+        leftover.append(
+            f"scene_{scene_g}: {'; '.join(g.get('qa_flaws') or []) or 'qa failed'}"
+        )
+    episode["object_gate_by_scene"] = gates
+    if isinstance(script, dict):
+        script["lines"] = lines
+        episode["script"] = script
+    episode["visual_qa_flags"] = leftover
+    episode["manual_review"] = bool(leftover)
+    return {"beats": report, "leftover": leftover}
+
+
 def assess_anchor_painterly_lock(
     image_path: Path,
     *,
@@ -1850,13 +2031,11 @@ def generate_and_qa_scene(
     if str(row.get("negative_prompt") or "").strip():
         mood_meta["negative_prompt"] = str(row.get("negative_prompt")).strip()
     licensed_names = licensed_object_names(row)
-    if attempt_budget is None:
-        n_attempts = int(getattr(lofi_cfg, "IMAGE_ATTEMPTS_PER_SCENE", 0) or 0)
-        if n_attempts < 1:
-            n_attempts = int(lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE) + 1
-        n_attempts = max(1, min(n_attempts, 2))
-    else:
-        n_attempts = max(1, min(int(attempt_budget), 4))
+    n_attempts = lofi_cfg.clamp_attempt_budget(attempt_budget)
+    print(
+        f"[LOFI attempts] scene={scene_i} hard_cap={n_attempts} "
+        f"(IMAGE_ATTEMPTS_PER_BEAT={lofi_cfg.IMAGE_ATTEMPTS_PER_BEAT})"
+    )
 
     ok_img = False
     last_flaws: list[str] = []
@@ -2132,6 +2311,13 @@ def generate_and_qa_scene(
             ),
         )
         del prop_ok
+        if apply_background_window_exception(prop_meta, row, gate_meta):
+            prop_flaws = []
+            if prop_meta.get("leaks"):
+                prop_flaws = [
+                    "SPOKEN-PROP: unspoken objects in pixels: "
+                    + ", ".join(str(x) for x in prop_meta["leaks"])
+                ]
         gate_meta["spoken_prop"] = prop_meta
         if prop_flaws:
             flaws = list(flaws) + prop_flaws
@@ -2216,6 +2402,9 @@ def generate_and_qa_scene(
 def _caption_cap_reasons_only(reasons: list[str]) -> bool:
     """True when every validator reason is a per-beat word/char cap miss."""
     if not reasons:
+        return False
+    joined = " ".join(reasons)
+    if "spoken line" in joined or "duration_requested_s" in joined:
         return False
     pats = (
         re.compile(r"has \d+ words \(max \d+\)"),
@@ -2968,6 +3157,7 @@ def _produce_one(
     captions: list[str] = []
     scene_moods: list[dict] = []
     qa_flags: list[str] = []
+    tts_overruns: list[dict[str, Any]] = []
     voice_paths: list[Path | None] = []
     word_timings_per_scene: list[list[tuple[str, float, float]] | None] = []
     voice_settings_result: dict[str, Any] | None = None
@@ -2976,10 +3166,11 @@ def _produce_one(
     object_gate_by_scene: list[dict[str, Any]] = []
     n_beats_planned = max(1, len(lines))
     call_budget = lofi_cfg.image_call_budget(n_beats_planned)
+    lofi_cfg.log_image_budget(used=0, budget=call_budget, n_beats=n_beats_planned)
     print(
         f"[LOFI budget] image_call_cap={call_budget} "
         f"({n_beats_planned} beats x {lofi_cfg.IMAGE_CALL_BUDGET_MULT:g}) "
-        f"attempts_per_scene={lofi_cfg.IMAGE_ATTEMPTS_PER_SCENE}"
+        f"attempts_per_beat={lofi_cfg.IMAGE_ATTEMPTS_PER_BEAT} HARD CAP"
     )
 
     if (not stills_only) and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
@@ -3144,10 +3335,7 @@ def _produce_one(
                 continue
             gen_kw: dict[str, Any] = {
                 "mood": mood_meta,
-                "attempt_budget": min(
-                    int(getattr(lofi_cfg, "IMAGE_ATTEMPTS_PER_SCENE", 2) or 2),
-                    remaining,
-                ),
+                "attempt_budget": lofi_cfg.clamp_attempt_budget(remaining),
             }
             if use_dev:
                 from core.economic_reel_lofi.image_gen import (
@@ -3226,6 +3414,90 @@ def _produce_one(
                     and not str(w).startswith("<")
                     and str(w).lower() not in {"break", "time"}
                 ]
+                declared_s = float(row.get("duration_s") or lofi_cfg.beat_duration_s())
+                vo_dur = (
+                    float(measure_vo_speech_duration(vo_path))
+                    if vo_path and vo_path.is_file()
+                    else 0.0
+                )
+                if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
+                    print(
+                        f"[LOFI VO] scene={scene_i} {vo_dur:.2f}s exceeds "
+                        f"{declared_s:.1f}s — rewrite spoken line (no still regen)"
+                    )
+                    from agents.writer.freeform_writer import split_long_line
+                    from agents.writer.spoken_budget import rewrite_single_line
+
+                    ceiling = lofi_cfg.beat_word_ceiling(declared_s)
+                    prev = (
+                        str(lines[scene_i - 2].get("text") or "")
+                        if scene_i > 1
+                        else ""
+                    )
+                    nxt = (
+                        str(lines[scene_i].get("text") or "")
+                        if scene_i < len(lines)
+                        else ""
+                    )
+                    new_text = rewrite_single_line(
+                        caption,
+                        ceiling=ceiling,
+                        theme=str(script.get("theme") or ""),
+                        subtheme=str(script.get("subtheme") or ""),
+                        neighbor_before=prev,
+                        neighbor_after=nxt,
+                    )
+                    row["text"] = new_text
+                    row["beat_text"] = new_text
+                    max_w, max_c = lofi_cfg.thematic_caption_limits()
+                    row["caption_beats"] = split_long_line(new_text, max_w, max_c)
+                    caption = new_text
+                    captions[-1] = caption
+                    tts_text = _tts_text_with_breaks(_tts_breath_commas(caption))
+                    use_ssml = "<break" in tts_text
+                    print(
+                        f"[LOFI VO] scene={scene_i} rewrite {len(new_text.split())}w "
+                        f"tts={tts_text!r}"
+                    )
+                    vo_path, raw_timings = generate_voiceover_with_timestamps(
+                        tts_text,
+                        vo_path,
+                        voice_id=voice_id or None,
+                        model_id=model_id,
+                        force_elevenlabs=True,
+                        expressive_mode=False,
+                        enable_ssml=use_ssml,
+                        speed=speed,
+                        voice_settings={
+                            "stability": 1.0,
+                            "similarity_boost": 1.0,
+                            "style": 0.0,
+                            "use_speaker_boost": True,
+                            "speed": speed,
+                        },
+                    )
+                    timings = [
+                        (str(w), float(s), float(e))
+                        for w, s, e in (raw_timings or [])
+                        if str(w).strip()
+                        and not str(w).startswith("<")
+                        and str(w).lower() not in {"break", "time"}
+                    ]
+                    vo_dur = (
+                        float(measure_vo_speech_duration(vo_path))
+                        if vo_path and vo_path.is_file()
+                        else 0.0
+                    )
+                    if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
+                        tts_overruns.append(
+                            {
+                                "index": scene_i - 1,
+                                "vo_dur": vo_dur,
+                                "duration_s": declared_s,
+                                "tightened": True,
+                                "row": row,
+                            }
+                        )
             except Exception as exc:  # noqa: BLE001
                 msg = f"scene_{scene_i} VO failed: {exc}"
                 _LOG.warning(msg)
@@ -3235,6 +3507,21 @@ def _produce_one(
                 timings = None
         voice_paths.append(vo_path)
         word_timings_per_scene.append(timings)
+
+    if tts_overruns:
+        applied, stop = lofi_cfg.apply_isolated_tts_duration_bumps(
+            tts_overruns,
+            requested_total_s=float(duration_s),
+            n_beats=max(1, len(lines)),
+        )
+        if stop:
+            qa_flags.append(stop)
+        else:
+            script["duration_auto_bumps"] = applied
+            for rec in tts_overruns:
+                row_i = rec.get("row")
+                if isinstance(row_i, dict) and rec.get("bumped_s") is not None:
+                    row_i["duration_s"] = float(rec["bumped_s"])
 
     try:
         (run_dir / "vo_meta.json").write_text(
@@ -3330,6 +3617,9 @@ def _produce_one(
         f"image_cost=${img_cost:.4f} | critic={n_critic_calls} "
         f"critic_cost=${critic_cost:.4f} | script_cost=${script_llm_cost_usd:.4f} "
         f"| total_est_cost=${total_est_cost:.4f}"
+    )
+    lofi_cfg.log_image_budget(
+        used=n_image_calls, budget=call_budget, n_beats=n_beats_planned
     )
     if cost_meta.get("note"):
         print(f"[LOFI cost] {cost_meta['note']}")
@@ -3520,8 +3810,18 @@ def _produce_one(
                 if i >= n_beats - 1
                 else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
             )
+            declared_s = float(
+                (lines[i].get("duration_s") if i < len(lines) and isinstance(lines[i], dict) else None)
+                or beat_s
+            )
+            if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
+                raise ValueError(
+                    f"scene {i + 1} VO {vo_dur:.2f}s exceeds declared "
+                    f"{declared_s:.1f}s +{int(float(lofi_cfg.TTS_DURATION_TOLERANCE) * 100)}% "
+                    "— rewrite the spoken line; will not stretch the still"
+                )
             dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
-                vo_dur, base_s=beat_s, trailing_silence_s=trail
+                vo_dur, base_s=declared_s, trailing_silence_s=trail
             )
             n_words = len(str(cap).split())
             wps = (n_words / vo_dur) if vo_dur > 0.05 else 0.0

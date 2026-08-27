@@ -107,11 +107,8 @@ def _cost_log_path() -> Path:
 
 
 def polish_skip() -> bool:
-    return os.getenv("LOFI_SKIP_CLAUDE_POLISH", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    """Claude polish is disabled. Claude is reserved for script writing."""
+    return True
 
 
 def _lines_from_script(script: dict[str, Any]) -> list[str]:
@@ -317,6 +314,7 @@ def polish_scripts_batch(scripts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     On batch/parse failure the original script is returned unchanged.
     """
     if polish_skip() or not scripts:
+        print("[LOFI polish] skipped — Claude is reserved for script writing")
         return [dict(s) for s in scripts]
     client, model = _client_and_model()
     requests: list[dict[str, Any]] = []

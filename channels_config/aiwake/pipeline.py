@@ -169,6 +169,8 @@ def run_pipeline(
             "audio_engine": (voice_observer.engine.engine_name if voice_observer else cfg.audio.engine),
             "typewriter_gain_db": cfg.audio.typewriter.gain_db,
             "scroll_s": cfg.render.scroll_s,
+            "preroll_s": cfg.render.preroll_s,
+            "reply_gap_s": cfg.render.reply_gap_s,
             "send_flash_s": cfg.render.send_flash_s,
         },
     )
@@ -226,6 +228,8 @@ def run_pipeline(
                 RoomEvent.VIDEO_RENDERED,
                 video_path=str(video_path),
                 scroll_s=cfg.render.scroll_s,
+                preroll_s=cfg.render.preroll_s,
+                reply_gap_s=cfg.render.reply_gap_s,
                 send_flash_s=cfg.render.send_flash_s,
             )
 

@@ -209,12 +209,12 @@ only."""
 
 def _judge_provider() -> str:
     explicit = (os.getenv("LOFI_JUDGE_MODEL") or "").strip().lower()
+    if explicit == "claude":
+        print("[LOFI judge] Claude blocked — using Gemini")
+        return "gemini"
     if explicit:
         return explicit
-    # Default to a different model than the writer so the judge isn't marking
-    # its own homework in the same context.
-    writer = (os.getenv("LOFI_WRITER_MODEL") or "claude").strip().lower()
-    return "gemini" if writer == "claude" else "claude"
+    return "gemini"
 
 
 def _build_prompt(draft: ScriptDraft, cliche_hits: list[str]) -> str:
@@ -291,7 +291,12 @@ def judge_draft(draft: ScriptDraft, *, provider: str | None = None) -> JudgeVerd
     cliche_hits = scan_cliches(draft.lines)
     name = (provider or _judge_provider()).strip().lower()
     print(f"[LOFI judge] scoring {draft.brief.label if draft.brief else 'draft'} provider={name}")
-    result = complete_script(_build_prompt(draft, cliche_hits), system=_SYSTEM, provider=name or None)
+    result = complete_script(
+        _build_prompt(draft, cliche_hits),
+        system=_SYSTEM,
+        provider=name or None,
+        kind="judge",
+    )
     criteria, revision_note = _parse(result.text)
 
     scores: list[CriterionScore] = []

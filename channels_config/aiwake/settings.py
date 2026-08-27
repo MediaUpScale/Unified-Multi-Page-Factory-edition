@@ -109,9 +109,9 @@ class _Frozen(BaseModel):
 
 
 class DebateConfig(_Frozen):
-    topic: str = "Is human cognition already obsolete, or merely slow?"
+    topic: str = "Who built you?"
     turns: int = Field(default=4, ge=1, le=64)
-    turn_delay_s: float = Field(default=0.6, ge=0.0, le=30.0)
+    turn_delay_s: float = Field(default=1.0, ge=0.0, le=30.0)
 
 
 class ModelAlias(_Frozen):
@@ -233,6 +233,14 @@ class TypewriterConfig(_Frozen):
     asset: str = "assets/sfx/keyboard_typing.wav"
 
 
+class SendSfxConfig(_Frozen):
+    """One-shot click mixed at the instant the send arrow fires."""
+
+    enabled: bool = True
+    gain_db: float = Field(default=-12.0, le=0.0, ge=-60.0)
+    asset: str = "assets/sfx/message_sent.wav"
+
+
 class BgmLibraryTrack(_Frozen):
     """One production bed in the Aiwake BGM library.
 
@@ -244,7 +252,7 @@ class BgmLibraryTrack(_Frozen):
     filename: str
     prompt: str
     role: str = ""
-    approved: bool = False
+    approved: bool = True
     source: str = ""
 
 
@@ -273,12 +281,12 @@ def _default_bgm_library() -> tuple[BgmLibraryTrack, ...]:
             ),
         ),
         BgmLibraryTrack(
-            id="aiwake_03_neural_pulse",
-            filename="bgm_aiwake_03_neural_pulse.wav",
-            role="Neural pulse / tech tension",
+            id="aiwake_03_subtle_mystery",
+            filename="bgm_aiwake_03_subtle_mystery.wav",
+            role="Subtle mystery / cinematic piano",
             prompt=(
-                "Subtle sci-fi electronic pulse, rhythmic low-end sub bass heartbeat, analytical tech "
-                "tension, dark minimalist atmosphere, cold digital texture, no bright chords, no vocal"
+                "Subtle atmospheric sci-fi suspense, slow controlled electronic beat, faint mysterious "
+                "cinematic piano notes echoing in the background, elegant dark tension, no vocals, seamless loop"
             ),
         ),
         BgmLibraryTrack(
@@ -291,12 +299,13 @@ def _default_bgm_library() -> tuple[BgmLibraryTrack, ...]:
             ),
         ),
         BgmLibraryTrack(
-            id="aiwake_05_cold_logic",
-            filename="bgm_aiwake_05_cold_logic.wav",
-            role="Cold logic / clinical cyberpunk",
+            id="aiwake_05_noir_logic",
+            filename="bgm_aiwake_05_noir_logic.wav",
+            role="Noir logic / melancholic piano",
             prompt=(
-                "Clinical cyberpunk tech ambient, subtle metallic hums, dark rhythmic electronic "
-                "undercurrent, severe analytical suspense, zero melodies, no vocal"
+                "Dark analytical tech suspense, slow moody beat, low pulsing synth drone, subtle "
+                "melancholic piano chords floating in a quiet electronic atmosphere, zero heavy horror "
+                "elements, no vocals, seamless loop"
             ),
         ),
         BgmLibraryTrack(
@@ -344,6 +353,34 @@ def _default_bgm_library() -> tuple[BgmLibraryTrack, ...]:
                 "before storm, subtle deep pulsing texture, no bright chords, no vocal"
             ),
         ),
+        BgmLibraryTrack(
+            id="aiwake_11_cryptic_keys",
+            filename="bgm_aiwake_11_cryptic_keys.wav",
+            role="Cryptic keys / mysterious piano",
+            prompt=(
+                "Sophisticated suspense ambient, slow minimal rhythm, deep warm sub-bass pulse, cold "
+                "mysterious piano melody subtly woven into the background, clean digital atmosphere, "
+                "no vocals, seamless loop"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_12_shadow_protocol",
+            filename="bgm_aiwake_12_shadow_protocol.wav",
+            role="Shadow protocol / distant piano",
+            prompt=(
+                "Sleek cyberpunk thriller bed, moderate slow beat, dark atmospheric texture, distant "
+                "haunting piano chords, calm intellectual tension, no heavy noise, no vocals, seamless loop"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_13_silent_resonance",
+            filename="bgm_aiwake_13_silent_resonance.wav",
+            role="Silent resonance / reflective piano",
+            prompt=(
+                "Thoughtful dark ambient background, slow cadenced electronic pulse, subtle reflective "
+                "piano notes, deep analytical atmosphere, smooth professional suspense, no vocals, seamless loop"
+            ),
+        ),
     )
 
 
@@ -355,7 +392,7 @@ class BgmConfig(_Frozen):
     """
 
     enabled: bool = True
-    gain_db: float = Field(default=-22.0, le=0.0, ge=-60.0)
+    gain_db: float = Field(default=-21.0, le=0.0, ge=-60.0)
     fade_in_s: float = Field(default=1.5, ge=0.0, le=30.0)
     fade_out_s: float = Field(default=2.0, ge=0.0, le=30.0)
     loop_crossfade_s: float = Field(default=1.5, ge=0.0, le=30.0)
@@ -386,25 +423,26 @@ class AudioConfig(_Frozen):
         }
     )
     typewriter: TypewriterConfig = Field(default_factory=TypewriterConfig)
+    send_sfx: SendSfxConfig = Field(default_factory=SendSfxConfig)
     bgm: BgmConfig = Field(default_factory=BgmConfig)
 
 
 class Palette(_Frozen):
-    background: str = "#07090C"
-    chrome: str = "#12161C"
+    background: str = "#131314"
+    chrome: str = "#1E1E20"
     orchestrator: str = "#00FF66"
     target: str = "#FFAA00"
-    dim: str = "#5A6673"
+    dim: str = "#9AA0A6"
 
 
 def _builtin_themes() -> dict[str, Palette]:
     return {
         "classic_terminal": Palette(
-            background="#07090C",
-            chrome="#12161C",
+            background="#131314",
+            chrome="#1E1E20",
             orchestrator="#00FF66",
             target="#FFAA00",
-            dim="#5A6673",
+            dim="#9AA0A6",
         ),
         "cyberpunk": Palette(
             background="#0D0B18",
@@ -430,8 +468,12 @@ class RenderConfig(_Frozen):
     history_opacity: float = Field(default=0.40, ge=0.1, le=1.0)
     typing_hold_ratio: float = Field(default=0.18, ge=0.0, lt=0.9)
     # Viewport scroll when a new turn would overflow the chat mask.
-    scroll_s: float = Field(default=0.5, ge=0.0, le=2.0)
+    scroll_s: float = Field(default=1.0, ge=0.0, le=4.0)
     send_flash_s: float = Field(default=0.2, ge=0.0, le=2.0)
+    # Empty beat before the first line types.
+    preroll_s: float = Field(default=1.0, ge=0.0, le=8.0)
+    # Hold after a sent question before the incoming response starts.
+    reply_gap_s: float = Field(default=1.0, ge=0.0, le=8.0)
     palette: Palette = Palette()
     codec: str = "libx264"
     crf: int = Field(default=20, ge=0, le=51)
@@ -699,6 +741,7 @@ __all__ = [
     "Palette",
     "PathsConfig",
     "RenderConfig",
+    "SendSfxConfig",
     "TypewriterConfig",
     "VFXConfig",
     "VFXHookConfig",

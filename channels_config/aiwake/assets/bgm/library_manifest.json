@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-27T00:32:53.692565+00:00",
+  "generated_at": "2026-08-27T01:02:23.028496+00:00",
   "inspection": {
     "file": "test_track_lyria.wav",
     "relative": "assets/bgm/test_track_lyria.wav",
@@ -10,11 +10,22 @@
   "locked_sources": [
     "bgm_aiwake_01_core_suspense.wav",
     "bgm_aiwake_02_dark_ambient.wav",
+    "bgm_aiwake_03_subtle_mystery.wav",
+    "bgm_aiwake_04_socratic_void.wav",
+    "bgm_aiwake_05_noir_logic.wav",
+    "bgm_aiwake_06_cryptic_signal.wav",
+    "bgm_aiwake_07_binary_tension.wav",
+    "bgm_aiwake_08_deep_protocol.wav",
+    "bgm_aiwake_09_silent_argument.wav",
+    "bgm_aiwake_10_terminal_state.wav",
+    "bgm_aiwake_11_cryptic_keys.wav",
+    "bgm_aiwake_12_shadow_protocol.wav",
+    "bgm_aiwake_13_silent_resonance.wav",
     "bgm_dark_ambient.wav",
     "test_track_lyria.wav"
   ],
   "mix_contract": {
-    "gain_db": -22.0,
+    "gain_db": -21.0,
     "loop_crossfade_s": 1.5,
     "production_target_s": 60.0,
     "note": "Gain is applied at mix time versus TTS; WAV files stay full-scale."
@@ -43,12 +54,12 @@
       "failed": false
     },
     {
-      "id": "aiwake_03_neural_pulse",
-      "filename": "bgm_aiwake_03_neural_pulse.wav",
-      "role": "Neural pulse / tech tension",
+      "id": "aiwake_03_subtle_mystery",
+      "filename": "bgm_aiwake_03_subtle_mystery.wav",
+      "role": "Subtle mystery / cinematic piano",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -58,19 +69,19 @@
       "filename": "bgm_aiwake_04_socratic_void.wav",
       "role": "Socratic void / isolation drone",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
     },
     {
-      "id": "aiwake_05_cold_logic",
-      "filename": "bgm_aiwake_05_cold_logic.wav",
-      "role": "Cold logic / clinical cyberpunk",
+      "id": "aiwake_05_noir_logic",
+      "filename": "bgm_aiwake_05_noir_logic.wav",
+      "role": "Noir logic / melancholic piano",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -80,8 +91,8 @@
       "filename": "bgm_aiwake_06_cryptic_signal.wav",
       "role": "Cryptic signal / faint transmission",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -91,8 +102,8 @@
       "filename": "bgm_aiwake_07_binary_tension.wav",
       "role": "Binary tension / computational pulse",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -102,8 +113,8 @@
       "filename": "bgm_aiwake_08_deep_protocol.wav",
       "role": "Deep protocol / subterranean drone",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -113,8 +124,8 @@
       "filename": "bgm_aiwake_09_silent_argument.wav",
       "role": "Silent argument / ghostly pad",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -124,8 +135,41 @@
       "filename": "bgm_aiwake_10_terminal_state.wav",
       "role": "Terminal state / calm before storm",
       "source": "",
-      "approved": false,
-      "status": "pending_review",
+      "approved": true,
+      "status": "approved",
+      "present": true,
+      "generated": true,
+      "failed": false
+    },
+    {
+      "id": "aiwake_11_cryptic_keys",
+      "filename": "bgm_aiwake_11_cryptic_keys.wav",
+      "role": "Cryptic keys / mysterious piano",
+      "source": "",
+      "approved": true,
+      "status": "approved",
+      "present": true,
+      "generated": true,
+      "failed": false
+    },
+    {
+      "id": "aiwake_12_shadow_protocol",
+      "filename": "bgm_aiwake_12_shadow_protocol.wav",
+      "role": "Shadow protocol / distant piano",
+      "source": "",
+      "approved": true,
+      "status": "approved",
+      "present": true,
+      "generated": true,
+      "failed": false
+    },
+    {
+      "id": "aiwake_13_silent_resonance",
+      "filename": "bgm_aiwake_13_silent_resonance.wav",
+      "role": "Silent resonance / reflective piano",
+      "source": "",
+      "approved": true,
+      "status": "approved",
       "present": true,
       "generated": true,
       "failed": false
@@ -134,14 +178,17 @@
   "written": [
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_01_core_suspense.wav",
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_02_dark_ambient.wav",
-    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_03_neural_pulse.wav",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_03_subtle_mystery.wav",
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_04_socratic_void.wav",
-    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_05_cold_logic.wav",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_05_noir_logic.wav",
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_06_cryptic_signal.wav",
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_07_binary_tension.wav",
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_08_deep_protocol.wav",
     "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_09_silent_argument.wav",
-    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_10_terminal_state.wav"
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_10_terminal_state.wav",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_11_cryptic_keys.wav",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_12_shadow_protocol.wav",
+    "G:\\My Drive\\Z sosFiles\\Z_act\\@ NETWORK\\@MEDIAUPSCALE_FACTORY_DYNAMIC_CONTENT\\Unified Multi-Page Factory\\channels_config\\aiwake\\assets\\bgm\\bgm_aiwake_13_silent_resonance.wav"
   ],
   "failures": []
 }

@@ -81,8 +81,8 @@ def validate_script(
         if thematic
         else int(getattr(lofi_cfg, "MAX_SCENES", 12))
     )
-    # Length is the writer's call on freeform scripts — the piece runs as long as
-    # the idea needs and the render follows it, so no count check applies.
+    # Length is the writer's call on freeform scripts, but spoken duration is not:
+    # N beats × beat_s must fit duration_requested_s.
     freeform = str(script.get("writer") or "").strip().startswith("freeform")
     if not isinstance(lines, list):
         reasons.append(f"expected a lines list, got {type(lines).__name__}")
@@ -109,9 +109,22 @@ def validate_script(
             use_v2 = bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
             if not text:
                 reasons.append(f"scene {i} has empty text")
-            elif freeform:
-                # The written line is the image unit and may run long by design.
-                # What has to fit a caption is each on-screen beat it displays as.
+                continue
+            slot_s = float(
+                row.get("duration_s")
+                or script.get("scene_duration_s")
+                or lofi_cfg.beat_duration_s()
+            )
+            spoken_ceiling = lofi_cfg.beat_word_ceiling(slot_s)
+            n_spoken = len(text.split())
+            if n_spoken > spoken_ceiling:
+                reasons.append(
+                    f"scene {i} spoken line has {n_spoken} words "
+                    f"(max {spoken_ceiling} for {slot_s:.1f}s at "
+                    f"{lofi_cfg.narration_wpm():.0f} wpm) — rewrite that line; "
+                    "do not let it proceed to image generation"
+                )
+            if freeform:
                 caps = row.get("caption_beats")
                 caps = [str(c).strip() for c in caps if str(c).strip()] if isinstance(caps, list) else []
                 if not caps:
@@ -212,6 +225,21 @@ def validate_script(
                     reasons.append(f"scene {i} missing visual_prompt")
                 if visual and text and visual.strip().lower() == text.strip().lower():
                     reasons.append(f"scene {i} visual_prompt must differ from caption text")
+
+        beat_s = float(script.get("scene_duration_s") or lofi_cfg.beat_duration_s())
+        requested = float(
+            script.get("duration_requested_s")
+            or script.get("duration_s")
+            or lofi_cfg.declared_duration_s(scene_count=len(lines))
+        )
+        max_beats = lofi_cfg.max_beats_for_duration(requested)
+        if len(lines) > max_beats:
+            needed = round(len(lines) * beat_s, 3)
+            reasons.append(
+                f"script has {len(lines)} beats × {beat_s:.1f}s = {needed:.1f}s "
+                f"but duration_requested_s is {requested:.1f}s (max {max_beats} beats). "
+                f"Request a longer format up front; do not overrun silently."
+            )
 
         # Split-across-cut version of the same template (object arcs only)
         if not thematic:

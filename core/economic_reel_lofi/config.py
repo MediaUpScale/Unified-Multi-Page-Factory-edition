@@ -50,6 +50,18 @@ THEMATIC_ARC_ID: str = "thematic_arc"
 MEASURED_SPEECH_WPS: float = 3.0
 MEASURED_SPEECH_AT_VOICE_SPEED: float = 0.80
 MONOLOGUE_DURATION_SAFETY: float = 0.90
+# Writer-side spoken pace. Distance-pilot VO at speed 0.80 ran ~2.7–3.1 w/s
+# (162–186 wpm) on long literary beats. 150 wpm is slightly conservative so
+# TTS has headroom inside the declared beat window.
+NARRATION_WPM: float = 150.0
+BEAT_WORD_BUDGET_SLACK: int = 2  # punchy-clause ceiling on top of floor(dur×wpm)
+TTS_DURATION_TOLERANCE: float = 0.15  # post-TTS vs declared duration_s
+LINE_REWRITE_MAX_PASSES: int = 2
+# Isolated TTS overrun: auto-bump one beat's duration_s instead of sign-off.
+TTS_AUTO_BUMP_MAX_BEATS: int = 1
+TTS_AUTO_BUMP_MAX_FRAC: float = 0.35  # overrun ≤ 35% of original declared
+TTS_AUTO_BUMP_MAX_ABS_S: float = 1.5  # bump target ≤ +1.5s
+TTS_AUTO_BUMP_TOTAL_FRAC: float = 0.10  # total stays within 10% of request
 # Wonder Feed + Momma Circle production default (object arcs remain in the bank).
 DEFAULT_ARC_BY_MODULE: dict[str, str] = {
     "relationship": "thematic_arc",
@@ -62,9 +74,12 @@ DEDUP_SIMILARITY_THRESHOLD: float = 0.85
 # Auto-reject if a script copies stored wf1–4 / mc1–3 transcripts.
 REFERENCE_OVERLAP_THRESHOLD: float = 0.80
 # Total tries per scene = IMAGE_MAX_RETRIES_PER_SCENE + 1.
-# Cap at 2 attempts so a systematic fail cannot 3–4× its own cost.
+# HARD CAP: never more than 2 image+critic attempts per beat per run.
 IMAGE_MAX_RETRIES_PER_SCENE: int = 1
+IMAGE_ATTEMPTS_PER_BEAT: int = 2
 IMAGE_ATTEMPTS_PER_SCENE: int = 2
+# Regen cycles in manual_overrides history. A 3rd cycle needs force=True.
+MAX_REGEN_CYCLES_PER_BEAT: int = 2
 # Stop the episode once image calls would exceed this × beat count.
 IMAGE_CALL_BUDGET_MULT: float = 2.0
 
@@ -72,6 +87,29 @@ IMAGE_CALL_BUDGET_MULT: float = 2.0
 def image_call_budget(n_beats: int) -> int:
     n = max(1, int(n_beats))
     return max(n, int(math.ceil(n * IMAGE_CALL_BUDGET_MULT)))
+
+
+def clamp_attempt_budget(requested: int | None) -> int:
+    """Never more than IMAGE_ATTEMPTS_PER_BEAT, even if a caller asks for more."""
+    cap = max(1, int(IMAGE_ATTEMPTS_PER_BEAT))
+    if requested is None:
+        n = int(IMAGE_ATTEMPTS_PER_SCENE or cap)
+    else:
+        n = int(requested)
+    return max(1, min(n, cap))
+
+
+def log_image_budget(*, used: int, budget: int, n_beats: int = 0) -> None:
+    over = int(used) > int(budget)
+    tag = "OVERRUN" if over else "ok"
+    print("=" * 64)
+    print(
+        f"[LOFI budget] image_calls={int(used)}  "
+        f"image_call_budget={int(budget)}  beats={int(n_beats)}  {tag}"
+    )
+    print("=" * 64)
+
+
 # Core Mode (a) retrieval — not quote/philosopher mode (b)
 CORE_DETAIL_COUNT: int = 3
 REQUIRE_ANCHOR_OBJECT: bool = True
@@ -183,6 +221,134 @@ def estimated_spoken_duration_s(
     if rate <= 0:
         return 0.0
     return round(float(word_count) / rate, 2)
+
+
+def narration_wpm() -> float:
+    return float(NARRATION_WPM)
+
+
+def narration_wps() -> float:
+    return float(NARRATION_WPM) / 60.0
+
+
+def beat_word_budget(duration_s: float | None = None) -> int:
+    """Floor words that fit ``duration_s`` at NARRATION_WPM. 3.0s → 7."""
+    dur = float(duration_s if duration_s is not None else SCENE_DURATION_S)
+    return max(1, math.floor(dur / 60.0 * float(NARRATION_WPM)))
+
+
+def beat_word_ceiling(duration_s: float | None = None) -> int:
+    """Hard per-beat spoken cap: budget + slack. 3.0s → 9."""
+    return beat_word_budget(duration_s) + max(0, int(BEAT_WORD_BUDGET_SLACK))
+
+
+def max_beats_for_duration(duration_s: float | None = None) -> int:
+    """How many SCENE_DURATION_S beats fit the requested total. Default 27s → 9."""
+    dur = float(duration_s if duration_s is not None else DEFAULT_DURATION_S)
+    n = int(math.floor(dur / float(SCENE_DURATION_S) + 1e-9))
+    return max(1, min(int(MAX_SCENES), n))
+
+
+def declared_duration_s(*, scene_count: int | None = None) -> float:
+    n = int(scene_count if scene_count is not None else THEMATIC_DEFAULT_SCENES)
+    return round(float(n) * float(SCENE_DURATION_S), 3)
+
+
+def vo_duration_overrun(
+    vo_dur_s: float,
+    *,
+    duration_s: float | None = None,
+    tolerance: float | None = None,
+) -> bool:
+    """True when rendered speech exceeds declared beat length by more than tolerance."""
+    declared = float(duration_s if duration_s is not None else SCENE_DURATION_S)
+    tol = float(TTS_DURATION_TOLERANCE if tolerance is None else tolerance)
+    return float(vo_dur_s or 0.0) > declared * (1.0 + max(0.0, tol))
+
+
+def ceil_half_second(duration_s: float) -> float:
+    """Next 0.5s at or above ``duration_s``. 3.84 → 4.0."""
+    return round(math.ceil(float(duration_s) * 2.0 - 1e-9) / 2.0, 3)
+
+
+def apply_isolated_tts_duration_bumps(
+    overruns: list[dict[str, Any]],
+    *,
+    requested_total_s: float,
+    n_beats: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Auto-bump a single small TTS overrun after the word-budget gate.
+
+    ``overruns`` items: index (0-based), vo_dur, duration_s, tightened.
+    On success, each applied note includes ``bumped_s`` and the item's
+    ``duration_s`` is updated. Returns (applied, stop_reason).
+    """
+    if not overruns:
+        return [], None
+    if len(overruns) > int(TTS_AUTO_BUMP_MAX_BEATS):
+        bits = ", ".join(
+            f"beat {int(r.get('index', 0)) + 1} {float(r.get('vo_dur') or 0):.2f}s/"
+            f"{float(r.get('duration_s') or SCENE_DURATION_S):.1f}s"
+            for r in overruns
+        )
+        return [], (
+            f"{len(overruns)} beats need a TTS duration bump ({bits}) — "
+            "not an isolated edge case; sign-off required"
+        )
+    rec = overruns[0]
+    if not rec.get("tightened"):
+        return [], (
+            f"beat {int(rec.get('index', 0)) + 1} TTS-overran before a tightening "
+            "pass — rewrite first; auto-bump is not a shortcut around the word gate"
+        )
+    original = float(rec.get("duration_s") or SCENE_DURATION_S)
+    vo = float(rec.get("vo_dur") or 0.0)
+    if original <= 0:
+        return [], f"beat {int(rec.get('index', 0)) + 1} has no declared duration"
+    frac = (vo / original) - 1.0
+    bumped = ceil_half_second(max(vo, original))
+    if bumped < vo:
+        bumped = round(vo + 0.05, 3)
+    abs_delta = bumped - original
+    if frac > float(TTS_AUTO_BUMP_MAX_FRAC) + 1e-9:
+        return [], (
+            f"beat {int(rec.get('index', 0)) + 1} TTS {vo:.2f}s is "
+            f"{frac * 100:.0f}% over {original:.1f}s (auto-bump cap "
+            f"{float(TTS_AUTO_BUMP_MAX_FRAC) * 100:.0f}%) — sign-off required"
+        )
+    if abs_delta > float(TTS_AUTO_BUMP_MAX_ABS_S) + 1e-9:
+        return [], (
+            f"beat {int(rec.get('index', 0)) + 1} bump {original:.1f}s → {bumped:.1f}s "
+            f"exceeds +{float(TTS_AUTO_BUMP_MAX_ABS_S):.1f}s — sign-off required"
+        )
+    n = max(1, int(n_beats))
+    new_total = float(requested_total_s) - original + bumped
+    cap_total = float(requested_total_s) * (1.0 + float(TTS_AUTO_BUMP_TOTAL_FRAC))
+    if new_total > cap_total + 1e-9:
+        return [], (
+            f"beat {int(rec.get('index', 0)) + 1} bump would make total {new_total:.1f}s "
+            f"vs requested {float(requested_total_s):.1f}s "
+            f"(cap {cap_total:.1f}s) — sign-off required"
+        )
+    rec["duration_s"] = bumped
+    rec["bumped_s"] = bumped
+    rec["original_s"] = original
+    note = {
+        "beat": int(rec.get("index", 0)) + 1,
+        "index": int(rec.get("index", 0)),
+        "original_s": original,
+        "bumped_s": bumped,
+        "vo_dur_s": round(vo, 3),
+        "requested_total_s": float(requested_total_s),
+        "new_total_s": round(new_total, 3),
+        "n_beats": n,
+        "reason": "isolated TTS overrun after tightening; auto-approved duration bump",
+    }
+    print(
+        f"[LOFI duration-bump] AUTO beat={note['beat']} {original:.1f}s → {bumped:.1f}s "
+        f"(VO {vo:.2f}s) new_total={new_total:.1f}s vs requested {requested_total_s:.1f}s"
+    )
+    return [note], None
 
 
 def thematic_caption_limits(

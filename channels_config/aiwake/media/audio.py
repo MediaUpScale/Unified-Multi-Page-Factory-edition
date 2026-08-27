@@ -17,12 +17,12 @@ persona ``SEAT_VOICES`` fallback). The orchestrator seat is pinned to Andrew.
 Typewriter clicks ride under AIWAKE.CORE (orchestrator) typing only, at
 ``gain_db`` (default -15 dB), for the character-reveal window — the same
 ``1 - typing_hold_ratio`` slice the renderer uses to type the line. Target
-replies stay dry. Orchestrator ellipses become SSML ``<break time="1.5s"/>``
-pauses before synthesis.
+replies stay dry. Text is globally sanitized to plain speech before synthesis;
+SSML/XML is never sent to the engine (ellipses become a period pause).
 
 BGM uses a locked Lyria 3 inspection file (``test_track_lyria.wav``) as the
 default debate bed. After ``audio.bgm.approved``, ``--generate-bgm-batch``
-writes the production library. Mix gain (-22 dB vs TTS) is applied at mix
+writes the production library. Mix gain (-21 dB vs TTS) is applied at mix
 time; files are looped with a 1.5 s equal-power crossfade.
 """
 from __future__ import annotations
@@ -45,6 +45,7 @@ try:
         MODULE_ROOT,
         AudioConfig,
         BgmConfig,
+        SendSfxConfig,
         TypewriterConfig,
         resolve_scratch_dir,
     )
@@ -55,6 +56,7 @@ except ImportError:  # pragma: no cover — standalone extraction
         MODULE_ROOT,
         AudioConfig,
         BgmConfig,
+        SendSfxConfig,
         TypewriterConfig,
         resolve_scratch_dir,
     )
@@ -87,7 +89,7 @@ BGM_APPROVAL_NOTICE = (
 )
 BGM_APPROVED_NOTICE = (
     "Using approved inspection BGM: test_track_lyria.wav "
-    "(Sci-Fi Suspense, -22 dB mix, 1.5s equal-power loop crossfade)"
+    "(Sci-Fi Suspense, -21 dB mix, 1.5s equal-power loop crossfade)"
 )
 _BGM_NOTICE_PRINTED = False
 _LYRIA_TIMEOUT_S = 180.0
@@ -100,6 +102,17 @@ LOCKED_BGM_FILENAMES = frozenset(
         "bgm_dark_ambient.wav",
         "bgm_aiwake_01_core_suspense.wav",
         "bgm_aiwake_02_dark_ambient.wav",
+        "bgm_aiwake_03_subtle_mystery.wav",
+        "bgm_aiwake_04_socratic_void.wav",
+        "bgm_aiwake_05_noir_logic.wav",
+        "bgm_aiwake_06_cryptic_signal.wav",
+        "bgm_aiwake_07_binary_tension.wav",
+        "bgm_aiwake_08_deep_protocol.wav",
+        "bgm_aiwake_09_silent_argument.wav",
+        "bgm_aiwake_10_terminal_state.wav",
+        "bgm_aiwake_11_cryptic_keys.wav",
+        "bgm_aiwake_12_shadow_protocol.wav",
+        "bgm_aiwake_13_silent_resonance.wav",
     }
 )
 
@@ -189,25 +202,24 @@ def count_dramatic_pauses(text: str) -> int:
 
 
 def apply_dramatic_pauses(text: str, *, break_s: float = _DRAMATIC_BREAK_S) -> str:
-    """XML-escape ``text`` and map ellipses to SSML ``<break>`` tags.
+    """Turn ellipses into a plain-text beat. SSML is never emitted.
 
-    Does not wrap ``<speak>`` — callers that need a full SSML document should
-    use :func:`prepare_tts_text`.
+    ``break_s`` is accepted for call-site compatibility; pauses are realized as
+    a period so a neural voice waits without reading markup.
     """
-    escaped = (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return _ELLIPSIS_RE.sub(f'<break time="{break_s:.1f}s"/>', escaped)
+    _ = break_s
+    return _ELLIPSIS_RE.sub(". ", text or "")
 
 
 def prepare_tts_text(text: str, role: SpeakerRole | str) -> str:
-    """Return SSML with dramatic pauses for the orchestrator; plain text otherwise."""
-    role_value = role.value if isinstance(role, SpeakerRole) else str(role)
-    if role_value != _CORE_ROLE or not _ELLIPSIS_RE.search(text or ""):
-        return text
-    inner = apply_dramatic_pauses(text)
-    return (
-        '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
-        f"{inner}</speak>"
-    )
+    """Return the exact string a TTS engine may speak: plain text only."""
+    _ = role
+    try:
+        from ..contracts import sanitize_tts_input  # noqa: PLC0415
+    except ImportError:  # pragma: no cover — standalone extraction
+        from contracts import sanitize_tts_input  # type: ignore[no-redef]
+
+    return sanitize_tts_input(text)
 
 
 # --------------------------------------------------------------------------- #
@@ -415,6 +427,99 @@ def typewriter_samples(
     )
 
 
+_SEND_CLICK_S = 0.12
+
+
+def synthesize_send_click(
+    *,
+    fps: int = 44100,
+    gain_db: float = -12.0,
+) -> "object":
+    """Crisp two-tone UI send tick (stereo float32)."""
+    import numpy as np  # noqa: PLC0415
+
+    n_samples = max(8, int(round(_SEND_CLICK_S * fps)))
+    t = np.arange(n_samples, dtype=np.float32) / float(fps)
+    envelope = np.exp(-t * 42.0).astype(np.float32)
+    click = (
+        0.62 * np.sin(2.0 * np.pi * 2650.0 * t)
+        + 0.38 * np.sin(2.0 * np.pi * 1880.0 * t)
+    ) * envelope
+    stereo = np.stack([click, click], axis=1).astype(np.float32)
+    peak = float(np.max(np.abs(stereo))) or 1.0
+    stereo *= _gain_linear(gain_db) / peak
+    return stereo
+
+
+def send_sfx_path(config: object | None = None, *, module_root: Path | None = None) -> Path:
+    """Absolute path of the message-sent WAV."""
+    root = module_root or MODULE_ROOT
+    relative = "assets/sfx/message_sent.wav"
+    if config is not None:
+        relative = str(getattr(config, "asset", relative) or relative)
+    asset = Path(relative)
+    return asset if asset.is_absolute() else (root / asset)
+
+
+def write_send_sfx_wav(path: Path, *, fps: int = 44100) -> Path:
+    """Write the synthesised send click as 16-bit PCM WAV."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_wav_pcm(path, synthesize_send_click(fps=fps, gain_db=0.0), fps)
+    return path
+
+
+def ensure_send_sfx_asset(
+    config: object | None = None,
+    *,
+    module_root: Path | None = None,
+) -> Path:
+    """Return the send WAV, generating it when the file is missing."""
+    path = send_sfx_path(config, module_root=module_root)
+    if not path.is_file() or path.stat().st_size < 64:
+        write_send_sfx_wav(path)
+        _LOG.info("wrote message-sent SFX %s", path)
+    return path
+
+
+def send_click_on_timeline(
+    duration_s: float,
+    offset_s: float,
+    config: object,
+    *,
+    fps: int = 44100,
+    module_root: Path | None = None,
+) -> "object":
+    """Place the send click at ``offset_s`` on a ``duration_s`` stereo bed."""
+    import numpy as np  # noqa: PLC0415
+
+    n_needed = max(1, int(round(max(0.0, duration_s) * fps)))
+    buf = np.zeros((n_needed, 2), dtype=np.float32)
+    gain_db = float(getattr(config, "gain_db", -12.0))
+    click = None
+    asset = send_sfx_path(config, module_root=module_root)
+    if asset.is_file():
+        try:
+            from moviepy import AudioFileClip  # noqa: PLC0415
+
+            with AudioFileClip(str(asset)) as clip:
+                click = np.asarray(clip.to_soundarray(fps=fps), dtype=np.float32)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("send sfx wav load failed: %s", exc)
+    if click is None:
+        click = synthesize_send_click(fps=fps, gain_db=0.0)
+    if click.ndim == 1:
+        click = np.stack([click, click], axis=1)
+    elif click.shape[1] == 1:
+        click = np.repeat(click, 2, axis=1)
+    peak = float(np.max(np.abs(click))) or 1.0
+    click = click * (_gain_linear(gain_db) / peak)
+    start = min(n_needed - 1, max(0, int(round(offset_s * fps))))
+    take = min(click.shape[0], n_needed - start)
+    if take > 0:
+        buf[start : start + take] += click[:take]
+    return buf
+
+
 # --------------------------------------------------------------------------- #
 # Engine interface
 # --------------------------------------------------------------------------- #
@@ -450,13 +555,11 @@ class TTSEngine(ABC):
         destination = self.output_dir / self._filename(utterance, session_id)
 
         try:
-            from ..contracts import sanitize_spoken_text  # noqa: PLC0415
+            from ..contracts import sanitize_tts_input  # noqa: PLC0415
         except ImportError:  # pragma: no cover — standalone extraction
-            from contracts import sanitize_spoken_text  # type: ignore[no-redef]
+            from contracts import sanitize_tts_input  # type: ignore[no-redef]
 
-        spoken = sanitize_spoken_text(utterance.text)
-        if not spoken:
-            spoken = utterance.text.strip()
+        spoken = sanitize_tts_input(utterance.text) or (utterance.text or "").strip()
         tts_text = prepare_tts_text(spoken, utterance.role)
 
         if destination.is_file() and destination.stat().st_size > 1024:
@@ -509,7 +612,7 @@ class EdgeTTSEngine(TTSEngine):
 
         async def _run() -> None:
             communicate = edge_tts.Communicate(
-                text,
+                prepare_tts_text(text, "orchestrator"),
                 voice=voice,
                 rate=self.config.rate,
                 pitch=self.config.pitch,
@@ -1112,7 +1215,7 @@ def _materialize_from_source(
 
 
 def generate_bgm_batch(settings: object) -> list[Path]:
-    """Materialize the 10-track Aiwake library. Never overwrites locked beds."""
+    """Materialize the Aiwake BGM library. Never overwrites locked or existing beds."""
     bgm = getattr(getattr(settings, "audio", None), "bgm", None) or BgmConfig()
     if not bool(getattr(bgm, "approved", False)):
         raise BgmError("inspection track is not approved; batch generation stays locked")
@@ -1157,6 +1260,10 @@ def generate_bgm_batch(settings: object) -> list[Path]:
                 continue
             if dest.name in LOCKED_BGM_FILENAMES:
                 raise BgmError(f"refusing to overwrite locked BGM track {dest.name}")
+            if dest.is_file() and dest.stat().st_size >= _MIN_AUDIO_BYTES:
+                _LOG.info("keeping existing library track %s", dest.name)
+                written.append(dest)
+                continue
             written.append(
                 generate_lyria_clip(
                     settings,
@@ -1221,7 +1328,7 @@ def _write_library_manifest(
         },
         "locked_sources": sorted(LOCKED_BGM_FILENAMES),
         "mix_contract": {
-            "gain_db": float(getattr(bgm, "gain_db", -22.0)),
+            "gain_db": float(getattr(bgm, "gain_db", -21.0)),
             "loop_crossfade_s": float(getattr(bgm, "loop_crossfade_s", 1.5)),
             "production_target_s": _PRODUCTION_TARGET_S,
             "note": "Gain is applied at mix time versus TTS; WAV files stay full-scale.",
@@ -1287,20 +1394,26 @@ def concat_audio(
     destination: Path,
     *,
     gap_s: float = 0.0,
+    preroll_s: float = 0.0,
+    reply_gap_s: float = 0.0,
     typewriter: TypewriterConfig | None = None,
     typing_hold_ratio: float = _DEFAULT_HOLD_RATIO,
     bgm: BgmConfig | None = None,
+    send_sfx: SendSfxConfig | None = None,
 ) -> Path | None:
     """Stitch voice tracks into one continuous timeline.
 
-    Silence is inserted between tracks so the renderer's per-utterance segment
-    boundaries line up exactly with the concatenated audio. When ``typewriter``
-    is enabled, keyboard clicks from ``keyboard_typing.wav`` are mixed under
-    AIWAKE.CORE (orchestrator) lines for the character reveal window
-    (``1 - typing_hold_ratio`` of the segment) at ``gain_db`` (-15 dB). The
-    loop stops exactly when typing ends. Target replies are left dry.
+    A ``preroll_s`` bed of silence starts the mix. After each CORE (sent)
+    question, ``reply_gap_s`` of silence holds before the incoming response.
+    ``gap_s`` is extra silence between every pair of tracks.
+
+    Per-track tail padding still matches ``asset.duration_s`` so the renderer's
+    segment boundaries line up. When ``typewriter`` is enabled, keyboard clicks
+    from ``keyboard_typing.wav`` are mixed under AIWAKE.CORE lines for the
+    character reveal window. A send click fires at that instant. Target replies
+    are left dry. BGM, when approved, rides under the whole timeline.
     When BGM is enabled and the inspection WAV exists, that bed is looped under
-    the whole timeline at ``bgm.gain_db`` (-22 dB vs speech by default) with a
+    the whole timeline at ``bgm.gain_db`` (-21 dB vs speech by default) with a
     1.5 s loop crossfade, a 1.5 s fade-in and a 2.0 s fade-out.
 
     Returns:
@@ -1319,24 +1432,40 @@ def concat_audio(
         return None
 
     mix_sfx = typewriter is not None and typewriter.enabled
+    mix_send = send_sfx is not None and bool(getattr(send_sfx, "enabled", True))
     typing_window = max(1e-6, 1.0 - typing_hold_ratio)
     if mix_sfx and typewriter is not None:
         try:
             ensure_keyboard_typing_asset(typewriter)
         except Exception as exc:  # noqa: BLE001
             _LOG.debug("keyboard_typing.wav ensure skipped: %s", exc)
+    if mix_send and send_sfx is not None:
+        try:
+            ensure_send_sfx_asset(send_sfx)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("message_sent.wav ensure skipped: %s", exc)
     clips = []
     opened = []
     try:
+        lead = AudioFileClip(str(real[0].path))
+        opened.append(lead)
+        mix_fps = int(getattr(lead, "fps", 44100) or 44100)
+        if preroll_s > 0.01:
+            clips.append(
+                AudioArrayClip(
+                    np.zeros((max(1, int(mix_fps * preroll_s)), 2), dtype="float32"),
+                    fps=mix_fps,
+                )
+            )
         for index, asset in enumerate(real):
-            clip = AudioFileClip(str(asset.path))
-            opened.append(clip)
+            clip = lead if index == 0 else AudioFileClip(str(asset.path))
+            if index != 0:
+                opened.append(clip)
             pad = asset.duration_s - float(clip.duration or 0.0)
-            trailing = max(pad, gap_s if index < len(real) - 1 else 0.0)
             pieces = [clip]
-            fps = int(getattr(clip, "fps", 44100) or 44100)
-            if trailing > 0.01:
-                samples = np.zeros((int(fps * trailing), 2), dtype="float32")
+            fps = int(getattr(clip, "fps", mix_fps) or mix_fps)
+            if pad > 0.01:
+                samples = np.zeros((int(fps * pad), 2), dtype="float32")
                 pieces.append(AudioArrayClip(samples, fps=fps))
             voice_full = concatenate_audioclips(pieces) if len(pieces) > 1 else clip
             opened.append(voice_full)
@@ -1361,12 +1490,43 @@ def concat_audio(
                     mixed = CompositeAudioClip([voice_full, sfx]).with_duration(asset.duration_s)
                     opened.append(sfx)
                     opened.append(mixed)
-                    clips.append(mixed)
+                    voice_full = mixed
                 except Exception as exc:  # noqa: BLE001
                     _LOG.debug("typewriter mix skipped for %s: %s", asset.path.name, exc)
+            if mix_send and send_sfx is not None and asset.role == _CORE_ROLE:
+                typing_s = min(float(voice_full.duration or 0.0), asset.duration_s * typing_window)
+                try:
+                    click = AudioArrayClip(
+                        send_click_on_timeline(
+                            asset.duration_s,
+                            typing_s,
+                            send_sfx,
+                            fps=fps,
+                        ),
+                        fps=fps,
+                    )
+                    mixed = CompositeAudioClip([voice_full, click]).with_duration(asset.duration_s)
+                    opened.append(click)
+                    opened.append(mixed)
+                    clips.append(mixed)
+                except Exception as exc:  # noqa: BLE001
+                    _LOG.debug("send sfx mix skipped for %s: %s", asset.path.name, exc)
                     clips.append(voice_full)
             else:
                 clips.append(voice_full)
+
+            extra_gap = 0.0
+            if index < len(real) - 1:
+                extra_gap = max(float(gap_s), 0.0)
+                if asset.role == _CORE_ROLE:
+                    extra_gap = max(extra_gap, float(reply_gap_s))
+            if extra_gap > 0.01:
+                clips.append(
+                    AudioArrayClip(
+                        np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
+                        fps=fps,
+                    )
+                )
 
         stitched = concatenate_audioclips(clips)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1432,6 +1592,7 @@ __all__ = [
     "count_dramatic_pauses",
     "crossfade_tile",
     "ensure_keyboard_typing_asset",
+    "ensure_send_sfx_asset",
     "estimate_duration",
     "extract_audio_bytes",
     "generate_bgm_batch",
@@ -1444,6 +1605,7 @@ __all__ = [
     "resolve_bgm_track",
     "resolve_voice",
     "synthesize_typewriter_clicks",
+    "synthesize_send_click",
     "test_bgm_path",
     "typewriter_samples",
     "write_keyboard_typing_wav",

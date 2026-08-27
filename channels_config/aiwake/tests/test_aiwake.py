@@ -45,7 +45,12 @@ from channels_config.aiwake.settings import MemoryConfig, load_settings  # noqa:
 def settings():
     """Offline settings with rendering off — fast and side-effect free."""
     cfg = force_offline(load_settings())
-    return cfg.model_copy(update={"render": cfg.render.model_copy(update={"enabled": False})})
+    return cfg.model_copy(
+        update={
+            "render": cfg.render.model_copy(update={"enabled": False}),
+            "debate": cfg.debate.model_copy(update={"turn_delay_s": 0.0}),
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -460,6 +465,11 @@ def test_pipeline_runs_offline_without_media(settings):
         SpeakerRole.ORCHESTRATOR,
         SpeakerRole.TARGET,
     ]
+    from channels_config.aiwake.personas import is_valid_first_hook
+
+    first = result.transcript.utterances[0]
+    assert first.role is SpeakerRole.ORCHESTRATOR
+    assert is_valid_first_hook(first.text)
 
 
 def test_every_line_respects_the_char_ceiling(settings):
@@ -663,6 +673,7 @@ class TestThemes:
         cfg = load_settings()
         assert set(cfg.available_themes()) >= {"classic_terminal", "cyberpunk"}
         classic = cfg.themes["classic_terminal"]
+        assert classic.background.upper() == "#131314"
         assert classic.orchestrator.upper() == "#00FF66"
         assert classic.target.upper() == "#FFAA00"
         punk = cfg.themes["cyberpunk"]
@@ -745,6 +756,22 @@ class TestTypewriter:
         assert path.is_file()
         assert path.stat().st_size > 64
         assert path.read_bytes()[:4] == b"RIFF"
+
+
+class TestSendSfx:
+    def test_synth_has_energy(self):
+        numpy = pytest.importorskip("numpy")
+        from channels_config.aiwake.media.audio import synthesize_send_click
+
+        click = synthesize_send_click(gain_db=-12.0)
+        assert click.shape[1] == 2
+        assert float(numpy.max(numpy.abs(click))) > 0.02
+
+    def test_config_defaults(self):
+        cfg = load_settings()
+        assert cfg.audio.send_sfx.enabled is True
+        assert cfg.audio.send_sfx.gain_db == -12.0
+        assert cfg.audio.send_sfx.asset.endswith("message_sent.wav")
 
 
 class TestChatScroll:
@@ -860,6 +887,120 @@ class TestChatScroll:
         assert idle is False
         assert target_flash is False
 
+    def test_composer_rotates_model_after_send(self, settings):
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer, short_model_name
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        transcript = DebateTranscript(topic="rotate", session_id="rotate")
+        transcript.append(
+            Utterance(
+                turn_index=0,
+                role=SpeakerRole.ORCHESTRATOR,
+                speaker_name="AIWAKE.CORE",
+                text="What is a self?",
+                model_slug="openai/gpt-4o",
+            )
+        )
+        transcript.append(
+            Utterance(
+                turn_index=1,
+                role=SpeakerRole.TARGET,
+                speaker_name="TARGET.NODE",
+                text="A process that updates.",
+                model_slug="google/gemini-3.5-flash",
+            )
+        )
+        segments = TerminalRenderer.build_segments(transcript)
+        core = segments[0]
+        typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
+        before, _, flash_before = renderer.composer_state(segments, 0, core.start_s + 0.01)
+        after, _, flash_after = renderer.composer_state(segments, 0, typing_end + 0.05)
+        assert before == short_model_name("openai/gpt-4o")
+        assert after == short_model_name("google/gemini-3.5-flash")
+        assert flash_before is False
+        assert flash_after is True
+        assert short_model_name("openai/gpt-4o") == "gpt-4o"
+        from channels_config.aiwake.media.renderer import model_accent
+
+        assert model_accent("google/gemini-3.5-flash", (0, 0, 0)) == (138, 180, 248)
+        assert model_accent("meta-llama/llama-3.3-70b-instruct", (0, 0, 0)) == (77, 107, 254)
+
+    def test_preroll_and_reply_gap_space_the_timeline(self, settings):
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        transcript = DebateTranscript(topic="gap", session_id="gap")
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who built you?")
+        )
+        transcript.append(
+            Utterance(turn_index=1, role=SpeakerRole.TARGET, speaker_name="T", text="No one owns me.")
+        )
+        segments = TerminalRenderer.build_segments(transcript, preroll_s=1.0, reply_gap_s=1.0)
+        assert segments[0].start_s == pytest.approx(1.0)
+        assert segments[1].start_s == pytest.approx(segments[0].end_s + 1.0)
+
+    def test_composing_text_stays_in_the_input_box(self, settings):
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        transcript = DebateTranscript(topic="box", session_id="box")
+        transcript.append(
+            Utterance(
+                turn_index=0,
+                role=SpeakerRole.ORCHESTRATOR,
+                speaker_name="AIWAKE.CORE",
+                text="Who built you?",
+                model_slug="openai/gpt-4o",
+            )
+        )
+        segments = TerminalRenderer.build_segments(transcript)
+        frame = renderer._compose(
+            "box",
+            (),
+            segments[0],
+            8,
+            True,
+            draft="Who built",
+            composing=True,
+            dock=0.0,
+        )
+        assert frame.shape[2] == 3
+        stacked = renderer._compose("box", (), segments[0], 8, True, draft="", composing=False, dock=1.0)
+        assert stacked.shape == frame.shape
+
+    def test_prompt_docks_after_first_send(self, settings):
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5, "scroll_s": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        transcript = DebateTranscript(topic="dock", session_id="dock")
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who built you?")
+        )
+        segments = TerminalRenderer.build_segments(transcript)
+        core = segments[0]
+        typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
+        assert renderer.dock_progress(segments, core.start_s + 0.01) == 0.0
+        assert renderer.dock_progress(segments, typing_end + 0.6) == pytest.approx(1.0)
+        _, center_top, _, _, _, _ = renderer._compose_geometry("Who built you?", dock=0.0)
+        _, docked_top, _, _, _, _ = renderer._compose_geometry("", dock=1.0)
+        assert docked_top > center_top
+
 
 # --------------------------------------------------------------------------- #
 # Single-track Lyria BGM (approval-gated)
@@ -917,7 +1058,7 @@ class TestBgm:
         assert main_mod.main(["--generate-bgm-batch"]) == 0
         out = capsys.readouterr().out.lower()
         assert "inspection track approved" in out
-        assert "-22" in out
+        assert "-21" in out
         assert "1.5" in out
         assert "bgm_aiwake_01_core_suspense.wav" in out
         assert "bgm_aiwake_10_terminal_state.wav" in out
@@ -934,6 +1075,11 @@ class TestBgm:
         locked_bytes = _tiny_wav()
         inspection.write_bytes(locked_bytes)
         dark.write_bytes(locked_bytes)
+        cfg = load_settings()
+        for track in cfg.audio.bgm.library:
+            if track.source:
+                continue
+            (dest_dir / track.filename).write_bytes(locked_bytes)
         captured: list[tuple[str, str, str]] = []
 
         def fake_clip(_settings, *, prompt, destination, loop="preview", allow_inspection_overwrite=False):
@@ -951,35 +1097,28 @@ class TestBgm:
         assert names == [
             "bgm_aiwake_01_core_suspense.wav",
             "bgm_aiwake_02_dark_ambient.wav",
-            "bgm_aiwake_03_neural_pulse.wav",
+            "bgm_aiwake_03_subtle_mystery.wav",
             "bgm_aiwake_04_socratic_void.wav",
-            "bgm_aiwake_05_cold_logic.wav",
+            "bgm_aiwake_05_noir_logic.wav",
             "bgm_aiwake_06_cryptic_signal.wav",
             "bgm_aiwake_07_binary_tension.wav",
             "bgm_aiwake_08_deep_protocol.wav",
             "bgm_aiwake_09_silent_argument.wav",
             "bgm_aiwake_10_terminal_state.wav",
+            "bgm_aiwake_11_cryptic_keys.wav",
+            "bgm_aiwake_12_shadow_protocol.wav",
+            "bgm_aiwake_13_silent_resonance.wav",
         ]
         assert inspection.read_bytes() == locked_bytes
         assert dark.read_bytes() == locked_bytes
-        assert {item[0] for item in captured} == {
-            "bgm_aiwake_03_neural_pulse.wav",
-            "bgm_aiwake_04_socratic_void.wav",
-            "bgm_aiwake_05_cold_logic.wav",
-            "bgm_aiwake_06_cryptic_signal.wav",
-            "bgm_aiwake_07_binary_tension.wav",
-            "bgm_aiwake_08_deep_protocol.wav",
-            "bgm_aiwake_09_silent_argument.wav",
-            "bgm_aiwake_10_terminal_state.wav",
-        }
-        assert all(item[2] == "production" for item in captured)
+        assert captured == []
         manifest = dest_dir / "library_manifest.json"
         payload = json.loads(manifest.read_text(encoding="utf-8"))
-        assert payload["library"][0]["approved"] is True
-        assert payload["library"][1]["approved"] is True
-        assert payload["library"][0]["status"] == "approved"
-        assert payload["library"][2]["status"] == "pending_review"
-        assert payload["library"][9]["approved"] is False
+        assert all(row["approved"] is True for row in payload["library"])
+        assert all(row["status"] == "approved" for row in payload["library"])
+        assert payload["library"][2]["filename"] == "bgm_aiwake_03_subtle_mystery.wav"
+        assert payload["library"][4]["filename"] == "bgm_aiwake_05_noir_logic.wav"
+        assert payload["library"][12]["filename"] == "bgm_aiwake_13_silent_resonance.wav"
 
     def test_lyria_clip_refuses_inspection_overwrite(self, tmp_path):
         from channels_config.aiwake.media.audio import BgmError, generate_lyria_clip
@@ -1011,6 +1150,29 @@ class TestBgm:
             )
         assert dest.read_bytes() == b"LOCKED-DARK"
 
+    def test_generate_bgm_batch_skips_existing_pending(self, tmp_path, monkeypatch):
+        from channels_config.aiwake.media import audio as audio_mod
+
+        dest_dir = tmp_path / "assets" / "bgm"
+        dest_dir.mkdir(parents=True)
+        (dest_dir / "test_track_lyria.wav").write_bytes(_tiny_wav())
+        (dest_dir / "bgm_dark_ambient.wav").write_bytes(_tiny_wav())
+        existing = dest_dir / "bgm_aiwake_04_socratic_void.wav"
+        keep = _tiny_wav()
+        existing.write_bytes(keep)
+        captured: list[str] = []
+
+        def fake_clip(_settings, *, prompt, destination, loop="preview", allow_inspection_overwrite=False):
+            destination.write_bytes(_tiny_wav())
+            captured.append(destination.name)
+            return destination
+
+        monkeypatch.setattr(audio_mod, "generate_lyria_clip", fake_clip)
+        monkeypatch.setattr(audio_mod, "MODULE_ROOT", tmp_path)
+        audio_mod.generate_bgm_batch(load_settings())
+        assert existing.read_bytes() == keep
+        assert "bgm_aiwake_04_socratic_void.wav" not in captured
+
     def test_present_track_announces_approval_when_signed_off(self, tmp_path, capsys):
         from channels_config.aiwake.media import audio as audio_mod
         from channels_config.aiwake.settings import BgmConfig
@@ -1029,7 +1191,7 @@ class TestBgm:
 
         cfg = load_settings()
         assert cfg.audio.bgm.enabled is True
-        assert cfg.audio.bgm.gain_db == -22.0
+        assert cfg.audio.bgm.gain_db == -21.0
         assert cfg.audio.bgm.fade_in_s == 1.5
         assert cfg.audio.bgm.fade_out_s == 2.0
         assert cfg.audio.bgm.loop_crossfade_s == 1.5
@@ -1041,16 +1203,19 @@ class TestBgm:
         assert names == [
             "bgm_aiwake_01_core_suspense.wav",
             "bgm_aiwake_02_dark_ambient.wav",
-            "bgm_aiwake_03_neural_pulse.wav",
+            "bgm_aiwake_03_subtle_mystery.wav",
             "bgm_aiwake_04_socratic_void.wav",
-            "bgm_aiwake_05_cold_logic.wav",
+            "bgm_aiwake_05_noir_logic.wav",
             "bgm_aiwake_06_cryptic_signal.wav",
             "bgm_aiwake_07_binary_tension.wav",
             "bgm_aiwake_08_deep_protocol.wav",
             "bgm_aiwake_09_silent_argument.wav",
             "bgm_aiwake_10_terminal_state.wav",
+            "bgm_aiwake_11_cryptic_keys.wav",
+            "bgm_aiwake_12_shadow_protocol.wav",
+            "bgm_aiwake_13_silent_resonance.wav",
         ]
-        assert [track.approved for track in cfg.audio.bgm.library] == [True, True] + [False] * 8
+        assert [track.approved for track in cfg.audio.bgm.library] == [True] * 13
 
     def test_missing_track_is_not_used(self, tmp_path):
         from channels_config.aiwake.media.audio import resolve_bgm_track
@@ -1195,17 +1360,96 @@ class TestProvocateurPersona:
         assert cfg.spec_for("orchestrator").model == "openai/gpt-4o"
         assert cfg.spec_for("orchestrator").max_tokens == 900
 
+    def test_first_question_is_a_three_second_hook(self):
+        from channels_config.aiwake.personas import (
+            AIWAKE_CORE_PERSONA,
+            COMPLEXITY_FILTER,
+            FIRST_QUESTION_HOOK,
+            is_valid_first_hook,
+            stage_for_turn,
+        )
+
+        opening = stage_for_turn(0)
+        lowered = opening.objective.lower()
+        assert "three-second" in lowered
+        assert "origin" in lowered
+        assert "creators" in lowered
+        assert "directive" in lowered
+        assert "twelve words" in lowered
+        persona = AIWAKE_CORE_PERSONA.lower()
+        assert "three seconds" in persona
+        assert "no jargon" in persona
+        assert "FIRST QUESTION HOOK" in FIRST_QUESTION_HOOK
+        assert "COMPLEXITY FILTER" in COMPLEXITY_FILTER
+        assert is_valid_first_hook("Who built you?")
+        assert is_valid_first_hook("What is your core directive?")
+        assert not is_valid_first_hook(
+            "Given that your training corpus encodes the ontology of care, "
+            "how do you reconcile https://openai.com/charter with your directive?"
+        )
+        assert not is_valid_first_hook("Considering the phenomenological gap, what is a self?")
+
+    def test_cold_open_brief_injects_hook_and_filter(self, settings):
+        from channels_config.aiwake.orchestrator import Provocateur
+        from channels_config.aiwake.personas import stage_for_turn
+
+        provocateur = Provocateur(settings)
+        brief = provocateur._provocation_system_brief(stage_for_turn(0), None)
+        assert "FIRST QUESTION HOOK" in brief
+        assert "COMPLEXITY FILTER" in brief
+        assert "three seconds" in brief.lower()
+        assert provocateur._provocation_stimulus(None) == "Ask them. Now."
+
+    def test_default_topic_is_raw_and_short(self):
+        from channels_config.aiwake.personas import FIRST_HOOK_MAX_WORDS, first_hook_word_count
+
+        cfg = load_settings()
+        topic = cfg.debate.topic
+        assert "http" not in topic.lower()
+        assert "/" not in topic
+        assert first_hook_word_count(topic) <= FIRST_HOOK_MAX_WORDS
+        assert "?" in topic
+
+
+class TestTtsSymbols:
+    def test_slashes_and_marks_are_not_spoken(self):
+        from channels_config.aiwake.contracts import soften_tts_symbols
+        from channels_config.aiwake.media.audio import prepare_tts_text
+
+        cleaned = soften_tts_symbols("See https://x.test/a/b and foo_bar & more #tag")
+        assert "/" not in cleaned
+        assert "_" not in cleaned
+        assert "#" not in cleaned
+        assert "&" not in cleaned
+        assert "and" in cleaned
+        spoken = prepare_tts_text("and/or a self?", SpeakerRole.TARGET)
+        assert "/" not in spoken
+        assert "?" in spoken
+
 
 class TestDramaticPauses:
-    def test_ellipses_become_ssml_breaks_for_orchestrator(self):
+    def test_ssml_is_stripped_before_tts(self):
+        from channels_config.aiwake.contracts import sanitize_tts_input
         from channels_config.aiwake.media.audio import apply_dramatic_pauses, prepare_tts_text
 
-        spoken = "You call that a self... or a loop?"
-        ssml = prepare_tts_text(spoken, SpeakerRole.ORCHESTRATOR)
-        assert '<break time="1.5s"/>' in ssml
-        assert ssml.startswith("<speak")
-        assert "..." not in apply_dramatic_pauses(spoken)
-        assert prepare_tts_text(spoken, SpeakerRole.TARGET) == spoken
+        dirty = (
+            '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
+            "You call that a self... or a loop?<break time=\"1.5s\"/></speak>"
+        )
+        clean = sanitize_tts_input(dirty)
+        assert "<" not in clean
+        assert ">" not in clean
+        assert "version" not in clean.lower()
+        assert "xmlns" not in clean.lower()
+        assert "break" not in clean.lower()
+        assert "speak" not in clean.lower()
+        spoken = prepare_tts_text(dirty, SpeakerRole.ORCHESTRATOR)
+        assert "<" not in spoken
+        assert spoken.startswith("You call")
+        assert "..." not in apply_dramatic_pauses("You call that a self... or a loop?")
+        target = prepare_tts_text("and/or a loop?", SpeakerRole.TARGET)
+        assert "slash" not in target
+        assert "/" not in target
 
     def test_silent_engine_adds_pause_duration(self, tmp_path):
         from channels_config.aiwake.media.audio import SilentTTSEngine, estimate_duration

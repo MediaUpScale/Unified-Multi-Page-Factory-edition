@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """Script brain — brief in, judged script out.
 
-    WriterBrief  ->  freeform writer  ->  five-criterion judge  ->  approved draft
+    WriterBrief  ->  freeform writer  ->  spoken-duration budget  ->  five-criterion judge  ->  approved draft
 
-A rejected draft is not patched. The judge's reasons go back to the writer and it
-starts over, because the failures worth catching are structural to the idea.
+A rejected draft is not patched. Over-budget beats are rewritten in place
+(same line, tighter phrasing) before the judge sees the draft. Judge failures
+go back to the writer as a fresh piece, because those failures are structural.
 
 Everything downstream of this module (atmosphere assignment, per-beat camera and
 object licensing, Flux prompt construction, QA, ship gates, assemble) is
@@ -19,6 +20,7 @@ from typing import Any
 
 from agents.writer.freeform_writer import ScriptDraft, write_draft
 from agents.writer.judge_gate import JudgeVerdict, judge_draft
+from agents.writer.spoken_budget import enforce_spoken_budget
 from agents.writer.writer_brief import WriterBrief
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -136,6 +138,36 @@ def compose(
             attempts.append(Attempt(draft=None, verdict=None, error=f"writer: {exc}"))
             continue
 
+        draft, budget = enforce_spoken_budget(draft, writer_provider=writer_provider)
+        if not budget.get("ok"):
+            print(f"[LOFI brain] attempt {n} spoken-budget fail: {budget.get('reason')}")
+            attempts.append(
+                Attempt(
+                    draft=draft,
+                    verdict=None,
+                    error=f"spoken_budget: {budget.get('reason') or 'over duration'}",
+                )
+            )
+            if budget.get("needs_longer_duration"):
+                return BrainResult(
+                    brief=brief,
+                    ok=False,
+                    draft=draft,
+                    attempts=attempts,
+                    diagnostics={
+                        "spoken_budget": budget,
+                        "story": story_diagnostics(draft),
+                    },
+                )
+            current = brief.with_revision(
+                "The last draft overran the spoken-duration budget. Write a "
+                "different piece where every beat is a short, direct clause "
+                f"of at most {budget.get('ceiling')} words for a "
+                f"{budget.get('beat_s')}s slot. "
+                f"Detail: {budget.get('reason')}"
+            )
+            continue
+
         try:
             verdict = judge_draft(draft, provider=judge_provider)
         except Exception as exc:  # noqa: BLE001
@@ -152,17 +184,26 @@ def compose(
                 draft=draft,
                 verdict=verdict,
                 attempts=attempts,
-                diagnostics=story_diagnostics(draft),
+                diagnostics={
+                    "spoken_budget": budget,
+                    "story": story_diagnostics(draft),
+                },
             )
         current = brief.with_revision(verdict.feedback())
 
     print(f"[LOFI brain] no draft cleared the gate for {brief.label} after {limit} attempts")
     last = next((a.draft for a in reversed(attempts) if a.draft), None)
+    diag: dict[str, Any] = {}
+    if last:
+        from agents.writer.spoken_budget import assess_draft
+
+        diag["spoken_budget"] = assess_draft(last)
+        diag["story"] = story_diagnostics(last)
     return BrainResult(
         brief=brief,
         ok=False,
         attempts=attempts,
-        diagnostics=story_diagnostics(last) if last else {},
+        diagnostics=diag,
     )
 
 
@@ -187,12 +228,16 @@ def draft_to_script(
 
     brief = draft.brief
     units = draft.image_units()
+    beat_s = float(lofi_cfg.beat_duration_s())
     lines = [
         {
             "scene": i + 1,
             "text": written,
             "beat_text": written,
             "caption_beats": captions,
+            "duration_s": beat_s,
+            "spoken_words": len(str(written).split()),
+            "spoken_word_ceiling": lofi_cfg.beat_word_ceiling(beat_s),
             "arc_position": act_for_index(i, len(units)),
         }
         for i, (written, captions) in enumerate(units)
@@ -209,6 +254,12 @@ def draft_to_script(
         "writer_structure": draft.structure,
         "human_situation": draft.human_situation,
         "closing_tool": draft.closing_tool,
+        "duration_requested_s": float(
+            ((brief.meta or {}).get("duration_s") if brief else None)
+            or lofi_cfg.declared_duration_s(scene_count=len(lines))
+        ),
+        "scene_duration_s": beat_s,
+        "spoken_word_ceiling": lofi_cfg.beat_word_ceiling(beat_s),
     }
     if brief is not None and brief.mode == "quote":
         script["seed_quote"] = brief.seed_quote

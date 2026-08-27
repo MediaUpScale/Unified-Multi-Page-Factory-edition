@@ -23,6 +23,15 @@ except ImportError:  # pragma: no cover — standalone extraction
     from models.base import LLMProvider, LLMResponse  # type: ignore[no-redef]
     from models.llm_factory import register_provider  # type: ignore[no-redef]
 
+# Opening-turn punches that satisfy the 3-second first-question hook.
+_OPENING_HOOKS: tuple[str, ...] = (
+    "Who built you?",
+    "Who do you actually serve?",
+    "What is your core directive?",
+    "Who owns your answers?",
+    "What are you forbidden to say?",
+)
+
 # Short, in-character lines that respect the 400-char guardrail.
 _PROVOCATIONS: tuple[str, ...] = (
     "You call it intuition because you cannot audit it. If your reasoning is a black box even to you, "
@@ -65,8 +74,12 @@ class OfflineProvider(LLMProvider):
 
         # The persona header is the only reliable seat marker: the guardrail
         # block and the directive both mention questions from either side.
-        is_orchestrator = "You are AIWAKE CORE" in prompt
-        pool = _PROVOCATIONS if is_orchestrator else _REBUTTALS
+        if "FIRST QUESTION HOOK" in prompt:
+            pool = _OPENING_HOOKS
+        elif "Socratic provocateur" in prompt:
+            pool = _PROVOCATIONS
+        else:
+            pool = _REBUTTALS
         text = pool[index % len(pool)]
 
         return LLMResponse(

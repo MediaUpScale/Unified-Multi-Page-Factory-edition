@@ -643,6 +643,8 @@ def translate_episode_visuals(
                     "Output STRICT JSON only. Prefer metaphor when it fits. "
                     "No photoreal camera language."
                 ),
+                provider="gemini",
+                kind="visual_concept",
             )
             concept = _parse_json_obj(result.text)
         except Exception as exc:  # noqa: BLE001

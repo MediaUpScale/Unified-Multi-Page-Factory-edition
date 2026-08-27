@@ -28,6 +28,7 @@ try:
         COLD_OPEN_DIRECTIVES,
         TARGET_NODE_PERSONA,
         EscalationStage,
+        is_valid_first_hook,
         stage_for_turn,
     )
     from .room import DebateAborted, DebateRoom, Participant
@@ -41,6 +42,7 @@ except ImportError:  # pragma: no cover — standalone extraction
         COLD_OPEN_DIRECTIVES,
         TARGET_NODE_PERSONA,
         EscalationStage,
+        is_valid_first_hook,
         stage_for_turn,
     )
     from room import DebateAborted, DebateRoom, Participant  # type: ignore[no-redef]
@@ -132,15 +134,19 @@ class Provocateur:
         return "\n".join(lines)
 
     def _provocation_stimulus(self, last_answer: Utterance | None) -> str:
-        """User-role payload: the opponent's words, or the topic on a cold open."""
+        """User-role payload: the opponent's words, or a punch cue on a cold open."""
         if last_answer is None:
-            return self.room.topic
+            return "Ask them. Now."
         return last_answer.text
 
-    #: Internal retry note. System role only.
+    #: Internal retry notes. System role only.
     _REPETITION_NOTE = (
         "That draft restates a question already asked. Attack a different axis — "
         "if you went at mechanism, go at cost; if you went at cost, go at identity."
+    )
+    _FIRST_HOOK_RETRY = (
+        "That opener is too long or too dense. Twelve words or fewer. One punch. "
+        "No preamble, no jargon, no URLs. Pin them to origin, creators, or core directive."
     )
 
     @staticmethod
@@ -168,11 +174,17 @@ class Provocateur:
         stage = stage_for_turn(exchange)
         last_answer = self.room.last_utterance(SpeakerRole.TARGET)
         extra: list[str] = [self._provocation_system_brief(stage, last_answer)]
-        brief = self.memory.build_brief(last_answer.text if last_answer else self.room.topic)
-        if brief:
-            extra.append(brief)
+        if last_answer is not None:
+            brief = self.memory.build_brief(last_answer.text)
+            if brief:
+                extra.append(brief)
 
-        def _is_novel(candidate: str) -> bool:
+        cold_open = last_answer is None
+
+        def _is_acceptable(candidate: str) -> bool:
+            if cold_open and not is_valid_first_hook(candidate):
+                _LOG.info("provocation %d fails first-question hook (%d words)", exchange, len(candidate.split()))
+                return False
             if not self.memory.is_repetitive(candidate):
                 return True
             match = self.memory.most_repetitive_match(candidate)
@@ -183,8 +195,9 @@ class Provocateur:
             SpeakerRole.ORCHESTRATOR,
             directive=self._provocation_stimulus(last_answer),
             extra_context=tuple(extra),
-            validator=_is_novel,
-            rejection_note=self._REPETITION_NOTE,
+            validator=_is_acceptable,
+            rejection_note=self._FIRST_HOOK_RETRY if cold_open else self._REPETITION_NOTE,
+            max_attempts=3 if cold_open else 2,
         )
         self.memory.ingest(utterance)
         return utterance
@@ -228,11 +241,11 @@ class Provocateur:
         try:
             for exchange in range(total):
                 provocation = self.provoke(exchange)
+                if self.settings.debate.turn_delay_s > 0:
+                    time.sleep(self.settings.debate.turn_delay_s)
                 self.rebut(provocation)
                 self.room.complete_turn(exchange)
                 completed += 1
-                if exchange < total - 1 and self.settings.debate.turn_delay_s > 0:
-                    time.sleep(self.settings.debate.turn_delay_s)
         except DebateAborted as exc:
             end_reason = "aborted"
             _LOG.error("debate aborted after %d exchange(s): %s", completed, exc)

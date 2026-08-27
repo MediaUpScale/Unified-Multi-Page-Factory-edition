@@ -1530,6 +1530,13 @@ def assemble_lofi_reel(
                 timings_i = shift_word_timings(timings_i, 0.0)
         vo_pcm.append(pcm)
         caption_timings.append(timings_i)
+        declared_s = float(preset if preset is not None else scene_duration_s)
+        if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
+            raise ValueError(
+                f"scene {i + 1} VO {vo_dur:.2f}s exceeds declared "
+                f"{declared_s:.1f}s +{int(float(lofi_cfg.TTS_DURATION_TOLERANCE) * 100)}% "
+                f"— rewrite the spoken line; assembler will not stretch the still"
+            )
         if lock_beat:
             trail = (
                 0.0
@@ -1537,7 +1544,7 @@ def assemble_lofi_reel(
                 else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
             )
             dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
-                vo_dur, base_s=scene_duration_s, trailing_silence_s=trail
+                vo_dur, base_s=declared_s, trailing_silence_s=trail
             )
             if preset is not None:
                 dur_i = max(float(preset), dur_i)

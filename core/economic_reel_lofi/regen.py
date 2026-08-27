@@ -40,6 +40,7 @@ def assemble_video_from_episode(
     episode: dict[str, Any],
     *,
     output_mp4: Path | None = None,
+    allow_qa_hold: bool = False,
 ) -> Path:
     """
     Re-render the MP4 from existing stills + VO. Does not regenerate
@@ -47,10 +48,19 @@ def assemble_video_from_episode(
 
     Hard-stops if the script failed the validator or the episode is under
     visual QA HOLD (same class of block as pipeline HOLD before assemble).
+    ``allow_qa_hold`` is an explicit pilot opt-in — leftover flags are
+    logged and the video is still assembled.
     """
     from core.economic_reel_lofi.ship_gates import assert_episode_cleared_for_assemble
 
-    assert_episode_cleared_for_assemble(episode)
+    leftover = list(episode.get("visual_qa_flags") or [])
+    if allow_qa_hold:
+        print(
+            f"[LOFI assemble] PILOT allow_qa_hold leftover={len(leftover)} "
+            f"flags={leftover}"
+        )
+    else:
+        assert_episode_cleared_for_assemble(episode)
     images = [Path(p) for p in (episode.get("scene_images") or [])]
     if not images or any(not p.is_file() for p in images):
         missing = [str(p) for p in images if not p.is_file()]
@@ -114,6 +124,135 @@ def assemble_video_from_episode(
     )
 
 
+def ensure_episode_voiceover(episode: dict[str, Any]) -> list[Path | None]:
+    """Generate missing per-beat VO files. ElevenLabs only — no Claude."""
+    from core.economic_reel_lofi.assembler import measure_vo_speech_duration
+    from core.economic_reel_lofi.pipeline import (
+        _sanitize_caption_typos,
+        _tts_breath_commas,
+        _tts_text_with_breaks,
+    )
+    from agents.media.audio_engine import generate_voiceover_with_timestamps
+
+    script = episode.get("script") if isinstance(episode.get("script"), dict) else {}
+    lines = list((script or {}).get("lines") or [])
+    work_dir = Path(str(episode.get("work_dir") or "."))
+    work_dir.mkdir(parents=True, exist_ok=True)
+    existing = list(episode.get("voice_paths") or [])
+    timings_all = list(episode.get("word_timings_per_scene") or [])
+    voice_paths: list[Path | None] = []
+    word_timings: list[Any] = []
+    durations: list[float] = []
+    vo_durs: list[float] = []
+    beat_s = float(episode.get("scene_duration_s") or lofi_cfg.beat_duration_s())
+    n = len(lines)
+    tts_overruns: list[dict[str, Any]] = []
+    for i, ln in enumerate(lines):
+        caption = _sanitize_caption_typos(str((ln or {}).get("text") or ""))
+        prior = Path(str(existing[i])) if i < len(existing) and existing[i] else None
+        vo_path = prior if prior and prior.is_file() else work_dir / f"vo_scene_{i + 1:02d}.mp3"
+        timings = timings_all[i] if i < len(timings_all) else None
+        if not vo_path.is_file() and caption.strip():
+            tts_text = _tts_text_with_breaks(_tts_breath_commas(caption))
+            use_ssml = "<break" in tts_text
+            speed = lofi_cfg.tts_speed()
+            model_id = lofi_cfg.tts_model() or "eleven_multilingual_v2"
+            voice_id = lofi_cfg.tts_voice_id()
+            print(
+                f"[LOFI VO] scene={i + 1} voice={voice_id} "
+                f"model={model_id} speed={speed} ssml={use_ssml}"
+            )
+            vo_path, raw_timings = generate_voiceover_with_timestamps(
+                tts_text,
+                vo_path,
+                voice_id=voice_id or None,
+                model_id=model_id,
+                force_elevenlabs=True,
+                expressive_mode=False,
+                enable_ssml=use_ssml,
+                speed=speed,
+                voice_settings={
+                    "stability": 1.0,
+                    "similarity_boost": 1.0,
+                    "style": 0.0,
+                    "use_speaker_boost": True,
+                    "speed": speed,
+                },
+            )
+            timings = [
+                (str(w), float(s), float(e))
+                for w, s, e in (raw_timings or [])
+                if str(w).strip()
+                and not str(w).startswith("<")
+                and str(w).lower() not in {"break", "time"}
+            ]
+        voice_paths.append(vo_path if vo_path and vo_path.is_file() else None)
+        word_timings.append(timings)
+        vo_dur = 0.0
+        if voice_paths[-1]:
+            try:
+                vo_dur = float(measure_vo_speech_duration(voice_paths[-1]))
+            except Exception:  # noqa: BLE001
+                vo_dur = 0.0
+        vo_durs.append(vo_dur)
+        declared = float((ln or {}).get("duration_s") or beat_s)
+        ceiling = lofi_cfg.beat_word_ceiling(declared)
+        tightened = len(caption.split()) <= ceiling
+        if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared):
+            tts_overruns.append(
+                {
+                    "index": i,
+                    "vo_dur": vo_dur,
+                    "duration_s": declared,
+                    "tightened": tightened,
+                    "row": ln,
+                }
+            )
+        trail = 0.0 if i >= n - 1 else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
+        dur_i, _ext = lofi_cfg.slot_duration_for_vo(
+            vo_dur, base_s=declared, trailing_silence_s=trail
+        )
+        durations.append(dur_i)
+    if tts_overruns:
+        requested = float(
+            episode.get("duration_requested_s")
+            or episode.get("duration_expected_s")
+            or (n * beat_s)
+        )
+        applied, stop = lofi_cfg.apply_isolated_tts_duration_bumps(
+            tts_overruns, requested_total_s=requested, n_beats=n
+        )
+        if stop:
+            raise ValueError(stop)
+        episode["duration_auto_bumps"] = applied
+        for rec in tts_overruns:
+            row = rec.get("row")
+            bumped = rec.get("bumped_s")
+            if not isinstance(row, dict) or bumped is None:
+                continue
+            row["duration_s"] = float(bumped)
+            i = int(rec["index"])
+            trail = 0.0 if i >= n - 1 else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
+            durations[i], _ = lofi_cfg.slot_duration_for_vo(
+                vo_durs[i], base_s=float(bumped), trailing_silence_s=trail
+            )
+    episode["voice_paths"] = [str(p) if p else None for p in voice_paths]
+    episode["word_timings_per_scene"] = word_timings
+    episode["scene_durations"] = durations
+    return voice_paths
+
+
+def regen_cycle_count(episode: dict[str, Any], scene_number: int) -> int:
+    """How many regen cycles this scene already has in manual_overrides."""
+    n = 0
+    for ov in episode.get("manual_overrides") or []:
+        if not isinstance(ov, dict):
+            continue
+        if int(ov.get("scene") or 0) == int(scene_number):
+            n += 1
+    return n
+
+
 def regenerate_scene(
     episode_json_path: Path | str,
     scene_number: int,
@@ -122,6 +261,8 @@ def regenerate_scene(
     *,
     assemble: bool = True,
     keep_last_attempt: bool = True,
+    force: bool = False,
+    composition_tighten: bool = False,
 ) -> dict[str, Any]:
     """
     Regen one scene still, run the same QA stack, replace the image in place,
@@ -147,11 +288,32 @@ def regenerate_scene(
 
     gates = list(episode.get("object_gate_by_scene") or [])
     gate_entry = dict(gates[idx]) if idx < len(gates) and isinstance(gates[idx], dict) else {}
+    cycles = regen_cycle_count(episode, scene_number)
+    cap = int(getattr(lofi_cfg, "MAX_REGEN_CYCLES_PER_BEAT", 2) or 2)
+    if cycles >= cap and not force:
+        msg = (
+            f"scene {scene_number} already has {cycles} regen cycles "
+            f"(cap={cap}). Pass force=True for a new strategy."
+        )
+        print(f"[LOFI regen] REFUSE {msg}")
+        return {
+            "status": "refused_cycle_cap",
+            "scene": int(scene_number),
+            "cycles": cycles,
+            "cap": cap,
+            "reason": msg,
+        }
     from core.economic_reel_lofi.visual_identity import restamp_abstract_licenses
 
     restamp_abstract_licenses(lines)
     row = dict(lines[idx])
     row["scene"] = int(row.get("scene") or scene_number)
+    if composition_tighten:
+        from core.economic_reel_lofi.visual_identity import (
+            tighten_licensed_subject_frame,
+        )
+
+        tighten_licensed_subject_frame(row)
     row.pop("visual_prompt", None)
 
     work_dir = Path(str(episode.get("work_dir") or target_path.parent))
@@ -159,12 +321,13 @@ def regenerate_scene(
     tmp_img = work_dir / f"scene_{int(scene_number):02d}_regen_tmp.png"
 
     extra = apply_ad_hoc_guidance("", str(reason or ""))
+    attempts = lofi_cfg.clamp_attempt_budget(max_attempts)
     print(
-        f"[LOFI regen] scene={scene_number} attempts={max_attempts} "
-        f"reason={reason!r} tmp={tmp_img.name}"
+        f"[LOFI regen] scene={scene_number} attempts={attempts} "
+        f"cycles={cycles} force={int(force)} reason={reason!r} tmp={tmp_img.name}"
     )
     gen_kw: dict[str, Any] = {
-        "attempt_budget": max_attempts,
+        "attempt_budget": attempts,
         "extra_prompt": extra,
     }
     if lofi_cfg.uses_flux_dev():
@@ -207,10 +370,13 @@ def regenerate_scene(
         "subject_type",
         "composition_type",
         "framing",
+        "shot_scale",
         "pose_hint",
         "object_continuity",
         "lighting_label",
         "abstract_license",
+        "visual_fallback",
+        "object_focus_framing",
     ):
         if key in row:
             lines[idx][key] = row[key]
@@ -318,6 +484,8 @@ def regenerate_flagged_scenes(
     *,
     max_attempts: int = 2,
     assemble: bool = False,
+    force: bool = False,
+    scenes: list[int] | None = None,
 ) -> dict[str, Any]:
     """Regen only QA-failed stills. Does not touch passing beats or other episodes."""
     episode_path = Path(episode_json_path)
@@ -331,10 +499,14 @@ def regenerate_flagged_scenes(
         script["lines"] = lines
         episode["script"] = script
         save_episode_json(episode, episode_path)
-    scenes = flagged_scene_numbers(episode)
-    print(f"[LOFI regen] flagged scenes={scenes} episode={episode_path.name}")
+    wanted = list(scenes) if scenes else flagged_scene_numbers(episode)
+    print(f"[LOFI regen] flagged scenes={wanted} episode={episode_path.name} force={int(force)}")
+    n_beats = max(1, len(lines) or len(wanted))
+    budget = lofi_cfg.image_call_budget(n_beats)
+    used_before = int(episode.get("image_calls") or 0)
+    lofi_cfg.log_image_budget(used=used_before, budget=budget, n_beats=n_beats)
     results = []
-    for n in scenes:
+    for n in wanted:
         results.append(
             regenerate_scene(
                 episode_path,
@@ -342,20 +514,32 @@ def regenerate_flagged_scenes(
                 reason=None,
                 max_attempts=max_attempts,
                 assemble=False,
+                force=force,
             )
         )
     episode = load_episode_json(episode_path)
     leftover = flagged_scene_numbers(episode)
+    used_after = int(episode.get("image_calls") or 0)
+    this_run = used_after - used_before
+    this_budget = len(wanted) * lofi_cfg.clamp_attempt_budget(max_attempts)
+    print(
+        f"[LOFI budget] this_run image_calls={this_run}  "
+        f"this_run_budget={this_budget}  "
+        f"episode_cumulative={used_after}  episode_budget={budget}"
+    )
+    lofi_cfg.log_image_budget(used=this_run, budget=this_budget, n_beats=len(wanted))
     video = None
     if assemble and not leftover:
         video = assemble_video_from_episode(episode)
         episode["video_path"] = str(video)
         save_episode_json(episode, episode_path)
     return {
-        "scenes": scenes,
+        "scenes": wanted,
         "leftover": leftover,
         "results": results,
         "video_path": str(video) if video else None,
+        "this_run_image_calls": this_run,
+        "this_run_budget": this_budget,
     }
 
 
@@ -371,12 +555,18 @@ def main() -> None:
     parser.add_argument("--scene", type=int, required=True, help="1-indexed scene number")
     parser.add_argument("--reason", default="", help="One-off prompt guidance")
     parser.add_argument("--max-attempts", type=int, default=2)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow a regen cycle after MAX_REGEN_CYCLES_PER_BEAT (new strategy only).",
+    )
     args = parser.parse_args()
     result = regenerate_scene(
         args.episode,
         args.scene,
         reason=args.reason or None,
         max_attempts=args.max_attempts,
+        force=bool(args.force),
     )
     print(json.dumps(result, indent=2))
     if result.get("status") != "ok":

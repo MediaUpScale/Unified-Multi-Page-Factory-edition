@@ -22,12 +22,9 @@ from agents.writer.writer_brief import WriterBrief
 
 # Sanity bounds only. These are not a creative target — the prompt asks for
 # "as many lines as the idea needs" and anything in this window is accepted.
+# Spoken-duration budget (words per beat) is enforced separately in spoken_budget.
 MIN_LINES = 4
 MAX_LINES = 20
-
-# Measured speaking rate, used only to *report* an estimated runtime in the draft
-# record. Nothing is ever trimmed or padded to hit a target duration.
-_WORDS_PER_SECOND = 3.0
 
 
 _CLAUSE_END = (",", ";", ":", "—", "–", ".", "?", "!")
@@ -132,7 +129,12 @@ class ScriptDraft:
 
     @property
     def estimated_seconds(self) -> float:
-        return round(self.word_count / _WORDS_PER_SECOND, 1)
+        from core.economic_reel_lofi import config as lofi_cfg
+
+        wps = lofi_cfg.narration_wps()
+        if wps <= 0:
+            return 0.0
+        return round(self.word_count / wps, 1)
 
     def full_text(self) -> str:
         return "\n".join(self.lines)
@@ -185,10 +187,12 @@ class ScriptDraft:
 _SYSTEM = """You are a writer. You make short spoken pieces that a person hears \
 once, alone, on a phone, and feels caught by.
 
-You are not filling in a template. Nobody is going to tell you how many lines to \
-write, where to put a connective, or what shape the piece takes. Those are your \
-decisions and they should be different every time, because different ideas need \
-different forms.
+You are not filling in a template. Nobody is going to tell you where to put a \
+connective or what shape the piece takes. Those are your decisions and they \
+should be different every time, because different ideas need different forms. \
+The output contract states the spoken slot — beat count, seconds per beat, \
+words per beat. Stay inside that slot. If the idea needs more room, it needs \
+a longer format requested up front, not longer sentences.
 
 What is actually being asked of you:
 
@@ -205,9 +209,11 @@ Generic sorrow is the failure mode. Precision is the whole job.
 Choose your own form. A single metaphor carried the whole way through. A refrain \
 that returns changed. A confession spoken straight at one person. A patient \
 observation that turns, near the end, into something the listener can actually \
-do. Long sentences are allowed. So is one word on its own line. So is repetition \
-used as a device. Vary the rhythm — a piece where every line is the same length \
-reads like a list.
+do. Rhythm can vary — one word on its own line, a repeated phrase used as a \
+device — but each spoken beat must be a short, direct clause, not a 30-word \
+literary sentence. The reference pieces move fast sentence to sentence; split \
+the thought across beats the same way. A piece where every line is the same \
+length reads like a list.
 
 Build one throughline. Every line has to need the line before it and set up the \
 one after. If a line could be lifted out and the piece still stands, it was \
@@ -234,10 +240,19 @@ different piece about a different subject, it is filler.
 Constraints that are real, because this gets produced: no NSFW, no naming real \
 private individuals, no naming or quoting authors, philosophers or books, no \
 titles, hashtags, emoji, stage directions or scene descriptions. Spoken words \
-only. Output valid JSON and nothing else."""
+only. Each beat has a hard spoken-duration budget — if a line cannot be said \
+in its slot at a natural pace, it is too long. Output valid JSON and nothing else."""
 
 
-def _output_contract() -> str:
+def _output_contract(brief: WriterBrief | None = None) -> str:
+    from core.economic_reel_lofi import config as lofi_cfg
+
+    meta = (brief.meta if brief is not None else {}) or {}
+    beat_s = float(meta.get("beat_duration_s") or meta.get("scene_duration_s") or lofi_cfg.beat_duration_s())
+    duration_s = float(meta.get("duration_s") or lofi_cfg.DEFAULT_DURATION_S)
+    ceiling = lofi_cfg.beat_word_ceiling(beat_s)
+    budget = lofi_cfg.beat_word_budget(beat_s)
+    max_beats = lofi_cfg.max_beats_for_duration(duration_s)
     return f"""Return one JSON object, no markdown fence, no commentary:
 
 {{
@@ -248,10 +263,16 @@ def _output_contract() -> str:
 }}
 
 "lines" is the spoken piece, in order, split where you want the listener to \
-breathe. Use as many lines as the idea needs — somewhere between {MIN_LINES} and \
-{MAX_LINES}. Do not pad to reach a number and do not compress to stay under one. \
-Lines may be one word or one long sentence; that is a rhythm decision and it is \
-yours."""
+breathe. This piece is {max_beats} beats of {beat_s:.1f}s each \
+(total {duration_s:.0f}s) unless a longer duration was requested. Do not write \
+more beats than that — if the idea needs more room, it needs a longer format, \
+not silently longer beats.
+
+Each beat is spoken in {beat_s:.1f}s. Target about {budget} words. HARD MAX \
+{ceiling} words. Short, direct clauses like the reference corpus — not one \
+long literary sentence per beat. One word is allowed. A 30-word sentence is \
+not. Use as many of those {max_beats} beats as the idea needs (at least \
+{MIN_LINES}). Do not pad. Do not overrun the word ceiling."""
 
 
 def build_prompt(brief: WriterBrief, *, reference_seed: int | None = None) -> str:
@@ -259,7 +280,7 @@ def build_prompt(brief: WriterBrief, *, reference_seed: int | None = None) -> st
     parts = [brief.assignment_block()]
     if ref:
         parts.append(ref)
-    parts.append(_output_contract())
+    parts.append(_output_contract(brief))
     return "\n\n".join(p for p in parts if p.strip())
 
 
@@ -312,12 +333,16 @@ def write_draft(
     reference_seed: int | None = None,
 ) -> ScriptDraft:
     """One writer call. Raises on a malformed response; the caller retries."""
-    from agents.mcp.text_model import complete_script
+    from agents.mcp.text_model import complete_script, estimate_tokens
 
     prompt = build_prompt(brief, reference_seed=reference_seed)
     name = (provider or _writer_provider()).strip().lower()
-    print(f"[LOFI writer] draft attempt={attempt} brief={brief.label} provider={name}")
-    result = complete_script(prompt, system=_SYSTEM, provider=name or None)
+
+    print(
+        f"[LOFI writer] draft attempt={attempt} brief={brief.label} provider={name} "
+        f"prompt_tokens_est={estimate_tokens(prompt) + estimate_tokens(_SYSTEM)}"
+    )
+    result = complete_script(prompt, system=_SYSTEM, provider=name or None, kind="writer")
     data = _extract_json(result.text)
     lines = _coerce_lines(data.get("lines"))
     if not (MIN_LINES <= len(lines) <= MAX_LINES):

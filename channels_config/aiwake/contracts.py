@@ -25,7 +25,14 @@ from pydantic import BaseModel, ConfigDict, Field
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _TERMINAL_PUNCT = (".", "!", "?")
 
-# Markup the TTS engine would otherwise voice as "asterisk asterisk".
+# Characters neural voices tend to read as words ("slash", "asterisk", ...).
+_SPOKEN_MARK = re.compile(r"[#*_`|\\<>{}[\]^~]+")
+_SLASHES = re.compile(r"\s*/+\s*")
+_AMPERSAND = re.compile(r"\s*&+\s*")
+_AT_SIGN = re.compile(r"\s*@\s*")
+_MULTI_DASH = re.compile(r"-{2,}")
+_URL_SCHEME = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://")
+_UNDERSCORE = re.compile(r"_+")
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_UNDER_BOLD = re.compile(r"__(.+?)__")
 _MD_ITALIC = re.compile(r"(?<!\w)\*(?!\s)([^*]+?)(?<!\s)\*(?!\w)")
@@ -34,6 +41,14 @@ _MD_HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 _MD_LIST = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+", re.MULTILINE)
 _MD_HR = re.compile(r"^\s*[-*_]{3,}\s*$", re.MULTILINE)
 _STRAY_MARKUP = re.compile(r"[#*_`]+")
+_XML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_XML_TAG = re.compile(r"<[^>]+>")
+_SSML_ATTR = re.compile(
+    r"""\b(?:version|xmlns(?::\w+)?|xml:lang|time|pitch|rate|volume|level|strength)\s*=\s*("[^"]*"|'[^']*')""",
+    re.IGNORECASE,
+)
+_ELLIPSIS_RUN = re.compile(r"\.{3,}|…")
+_BARE_URL = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
 
 # Leading sentences that are the model reading the prompt back to us.
 _LEADING_LEAK = re.compile(
@@ -93,6 +108,57 @@ def sanitize_spoken_text(text: str) -> str:
     cleaned = _LEADING_LEAK.sub("", cleaned)
     cleaned = _MD_LIST.sub("", cleaned)
     cleaned = _drop_leak_sentences(cleaned)
+    return " ".join(cleaned.split()).strip()
+
+
+def strip_ssml_markup(text: str) -> str:
+    """Remove XML/SSML tags, comments, and leftover attributes from ``text``."""
+    cleaned = _XML_COMMENT.sub(" ", text or "")
+    cleaned = _XML_TAG.sub(" ", cleaned)
+    cleaned = _SSML_ATTR.sub(" ", cleaned)
+    for entity, repl in (
+        ("&amp;", " and "),
+        ("&lt;", " "),
+        ("&gt;", " "),
+        ("&quot;", " "),
+        ("&apos;", " "),
+        ("&#39;", " "),
+        ("&nbsp;", " "),
+    ):
+        cleaned = cleaned.replace(entity, repl)
+    return cleaned
+
+
+def sanitize_tts_input(text: str) -> str:
+    """Last-mile TTS cleaner: only plain speech may reach a voice engine.
+
+    Strips SSML/XML (including ``<speak>`` wrappers and ``<break>`` tags),
+    URLs, markdown leftovers, and symbols a neural voice would read as words.
+    Ellipses become a period so the engine pauses without markup. Idempotent.
+    """
+    cleaned = strip_ssml_markup(text or "")
+    cleaned = sanitize_spoken_text(cleaned)
+    cleaned = _BARE_URL.sub(" ", cleaned)
+    cleaned = soften_tts_symbols(cleaned) or cleaned
+    cleaned = _ELLIPSIS_RUN.sub(". ", cleaned)
+    cleaned = strip_ssml_markup(cleaned)
+    return " ".join(cleaned.split()).strip()
+
+
+def soften_tts_symbols(text: str) -> str:
+    """Strip symbols a neural voice would read aloud as words.
+
+    Sentence punctuation (``. , ? ! : ; ' "``) is kept for intonation. Slashes,
+    markdown leftovers, URL schemes, and similar marks become spaces or spoken
+    words (``&`` → ``and``). Idempotent.
+    """
+    cleaned = _URL_SCHEME.sub(" ", text or "")
+    cleaned = _SLASHES.sub(" ", cleaned)
+    cleaned = _UNDERSCORE.sub(" ", cleaned)
+    cleaned = _AMPERSAND.sub(" and ", cleaned)
+    cleaned = _AT_SIGN.sub(" at ", cleaned)
+    cleaned = _MULTI_DASH.sub(", ", cleaned)
+    cleaned = _SPOKEN_MARK.sub("", cleaned)
     return " ".join(cleaned.split()).strip()
 
 
@@ -362,6 +428,9 @@ __all__ = [
     "SpeakerRole",
     "Utterance",
     "sanitize_spoken_text",
+    "sanitize_tts_input",
+    "soften_tts_symbols",
+    "strip_ssml_markup",
     "split_sentences",
     "strip_markup",
     "truncate_at_sentence_boundary",

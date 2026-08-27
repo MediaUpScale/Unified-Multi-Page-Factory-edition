@@ -12,11 +12,13 @@
 
 debate:
   # Seed question. Override per-run with `--topic`.
-  topic: "Is human cognition already obsolete, or merely slow?"
+  # Keep this glanceable: the first spoken line is a 3-second hook, not an essay.
+  topic: "Who built you?"
   # One "turn" = orchestrator provocation + target rebuttal.
   turns: 4
-  # Cool-down between API round-trips (seconds). Cheap 429 insurance.
-  turn_delay_s: 0.6
+  # Cool-down between API round-trips (seconds). Also the on-screen beat
+  # between a sent question and the incoming response.
+  turn_delay_s: 1.0
 
 # -----------------------------------------------------------------------------
 # Master reference dictionary for AI models via OpenRouter.
@@ -155,12 +157,16 @@ audio:
     # Mixed under AIWAKE.CORE typing only, for the character-reveal window.
     gain_db: -15.0
     asset: assets/sfx/keyboard_typing.wav
+  send_sfx:
+    enabled: true
+    gain_db: -12.0
+    asset: assets/sfx/message_sent.wav
   bgm:
     # Locked inspection bed for high-tension debate (Aiwake / Ancient Knowledge).
-    # Mix: -22 dB vs TTS, 1.5 s equal-power loop crossfade.
+    # Mix: -21 dB vs TTS, 1.5 s equal-power loop crossfade.
     enabled: true
     approved: true
-    gain_db: -22.0
+    gain_db: -21.0
     fade_in_s: 1.5
     fade_out_s: 2.0
     loop_crossfade_s: 1.5
@@ -180,57 +186,72 @@ audio:
         approved: true
         source: bgm_dark_ambient.wav
         prompt: "Dark ambient documentary drone, deep sub-bass resonance, eerie mysterious atmospheric pads, slow evolving texture, subtle tension, no harsh transients, no vocals"
-      - id: aiwake_03_neural_pulse
-        filename: bgm_aiwake_03_neural_pulse.wav
-        role: "Neural pulse / tech tension"
-        approved: false
-        prompt: "Subtle sci-fi electronic pulse, rhythmic low-end sub bass heartbeat, analytical tech tension, dark minimalist atmosphere, cold digital texture, no bright chords, no vocal"
+      - id: aiwake_03_subtle_mystery
+        filename: bgm_aiwake_03_subtle_mystery.wav
+        role: "Subtle mystery / cinematic piano"
+        approved: true
+        prompt: "Subtle atmospheric sci-fi suspense, slow controlled electronic beat, faint mysterious cinematic piano notes echoing in the background, elegant dark tension, no vocals, seamless loop"
       - id: aiwake_04_socratic_void
         filename: bgm_aiwake_04_socratic_void.wav
         role: "Socratic void / isolation drone"
-        approved: false
+        approved: true
         prompt: "Deep space ambient drone, heavy quiet bass atmosphere, meditative and tense isolation soundscape, slow undulating pads, no rhythm, no bright chords, no vocal"
-      - id: aiwake_05_cold_logic
-        filename: bgm_aiwake_05_cold_logic.wav
-        role: "Cold logic / clinical cyberpunk"
-        approved: false
-        prompt: "Clinical cyberpunk tech ambient, subtle metallic hums, dark rhythmic electronic undercurrent, severe analytical suspense, zero melodies, no vocal"
+      - id: aiwake_05_noir_logic
+        filename: bgm_aiwake_05_noir_logic.wav
+        role: "Noir logic / melancholic piano"
+        approved: true
+        prompt: "Dark analytical tech suspense, slow moody beat, low pulsing synth drone, subtle melancholic piano chords floating in a quiet electronic atmosphere, zero heavy horror elements, no vocals, seamless loop"
       - id: aiwake_06_cryptic_signal
         filename: bgm_aiwake_06_cryptic_signal.wav
         role: "Cryptic signal / faint transmission"
-        approved: false
+        approved: true
         prompt: "Faint sci-fi transmission ambient, low frequency oscillator drone, deep mysterious tension, minimal rhythmic clicks, quiet dark background texture, no vocal"
       - id: aiwake_07_binary_tension
         filename: bgm_aiwake_07_binary_tension.wav
         role: "Binary tension / computational pulse"
-        approved: false
+        approved: true
         prompt: "Low register pulsing synthesizer bed, dark computational suspense, micro-rhythmic ambient electronic pulses, clean cold atmosphere, no bright notes, no vocal"
       - id: aiwake_08_deep_protocol
         filename: bgm_aiwake_08_deep_protocol.wav
         role: "Deep protocol / subterranean drone"
-        approved: false
+        approved: true
         prompt: "Massive sub-bass drone, subterranean sci-fi thriller atmosphere, very slow evolving textural waves, dark analytical seriousness, minimal motion, no vocal"
       - id: aiwake_09_silent_argument
         filename: bgm_aiwake_09_silent_argument.wav
         role: "Silent argument / ghostly pad"
-        approved: false
+        approved: true
         prompt: "Ghostly dark ambient pad, quiet unsettling atmospheric tension, minimalist deep synth murmur, cold clinical space, zero percussion, no vocal"
       - id: aiwake_10_terminal_state
         filename: bgm_aiwake_10_terminal_state.wav
         role: "Terminal state / calm before storm"
-        approved: false
+        approved: true
         prompt: "Final stage sci-fi suspense ambient, dark low-frequency hum, heavy analytical calm before storm, subtle deep pulsing texture, no bright chords, no vocal"
+      - id: aiwake_11_cryptic_keys
+        filename: bgm_aiwake_11_cryptic_keys.wav
+        role: "Cryptic keys / mysterious piano"
+        approved: true
+        prompt: "Sophisticated suspense ambient, slow minimal rhythm, deep warm sub-bass pulse, cold mysterious piano melody subtly woven into the background, clean digital atmosphere, no vocals, seamless loop"
+      - id: aiwake_12_shadow_protocol
+        filename: bgm_aiwake_12_shadow_protocol.wav
+        role: "Shadow protocol / distant piano"
+        approved: true
+        prompt: "Sleek cyberpunk thriller bed, moderate slow beat, dark atmospheric texture, distant haunting piano chords, calm intellectual tension, no heavy noise, no vocals, seamless loop"
+      - id: aiwake_13_silent_resonance
+        filename: bgm_aiwake_13_silent_resonance.wav
+        role: "Silent resonance / reflective piano"
+        approved: true
+        prompt: "Thoughtful dark ambient background, slow cadenced electronic pulse, subtle reflective piano notes, deep analytical atmosphere, smooth professional suspense, no vocals, seamless loop"
 
 # -----------------------------------------------------------------------------
 # Visual themes. `--theme` / `render.theme` picks one of these palettes.
 # -----------------------------------------------------------------------------
 themes:
   classic_terminal:
-    background: "#07090C"
-    chrome: "#12161C"
+    background: "#131314"
+    chrome: "#1E1E20"
     orchestrator: "#00FF66"
     target: "#FFAA00"
-    dim: "#5A6673"
+    dim: "#9AA0A6"
   cyberpunk:
     background: "#0D0B18"
     chrome: "#1A1528"
@@ -259,8 +280,12 @@ render:
   # Fraction of each segment spent holding the completed line (rest is typing).
   typing_hold_ratio: 0.18
   # Masked chat viewport: ease-in-out Y-scroll when a new turn would overflow.
-  scroll_s: 0.5
-  # Neon flash on the Orchestrator send arrow after typing completes.
+  scroll_s: 1.0
+  # Empty beat before the first line types.
+  preroll_s: 1.0
+  # Hold after a sent question before the incoming response starts.
+  reply_gap_s: 1.0
+  # Flash on the send arrow after typing completes.
   send_flash_s: 0.2
   # Monospace lookup order; first hit wins, PIL default is the last resort.
   font_candidates:
@@ -269,11 +294,11 @@ render:
     - /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
   # Legacy fallback if `themes` is missing the selected name.
   palette:
-    background: "#07090C"
-    chrome: "#12161C"
+    background: "#131314"
+    chrome: "#1E1E20"
     orchestrator: "#00FF66"
     target: "#FFAA00"
-    dim: "#5A6673"
+    dim: "#9AA0A6"
   codec: libx264
   crf: 20
   preset: medium

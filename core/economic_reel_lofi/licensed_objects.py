@@ -256,7 +256,13 @@ def scrub_assembled_prompt(prompt: str, beat: dict[str, Any] | None) -> str:
             flags=re.I,
         )
         cleaned = re.sub(
-            r"\bwith a (?:large |tall |small )?letting\b",
+            r"\bwith a (?:large |tall |small |wide)?letting\b",
+            "",
+            cleaned,
+            flags=re.I,
+        )
+        cleaned = re.sub(
+            r"\bwith a (?:large|tall|small|wide)\b",
             "",
             cleaned,
             flags=re.I,
