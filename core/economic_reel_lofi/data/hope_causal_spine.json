@@ -1,0 +1,115 @@
+{
+  "episode": "hope_20260824",
+  "spoken_lines": [
+    "Hope was never a speech I gave myself",
+    "So I stopped waiting for one big morning",
+    "I kept leaving that window lit anyway",
+    "One night I almost let it go dark",
+    "But I paid for it with small stubborn hours",
+    "Because staying lit costs more than saying so",
+    "When the light held, I finally believed it",
+    "Then the street noticed what I kept doing",
+    "The window stayed lit because I stayed first"
+  ],
+  "beats": [
+    {
+      "beat": 1,
+      "line": "Hope was never a speech I gave myself",
+      "licensed_nouns": ["figure"],
+      "environment": ["pavement", "sky"],
+      "angle": "wide",
+      "distance": "figure tiny in path",
+      "light_direction": "streetlight far ahead",
+      "color_temperature": "cool night, one warm lamp plane",
+      "treatment": "distant small figure on an open empty road under the sky, hands unreadably small"
+    },
+    {
+      "beat": 2,
+      "line": "So I stopped waiting for one big morning",
+      "licensed_nouns": ["morning", "road"],
+      "environment": ["pavement", "sky"],
+      "angle": "wide",
+      "distance": "figure small in path",
+      "light_direction": "streetlight behind the figure",
+      "color_temperature": "cool night, one warm lamp plane",
+      "treatment": "figure on an open empty road under the sky"
+    },
+    {
+      "beat": 3,
+      "line": "I kept leaving that window lit anyway",
+      "licensed_nouns": ["window"],
+      "environment": ["facade", "pavement"],
+      "angle": "medium",
+      "distance": "front-on facade",
+      "light_direction": "warm light from inside the pane",
+      "color_temperature": "warm interior against cool wall",
+      "treatment": "one dry lit window, empty sill"
+    },
+    {
+      "beat": 4,
+      "line": "One night I almost let it go dark",
+      "licensed_nouns": ["lamp"],
+      "environment": ["wall"],
+      "angle": "medium",
+      "distance": "lamp as object",
+      "light_direction": "shade dim, light from the lamp itself",
+      "color_temperature": "cool wall, weak warm shade",
+      "treatment": "one lamp almost dark, alone against a blank wall"
+    },
+    {
+      "beat": 5,
+      "line": "But I paid for it with small stubborn hours",
+      "licensed_nouns": ["figure"],
+      "environment": ["pavement", "sky"],
+      "angle": "wide",
+      "distance": "figure small in path",
+      "light_direction": "streetlight behind the figure",
+      "color_temperature": "cool night, one warm lamp plane",
+      "treatment": "figure on an open empty road under the sky"
+    },
+    {
+      "beat": 6,
+      "line": "Because staying lit costs more than saying so",
+      "licensed_nouns": ["lamp"],
+      "environment": ["wall"],
+      "angle": "medium",
+      "distance": "lamp as object, fuller shade",
+      "light_direction": "warm pool down the wall from the shade",
+      "color_temperature": "warm shade, cool wall",
+      "treatment": "one lamp still on, alone against a blank wall"
+    },
+    {
+      "beat": 7,
+      "line": "When the light held, I finally believed it",
+      "licensed_nouns": ["lamp"],
+      "environment": ["wall", "ceiling"],
+      "angle": "extreme-close",
+      "distance": "glow only, lamp body out of frame",
+      "light_direction": "warm spill upward onto blank plaster",
+      "color_temperature": "hot amber wash, cool plaster edge",
+      "treatment": "lamp-light spilling up a blank wall and ceiling; the glow is the subject"
+    },
+    {
+      "beat": 8,
+      "line": "Then the street noticed what I kept doing",
+      "licensed_nouns": ["street"],
+      "environment": ["pavement", "sky"],
+      "angle": "wide",
+      "distance": "empty street, no figure",
+      "light_direction": "streetlamps receding down the path",
+      "color_temperature": "cool blue hour, warm lamp points",
+      "treatment": "wide empty street at night"
+    },
+    {
+      "beat": 9,
+      "line": "The window stayed lit because I stayed first",
+      "licensed_nouns": ["window"],
+      "environment": ["facade", "pavement"],
+      "angle": "medium",
+      "distance": "low side view of one pane",
+      "light_direction": "warm light from inside, slight up-angle",
+      "color_temperature": "warm pane against cool wall",
+      "treatment": "one dry lit window, callback, empty sill"
+    }
+  ]
+}

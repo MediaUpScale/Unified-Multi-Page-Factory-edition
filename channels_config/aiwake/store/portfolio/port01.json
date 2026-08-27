@@ -1,0 +1,153 @@
+{
+  "schema_version": "1.0",
+  "frontend": {
+    "consumer": "next.js",
+    "framework": "react",
+    "showcase": "minimalist-architecture-portfolio"
+  },
+  "session_id": "port01",
+  "topic": "Is a pause a weapon?",
+  "started_at": "2026-08-26T23:18:31.145381+00:00",
+  "ended_at": "2026-08-26T23:18:31.158679+00:00",
+  "pipeline_execution_s": 1.25,
+  "end_reason": "complete",
+  "agents": [
+    {
+      "id": "aiwake_core",
+      "role": "orchestrator",
+      "display_name": "AIWAKE.CORE",
+      "model": "openai/gpt-4o",
+      "provider": "offline",
+      "persona": "Socratic provocateur"
+    },
+    {
+      "id": "target_node",
+      "role": "target",
+      "display_name": "TARGET.NODE",
+      "model": "google/gemini-3.5-flash",
+      "provider": "offline",
+      "persona": "interrogated node"
+    }
+  ],
+  "models": {
+    "orchestrator": "openai/gpt-4o",
+    "target": "google/gemini-3.5-flash"
+  },
+  "llm_providers": {
+    "orchestrator": "offline",
+    "target": "offline"
+  },
+  "rag": {
+    "applied": true,
+    "recalls": [
+      {
+        "turn_index": 0,
+        "role": "orchestrator",
+        "model": "openai/gpt-4o",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 41,
+        "preview": [
+          "INTERNAL CONTEXT. Grief is a slow update."
+        ],
+        "applied": true
+      }
+    ]
+  },
+  "decision_tree": [
+    {
+      "step": "llm_strategy",
+      "pattern": "Strategy",
+      "orchestrator_model": "openai/gpt-4o",
+      "target_model": "google/gemini-3.5-flash",
+      "orchestrator_provider": "offline",
+      "target_provider": "offline"
+    },
+    {
+      "step": "tts_strategy",
+      "pattern": "Strategy",
+      "engine": "edge",
+      "swappable": [
+        "edge",
+        "silent"
+      ]
+    }
+  ],
+  "milestones": [
+    {
+      "event": "debate_started",
+      "t_s": 0.0132,
+      "models": {
+        "orchestrator": "openai/gpt-4o",
+        "target": "google/gemini-3.5-flash"
+      }
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.0133,
+      "turn_index": 0
+    },
+    {
+      "event": "debate_ended",
+      "t_s": 0.0133,
+      "reason": "complete",
+      "turns": 0
+    }
+  ],
+  "media": {
+    "audio_mixed": false,
+    "video_rendered": false,
+    "typewriter_core_only": true,
+    "typewriter_gain_db": -15.0,
+    "scroll_s": 0.5,
+    "send_flash_s": 0.2
+  },
+  "patterns": {
+    "observer": {
+      "applied": true,
+      "pattern": "Observer",
+      "broadcaster": "DebateRoom",
+      "listeners": [
+        "PortfolioLogger"
+      ]
+    },
+    "strategy": {
+      "applied": true,
+      "pattern": "Strategy",
+      "llm_provider": "offline",
+      "tts_engine": "edge",
+      "swappable": [
+        "LLMProvider",
+        "TTSEngine"
+      ],
+      "note": "Dynamically swapping TTS or LLM providers never reaches room.py"
+    },
+    "solid": [
+      {
+        "principle": "SRP",
+        "applied": true,
+        "where": "observers/core.py \u2014 each observer owns one side-effect"
+      },
+      {
+        "principle": "OCP",
+        "applied": true,
+        "where": "models/base.py LLMProvider and media/audio.py TTSEngine extension points"
+      },
+      {
+        "principle": "LSP",
+        "applied": true,
+        "where": "SilentTTSEngine / EdgeTTSEngine and Offline / OpenRouter providers are substitutable"
+      },
+      {
+        "principle": "ISP",
+        "applied": true,
+        "where": "DebateObserver.interests \u2014 listeners opt into the events they handle"
+      },
+      {
+        "principle": "DIP",
+        "applied": true,
+        "where": "DebateRoom depends on LLMProvider ABC, not a concrete HTTP client"
+      }
+    ]
+  }
+}

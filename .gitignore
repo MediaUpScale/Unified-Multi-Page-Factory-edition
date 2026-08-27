@@ -78,3 +78,6 @@ postplan_*.xlsx
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Generated per-run telemetry (showcase is optional / detachable)
+portfolio_showcase/data/projects/aiwake/architecture.json

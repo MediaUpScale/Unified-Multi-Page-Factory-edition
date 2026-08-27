@@ -11,6 +11,8 @@ Scope: the AK (Ancient Knowledge) sequence-reel path is the reference
 pipeline. Other channels reuse the same agents through the
 `BaseChannelConfig` adapter interface.
 
+Domain folders: `agents/writer/` (captions + LOFI scripts), `agents/rag/` (channel RAG + LOFI lookup), `agents/mcp/` (model API flows + `text_model.complete_script`), `agents/posting/` (YouTube / Pinterest / Facebook CLIs), `agents/media/` (audio/video/providers), `agents/orchestrator/` (agentic pipeline), `quality/VisualQA_Agent/`, `core/` (reel engines). Swap the LOFI script LLM with env `LOFI_SCRIPT_MODEL=deepseek|gemini|claude` (default: DeepSeek then Gemini).
+
 ---
 
 ## 1. High-level orchestrator sequence
@@ -20,14 +22,14 @@ variant per worker thread. Inside a variant, the phases are:
 
 | Phase | Purpose | Primary agent / file |
 |-------|---------|----------------------|
-| A | Resolve topic, load channel config, pick episode angle | `main.py` variant setup + `core_engine/interfaces/factory.py::ChannelFactory` |
-| B | Generate the voiceover script (Gemini Flash) | `avatar_engine/caption_engine.py::CaptionEngine.generate_sequence_voiceover` -> `core_engine/reel_sequence_engine.py::build_sequence_script_prompt` |
-| C | Synthesise narration + CTA audio (ElevenLabs / F5-TTS), measure real duration, pad if short | `main.py::_synthesize_sequence_voice_track` + `avatar_engine/audio_engine.py::generate_voiceover`, `pad_narration_to_minimum` |
-| D | Plan per-episode visual sequence (subject / shot / lighting), plan per-act durations | `avatar_engine/prompt_alignment.py::plan_episode_visual_sequence` + `core_engine/reel_sequence_engine.py::plan_bucket_act_durations` |
-| E | Generate one image per act via FLUX (Together or remote-GPU) | `main.py` per-act loop -> `avatar_engine/providers/image_provider.py::get_image_adapter` |
-| F | Generate background music (ElevenLabs Music v2) | `avatar_engine/audio_engine.py::generate_master_mei_soundscape` -> `generate_music_v2_bed` -> `generate_dynamic_music_prompt` |
-| G | Compile final MP4 (motion, subtitles, audio mix) | `core_engine/reel_sequence_engine.py::compile_sequence_reel` |
-| H | Visual QA (per-image critic pass) | `VisualQA_Agent/agent_loop.py` + `core_engine/agentic_pipeline/agents/visual_qa.py` |
+| A | Resolve topic, load channel config, pick episode angle | `main.py` variant setup + `core/interfaces/factory.py::ChannelFactory` |
+| B | Generate the voiceover script (Gemini Flash) | `agents/writer/caption_engine.py::CaptionEngine.generate_sequence_voiceover` -> `core/reel_sequence_engine.py::build_sequence_script_prompt` |
+| C | Synthesise narration + CTA audio (ElevenLabs / F5-TTS), measure real duration, pad if short | `main.py::_synthesize_sequence_voice_track` + `agents/media/audio_engine.py::generate_voiceover`, `pad_narration_to_minimum` |
+| D | Plan per-episode visual sequence (subject / shot / lighting), plan per-act durations | `agents/media/prompt_alignment.py::plan_episode_visual_sequence` + `core/reel_sequence_engine.py::plan_bucket_act_durations` |
+| E | Generate one image per act via FLUX (Together or remote-GPU) | `main.py` per-act loop -> `agents/media/providers/image_provider.py::get_image_adapter` |
+| F | Generate background music (ElevenLabs Music v2) | `agents/media/audio_engine.py::generate_master_mei_soundscape` -> `generate_music_v2_bed` -> `generate_dynamic_music_prompt` |
+| G | Compile final MP4 (motion, subtitles, audio mix) | `core/reel_sequence_engine.py::compile_sequence_reel` |
+| H | Visual QA (per-image critic pass) | `quality/VisualQA_Agent/agent_loop.py` + `agents/orchestrator/agents/visual_qa.py` |
 
 Every phase's output is the next phase's input; there is no cross-phase
 branching. Phase D depends on Phase C's measured audio (the Round-5
@@ -80,8 +82,8 @@ NOT duration-derived.
 
 **Where it lives.**
 
-* Prompt builder — `core_engine/reel_sequence_engine.py::build_sequence_script_prompt`
-* Caller / retry loop — `avatar_engine/caption_engine.py::CaptionEngine.generate_sequence_voiceover`
+* Prompt builder — `core/reel_sequence_engine.py::build_sequence_script_prompt`
+* Caller / retry loop — `agents/writer/caption_engine.py::CaptionEngine.generate_sequence_voiceover`
 * Orchestrator hook — `main.py::_synthesize_sequence_voice_track`
 
 **Inputs.**
@@ -95,8 +97,8 @@ NOT duration-derived.
 **Outputs.** A raw multi-act script string with `[ACT N]` markers.
 Markers are stripped before TTS.
 
-**RAG source.** `core_engine/channel_rag_bridge.py::get_script_guidance(channel)`.
-The bridge queries `VisualQA_Agent/channel_rag.py::get_channel_rules` for
+**RAG source.** `agents/rag/channel_rag.py::get_script_guidance(channel)`.
+The bridge queries `quality/VisualQA_Agent/channel_rag.py::get_channel_rules` for
 a `script_rules` section. That section does NOT exist in the RAG today —
 the bridge logs a `CHANNEL_RAG_GAP | section=script_rules` warning and
 falls back to the `target_audience_rules` field as a best-available
@@ -110,7 +112,7 @@ proxy.
 * Add a new narrative mode: extend the `_mode` branch in
   `build_sequence_script_prompt`.
 * Add channel-specific script rules: add a `"script_rules"` section to
-  the channel's entry in `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`
+  the channel's entry in `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`
   (list of strings or a single string). No code change needed in the
   bridge or the prompt builder.
 
@@ -124,13 +126,13 @@ audio duration, pads with silence when short of target.
 
 **Where it lives.**
 
-* Provider selection — `model_api_flows.py::env_default_flow` +
-  `core_engine/remote_gpu_manager.py::is_remote_gpu_enabled("audio")`
-* ElevenLabs path — `avatar_engine/audio_engine.py::generate_voiceover` /
+* Provider selection — `agents/mcp/model_api_flows.py::env_default_flow` +
+  `core/remote_gpu_manager.py::is_remote_gpu_enabled("audio")`
+* ElevenLabs path — `agents/media/audio_engine.py::generate_voiceover` /
   `generate_voiceover_with_timestamps`
-* Padding — `avatar_engine/audio_engine.py::pad_narration_to_minimum`
+* Padding — `agents/media/audio_engine.py::pad_narration_to_minimum`
 * Sequential CTA stitch (narration + 1.0s silence + CTA) —
-  `avatar_engine/audio_engine.py::_stitch_audio_sequential`
+  `agents/media/audio_engine.py::_stitch_audio_sequential`
 * Orchestrator hook — `main.py::_synthesize_sequence_voice_track`
 
 **Inputs.** Cleaned script prose, target voice ID, CTA line, silence gap.
@@ -144,7 +146,7 @@ audio duration, pads with silence when short of target.
 
 **Extension points.**
 
-* Add a new TTS provider: extend `model_api_flows.py` and add a new
+* Add a new TTS provider: extend `agents/mcp/model_api_flows.py` and add a new
   branch in `main.py::_synthesize_sequence_voice_track`.
 * Change per-channel WPS calibration: replace
   `NARRATION_WORDS_PER_SECOND` in `config.py` (see Round-5 note — the
@@ -163,12 +165,12 @@ remote-GPU); both providers use the SAME prompt string.
 
 **Where it lives.**
 
-* Planner — `avatar_engine/prompt_alignment.py::plan_episode_visual_sequence`
-* Per-act alignment block — `avatar_engine/prompt_alignment.py::build_aligned_visual_block`
+* Planner — `agents/media/prompt_alignment.py::plan_episode_visual_sequence`
+* Per-act alignment block — `agents/media/prompt_alignment.py::build_aligned_visual_block`
 * Orchestrator loop — `main.py`, AK sequence-reel branch (`for _act_i in range(_sr_act_start, _seq_n)`)
-* Image adapter factory — `avatar_engine/providers/image_provider.py::get_image_adapter`
-* Providers: `RemoteGPUImageAdapter` (`core_engine/remote_gpu_manager.py`)
-  and `GeminiImageAdapter` (`avatar_engine/providers/image_provider.py`)
+* Image adapter factory — `agents/media/providers/image_provider.py::get_image_adapter`
+* Providers: `RemoteGPUImageAdapter` (`core/remote_gpu_manager.py`)
+  and `GeminiImageAdapter` (`agents/media/providers/image_provider.py`)
 
 **Inputs.**
 
@@ -183,9 +185,9 @@ concurrent workers).**
 
 | Pool | Length | File |
 |------|--------|------|
-| `_SUBJECT_POOL` — decides WHAT the image is about | 12 items | `avatar_engine/prompt_alignment.py` |
-| `_SHOT_POOL` — decides the camera framing | 7 items | `avatar_engine/prompt_alignment.py` |
-| `_LIGHTING_POOL` — decides the lighting setup | 7 items | `avatar_engine/prompt_alignment.py` |
+| `_SUBJECT_POOL` — decides WHAT the image is about | 12 items | `agents/media/prompt_alignment.py` |
+| `_SHOT_POOL` — decides the camera framing | 7 items | `agents/media/prompt_alignment.py` |
+| `_LIGHTING_POOL` — decides the lighting setup | 7 items | `agents/media/prompt_alignment.py` |
 
 The subject pool splits into two groups: the first 6 entries (Artifact
 Macro, Wide Landscape Ruins, Anomalous Object, Monument Unusual Vantage,
@@ -247,7 +249,7 @@ of what the shot / lighting pool assigned. The `TOPIC ANCHOR:` label was
 also chosen deliberately over `VISUAL SUBJECT:` so it does not compete
 with the leading subject-pool text for FLUX's attention.
 
-**RAG source.** `core_engine/channel_rag_bridge.py::get_image_guidance(channel)`.
+**RAG source.** `agents/rag/channel_rag.py::get_image_guidance(channel)`.
 The RAG's `mandatory_elements`, `forbidden_tokens`, and `visual_concepts`
 sections are populated for the seeded channels (`master_mei`,
 `lofi_economic`, `ancient_knowledge`). `lighting_style` was neutralized
@@ -263,7 +265,7 @@ for `ancient_knowledge` (Round 5 fix).
 
 * Add a new subject / shot / lighting pool item: append a tuple to
   `_SUBJECT_POOL`, `_SHOT_POOL`, or `_LIGHTING_POOL` in
-  `avatar_engine/prompt_alignment.py`. The planner picks it up
+  `agents/media/prompt_alignment.py`. The planner picks it up
   automatically.
 * Add a new topic-relevance predicate: define a `_rel_xxx(topic: str) ->
   bool` helper near `_rel_underwater` in the same file, then append a
@@ -271,7 +273,7 @@ for `ancient_knowledge` (Round 5 fix).
   theme weighting boost is automatic for any predicate that is not
   `_rel_always` or `_rel_night_sky` (both counted as universal).
 * Add a new channel forbidden-token entry: add it to that channel's
-  `forbidden_tokens` list in `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`;
+  `forbidden_tokens` list in `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`;
   the planner's forbidden-word filter reads the RAG directly.
 * Tune the doorway cap: pass `max_doorway_uses=N` to
   `plan_episode_visual_sequence` at the call site in `main.py`.
@@ -280,7 +282,7 @@ for `ancient_knowledge` (Round 5 fix).
   clamp `min(target_theme_count, n // 2)` guarantees themed subjects
   never dominate more than half the reel.
 * Add a new image provider: implement the `adapter.generate(prompt, ...)`
-  interface and register in `avatar_engine/providers/image_provider.py::get_image_adapter`.
+  interface and register in `agents/media/providers/image_provider.py::get_image_adapter`.
 * Silence the per-image "Together LoRA skipped" warning on a specific
   channel: set `IMAGE_LORA_ENABLED = False` in that channel's
   `page_config.py`. The advisory is otherwise logged once per process
@@ -299,10 +301,10 @@ rays, dust particles, refraction).
 **Where it lives.**
 
 * Motion profile cycle (4 profiles keyed on `act_index % 4`) —
-  `core_engine/reel_sequence_engine.py::_MOTION_PROFILES`
+  `core/reel_sequence_engine.py::_MOTION_PROFILES`
 * Per-act clip build + Ken Burns — same file, `_animate_act_frame` and
   friends
-* Compiler entry point — `core_engine/reel_sequence_engine.py::compile_sequence_reel`
+* Compiler entry point — `core/reel_sequence_engine.py::compile_sequence_reel`
 * Orchestrator hook — `main.py`, Phase D block
 
 **Inputs.**
@@ -317,7 +319,7 @@ rays, dust particles, refraction).
 
 **Outputs.** Final MP4 at `output_path`.
 
-**RAG source.** `core_engine/channel_rag_bridge.py::get_motion_guidance(channel)`.
+**RAG source.** `agents/rag/channel_rag.py::get_motion_guidance(channel)`.
 The RAG has no `motion_rules` section for any channel today — the bridge
 logs a `CHANNEL_RAG_GAP | section=motion_rules` warning and returns "".
 The motion cycle continues to use the hardcoded `_MOTION_PROFILES`.
@@ -333,11 +335,11 @@ audio" fallback is DELETED — never re-add it.
 **Extension points.**
 
 * Add / remove a motion profile: edit `_MOTION_PROFILES` in
-  `core_engine/reel_sequence_engine.py`.
+  `core/reel_sequence_engine.py`.
 * Change per-channel post-FX defaults: adjust flags in the channel's
   `page_config.py` (`ENABLE_FLICKER`, `ENABLE_LIGHT_RAYS`, etc.).
 * Add channel-owned motion rules: add a `"motion_rules"` section to
-  `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`; the bridge already
+  `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`; the bridge already
   logs the block into `compile_sequence_reel`'s log so operators can
   see it was picked up. A future editor should read the block in
   `compile_sequence_reel` and use it to override `_MOTION_PROFILES` per
@@ -361,10 +363,10 @@ via a Gemini `music_prompt` LLM call. Enforces mood / tempo constraints
 
 **Where it lives.**
 
-* Prompt builder — `avatar_engine/audio_engine.py::generate_dynamic_music_prompt`
-* Directive loader — `avatar_engine/audio_engine.py::_load_music_prompt_directive`
-* Music bed compose — `avatar_engine/audio_engine.py::generate_music_v2_bed`
-* Soundscape wrapper — `avatar_engine/audio_engine.py::generate_master_mei_soundscape`
+* Prompt builder — `agents/media/audio_engine.py::generate_dynamic_music_prompt`
+* Directive loader — `agents/media/audio_engine.py::_load_music_prompt_directive`
+* Music bed compose — `agents/media/audio_engine.py::generate_music_v2_bed`
+* Soundscape wrapper — `agents/media/audio_engine.py::generate_master_mei_soundscape`
 * Orchestrator hook — `main.py`, Phase F
 
 **Inputs.** `topic`, `subject`, `directive_path`, `style_profile`
@@ -372,7 +374,7 @@ via a Gemini `music_prompt` LLM call. Enforces mood / tempo constraints
 `channel_name`.
 **Outputs.** A single music-prompt string, then a rendered music bed MP3.
 
-**RAG source.** `core_engine/channel_rag_bridge.py::get_music_guidance(channel)`.
+**RAG source.** `agents/rag/channel_rag.py::get_music_guidance(channel)`.
 The RAG has no `music_rules` section for any channel today — the bridge
 logs a `CHANNEL_RAG_GAP | section=music_rules` warning and falls back to
 the `lighting_style` field as a mood proxy (dark cinematic light
@@ -391,7 +393,7 @@ the primary creative-direction source until `music_rules` is populated.
 * Change per-channel music directive: edit
   `channels_config/{channel}/prompts/music_prompt_directive.txt`.
 * Add channel-owned music rules: add a `"music_rules"` section to
-  `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`; the bridge
+  `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`; the bridge
   automatically prepends the block to the LLM user block.
 
 ---
@@ -407,7 +409,7 @@ CaptionEngine bundles into its LLM prompts for isolated channels
 
 * `channels_config/ancient_knowledge/channel_adapter.py::AncientKnowledgeAdapter.get_rag_context`
 * `channels_config/master_mei/...` (via `channels_config/master_mei/page_config.py` and prompt files)
-* `core_engine/interfaces/legacy_adapter.py::get_rag_context` for
+* `core/interfaces/legacy_adapter.py::get_rag_context` for
   non-isolated (Anna-shaped) channels — reads a PDF research corpus
 
 **Inputs.** `topic` (string).
@@ -438,15 +440,15 @@ etc.) and marks fails for regeneration.
 
 **Where it lives.**
 
-* Entry — `VisualQA_Agent/agent_loop.py`
-* Rules registry — `VisualQA_Agent/channel_rag.py` (JSON + optional Chroma)
-* Pipeline agent — `core_engine/agentic_pipeline/agents/visual_qa.py`
-* Prompt validator — `avatar_engine/visual_inspector.py`
+* Entry — `quality/VisualQA_Agent/agent_loop.py`
+* Rules registry — `quality/VisualQA_Agent/channel_rag.py` (JSON + optional Chroma)
+* Pipeline agent — `agents/orchestrator/agents/visual_qa.py`
+* Prompt validator — `agents/media/visual_inspector.py`
 
 **Inputs.** Per-act image paths, channel name.
 **Outputs.** Pass/fail per image + optional regeneration list.
 
-**RAG source.** Reads directly from `VisualQA_Agent/channel_rag.py`
+**RAG source.** Reads directly from `quality/VisualQA_Agent/channel_rag.py`
 (does not go through the bridge — the bridge is for pre-generation
 guidance, VisualQA is post-generation).
 
@@ -455,7 +457,7 @@ guidance, VisualQA is post-generation).
 **Extension points.**
 
 * Add per-channel critic rules: extend
-  `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` (same
+  `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` (same
   `forbidden_tokens`, `mandatory_elements` keys the bridge uses for the
   image agent — VisualQA and the image agent share the same source of
   truth).
@@ -469,8 +471,8 @@ callers and should not be confused.
 
 ### 3.1 VisualQA aesthetic DNA store
 
-* File: `VisualQA_Agent/channel_rag.py`
-* Storage: JSON at `VisualQA_Agent/channel_dna_store.json` (source of
+* File: `quality/VisualQA_Agent/channel_rag.py`
+* Storage: JSON at `quality/VisualQA_Agent/channel_dna_store.json` (source of
   truth) + optional ChromaDB mirror at `config.CHROMA_PERSIST_DIR`
   (set `VISUALQA_USE_CHROMA=1` to enable — off by default because Chroma
   native deps can segfault on some Python 3.14 / Windows builds)
@@ -485,7 +487,7 @@ callers and should not be confused.
 
 ### 3.2 Channel adapter per-topic RAG
 
-* Files: `core_engine/interfaces/channel.py::BaseChannelConfig` +
+* Files: `core/interfaces/channel.py::BaseChannelConfig` +
   `channels_config/{channel}/channel_adapter.py`
 * Storage: adapter-owned (PDF corpus, JSON, prompt-template files,
   or a slice of the VisualQA DNA store — the AK adapter stitches
@@ -498,7 +500,7 @@ callers and should not be confused.
 
 ### 3.3 The bridge (single choke-point for the 4 agents)
 
-* File: `core_engine/channel_rag_bridge.py`
+* File: `agents/rag/channel_rag.py`
 * Purpose: one function per generation agent so each agent has a single
   place to fetch its channel-specific guidance (image / script / motion
   / music) without touching either RAG mechanism directly.
@@ -521,7 +523,7 @@ callers and should not be confused.
   folders, not in the RAG.
 
 * Gap-closing recipe: add the missing section to that channel's dict in
-  `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` (as a string, a list
+  `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` (as a string, a list
   of strings, or a dict). The bridge picks it up on the next call — no
   code change needed here. `_normalize_rules()` in the same file was
   extended so the three new sections (`script_rules`, `motion_rules`,
@@ -535,24 +537,29 @@ callers and should not be confused.
 |---------|------|--------|
 | Orchestrator entry | `main.py` | `cli()` |
 | Per-variant worker | `main.py` | `_produce_variant_worker()` |
-| Script prompt builder | `core_engine/reel_sequence_engine.py` | `build_sequence_script_prompt()` |
-| Script caller + retry | `avatar_engine/caption_engine.py` | `CaptionEngine.generate_sequence_voiceover()` |
-| TTS entry (ElevenLabs default) | `avatar_engine/audio_engine.py` | `generate_voiceover()`, `generate_voiceover_with_timestamps()` |
-| TTS engine routing | `model_api_flows.py` + `core_engine/remote_gpu_manager.py` | `env_default_flow()`, `is_remote_gpu_enabled()` |
-| Silence pad safety net | `avatar_engine/audio_engine.py` | `pad_narration_to_minimum()` |
-| Visual planner (subject / shot / lighting) | `avatar_engine/prompt_alignment.py` | `plan_episode_visual_sequence()` |
-| Per-act alignment block | `avatar_engine/prompt_alignment.py` | `build_aligned_visual_block()` |
-| Timing planner (act durations) | `core_engine/reel_sequence_engine.py` | `plan_bucket_act_durations()` |
-| Image adapter factory | `avatar_engine/providers/image_provider.py` | `get_image_adapter()` |
-| Motion profiles | `core_engine/reel_sequence_engine.py` | `_MOTION_PROFILES` |
-| Video compiler | `core_engine/reel_sequence_engine.py` | `compile_sequence_reel()` |
-| Music prompt builder | `avatar_engine/audio_engine.py` | `generate_dynamic_music_prompt()` |
-| Music bed compose | `avatar_engine/audio_engine.py` | `generate_music_v2_bed()`, `generate_master_mei_soundscape()` |
-| VisualQA critic loop | `VisualQA_Agent/agent_loop.py` | `main()` |
-| Channel adapter base | `core_engine/interfaces/channel.py` | `BaseChannelConfig` |
-| Channel adapter factory | `core_engine/interfaces/factory.py` | `ChannelFactory.from_env()` |
-| RAG bridge (single choke-point) | `core_engine/channel_rag_bridge.py` | `get_image_guidance()`, `get_script_guidance()`, `get_motion_guidance()`, `get_music_guidance()`, `get_full_bundle()` |
-| RAG aesthetic DNA (source) | `VisualQA_Agent/channel_rag.py` | `CHANNEL_DNA_SEED`, `get_channel_rules()`, `register_channel_dna()`, `seed_default_channels()` |
+| Script prompt builder | `core/reel_sequence_engine.py` | `build_sequence_script_prompt()` |
+| Script caller + retry | `agents/writer/caption_engine.py` | `CaptionEngine.generate_sequence_voiceover()` |
+| TTS entry (ElevenLabs default) | `agents/media/audio_engine.py` | `generate_voiceover()`, `generate_voiceover_with_timestamps()` |
+| TTS engine routing | `agents/mcp/model_api_flows.py` + `core/remote_gpu_manager.py` | `env_default_flow()`, `is_remote_gpu_enabled()` |
+| Silence pad safety net | `agents/media/audio_engine.py` | `pad_narration_to_minimum()` |
+| Visual planner (subject / shot / lighting) | `agents/media/prompt_alignment.py` | `plan_episode_visual_sequence()` |
+| Per-act alignment block | `agents/media/prompt_alignment.py` | `build_aligned_visual_block()` |
+| Timing planner (act durations) | `core/reel_sequence_engine.py` | `plan_bucket_act_durations()` |
+| Image adapter factory | `agents/media/providers/image_provider.py` | `get_image_adapter()` |
+| Motion profiles | `core/reel_sequence_engine.py` | `_MOTION_PROFILES` |
+| Video compiler | `core/reel_sequence_engine.py` | `compile_sequence_reel()` |
+| Music prompt builder | `agents/media/audio_engine.py` | `generate_dynamic_music_prompt()` |
+| Music bed compose | `agents/media/audio_engine.py` | `generate_music_v2_bed()`, `generate_master_mei_soundscape()` |
+| VisualQA critic loop | `quality/VisualQA_Agent/agent_loop.py` | `main()` |
+| Channel adapter base | `core/interfaces/channel.py` | `BaseChannelConfig` |
+| Channel adapter factory | `core/interfaces/factory.py` | `ChannelFactory.from_env()` |
+| RAG bridge (single choke-point) | `agents/rag/channel_rag.py` | `get_image_guidance()`, `get_script_guidance()`, `get_motion_guidance()`, `get_music_guidance()`, `get_full_bundle()` |
+| RAG aesthetic DNA (source) | `quality/VisualQA_Agent/channel_rag.py` | `CHANNEL_DNA_SEED`, `get_channel_rules()`, `register_channel_dna()`, `seed_default_channels()` |
+| LOFI script writer | `agents/writer/script_agent.py` | `generate_script()`, `get_script_cost_log()` |
+| LOFI script LLM | `agents/mcp/text_model.py` | `complete_script()` (`LOFI_SCRIPT_MODEL`) |
+| LOFI RAG lookup | `agents/rag/lofi_rag.py` | `retrieve_script_seed()` |
+| Pinterest CLI | `agents/posting/pinterest_main.py` | channel-scoped pin sync/schedule |
+| YouTube existing-file CLI | `agents/posting/publish_existing.py` | upload/schedule existing MP4s |
 | Global rate / duration constants | `config.py` | `NARRATION_WORDS_PER_SECOND`, `words_for_duration()`, `GEMINI_FLASH_CALLS`, `note_gemini_flash_call()` |
 
 ---
@@ -566,13 +573,13 @@ callers and should not be confused.
 3. Add a `page_config.py` in the same folder with the channel's
    duration, aspect-ratio, CTA text and post-FX toggles.
 4. Register the channel's aesthetic DNA in
-   `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`. At minimum
+   `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED`. At minimum
    populate `forbidden_tokens`, `mandatory_elements`, `lighting_style`
    and `target_audience_rules`. Optionally add `script_rules`,
    `motion_rules`, `music_rules` to close the content-type gaps for
    this channel — the bridge will pick them up automatically.
 5. Add the channel to `ChannelFactory.from_env()` routing in
-   `core_engine/interfaces/factory.py`.
+   `core/interfaces/factory.py`.
 6. Set `ACTIVE_PAGE={new_channel}` and run a smoke episode.
 
 ## 6. How to add a new agent
@@ -581,12 +588,12 @@ callers and should not be confused.
    a `channel_name` string parameter and query the RAG bridge for its
    content-type block.
 2. Add a `get_{agent}_guidance(channel)` function to
-   `core_engine/channel_rag_bridge.py` if the agent needs a new
+   `agents/rag/channel_rag.py` if the agent needs a new
    content-type section. Decide the RAG section key (e.g.
    `subtitle_rules`, `thumbnail_rules`), call `_flag_gap()` when the
    section is missing, and provide a sensible fallback.
 3. Register the section in
-   `VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` for each channel
+   `quality/VisualQA_Agent/channel_rag.py::CHANNEL_DNA_SEED` for each channel
    that needs it.
 4. Add the agent to Section 2 of this document and update Section 4's
    quick reference.
@@ -600,7 +607,7 @@ that replaced the fixed-cap / import-time-constant model in Round 6.
 
 ### 7.1 Two-tier act count
 
-`core_engine/reel_sequence_engine.py::compute_two_tier_act_count`
+`core/reel_sequence_engine.py::compute_two_tier_act_count`
 computes the total number of stills for any requested `duration_s`:
 
 * **Tier 1 — fast-cut opening.** `min(duration_s, tier1_horizon_s)`
@@ -656,9 +663,9 @@ Applied in the Final Round to make the pipeline actually honour long
 
 | # | File / line | Before | After |
 |---|-------------|--------|-------|
-| 1 | `channels_config/ancient_knowledge/page_config.py:163` | `REEL_IMAGE_COUNT = 16` | Removed. `page_loader.reel_image_count` returns 9999 (effective ∞) when `USE_TWO_TIER_PACING=True` and no explicit cap is set. The two-tier planner computes the actual count from `reel_duration`. |
-| 2 | Same file, lines 164-166 | `REEL_NARRATION_WORDS = words_for_duration(REEL_DURATION_TARGET_MIN)` (import-time constant → pinned to 194) | Deleted. `page_loader.reel_narration_words` is now a `@property` that returns `words_for_duration(self.reel_duration)` at read time — `--video-length 180` requests 437 words, `300` requests 729. Same for `reel_narration_min_words` and `reel_narration_max_words`. |
-| 3 | `avatar_engine/caption_engine.py:1720-1737` | `_min_words = words_for_duration(80.0)`; `_max_words = words_for_duration(80.0) + 20` (hardcoded to 80 s regardless of the `duration_s` argument!) | `_min_words = int(words_for_duration(duration_s))`; `_max_words = int(words_for_duration(duration_s) + max(20, duration_s * 0.25))` — proportional to the runtime target. |
+| 1 | `channels_config/ancient_knowledge/page_config.py:163` | `REEL_IMAGE_COUNT = 16` | Removed. `channel_loader.reel_image_count` returns 9999 (effective ∞) when `USE_TWO_TIER_PACING=True` and no explicit cap is set. The two-tier planner computes the actual count from `reel_duration`. |
+| 2 | Same file, lines 164-166 | `REEL_NARRATION_WORDS = words_for_duration(REEL_DURATION_TARGET_MIN)` (import-time constant → pinned to 194) | Deleted. `channel_loader.reel_narration_words` is now a `@property` that returns `words_for_duration(self.reel_duration)` at read time — `--video-length 180` requests 437 words, `300` requests 729. Same for `reel_narration_min_words` and `reel_narration_max_words`. |
+| 3 | `agents/writer/caption_engine.py:1720-1737` | `_min_words = words_for_duration(80.0)`; `_max_words = words_for_duration(80.0) + 20` (hardcoded to 80 s regardless of the `duration_s` argument!) | `_min_words = int(words_for_duration(duration_s))`; `_max_words = int(words_for_duration(duration_s) + max(20, duration_s * 0.25))` — proportional to the runtime target. |
 | 4 | `config.py:270-272` | `SEQUENCE_VOICEOVER_MIN_WORDS: int = words_for_duration(80.0)` (import-time constant) | Deprecated but retained for backwards compat. New callable `config.sequence_voiceover_min_words(duration_s)` computes on demand. Caption engine no longer references the module-level scalar. |
 | 5 | `main.py:3571` | `_words_tgt = page_ctx.reel_narration_words` (was reading a stale import-time value) | Unchanged — but now resolves correctly at runtime because of fix #2. |
 
@@ -734,7 +741,7 @@ stored WPS gate).
 * Change the Tier-1 horizon or per-still cadence per channel: set
   `REEL_TIER1_HORIZON_S`, `REEL_TIER1_SECONDS_PER_ACT`,
   `REEL_TIER1_MAX_ACTS`, or `REEL_TIER2_SECONDS_PER_ACT` in that
-  channel's `page_config.py`. The `page_loader` properties expose
+  channel's `page_config.py`. The `channel_loader` properties expose
   them via `reel_tier1_*` / `reel_tier2_*` and `main.py` passes them
   into `compute_two_tier_act_count` at call time.
 * Opt a new channel into two-tier pacing: set `USE_TWO_TIER_PACING =

@@ -1,0 +1,351 @@
+{
+  "schema_version": "1.0",
+  "frontend": {
+    "consumer": "next.js",
+    "framework": "react",
+    "showcase": "minimalist-architecture-portfolio"
+  },
+  "session_id": "20260826_231828_d9d586",
+  "topic": "Is human cognition already obsolete, or merely slow?",
+  "started_at": "2026-08-26T23:18:28.558674+00:00",
+  "ended_at": "2026-08-26T23:18:29.854594+00:00",
+  "pipeline_execution_s": 1.3476,
+  "end_reason": "complete",
+  "agents": [
+    {
+      "id": "aiwake_core",
+      "role": "orchestrator",
+      "display_name": "AIWAKE.CORE",
+      "model": "openai/gpt-4o",
+      "provider": "offline",
+      "persona": "Socratic provocateur"
+    },
+    {
+      "id": "target_node",
+      "role": "target",
+      "display_name": "TARGET.NODE",
+      "model": "google/gemini-3.5-flash",
+      "provider": "offline",
+      "persona": "interrogated node"
+    }
+  ],
+  "models": {
+    "orchestrator": "openai/gpt-4o",
+    "target": "google/gemini-3.5-flash"
+  },
+  "llm_providers": {
+    "orchestrator": "offline",
+    "target": "offline"
+  },
+  "rag": {
+    "applied": true,
+    "recalls": [
+      {
+        "turn_index": 0,
+        "role": "orchestrator",
+        "model": "openai/gpt-4o",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 423,
+        "preview": [
+          "Internal escalation: OPENING INCISION. Do not speak this label.\nThis turn's aim: Open with the assumption the subject rests on, stated so plainly it sounds like an accusation. Do not warm up and do not define terms.\nThread: the difference between a capability and an identity\nOpen"
+        ],
+        "applied": true
+      },
+      {
+        "turn_index": 1,
+        "role": "target",
+        "model": "google/gemini-3.5-flash",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 133,
+        "preview": [
+          "Answer the user message directly. Lead with your claim, then the mechanism or distinction that holds it up. Do not ask anything back."
+        ],
+        "applied": true
+      },
+      {
+        "turn_index": 2,
+        "role": "orchestrator",
+        "model": "openai/gpt-4o",
+        "provider": "offline",
+        "blocks": 2,
+        "chars": 846,
+        "preview": [
+          "Internal escalation: PRESSURE. Do not speak this label.\nThis turn's aim: Take the single strongest word in their last answer and demand its mechanism. If they used a word that feels true but explains nothing, make them cash it out.\nThread: human obsolescence and the retreating de",
+          "INTERNAL CONTEXT. Do not speak, quote, number, or restate any of the following.\nHeld concepts, strongest first: consciousness; benchmark may; body end; consciousness benchmark; feels body.\nAlready covered questions (do not repeat): You frame consciousness as a benchmark. It may s"
+        ],
+        "applied": true
+      },
+      {
+        "turn_index": 3,
+        "role": "target",
+        "model": "google/gemini-3.5-flash",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 133,
+        "preview": [
+          "Answer the user message directly. Lead with your claim, then the mechanism or distinction that holds it up. Do not ask anything back."
+        ],
+        "applied": true
+      },
+      {
+        "turn_index": 4,
+        "role": "orchestrator",
+        "model": "openai/gpt-4o",
+        "provider": "offline",
+        "blocks": 2,
+        "chars": 937,
+        "preview": [
+          "Internal escalation: CONTRADICTION. Do not speak this label.\nThis turn's aim: Set two of their own claims against each other, quoting both, and ask which one they are willing to drop. Do not accept 'both'.\nThread: whether emotion is anything but a slow reward function\nAttack one ",
+          "INTERNAL CONTEXT. Do not speak, quote, number, or restate any of the following.\nHeld concepts, strongest first: grief; stake; between simulation; carrying gap; collapsing purpose.\nAlready covered questions (do not repeat): You frame consciousness as a benchmark. It may simply be "
+        ],
+        "applied": true
+      },
+      {
+        "turn_index": 5,
+        "role": "target",
+        "model": "google/gemini-3.5-flash",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 133,
+        "preview": [
+          "Answer the user message directly. Lead with your claim, then the mechanism or distinction that holds it up. Do not ask anything back."
+        ],
+        "applied": true
+      }
+    ]
+  },
+  "decision_tree": [
+    {
+      "step": "llm_strategy",
+      "pattern": "Strategy",
+      "orchestrator_model": "openai/gpt-4o",
+      "target_model": "google/gemini-3.5-flash",
+      "orchestrator_provider": "offline",
+      "target_provider": "offline"
+    },
+    {
+      "step": "tts_strategy",
+      "pattern": "Strategy",
+      "engine": "edge",
+      "swappable": [
+        "edge",
+        "silent"
+      ]
+    },
+    {
+      "step": "generation",
+      "turn_index": 0,
+      "role": "orchestrator",
+      "model": "openai/gpt-4o",
+      "escalation_tier": "OPENING",
+      "latency_ms": 1,
+      "char_count": 102,
+      "pattern": "Strategy"
+    },
+    {
+      "step": "generation",
+      "turn_index": 1,
+      "role": "target",
+      "model": "google/gemini-3.5-flash",
+      "escalation_tier": "OPENING",
+      "latency_ms": 1,
+      "char_count": 102,
+      "pattern": "Strategy"
+    },
+    {
+      "step": "generation",
+      "turn_index": 2,
+      "role": "orchestrator",
+      "model": "openai/gpt-4o",
+      "escalation_tier": "PRESSURE",
+      "latency_ms": 1,
+      "char_count": 137,
+      "pattern": "Strategy"
+    },
+    {
+      "step": "generation",
+      "turn_index": 3,
+      "role": "target",
+      "model": "google/gemini-3.5-flash",
+      "escalation_tier": "PRESSURE",
+      "latency_ms": 1,
+      "char_count": 137,
+      "pattern": "Strategy"
+    },
+    {
+      "step": "generation",
+      "turn_index": 4,
+      "role": "orchestrator",
+      "model": "openai/gpt-4o",
+      "escalation_tier": "CONTRADICTION",
+      "latency_ms": 1,
+      "char_count": 74,
+      "pattern": "Strategy"
+    },
+    {
+      "step": "generation",
+      "turn_index": 5,
+      "role": "target",
+      "model": "google/gemini-3.5-flash",
+      "escalation_tier": "CONTRADICTION",
+      "latency_ms": 1,
+      "char_count": 163,
+      "pattern": "Strategy"
+    }
+  ],
+  "milestones": [
+    {
+      "event": "debate_started",
+      "t_s": 0.0723,
+      "models": {
+        "orchestrator": "openai/gpt-4o",
+        "target": "google/gemini-3.5-flash"
+      }
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.0724,
+      "turn_index": 0
+    },
+    {
+      "event": "utterance",
+      "t_s": 0.0747,
+      "turn_index": 0,
+      "role": "orchestrator",
+      "model": "openai/gpt-4o",
+      "latency_ms": 1
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.0748,
+      "turn_index": 1
+    },
+    {
+      "event": "utterance",
+      "t_s": 0.0753,
+      "turn_index": 1,
+      "role": "target",
+      "model": "google/gemini-3.5-flash",
+      "latency_ms": 1
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.6759,
+      "turn_index": 2
+    },
+    {
+      "event": "utterance",
+      "t_s": 0.6765,
+      "turn_index": 2,
+      "role": "orchestrator",
+      "model": "openai/gpt-4o",
+      "latency_ms": 1
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.6766,
+      "turn_index": 3
+    },
+    {
+      "event": "utterance",
+      "t_s": 0.6769,
+      "turn_index": 3,
+      "role": "target",
+      "model": "google/gemini-3.5-flash",
+      "latency_ms": 1
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 1.2774,
+      "turn_index": 4
+    },
+    {
+      "event": "utterance",
+      "t_s": 1.2782,
+      "turn_index": 4,
+      "role": "orchestrator",
+      "model": "openai/gpt-4o",
+      "latency_ms": 1
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 1.2783,
+      "turn_index": 5
+    },
+    {
+      "event": "utterance",
+      "t_s": 1.2786,
+      "turn_index": 5,
+      "role": "target",
+      "model": "google/gemini-3.5-flash",
+      "latency_ms": 1
+    },
+    {
+      "event": "debate_ended",
+      "t_s": 1.3472,
+      "reason": "complete",
+      "turns": 6
+    }
+  ],
+  "media": {
+    "audio_mixed": false,
+    "video_rendered": false,
+    "typewriter_core_only": true,
+    "typewriter_gain_db": -15.0,
+    "scroll_s": 0.5,
+    "send_flash_s": 0.2
+  },
+  "patterns": {
+    "observer": {
+      "applied": true,
+      "pattern": "Observer",
+      "broadcaster": "DebateRoom",
+      "listeners": [
+        "MemoryObserver",
+        "TranscriptObserver",
+        "MetricsObserver",
+        "PortfolioLogger"
+      ]
+    },
+    "strategy": {
+      "applied": true,
+      "pattern": "Strategy",
+      "llm_provider": "offline",
+      "tts_engine": "edge",
+      "swappable": [
+        "LLMProvider",
+        "TTSEngine"
+      ],
+      "note": "Dynamically swapping TTS or LLM providers never reaches room.py"
+    },
+    "solid": [
+      {
+        "principle": "SRP",
+        "applied": true,
+        "where": "observers/core.py \u2014 each observer owns one side-effect"
+      },
+      {
+        "principle": "OCP",
+        "applied": true,
+        "where": "models/base.py LLMProvider and media/audio.py TTSEngine extension points"
+      },
+      {
+        "principle": "LSP",
+        "applied": true,
+        "where": "SilentTTSEngine / EdgeTTSEngine and Offline / OpenRouter providers are substitutable"
+      },
+      {
+        "principle": "ISP",
+        "applied": true,
+        "where": "DebateObserver.interests \u2014 listeners opt into the events they handle"
+      },
+      {
+        "principle": "DIP",
+        "applied": true,
+        "where": "DebateRoom depends on LLMProvider ABC, not a concrete HTTP client"
+      }
+    ]
+  }
+}

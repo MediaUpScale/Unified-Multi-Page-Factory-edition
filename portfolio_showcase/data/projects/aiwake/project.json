@@ -1,0 +1,10 @@
+{
+  "slug": "aiwake",
+  "title": "Aiwake",
+  "codename": "Socratic debate engine",
+  "status": "active",
+  "summary": "Two-seat LLM debate under hard guardrails, rendered as a 9:16 terminal reel. Optional event-bus telemetry; engine runs if this folder is deleted.",
+  "engine_path": "channels_config/aiwake",
+  "tags": ["LLM", "TTS", "Observer", "Strategy", "EventBus"],
+  "telemetry": "architecture.json"
+}

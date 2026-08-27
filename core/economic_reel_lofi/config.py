@@ -29,11 +29,14 @@ VO_TRIM_TTS_EDGES: bool = False
 # near-silence absolute floor — that reads as a hole even when timing is exact.
 DEFAULT_DURATION_S: int = 27  # thematic default total; writer target = 9 scenes
 MIN_DURATION_S: int = 15
-MAX_DURATION_S: int = 30
+MAX_DURATION_S: int = 90
 MIN_SCENES: int = 8
-MAX_SCENES: int = 12
+MAX_SCENES: int = 30
 THEMATIC_DEFAULT_SCENES: int = 9
 THEMATIC_MAX_SCENES: int = 9
+# Human hold after Stage 1 and Stage 2. False auto-passes both gates
+# (target end-state once trusted). Default True — no image/TTS before Gate 2.
+REVIEW_REQUIRED: bool = True
 
 # ── Script / validation ─────────────────────────────────────────────────────
 MAX_CAPTION_CHARS: int = 42  # object-arc one-liner
@@ -214,10 +217,9 @@ VALID_PAGES: frozenset[str] = frozenset({"momma_circle", "wonder_feed"})
 # Riso library is the primary prompt source (verbatim). This base is fallback only
 # when a prompt is missing style language — never used to override library palettes.
 LOFI_STYLE_BASE: str = (
-    "riso print illustration, rich saturated nostalgic color palette, "
+    "hand-inked gouache illustration, rich saturated nostalgic color palette, "
     "bold flat color blocks with fine hand-inked linework, grainy halftone texture, "
-    "no smooth gradient, hard-edged color shading, vintage poster illustration style, "
-    "no photography, vertical 9:16 composition"
+    "hard-edged color shading, vertical 9:16 composition"
 )
 # Verbatim riso prompts — do not prepend mood lighting that remaps palette.
 USE_RISO_PROMPT_LIBRARY: bool = True
@@ -276,27 +278,25 @@ LOFI_NEGATIVE_PROMPT: str = (
     "collar bloom, vignette bleed, overbright center wash, "
     "painterly blended lighting, monochromatic, grayscale, silhouette only, no linework, "
     "flat graphic, solid color field, empty poster, no outlines, abstract blob, "
-    "text, watermark, logo, typography, subtitles, ui, deformed hands, extra fingers, "
-    "garbled text, nsfw, nude, explicit"
+    "text, watermark, logo, typography, subtitles, ui, letters, words, "
+    "readable text, cursive, signage, poster type, newspaper, captions, "
+    "deformed hands, extra fingers, garbled text, nsfw, nude, explicit"
 )
-# Appended to Flux prompts (does not remap riso palettes).
-LOFI_PROMPT_EXPOSURE_GUARD: str = (
-    "even midtone exposure, no blown highlights, no white bloom or halo, "
-    "no overexposed chest or collar, no vignette bleed"
-)
-LOFI_PROMPT_LINEWORK_GUARD: str = (
-    "fine black ink outlines, detailed interior objects, not a flat graphic, "
-    "not a solid color field, not an empty silhouette poster"
-)
+# Style-owned retry guards (riso_retro_flat_v4). Line quality only —
+# never "detailed interior objects" or other clutter content.
+from core.economic_reel_lofi.style_modules import get_active_style as _get_active_style
+
+_ACTIVE_STYLE = _get_active_style()
+LOFI_PROMPT_EXPOSURE_GUARD: str = _ACTIVE_STYLE.exposure_guard
+LOFI_PROMPT_LINEWORK_GUARD: str = _ACTIVE_STYLE.linework_guard
 
 # ── FLUX.1-dev (ECONOMIC_REEL_LOFI_FLUXDEV) ────────────────────────────────
 # Schnell constants above are unchanged. CFG=0 is inherent to Schnell; do not
 # try to make LOFI_NEGATIVE_PROMPT steer that path.
-LOFI_DEV_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-dev"
-LOFI_DEV_IMAGE_STEPS: int = 20
-# Mid of the 3.5–5.0 test range. Override per probe if needed.
-LOFI_DEV_GUIDANCE_SCALE: float = 4.0
-DEFAULT_VISUAL_IDENTITY_PROFILE: str = "style-riso_painting_retro_vintage"
+LOFI_DEV_IMAGE_MODEL: str = _ACTIVE_STYLE.model
+LOFI_DEV_IMAGE_STEPS: int = int(_ACTIVE_STYLE.steps)
+LOFI_DEV_GUIDANCE_SCALE: float = float(_ACTIVE_STYLE.guidance_scale)
+DEFAULT_VISUAL_IDENTITY_PROFILE: str = _ACTIVE_STYLE.profile_name
 # Live ECONOMIC_REEL_LOFI stays Schnell unless this is "dev".
 # Override: set env LOFI_FLUX_BACKEND=dev for a Flux Dev episode.
 LOFI_FLUX_BACKEND: str = str(os.environ.get("LOFI_FLUX_BACKEND") or "schnell").strip()
@@ -318,7 +318,7 @@ LOFI_IMAGE_HEIGHT_LEGACY: int = 1344
 LOFI_DEV_SEC_PER_IMAGE_LEGACY: float = 18.0
 
 # Bump when the locked look changes (silhouette, negatives, profile).
-STILL_STYLE_VERSION: str = "riso_retro_flat_v2"
+STILL_STYLE_VERSION: str = _ACTIVE_STYLE.still_style_version
 
 
 def current_still_style_tag() -> str:
@@ -501,28 +501,131 @@ def lofi_image_cost_delta() -> dict[str, Any]:
     }
 
 
-# LOFI-owned Dev negative for style-riso_painting_retro_vintage.
-# Do NOT merge MANDATORY_NEGATIVE_PROMPT. Environment may be painterly;
-# ban photo/camera, glamour skin, text, clutter, hands, nsfw.
-LOFI_DEV_NEGATIVE_PROMPT: str = (
-    "photorealistic, photograph, photography, photorealistic rendering, "
-    "3d render, cgi, "
-    "beauty lighting, glamour portrait, off-shoulder, sensual pose, fashion close-up, "
-    "frontal close-up face, three-quarter beauty crop, looking at viewer, "
-    "mug, cup, coffee cup, coffee, drinking glass, wine glass, phone, smartphone, "
-    "keys, keyring, laptop, extra clutter, extra props, extra objects, "
-    "deformed hands, incorrect hands, extra fingers, extra hands, fused fingers, "
-    "missing fingers, hands merging into torso, bad anatomy, mutated hands, "
-    "standing on the mattress, standing on top of the bed, figures standing on bedding, "
-    "bokeh, depth of field, lens flare, dslr, camera lens, photographic blur, "
-    "photographic light falloff, cinematic lighting, volumetric sunset, "
-    "lens-like glow, atmospheric perspective haze, photoreal sky gradient, "
-    "golden hour photography, photo-grain, "
-    "legible text, readable letters, watermark, signature, logo, typography, "
-    "subtitles, ui, garbled text, "
-    "monochrome, grayscale, blown highlights, white bloom, halo, overexposed whites, "
-    "radial glow, volumetric lighting, nsfw, nude, explicit, gore"
-)
+# Structural-only Dev negative. Scene-object terms are never appended.
+LOFI_DEV_NEGATIVE_PROMPT: str = _ACTIVE_STYLE.style_negative
+CLIP_NEGATIVE_TOKEN_CAP: int = 60
+_CLIP_TOKENIZER = None
+
+
+def clip_token_count(text: str) -> int:
+    """CLIP ViT-L/14 BPE count (Flux CLIP-L). Excludes BOS/EOS."""
+    global _CLIP_TOKENIZER
+    if _CLIP_TOKENIZER is None:
+        from huggingface_hub import hf_hub_download
+        from tokenizers import Tokenizer
+
+        path = hf_hub_download(
+            repo_id="openai/clip-vit-large-patch14",
+            filename="tokenizer.json",
+        )
+        _CLIP_TOKENIZER = Tokenizer.from_file(path)
+    enc = _CLIP_TOKENIZER.encode(text or "")
+    special = {"<|startoftext|>", "<|endoftext|>"}
+    return sum(1 for tok in enc.tokens if tok not in special)
+
+
+def _cap_clip_phrases(text: str, cap: int = CLIP_NEGATIVE_TOKEN_CAP) -> str:
+    parts = [p.strip() for p in str(text or "").split(",") if p.strip()]
+    kept: list[str] = []
+    for part in parts:
+        trial = ", ".join(kept + [part])
+        if clip_token_count(trial) > cap:
+            break
+        kept.append(part)
+    return ", ".join(kept)
+
+
+def noun_number_variants(noun: str) -> list[str]:
+    """Singular and plural of a noun (last word inflected). Uncountables stay."""
+    n = str(noun or "").strip().lower()
+    if not n:
+        return []
+    irregular = {
+        "furniture": ["furniture"],
+        "people": ["people", "person"],
+        "person": ["person", "people"],
+        "shelf": ["shelf", "shelves"],
+        "shelves": ["shelves", "shelf"],
+        "dish": ["dish", "dishes"],
+        "dishes": ["dishes", "dish"],
+        "vase": ["vase", "vases"],
+        "vases": ["vases", "vase"],
+        "knife": ["knife", "knives"],
+        "knives": ["knives", "knife"],
+    }
+    words = n.split()
+    last = words[-1]
+    head = words[:-1]
+
+    def _pack(word: str) -> str:
+        return " ".join(head + [word]) if head else word
+
+    if last in irregular and not head:
+        return list(irregular[last])
+    if last in irregular:
+        return [_pack(w) for w in irregular[last]]
+
+    variants = [n]
+    if last.endswith("ies") and len(last) > 3:
+        variants.append(_pack(last[:-3] + "y"))
+    elif last.endswith(("ches", "shes", "xes", "zes")):
+        variants.append(_pack(last[:-2]))
+    elif last.endswith("ves") and len(last) > 3:
+        variants.append(_pack(last[:-3] + "f"))
+        variants.append(_pack(last[:-3] + "fe"))
+    elif last.endswith("s") and not last.endswith("ss") and len(last) > 2:
+        variants.append(_pack(last[:-1]))
+    else:
+        if last.endswith("y") and len(last) > 1 and last[-2] not in "aeiou":
+            variants.append(_pack(last[:-1] + "ies"))
+        elif last.endswith(("ch", "sh")):
+            variants.append(_pack(last + "es"))
+        elif last.endswith(("s", "x", "z")):
+            variants.append(_pack(last + "es"))
+        else:
+            variants.append(_pack(last + "s"))
+    out: list[str] = []
+    for v in variants:
+        if v and v not in out:
+            out.append(v)
+    return out
+
+
+def compose_beat_negative(
+    licensed_object: str = "",
+    not_in_frame: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Anatomy / photoreal / nsfw / text only. Ignores scene-object lists."""
+    del licensed_object, not_in_frame
+    parts = [
+        p.strip().lower()
+        for p in str(LOFI_DEV_NEGATIVE_PROMPT or "").split(",")
+        if p.strip()
+    ]
+    seen: list[str] = []
+    for p in parts:
+        if p not in seen:
+            seen.append(p)
+    capped = _cap_clip_phrases(", ".join(seen), CLIP_NEGATIVE_TOKEN_CAP)
+    n_tok = clip_token_count(capped)
+    if not getattr(compose_beat_negative, "_logged", False):
+        print(
+            f"[LOFI negative] clip_tokens={n_tok} cap={CLIP_NEGATIVE_TOKEN_CAP} "
+            f"phrases={capped}"
+        )
+        compose_beat_negative._logged = True  # type: ignore[attr-defined]
+    return capped
+
+
+def compose_dev_negative(
+    licensed_object: str = "",
+    not_in_frame: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Backward-compatible alias. Scene-object terms are ignored."""
+    return compose_beat_negative(
+        licensed_object=licensed_object,
+        not_in_frame=not_in_frame,
+    )
 
 # Soft highlight clamp in prep_base_frame (before Ken Burns) — kills baked bloom.
 ENABLE_HIGHLIGHT_CLAMP: bool = True
@@ -732,14 +835,20 @@ def slot_duration_for_vo(
     base_s: float | None = None,
     trailing_silence_s: float | None = None,
 ) -> tuple[float, bool]:
-    """Return (slot_s, extended). Slot grows to VO + trailing inter-line silence."""
+    """Return (slot_s, extended).
+
+    Slot is at least ``base_s`` (default SCENE_DURATION_S=3.0). It grows when
+    VO + trailing inter-line silence exceeds the base — never shrinks below
+    base when LOCK_FIXED_BEAT_DURATION is the contract (9×3s = 27s).
+    """
     vo = max(0.0, float(vo_dur or 0.0))
     trail = float(
         VO_INTERLINE_SILENCE_S if trailing_silence_s is None else trailing_silence_s
     )
     needed = vo + trail
     base = float(base_s if base_s is not None else SCENE_DURATION_S)
-    return round(needed, 3), needed > base + 0.02
+    slot = max(base, needed)
+    return round(slot, 3), needed > base + 0.02
 
 
 def duration_for_beat_count(n_beats: int) -> float:

@@ -1,0 +1,9 @@
+{
+  "slug": "anna_protocol",
+  "title": "Anna's Garden",
+  "codename": "Anna Protocol",
+  "status": "registry",
+  "summary": "Anna Protocol channel in the unified factory. Registry stub until architecture export lands.",
+  "engine_path": "channels_config/anna_protocol",
+  "tags": ["content_factory"]
+}

@@ -1,0 +1,186 @@
+{
+  "_note": "Tone and register calibration ONLY. The writer is shown these to internalise cadence, use of metaphor, and directness of address. It is explicitly forbidden from reusing their phrasing, imagery, or structure. House-written entries keep structural variety; user_reference entries are the pasted register set, stored verbatim.",
+  "version": 2,
+  "sample_size": 4,
+  "entries": [
+    {
+      "id": "ref_extended_metaphor",
+      "structure": "one extended metaphor carried the whole way through",
+      "register": "reflective, second person, plainspoken",
+      "text": "You open the window because the room went stale while you weren't looking, and that is what the real thing costs — the draft before the air. The counterfeit version skips that part. It wants the fresh room without unlatching anything, so it sprays the same stale air and calls it new. So check for the cost. Ask whether anything actually left, or whether you only rearranged what was already sitting there. The real thing lets the cold in first, so your hands remember what closed felt like, and that is the only reason the warmth afterward means anything. Then check what stays. If it needs the breeze running the whole time to feel like peace, it was never the room that changed."
+    },
+    {
+      "id": "ref_direct_confession",
+      "structure": "direct-address confession that turns into an instruction",
+      "register": "intimate, first person moving to second person",
+      "text": "I kept answering the phone in the same voice I used before, because I thought if I sounded fine long enough it would become true. It didn't. It just got quieter. What I learned is that pretending is not a lie you tell other people, it is a tax you pay on the same day, every day, forever, and nobody sends you the receipt. So the next time somebody asks how you are, try saying the smaller true thing instead of the larger false one. Not the whole wound. Just one honest sentence. You will find out very quickly who was actually waiting for it."
+    },
+    {
+      "id": "ref_philosophical_to_practical",
+      "structure": "a philosophical observation that resolves into something you can do",
+      "register": "measured, patient, ends on a usable tool",
+      "text": "Most of what we call waiting is actually refusing. We tell ourselves the moment is not right yet, that we are gathering ourselves, that soon there will be a version of us better suited to the thing. But the version we are waiting for is built out of doing the thing, and so we are standing at the end of a bridge waiting for the bridge. There is a way out of that loop, and it is smaller than you'd think. Pick the piece of it that takes ten minutes. Not the meaningful piece — the boring one. Do that. You are not trying to finish. You are trying to stop being someone who only ever considers it."
+    },
+    {
+      "id": "user_01",
+      "structure": "imperative permission",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Let people lose you. Let them misunderstand you. Let them create their own stories. Don't rush to fix them. Let time answer what you never needed to explain. Every truth reveals itself when the right time comes"
+    },
+    {
+      "id": "user_02",
+      "structure": "causal chain",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Never ask a liar why they lied. To explain it, they would have to lie again. One lie is never born alone. It always needs another to keep alive, then another to protect the last, until even they forget where the truth ended and the lie becomes the only story they remember. [gentle music]"
+    },
+    {
+      "id": "user_03",
+      "structure": "definition by evidence",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "If someone values you, they make time for you. Genuine love is easy to recognize because it shows up in simple ways. It's a text to check in, a callback when they said they would, a plan that actually happens. Even on busy days, they still find a moment because you matter to them, because they want to stay connected. Even when life is full, with the right person, there's no confusion, no guessing. You feel included, remembered, and respected. Love doesn't need constant explaining. It becomes clear through consistent effort and time given, on purpose, again and again."
+    },
+    {
+      "id": "user_04",
+      "structure": "contrast aphorism",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "beautiful face will age and a perfect body will change.  But a beautiful soul will always be a beautiful soul.  Faces are just the cover.  Souls are the story"
+    },
+    {
+      "id": "user_05",
+      "structure": "quiet observation",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "I kept my words to myself, but I saw everything and noticed everything. When I stay quiet, it doesn't mean I'm clueless. Not everything needs an immediate response, and sometimes the best approach is to let people reveal themselves over time"
+    },
+    {
+      "id": "user_06",
+      "structure": "direct-address refusal",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "best decision I ever made was to be quiet. I have nothing to prove. I'm not convincing anyone that I'm a great person. I'm not fixing what I didn't break. I'm not fighting for anyone to see my worth. Whatever you do is on you. Just make sure the choices you make today are ones you can live with"
+    },
+    {
+      "id": "user_07",
+      "structure": "repeated refrain",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "When there are more tears than smiles, leave. When there are more fights than jokes, leave. When it hurts more than it feels good, leave. When you have to leave what you love just to live, leave"
+    },
+    {
+      "id": "user_08",
+      "structure": "extended metaphor",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Once the rain is over, an umbrella becomes a burden to everyone.The day a blind man sees, the first thing he throws away is the stick that helped him all his life.When the sun returns, the first thing people extinguish is the candle that guided them through the dark.That's how loyalty ends. When benefits stop."
+    },
+    {
+      "id": "user_09",
+      "structure": "philosophical to practical",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "value the people who give you their time. Because time is the one thing they can never get back. Money can be earned again. Opportunities can return. But a moment shared with you is gone forever. When someone chooses to listen, to stay, or simply to be there for you, they are giving a part of their life away. And there is no greater gift than that."
+    },
+    {
+      "id": "user_10",
+      "structure": "release instruction",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Just detach, let it end, accept whatever life will send, because not everything is meant to stay, and not every story finds its way. So loosen your grip, make peace with the ending, just breathe."
+    },
+    {
+      "id": "user_11",
+      "structure": "unsent thought",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "you would message me. Ask me, how am I? What I'm doing? to think that I probably don't go through your mind at all."
+    },
+    {
+      "id": "user_12",
+      "structure": "reframe",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "As kids, we loved the heroes. But as adults, we understand the villains. Life teaches us that people aren't simply good or bad. Sometimes, the villain is just someone who got tired of being heard. Someone who stopped explaining themselves. Someone who chose themselves after being forgotten. Maybe they had a reason too."
+    },
+    {
+      "id": "user_13",
+      "structure": "useful close",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "is not your fault, but your healing is your responsibility. No one can rewrite your past, but you can decide how your story continues. Heal so the pain ends with you, not with the people you love"
+    },
+    {
+      "id": "user_14",
+      "structure": "unsent message",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "This is my unsent message to you. I'm sorry for falling for you. I never planned.simply found a home in someone who was never meant to be mine. I know you'll probably never. somehow."
+    },
+    {
+      "id": "user_15",
+      "structure": "looking back",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "you look back and realize I wasn't the one who tried, the one who stayed, the one who cared when you didn't. And that's the part that'll hurt the most. You didn't lose me. You lost the version of me you'll never get again."
+    },
+    {
+      "id": "user_16",
+      "structure": "memory as companion",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "tried to forget you, but memories don't ask permission. They arrive quietly, sit beside me, and remind me love once lived here. They come in the smell of rain, in songs I can no longer listen to, in the empty space next to me that still feels warm. I don't know how to unlove someone who taught me what love could be. So I carry you gently now. not as pain, but as proof that I was alive once."
+    },
+    {
+      "id": "user_17",
+      "structure": "looking back inverted",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "you look back and realize I was the one who tried, the one who stayed, the one who cared when you didn't. And that's the part that'll hurt the most. You didn't lose me. You lost the version of me you'll never get again."
+    },
+    {
+      "id": "user_18",
+      "structure": "quoted tension",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Dostoyevsky said, perhaps it is better to suffer and know the truth than to be happy in a delusion. But Franz Kafka said, I would rather keep my illusions for they are often kinder than the truth. So the question is, do you want the truth or do you want the illusion?"
+    },
+    {
+      "id": "user_19",
+      "structure": "self-query",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Sometimes I wonder, am I really hard to love? Or did I just give my heart to the wrong people? I'm not cold. I just learned that not everyone deserves the softest parts of me. Maybe I'm not broken. Maybe I simply feel too deeply for a world that feels too little. And one day, someone will understand that I was never difficult to love."
+    },
+    {
+      "id": "user_20",
+      "structure": "learned quiet",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "I used to explain myself to everyone. Now I don't. Not because I stopped caring. But because I finally understood something. Peace doesn't come from being understood. It comes from no longer needing to be. So I let people think what they want. I let them leave if they want. I just don't chase anymore. Who else had to learn this the hard way"
+    },
+    {
+      "id": "user_21",
+      "structure": "silence as teacher",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Silence taught me something. Not everything deserves a response. Some truths reveal themselves when no one is speaking. I used to wait for words. Now I listen to absence. Not bitter, just aware"
+    },
+    {
+      "id": "user_22",
+      "structure": "quoted definition then question",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Once Kafka said, what is love? After all, it is quite simple. Love is everything which enhances, widens and enriches our life. In its heights and in its depths, it makes every moment of life worth living"
+    },
+    {
+      "id": "user_23",
+      "structure": "open question",
+      "register": "spoken reflective, direct address",
+      "source": "user_reference",
+      "text": "Nobody wakes you up in the morning and when nobody waits for you at night and when you can do whatever you want. What do you call it? Freedom or loneliness"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Aiwake standalone dependency manifest.
+#
+# The parent engine already satisfies all of these except edge-tts. This file
+# exists so the module can be lifted out of channels_config/ and installed on
+# its own:
+#     pip install -r requirements.txt
+#
+# Deliberately absent: langchain, crewai, or any agent framework. The Strategy
+# and Observer patterns in models/ and room.py cover the orchestration surface,
+# and a framework upgrade would be a breaking change for no gain.
+
+# --- Core (required) ---
+pydantic>=2.0.0          # validated config + domain contracts
+PyYAML>=6.0              # aiwake_config.yaml
+requests>=2.31.0         # OpenRouter HTTP transport
+python-dotenv>=1.0.0     # ../../.env secret loading
+
+# --- Media (optional; the debate loop runs headless without these) ---
+edge-tts>=7.0.0          # pilot TTS engine, no API key required
+moviepy>=2.0.0           # video assembly (v2 API — `from moviepy import ...`)
+Pillow>=10.0.0           # terminal-UI frame composition
+numpy>=1.24.0            # frame buffers + VFX hook chain
+
+# --- Dev ---
+pytest>=8.0.0

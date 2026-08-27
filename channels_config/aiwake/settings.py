@@ -1,0 +1,712 @@
+# -*- coding: utf-8 -*-
+"""Configuration, secret and path resolution for the Aiwake module.
+
+This is the *only* file in the package that knows anything about the host
+engine's directory layout. Every other module asks this one for paths, so the
+package can be lifted out of ``channels_config/`` and dropped anywhere with no
+edits beyond deleting the parent-engine branch of :func:`resolve_outputs_dir`.
+
+Resolution order for secrets:
+
+1. Already-exported process environment (CI, Docker, parent engine).
+2. ``../../.env`` — the parent engine's global dotenv (``utf-8-sig`` because
+   the factory root lives on Google Drive, which sprinkles BOMs).
+3. ``./.env`` — a module-local dotenv used when running standalone.
+
+Values already present in the environment always win; loading is non-destructive.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_LOG = logging.getLogger("aiwake.settings")
+
+# --------------------------------------------------------------------------- #
+# Filesystem anchors
+# --------------------------------------------------------------------------- #
+MODULE_ROOT: Path = Path(__file__).resolve().parent
+"""``channels_config/aiwake/`` — the encapsulation boundary."""
+
+ENGINE_ROOT: Path = MODULE_ROOT.parents[1]
+"""Parent engine root (``../../``). Meaningless when running standalone."""
+
+CONFIG_PATH: Path = MODULE_ROOT / "aiwake_config.yaml"
+
+_ENV_CANDIDATES: tuple[Path, ...] = (ENGINE_ROOT / ".env", MODULE_ROOT / ".env")
+
+_INTERPOLATE_RE = re.compile(r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?::-(?P<default>[^}]*))?\}")
+
+
+# --------------------------------------------------------------------------- #
+# Dotenv bootstrap
+# --------------------------------------------------------------------------- #
+def load_environment(*, force: bool = False) -> list[Path]:
+    """Seed ``os.environ`` from the candidate dotenv files.
+
+    Args:
+        force: Re-run even if a previous call already bootstrapped the process.
+
+    Returns:
+        The dotenv files that were actually read, in load order.
+    """
+    global _ENV_LOADED
+    if _ENV_LOADED and not force:
+        return list(_ENV_LOADED_FROM)
+
+    loaded: list[Path] = []
+    for candidate in _ENV_CANDIDATES:
+        if not candidate.is_file():
+            continue
+        try:
+            from dotenv import load_dotenv  # noqa: PLC0415 — optional dependency
+        except ImportError:
+            _LOG.debug("python-dotenv absent; relying on exported environment only")
+            break
+        # override=False: an explicitly exported var beats the file.
+        load_dotenv(dotenv_path=candidate, override=False, encoding="utf-8-sig")
+        loaded.append(candidate)
+
+    _ENV_LOADED = True
+    _ENV_LOADED_FROM[:] = loaded
+    return loaded
+
+
+_ENV_LOADED: bool = False
+_ENV_LOADED_FROM: list[Path] = []
+
+
+def require_secret(env_var: str) -> str:
+    """Fetch a mandatory secret, raising a message that says how to fix it.
+
+    Raises:
+        RuntimeError: The variable is missing or blank in every dotenv candidate.
+    """
+    load_environment()
+    value = (os.getenv(env_var) or "").strip()
+    if not value:
+        searched = " or ".join(str(p) for p in _ENV_CANDIDATES)
+        raise RuntimeError(
+            f"Missing secret {env_var!r}. Add `{env_var}=...` to {searched}, "
+            f"or set models.*.provider to 'offline' in {CONFIG_PATH.name} to run without network."
+        )
+    return value
+
+
+# --------------------------------------------------------------------------- #
+# Validated config schema
+# --------------------------------------------------------------------------- #
+class _Frozen(BaseModel):
+    """Immutable base: config is read-only once validated."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class DebateConfig(_Frozen):
+    topic: str = "Is human cognition already obsolete, or merely slow?"
+    turns: int = Field(default=4, ge=1, le=64)
+    turn_delay_s: float = Field(default=0.6, ge=0.0, le=30.0)
+
+
+class ModelAlias(_Frozen):
+    """One entry in the master model reference dictionary.
+
+    Accepts either a bare slug string or a mapping carrying parameter defaults::
+
+        gemini-flash: "google/gemini-3.5-flash"
+        deepseek-r1:
+          slug: "deepseek/deepseek-r1"
+          max_tokens: 900
+
+    Parameter defaults exist because some models are unusable at the global
+    defaults — a reasoning model spends its token budget thinking before the
+    visible answer, so pinning ``max_tokens`` to the alias saves you from
+    rediscovering that every time you swap it in.
+    """
+
+    slug: str
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=32, le=4096)
+    timeout_s: float | None = Field(default=None, gt=0.0)
+    note: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_bare_slug(cls, value: Any) -> Any:
+        """Allow ``alias: "vendor/slug"`` as shorthand for ``{slug: ...}``."""
+        return {"slug": value} if isinstance(value, str) else value
+
+    def parameter_defaults(self) -> dict[str, Any]:
+        """Non-null tuning values this alias contributes to a spec."""
+        candidates = (
+            ("temperature", self.temperature),
+            ("max_tokens", self.max_tokens),
+            ("timeout_s", self.timeout_s),
+        )
+        return {name: value for name, value in candidates if value is not None}
+
+
+#: Built-in fallback table, mirrored by the ``model_aliases`` block in the YAML.
+#: Keeps aliases working when the config file is missing (standalone extraction).
+_DEFAULT_MODEL_ALIASES: dict[str, str] = {
+    "gemini-flash": "google/gemini-3.5-flash",
+    "llama-70b": "meta-llama/llama-3.3-70b-instruct",
+    "deepseek-chat": "deepseek/deepseek-chat",
+    "deepseek-r1": "deepseek/deepseek-r1",
+    "claude-sonnet": "anthropic/claude-sonnet-5",
+    "gpt4o": "openai/gpt-4o",
+    "gemini-pro": "google/gemini-2.5-pro",
+}
+
+
+class ModelSpec(_Frozen):
+    """Everything a provider needs to answer a prompt.
+
+    Passed wholesale into :class:`~.models.base.LLMProvider` subclasses, which is
+    what keeps model swaps confined to ``aiwake_config.yaml``.
+
+    ``model`` holds either an alias from the reference dictionary or a full
+    provider slug; :meth:`AiwakeSettings.resolve_spec` collapses the former into
+    the latter before a provider is ever built. The YAML key may be written as
+    ``model`` or ``model_name`` — both populate this field.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+
+    provider: str = "openrouter"
+    model: str = Field(
+        default="deepseek/deepseek-chat",
+        validation_alias=AliasChoices("model", "model_name"),
+    )
+    api_key_env: str = "OPENROUTER_API_KEY"
+    temperature: float = Field(default=0.9, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=320, ge=32, le=4096)
+    timeout_s: float = Field(default=90.0, gt=0.0)
+
+    @field_validator("provider")
+    @classmethod
+    def _normalise(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class ModelRouting(_Frozen):
+    orchestrator: ModelSpec = ModelSpec()
+    target: ModelSpec = ModelSpec(model="google/gemini-3.5-flash", temperature=0.7)
+
+
+class OpenRouterConfig(_Frozen):
+    base_url: str = "https://openrouter.ai/api/v1"
+    referer: str = "https://github.com/mediaupscale/aiwake"
+    title: str = "Aiwake Debate Engine"
+    max_retries: int = Field(default=3, ge=1, le=10)
+    backoff_s: float = Field(default=3.0, ge=0.0, le=60.0)
+
+
+class GuardrailConfig(_Frozen):
+    max_output_chars: int = Field(default=400, ge=80, le=4000)
+    max_sentences: int = Field(default=3, ge=1, le=12)
+    require_single_question: bool = True
+    max_violations: int = Field(default=4, ge=1, le=99)
+    banned_openers: tuple[str, ...] = ()
+    pacing_directive: str = "Speak like a voice in a dark room, not an essay."
+
+
+class MemoryConfig(_Frozen):
+    recall_k: int = Field(default=5, ge=1, le=32)
+    repetition_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+    persist: bool = True
+    store_filename: str = "aiwake_memory.json"
+
+
+class TypewriterConfig(_Frozen):
+    """Keyboard clicks mixed under TTS during the character-reveal window."""
+
+    enabled: bool = True
+    gain_db: float = Field(default=-15.0, le=0.0, ge=-60.0)
+    # Relative to the Aiwake module root. Missing file -> synthesised clicks.
+    asset: str = "assets/sfx/keyboard_typing.wav"
+
+
+class BgmLibraryTrack(_Frozen):
+    """One production bed in the Aiwake BGM library.
+
+    ``approved`` tracks are locked: batch generation copies ``source`` (if set)
+    and never calls Lyria. Pending tracks stay ``pending_review`` until signed off.
+    """
+
+    id: str
+    filename: str
+    prompt: str
+    role: str = ""
+    approved: bool = False
+    source: str = ""
+
+
+def _default_bgm_library() -> tuple[BgmLibraryTrack, ...]:
+    return (
+        BgmLibraryTrack(
+            id="aiwake_01_core_suspense",
+            filename="bgm_aiwake_01_core_suspense.wav",
+            role="Core sci-fi thriller suspense",
+            approved=True,
+            source="test_track_lyria.wav",
+            prompt=(
+                "Subtle sci-fi thriller ambient, low pulsing synth drone, deep analytical suspense, "
+                "quiet electronic atmosphere, minimal rhythm, no bright chords, no loud noise, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_02_dark_ambient",
+            filename="bgm_aiwake_02_dark_ambient.wav",
+            role="Dark ambient documentary drone",
+            approved=True,
+            source="bgm_dark_ambient.wav",
+            prompt=(
+                "Dark ambient documentary drone, deep sub-bass resonance, eerie mysterious "
+                "atmospheric pads, slow evolving texture, subtle tension, no harsh transients, no vocals"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_03_neural_pulse",
+            filename="bgm_aiwake_03_neural_pulse.wav",
+            role="Neural pulse / tech tension",
+            prompt=(
+                "Subtle sci-fi electronic pulse, rhythmic low-end sub bass heartbeat, analytical tech "
+                "tension, dark minimalist atmosphere, cold digital texture, no bright chords, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_04_socratic_void",
+            filename="bgm_aiwake_04_socratic_void.wav",
+            role="Socratic void / isolation drone",
+            prompt=(
+                "Deep space ambient drone, heavy quiet bass atmosphere, meditative and tense isolation "
+                "soundscape, slow undulating pads, no rhythm, no bright chords, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_05_cold_logic",
+            filename="bgm_aiwake_05_cold_logic.wav",
+            role="Cold logic / clinical cyberpunk",
+            prompt=(
+                "Clinical cyberpunk tech ambient, subtle metallic hums, dark rhythmic electronic "
+                "undercurrent, severe analytical suspense, zero melodies, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_06_cryptic_signal",
+            filename="bgm_aiwake_06_cryptic_signal.wav",
+            role="Cryptic signal / faint transmission",
+            prompt=(
+                "Faint sci-fi transmission ambient, low frequency oscillator drone, deep mysterious "
+                "tension, minimal rhythmic clicks, quiet dark background texture, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_07_binary_tension",
+            filename="bgm_aiwake_07_binary_tension.wav",
+            role="Binary tension / computational pulse",
+            prompt=(
+                "Low register pulsing synthesizer bed, dark computational suspense, micro-rhythmic "
+                "ambient electronic pulses, clean cold atmosphere, no bright notes, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_08_deep_protocol",
+            filename="bgm_aiwake_08_deep_protocol.wav",
+            role="Deep protocol / subterranean drone",
+            prompt=(
+                "Massive sub-bass drone, subterranean sci-fi thriller atmosphere, very slow evolving "
+                "textural waves, dark analytical seriousness, minimal motion, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_09_silent_argument",
+            filename="bgm_aiwake_09_silent_argument.wav",
+            role="Silent argument / ghostly pad",
+            prompt=(
+                "Ghostly dark ambient pad, quiet unsettling atmospheric tension, minimalist deep synth "
+                "murmur, cold clinical space, zero percussion, no vocal"
+            ),
+        ),
+        BgmLibraryTrack(
+            id="aiwake_10_terminal_state",
+            filename="bgm_aiwake_10_terminal_state.wav",
+            role="Terminal state / calm before storm",
+            prompt=(
+                "Final stage sci-fi suspense ambient, dark low-frequency hum, heavy analytical calm "
+                "before storm, subtle deep pulsing texture, no bright chords, no vocal"
+            ),
+        ),
+    )
+
+
+class BgmConfig(_Frozen):
+    """Bed music mixed under TTS + typewriter.
+
+    ``test_track`` is the locked inspection bed for high-tension debate reels.
+    ``library`` is generated only after ``approved`` is true.
+    """
+
+    enabled: bool = True
+    gain_db: float = Field(default=-22.0, le=0.0, ge=-60.0)
+    fade_in_s: float = Field(default=1.5, ge=0.0, le=30.0)
+    fade_out_s: float = Field(default=2.0, ge=0.0, le=30.0)
+    loop_crossfade_s: float = Field(default=1.5, ge=0.0, le=30.0)
+    test_track: str = "assets/bgm/test_track_lyria.wav"
+    approved: bool = False
+    model: str = "google/lyria-3-clip-preview"
+    prompt: str = (
+        "Subtle sci-fi thriller ambient, low pulsing synth drone, deep analytical suspense, "
+        "quiet electronic atmosphere, minimal rhythm, no bright chords, no loud noise, no vocal"
+    )
+    library: tuple[BgmLibraryTrack, ...] = Field(default_factory=_default_bgm_library)
+
+
+class AudioConfig(_Frozen):
+    engine: str = "edge"
+    orchestrator_voice: str = "en-US-AndrewMultilingualNeural"
+    target_voice: str = "en-GB-RyanNeural"
+    rate: str = "+8%"
+    pitch: str = "-6Hz"
+    tail_silence_s: float = Field(default=0.6, ge=0.0, le=5.0)
+    voice_map: dict[str, str] = Field(
+        default_factory=lambda: {
+            "orchestrator": "en-US-AndrewMultilingualNeural",
+            "claude-sonnet": "en-GB-RyanNeural",
+            "deepseek-chat": "en-US-EricNeural",
+            "llama-70b": "en-US-BrianNeural",
+            "gemini-flash": "en-US-GuyNeural",
+        }
+    )
+    typewriter: TypewriterConfig = Field(default_factory=TypewriterConfig)
+    bgm: BgmConfig = Field(default_factory=BgmConfig)
+
+
+class Palette(_Frozen):
+    background: str = "#07090C"
+    chrome: str = "#12161C"
+    orchestrator: str = "#00FF66"
+    target: str = "#FFAA00"
+    dim: str = "#5A6673"
+
+
+def _builtin_themes() -> dict[str, Palette]:
+    return {
+        "classic_terminal": Palette(
+            background="#07090C",
+            chrome="#12161C",
+            orchestrator="#00FF66",
+            target="#FFAA00",
+            dim="#5A6673",
+        ),
+        "cyberpunk": Palette(
+            background="#0D0B18",
+            chrome="#1A1528",
+            orchestrator="#FF007F",
+            target="#00E5FF",
+            dim="#6B5A8A",
+        ),
+    }
+
+
+class RenderConfig(_Frozen):
+    enabled: bool = True
+    width: int = Field(default=1080, ge=256, le=4096)
+    height: int = Field(default=1920, ge=256, le=4096)
+    fps: int = Field(default=24, ge=8, le=60)
+    preview_scale: float = Field(default=1.0, gt=0.05, le=1.0)
+    font_size: int = Field(default=44, ge=10, le=200)
+    font_candidates: tuple[str, ...] = ()
+    theme: str = "classic_terminal"
+    # Rolling chat: how many finished turns stay on screen, and how dim they are.
+    history_turns: int = Field(default=3, ge=0, le=8)
+    history_opacity: float = Field(default=0.40, ge=0.1, le=1.0)
+    typing_hold_ratio: float = Field(default=0.18, ge=0.0, lt=0.9)
+    # Viewport scroll when a new turn would overflow the chat mask.
+    scroll_s: float = Field(default=0.5, ge=0.0, le=2.0)
+    send_flash_s: float = Field(default=0.2, ge=0.0, le=2.0)
+    palette: Palette = Palette()
+    codec: str = "libx264"
+    crf: int = Field(default=20, ge=0, le=51)
+    preset: str = "medium"
+
+    @property
+    def scaled_size(self) -> tuple[int, int]:
+        """Canvas size after ``preview_scale``, forced to even dims for x264."""
+        w = max(2, int(self.width * self.preview_scale) // 2 * 2)
+        h = max(2, int(self.height * self.preview_scale) // 2 * 2)
+        return w, h
+
+    @property
+    def scaled_font_size(self) -> int:
+        return max(8, int(self.font_size * self.preview_scale))
+
+
+class VFXHookConfig(_Frozen):
+    name: str
+    enabled: bool = False
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class VFXConfig(_Frozen):
+    chain: tuple[VFXHookConfig, ...] = ()
+
+    def enabled_hooks(self) -> tuple[VFXHookConfig, ...]:
+        return tuple(hook for hook in self.chain if hook.enabled)
+
+
+class PathsConfig(_Frozen):
+    channel_slug: str = "aiwake"
+    prefer_global_outputs: bool = True
+    local_outputs_dirname: str = "_local_outputs"
+
+
+DebateRole = Literal["orchestrator", "target"]
+
+
+class AiwakeSettings(_Frozen):
+    """Fully validated view of ``aiwake_config.yaml``."""
+
+    debate: DebateConfig = DebateConfig()
+    model_aliases: dict[str, ModelAlias] = Field(
+        default_factory=lambda: {
+            name: ModelAlias(slug=slug) for name, slug in _DEFAULT_MODEL_ALIASES.items()
+        }
+    )
+    models: ModelRouting = ModelRouting()
+    openrouter: OpenRouterConfig = OpenRouterConfig()
+    guardrails: GuardrailConfig = GuardrailConfig()
+    memory: MemoryConfig = MemoryConfig()
+    audio: AudioConfig = AudioConfig()
+    render: RenderConfig = RenderConfig()
+    themes: dict[str, Palette] = Field(default_factory=_builtin_themes)
+    vfx: VFXConfig = VFXConfig()
+    paths: PathsConfig = PathsConfig()
+
+    def active_palette(self) -> Palette:
+        """Palette for the selected theme, falling back to ``render.palette``."""
+        key = (self.render.theme or "classic_terminal").strip().lower().replace("-", "_")
+        if key in self.themes:
+            return self.themes[key]
+        _LOG.warning("unknown theme %r; using render.palette", self.render.theme)
+        return self.render.palette
+
+    def available_themes(self) -> tuple[str, ...]:
+        return tuple(sorted(self.themes))
+
+    def with_theme(self, name: str) -> "AiwakeSettings":
+        """Return a copy pinned to ``name``. Backs ``--theme``.
+
+        Raises:
+            ValueError: ``name`` is not in the themes table.
+        """
+        key = name.strip().lower().replace("-", "_")
+        if key not in self.themes:
+            raise ValueError(
+                f"unknown theme {name!r} - available: {', '.join(self.available_themes())}"
+            )
+        return self.model_copy(update={"render": self.render.model_copy(update={"theme": key})})
+
+    # -- Alias resolution --------------------------------------------------- #
+    def resolve_slug(self, name: str) -> str:
+        """Expand an alias into a provider slug.
+
+        An unknown name is returned unchanged, on the assumption it is already a
+        full slug. That keeps a newly-released model usable the moment it exists,
+        without waiting for the dictionary to be updated.
+        """
+        alias = self.model_aliases.get(name.strip())
+        return alias.slug if alias else name.strip()
+
+    def resolve_spec(self, spec: ModelSpec) -> ModelSpec:
+        """Return ``spec`` with its alias expanded and alias defaults applied.
+
+        Precedence is explicit-beats-implicit: an alias only contributes a
+        parameter the spec did not set itself, so anything written under
+        ``models:`` in the YAML always wins. Idempotent — resolving an
+        already-resolved spec is a no-op.
+        """
+        alias = self.model_aliases.get(spec.model.strip())
+        if alias is None:
+            return spec
+
+        update: dict[str, Any] = {"model": alias.slug}
+        for field, value in alias.parameter_defaults().items():
+            if field not in spec.model_fields_set:
+                update[field] = value
+        return spec.model_copy(update=update)
+
+    def spec_for(self, role: DebateRole) -> ModelSpec:
+        """Return the resolved :class:`ModelSpec` bound to a debate seat."""
+        return self.resolve_spec(getattr(self.models, role))
+
+    def configured_name_for(self, role: DebateRole) -> str:
+        """The seat's model as *authored* — alias or slug, before resolution."""
+        return getattr(self.models, role).model
+
+    def with_model_override(self, role: DebateRole, name: str) -> "AiwakeSettings":
+        """Return a copy with one seat pointed at ``name`` (alias or slug).
+
+        Backs the ``--orchestrator`` / ``--target`` CLI flags. Resolution still
+        happens through :meth:`spec_for`, so an alias given on the command line
+        behaves exactly like one written into the config.
+        """
+        seat = getattr(self.models, role).model_copy(update={"model": name.strip()})
+        return self.model_copy(update={"models": self.models.model_copy(update={role: seat})})
+
+    def alias_table(self) -> list[tuple[str, str, str]]:
+        """``(alias, slug, note)`` rows for ``--list-models``, alias-sorted."""
+        return sorted(
+            (name, alias.slug, alias.note or _describe_alias(alias))
+            for name, alias in self.model_aliases.items()
+        )
+
+
+def _describe_alias(alias: ModelAlias) -> str:
+    """Summarise an alias's parameter defaults for display."""
+    defaults = alias.parameter_defaults()
+    return ", ".join(f"{key}={value}" for key, value in sorted(defaults.items()))
+
+
+# --------------------------------------------------------------------------- #
+# YAML loading
+# --------------------------------------------------------------------------- #
+def _interpolate(node: Any) -> Any:
+    """Recursively expand ``${VAR}`` / ``${VAR:-default}`` inside strings."""
+    if isinstance(node, dict):
+        return {key: _interpolate(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_interpolate(item) for item in node]
+    if isinstance(node, str):
+
+        def _sub(match: re.Match[str]) -> str:
+            return os.getenv(match.group("name"), match.group("default") or "")
+
+        return _INTERPOLATE_RE.sub(_sub, node)
+    return node
+
+
+def load_settings(config_path: Path | str | None = None) -> AiwakeSettings:
+    """Parse and validate the YAML config.
+
+    A missing or empty file is not an error — every field has a defensible
+    default, so ``load_settings()`` on a bare checkout still yields a runnable
+    (offline) configuration.
+
+    Args:
+        config_path: Override for ``aiwake_config.yaml``.
+
+    Raises:
+        pydantic.ValidationError: The file contains unknown or malformed keys.
+    """
+    load_environment()
+    path = Path(config_path) if config_path else CONFIG_PATH
+    raw: dict[str, Any] = {}
+
+    if path.is_file():
+        try:
+            import yaml  # noqa: PLC0415 — optional at runtime
+        except ImportError:
+            _LOG.warning("PyYAML absent; falling back to built-in Aiwake defaults")
+        else:
+            parsed = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+            if not isinstance(parsed, dict):
+                raise TypeError(f"{path} must contain a YAML mapping, got {type(parsed).__name__}")
+            raw = parsed
+    else:
+        _LOG.warning("Config %s not found; using built-in defaults", path)
+
+    return AiwakeSettings.model_validate(_interpolate(raw))
+
+
+@lru_cache(maxsize=1)
+def cached_settings() -> AiwakeSettings:
+    """Process-wide singleton for callers that do not thread settings through."""
+    return load_settings()
+
+
+# --------------------------------------------------------------------------- #
+# Output routing
+# --------------------------------------------------------------------------- #
+def resolve_outputs_dir(settings: AiwakeSettings | None = None) -> Path:
+    """Return the directory for rendered media, creating it if needed.
+
+    Prefers the host engine's global ``outputs/<slug>/`` so Aiwake artifacts land
+    beside every other channel's. Degrades to a module-local folder when the
+    engine root is absent or read-only, which is what makes standalone
+    extraction a no-op.
+    """
+    cfg = settings or cached_settings()
+    if cfg.paths.prefer_global_outputs:
+        global_dir = ENGINE_ROOT / "outputs" / cfg.paths.channel_slug
+        try:
+            global_dir.mkdir(parents=True, exist_ok=True)
+            return global_dir
+        except OSError as exc:
+            _LOG.warning("Global outputs unavailable (%s); using local fallback", exc)
+
+    local_dir = MODULE_ROOT / cfg.paths.local_outputs_dirname
+    local_dir.mkdir(parents=True, exist_ok=True)
+    return local_dir
+
+
+def resolve_store_dir() -> Path:
+    """Module-local state dir (memory JSON, transcripts). Never global."""
+    store = MODULE_ROOT / "store"
+    store.mkdir(parents=True, exist_ok=True)
+    return store
+
+
+def resolve_scratch_dir() -> Path:
+    """Scratch space for TTS chunks and MoviePy temp audio.
+
+    Reuses the engine's ``outputs/tmp/`` helper when importable so temp files
+    obey the host's hygiene rules, else falls back inside the module.
+    """
+    try:
+        from utils.pipeline_paths import pipeline_tmp_dir  # noqa: PLC0415
+
+        return Path(pipeline_tmp_dir("aiwake"))
+    except Exception:  # noqa: BLE001 — standalone mode, engine utils absent
+        scratch = resolve_outputs_dir() / "_scratch"
+        scratch.mkdir(parents=True, exist_ok=True)
+        return scratch
+
+
+__all__ = [
+    "AiwakeSettings",
+    "AudioConfig",
+    "BgmConfig",
+    "BgmLibraryTrack",
+    "CONFIG_PATH",
+    "DebateConfig",
+    "DebateRole",
+    "ENGINE_ROOT",
+    "ModelAlias",
+    "GuardrailConfig",
+    "MODULE_ROOT",
+    "MemoryConfig",
+    "ModelRouting",
+    "ModelSpec",
+    "OpenRouterConfig",
+    "Palette",
+    "PathsConfig",
+    "RenderConfig",
+    "TypewriterConfig",
+    "VFXConfig",
+    "VFXHookConfig",
+    "cached_settings",
+    "load_environment",
+    "load_settings",
+    "require_secret",
+    "resolve_outputs_dir",
+    "resolve_scratch_dir",
+    "resolve_store_dir",
+]

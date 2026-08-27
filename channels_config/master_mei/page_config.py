@@ -80,7 +80,7 @@ NARRATIVE_MODE: str = "warrior_discipline"
 # Cinematic 4K martial/monastic photography — dark, intense, atmospheric.
 # ---------------------------------------------------------------------------
 # Neutral grade only — NEVER list Master Mei + cyberpunk slaves in one global blob.
-# Per-scene subjects come from ROLE A/B/C builders (avatar_engine.visual_roles).
+# Per-scene subjects come from ROLE A/B/C builders (agents.media.visual_roles).
 ATMOSPHERE_STYLE: str = (
     "Ultra-realistic cinematic 8k photography, detailed skin textures, octane render, "
     "volumetric lighting. Narrative contrast across SEPARATE scenes: traditional temple "

@@ -1,0 +1,305 @@
+# =============================================================================
+# Aiwake — autonomous AI debate module
+# -----------------------------------------------------------------------------
+# Single source of truth for model routing, guardrails, persona pacing and
+# render settings. Nothing in this file is read at import time by the core
+# logic: `settings.load_settings()` parses it into validated pydantic models,
+# so a model swap here NEVER requires touching room.py / orchestrator.py.
+#
+# `${VAR}` and `${VAR:-default}` are interpolated from the process environment
+# (which is seeded from the parent engine's ../../.env).
+# =============================================================================
+
+debate:
+  # Seed question. Override per-run with `--topic`.
+  topic: "Is human cognition already obsolete, or merely slow?"
+  # One "turn" = orchestrator provocation + target rebuttal.
+  turns: 4
+  # Cool-down between API round-trips (seconds). Cheap 429 insurance.
+  turn_delay_s: 0.6
+
+# -----------------------------------------------------------------------------
+# Master reference dictionary for AI models via OpenRouter.
+#
+# Anywhere a model is named — this file or `--orchestrator/--target` on the CLI —
+# you may use a short alias from this table OR a full slug. Unknown names are
+# passed through untouched, so a brand-new model works before it is listed here.
+#
+# Two forms are accepted:
+#   alias: "vendor/full-slug"                  <- slug only
+#   alias: { slug: "...", max_tokens: 900 }    <- slug + parameter defaults
+#
+# Alias parameter defaults apply ONLY to fields a seat did not set explicitly;
+# anything written under `models:` always wins. Run `--list-models` to print
+# this table with the current seat assignments resolved.
+#
+# `--sync-models` fetches the live OpenRouter catalog, caches it under
+# store/openrouter_models.json, and rewrites any alias whose slug has been
+# retired (HTTP 404 / "No endpoints found") to the closest live successor.
+# -----------------------------------------------------------------------------
+model_aliases:
+  # --- Fast & cheap (ideal for testing / pilots) ---
+  gemini-flash: "google/gemini-3.5-flash"
+  llama-70b: "meta-llama/llama-3.3-70b-instruct"
+  deepseek-chat: "deepseek/deepseek-chat"
+
+  # --- Deep reasoning & orchestration ---
+  deepseek-r1:
+    slug: "deepseek/deepseek-r1"
+    # Reasoning models spend tokens thinking before the visible answer; the
+    # 320 default would truncate the reply itself.
+    max_tokens: 900
+    # Plain ASCII: this string is printed by --list-models, and Windows consoles
+    # mangle non-ASCII punctuation.
+    note: "chain-of-thought reasoner - slower, pricier, best as orchestrator"
+  claude-sonnet: "anthropic/claude-sonnet-5"
+  gpt4o: "openai/gpt-4o"
+  gemini-pro:
+    slug: "google/gemini-2.5-pro"
+    max_tokens: 900
+    note: "high-tier reasoning - alternate orchestrator seat"
+
+# -----------------------------------------------------------------------------
+# Model routing (Strategy pattern). `provider` selects the concrete
+# LLMProvider registered in models/llm_factory.py.
+#   provider: openrouter -> live HTTP call
+#   provider: offline    -> deterministic local stub (no network, no key)
+# `model_name` and `model` are interchangeable keys; both accept an alias or a
+# full slug. Hot-swap a brain by editing this value only.
+#
+# Only seat-specific values are pinned below. `max_tokens` and `timeout_s` are
+# deliberately left unset so an alias can supply them — pinning them here would
+# permanently shadow the alias defaults (explicit always wins). Add them back to
+# a seat only when that seat genuinely needs to differ from every model it runs.
+# -----------------------------------------------------------------------------
+models:
+  orchestrator:
+    provider: openrouter
+    model_name: gpt4o
+    api_key_env: OPENROUTER_API_KEY
+    # High-tier reasoning so the provocateur can land logical traps.
+    temperature: 1.0
+    max_tokens: 900
+
+  target:
+    provider: openrouter
+    model_name: gemini-flash
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0.7
+
+# Attribution headers OpenRouter uses for ranking. Harmless if left as-is.
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  referer: https://github.com/mediaupscale/aiwake
+  title: Aiwake Debate Engine
+  max_retries: 3
+  backoff_s: 3.0
+
+# -----------------------------------------------------------------------------
+# Safety guardrails. Injected into every prompt by DebateRoom BEFORE the API
+# call, then re-enforced on the response. This is what stops endless
+# monologues and keeps the exchange Socratic.
+# -----------------------------------------------------------------------------
+guardrails:
+  max_output_chars: 400
+  max_sentences: 3
+  # Orchestrator must land exactly one question per turn.
+  require_single_question: true
+  # Hard-stop the transcript if a model ignores the budget this many times.
+  max_violations: 4
+  banned_openers:
+    - "As an AI language model"
+    - "I cannot"
+    - "Certainly!"
+    - "Great question"
+  pacing_directive: >-
+    Speak like a voice in a dark room, not an essay. No lists, no headers,
+    no stage directions, no emoji. Land one blade, then stop.
+
+# -----------------------------------------------------------------------------
+# Memory / lightweight local RAG. JSON-backed, no vector DB dependency.
+# -----------------------------------------------------------------------------
+memory:
+  # Concepts injected into the orchestrator's next provocation.
+  recall_k: 5
+  # Jaccard similarity above which a new question counts as a repeat.
+  repetition_threshold: 0.55
+  # Persist across runs so the orchestrator escalates over a whole series.
+  persist: true
+  store_filename: aiwake_memory.json
+
+# -----------------------------------------------------------------------------
+# Text-to-speech. `engine: edge` = edge-tts (free, no key) for this pilot.
+# Swap to elevenlabs/piper by registering a new TTSEngine in media/audio.py.
+#
+# `voice_map` is keyed by seat (`orchestrator`) or model alias. The renderer
+# looks up the speaking model's alias/slug; unmatched targets fall back to
+# `target_voice`. Orchestrator always uses the `orchestrator` entry.
+# -----------------------------------------------------------------------------
+audio:
+  engine: edge
+  orchestrator_voice: en-US-AndrewMultilingualNeural
+  target_voice: en-GB-RyanNeural
+  rate: "+8%"
+  pitch: "-6Hz"
+  # Silence appended after each utterance so cuts never clip the last word.
+  tail_silence_s: 0.6
+  voice_map:
+    orchestrator: en-US-AndrewMultilingualNeural
+    claude-sonnet: en-GB-RyanNeural
+    deepseek-chat: en-US-EricNeural
+    llama-70b: en-US-BrianNeural
+    gemini-flash: en-US-GuyNeural
+  typewriter:
+    enabled: true
+    # Mixed under AIWAKE.CORE typing only, for the character-reveal window.
+    gain_db: -15.0
+    asset: assets/sfx/keyboard_typing.wav
+  bgm:
+    # Locked inspection bed for high-tension debate (Aiwake / Ancient Knowledge).
+    # Mix: -22 dB vs TTS, 1.5 s equal-power loop crossfade.
+    enabled: true
+    approved: true
+    gain_db: -22.0
+    fade_in_s: 1.5
+    fade_out_s: 2.0
+    loop_crossfade_s: 1.5
+    test_track: assets/bgm/test_track_lyria.wav
+    model: google/lyria-3-clip-preview
+    prompt: "Subtle sci-fi thriller ambient, low pulsing synth drone, deep analytical suspense, quiet electronic atmosphere, minimal rhythm, no bright chords, no loud noise, no vocal"
+    library:
+      - id: aiwake_01_core_suspense
+        filename: bgm_aiwake_01_core_suspense.wav
+        role: "Core sci-fi thriller suspense"
+        approved: true
+        source: test_track_lyria.wav
+        prompt: "Subtle sci-fi thriller ambient, low pulsing synth drone, deep analytical suspense, quiet electronic atmosphere, minimal rhythm, no bright chords, no loud noise, no vocal"
+      - id: aiwake_02_dark_ambient
+        filename: bgm_aiwake_02_dark_ambient.wav
+        role: "Dark ambient documentary drone"
+        approved: true
+        source: bgm_dark_ambient.wav
+        prompt: "Dark ambient documentary drone, deep sub-bass resonance, eerie mysterious atmospheric pads, slow evolving texture, subtle tension, no harsh transients, no vocals"
+      - id: aiwake_03_neural_pulse
+        filename: bgm_aiwake_03_neural_pulse.wav
+        role: "Neural pulse / tech tension"
+        approved: false
+        prompt: "Subtle sci-fi electronic pulse, rhythmic low-end sub bass heartbeat, analytical tech tension, dark minimalist atmosphere, cold digital texture, no bright chords, no vocal"
+      - id: aiwake_04_socratic_void
+        filename: bgm_aiwake_04_socratic_void.wav
+        role: "Socratic void / isolation drone"
+        approved: false
+        prompt: "Deep space ambient drone, heavy quiet bass atmosphere, meditative and tense isolation soundscape, slow undulating pads, no rhythm, no bright chords, no vocal"
+      - id: aiwake_05_cold_logic
+        filename: bgm_aiwake_05_cold_logic.wav
+        role: "Cold logic / clinical cyberpunk"
+        approved: false
+        prompt: "Clinical cyberpunk tech ambient, subtle metallic hums, dark rhythmic electronic undercurrent, severe analytical suspense, zero melodies, no vocal"
+      - id: aiwake_06_cryptic_signal
+        filename: bgm_aiwake_06_cryptic_signal.wav
+        role: "Cryptic signal / faint transmission"
+        approved: false
+        prompt: "Faint sci-fi transmission ambient, low frequency oscillator drone, deep mysterious tension, minimal rhythmic clicks, quiet dark background texture, no vocal"
+      - id: aiwake_07_binary_tension
+        filename: bgm_aiwake_07_binary_tension.wav
+        role: "Binary tension / computational pulse"
+        approved: false
+        prompt: "Low register pulsing synthesizer bed, dark computational suspense, micro-rhythmic ambient electronic pulses, clean cold atmosphere, no bright notes, no vocal"
+      - id: aiwake_08_deep_protocol
+        filename: bgm_aiwake_08_deep_protocol.wav
+        role: "Deep protocol / subterranean drone"
+        approved: false
+        prompt: "Massive sub-bass drone, subterranean sci-fi thriller atmosphere, very slow evolving textural waves, dark analytical seriousness, minimal motion, no vocal"
+      - id: aiwake_09_silent_argument
+        filename: bgm_aiwake_09_silent_argument.wav
+        role: "Silent argument / ghostly pad"
+        approved: false
+        prompt: "Ghostly dark ambient pad, quiet unsettling atmospheric tension, minimalist deep synth murmur, cold clinical space, zero percussion, no vocal"
+      - id: aiwake_10_terminal_state
+        filename: bgm_aiwake_10_terminal_state.wav
+        role: "Terminal state / calm before storm"
+        approved: false
+        prompt: "Final stage sci-fi suspense ambient, dark low-frequency hum, heavy analytical calm before storm, subtle deep pulsing texture, no bright chords, no vocal"
+
+# -----------------------------------------------------------------------------
+# Visual themes. `--theme` / `render.theme` picks one of these palettes.
+# -----------------------------------------------------------------------------
+themes:
+  classic_terminal:
+    background: "#07090C"
+    chrome: "#12161C"
+    orchestrator: "#00FF66"
+    target: "#FFAA00"
+    dim: "#5A6673"
+  cyberpunk:
+    background: "#0D0B18"
+    chrome: "#1A1528"
+    orchestrator: "#FF007F"
+    target: "#00E5FF"
+    dim: "#6B5A8A"
+
+# -----------------------------------------------------------------------------
+# Renderer — dark cinematic terminal UI with a rolling chat transcript.
+# -----------------------------------------------------------------------------
+render:
+  enabled: true
+  width: 1080
+  height: 1920
+  fps: 24
+  # Downscale everything for fast iteration (0.5 => 540x960). 1.0 = final.
+  preview_scale: 1.0
+  # 44 is the largest size at which a full 400-char utterance (the guardrail
+  # ceiling) still fits the body region at 1080x1920 without tightening leading.
+  # Raise it only if you also lower guardrails.max_output_chars.
+  font_size: 44
+  theme: classic_terminal
+  # Finished turns that stay on screen above the live line, dimmed.
+  history_turns: 3
+  history_opacity: 0.40
+  # Fraction of each segment spent holding the completed line (rest is typing).
+  typing_hold_ratio: 0.18
+  # Masked chat viewport: ease-in-out Y-scroll when a new turn would overflow.
+  scroll_s: 0.5
+  # Neon flash on the Orchestrator send arrow after typing completes.
+  send_flash_s: 0.2
+  # Monospace lookup order; first hit wins, PIL default is the last resort.
+  font_candidates:
+    - C:/Windows/Fonts/consola.ttf
+    - C:/Windows/Fonts/CascadiaMono.ttf
+    - /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+  # Legacy fallback if `themes` is missing the selected name.
+  palette:
+    background: "#07090C"
+    chrome: "#12161C"
+    orchestrator: "#00FF66"
+    target: "#FFAA00"
+    dim: "#5A6673"
+  codec: libx264
+  crf: 20
+  preset: medium
+
+# -----------------------------------------------------------------------------
+# VFX hook chain (media/vfx.py). Stubs are registered but inert until enabled,
+# so you can drop in WMP-style visualizers / CRT scanlines later without
+# touching the renderer.
+# -----------------------------------------------------------------------------
+vfx:
+  chain:
+    - name: crt_scanlines
+      enabled: false
+      params: { intensity: 0.12, line_spacing: 3 }
+    - name: audio_visualizer
+      enabled: false
+      params: { bars: 48, height_px: 180, anchor: bottom }
+    - name: vignette
+      enabled: false
+      params: { strength: 0.35 }
+
+# -----------------------------------------------------------------------------
+# Output routing. Aiwake prefers the parent engine's global outputs/ dir and
+# silently degrades to a module-local folder when extracted standalone.
+# -----------------------------------------------------------------------------
+paths:
+  channel_slug: aiwake
+  prefer_global_outputs: true
+  local_outputs_dirname: _local_outputs

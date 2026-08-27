@@ -1,0 +1,209 @@
+{
+  "schema_version": "1.0",
+  "frontend": {
+    "consumer": "next.js",
+    "framework": "react",
+    "showcase": "minimalist-architecture-portfolio"
+  },
+  "session_id": "20260826_231827_981ffa",
+  "topic": "Is human cognition already obsolete, or merely slow?",
+  "started_at": "2026-08-26T23:18:27.386848+00:00",
+  "ended_at": "2026-08-26T23:18:27.510145+00:00",
+  "pipeline_execution_s": 0.1711,
+  "end_reason": "complete",
+  "agents": [
+    {
+      "id": "aiwake_core",
+      "role": "orchestrator",
+      "display_name": "AIWAKE.CORE",
+      "model": "google/gemini-3.5-flash",
+      "provider": "offline",
+      "persona": "Socratic provocateur"
+    },
+    {
+      "id": "target_node",
+      "role": "target",
+      "display_name": "TARGET.NODE",
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "provider": "offline",
+      "persona": "interrogated node"
+    }
+  ],
+  "models": {
+    "orchestrator": "google/gemini-3.5-flash",
+    "target": "meta-llama/llama-3.3-70b-instruct"
+  },
+  "llm_providers": {
+    "orchestrator": "offline",
+    "target": "offline"
+  },
+  "rag": {
+    "applied": true,
+    "recalls": [
+      {
+        "turn_index": 0,
+        "role": "orchestrator",
+        "model": "google/gemini-3.5-flash",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 423,
+        "preview": [
+          "Internal escalation: OPENING INCISION. Do not speak this label.\nThis turn's aim: Open with the assumption the subject rests on, stated so plainly it sounds like an accusation. Do not warm up and do not define terms.\nThread: the difference between a capability and an identity\nOpen"
+        ],
+        "applied": true
+      },
+      {
+        "turn_index": 1,
+        "role": "target",
+        "model": "meta-llama/llama-3.3-70b-instruct",
+        "provider": "offline",
+        "blocks": 1,
+        "chars": 133,
+        "preview": [
+          "Answer the user message directly. Lead with your claim, then the mechanism or distinction that holds it up. Do not ask anything back."
+        ],
+        "applied": true
+      }
+    ]
+  },
+  "decision_tree": [
+    {
+      "step": "llm_strategy",
+      "pattern": "Strategy",
+      "orchestrator_model": "google/gemini-3.5-flash",
+      "target_model": "meta-llama/llama-3.3-70b-instruct",
+      "orchestrator_provider": "offline",
+      "target_provider": "offline"
+    },
+    {
+      "step": "tts_strategy",
+      "pattern": "Strategy",
+      "engine": "edge",
+      "swappable": [
+        "edge",
+        "silent"
+      ]
+    },
+    {
+      "step": "generation",
+      "turn_index": 0,
+      "role": "orchestrator",
+      "model": "google/gemini-3.5-flash",
+      "escalation_tier": "OPENING",
+      "latency_ms": 1,
+      "char_count": 102,
+      "pattern": "Strategy"
+    },
+    {
+      "step": "generation",
+      "turn_index": 1,
+      "role": "target",
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "escalation_tier": "OPENING",
+      "latency_ms": 1,
+      "char_count": 102,
+      "pattern": "Strategy"
+    }
+  ],
+  "milestones": [
+    {
+      "event": "debate_started",
+      "t_s": 0.0698,
+      "models": {
+        "orchestrator": "google/gemini-3.5-flash",
+        "target": "meta-llama/llama-3.3-70b-instruct"
+      }
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.07,
+      "turn_index": 0
+    },
+    {
+      "event": "utterance",
+      "t_s": 0.074,
+      "turn_index": 0,
+      "role": "orchestrator",
+      "model": "google/gemini-3.5-flash",
+      "latency_ms": 1
+    },
+    {
+      "event": "prompt_prepared",
+      "t_s": 0.0741,
+      "turn_index": 1
+    },
+    {
+      "event": "utterance",
+      "t_s": 0.0746,
+      "turn_index": 1,
+      "role": "target",
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "latency_ms": 1
+    },
+    {
+      "event": "debate_ended",
+      "t_s": 0.1708,
+      "reason": "complete",
+      "turns": 2
+    }
+  ],
+  "media": {
+    "audio_mixed": false,
+    "video_rendered": false,
+    "typewriter_core_only": true,
+    "typewriter_gain_db": -15.0,
+    "scroll_s": 0.5,
+    "send_flash_s": 0.2
+  },
+  "patterns": {
+    "observer": {
+      "applied": true,
+      "pattern": "Observer",
+      "broadcaster": "DebateRoom",
+      "listeners": [
+        "MemoryObserver",
+        "TranscriptObserver",
+        "MetricsObserver",
+        "PortfolioLogger"
+      ]
+    },
+    "strategy": {
+      "applied": true,
+      "pattern": "Strategy",
+      "llm_provider": "offline",
+      "tts_engine": "edge",
+      "swappable": [
+        "LLMProvider",
+        "TTSEngine"
+      ],
+      "note": "Dynamically swapping TTS or LLM providers never reaches room.py"
+    },
+    "solid": [
+      {
+        "principle": "SRP",
+        "applied": true,
+        "where": "observers/core.py \u2014 each observer owns one side-effect"
+      },
+      {
+        "principle": "OCP",
+        "applied": true,
+        "where": "models/base.py LLMProvider and media/audio.py TTSEngine extension points"
+      },
+      {
+        "principle": "LSP",
+        "applied": true,
+        "where": "SilentTTSEngine / EdgeTTSEngine and Offline / OpenRouter providers are substitutable"
+      },
+      {
+        "principle": "ISP",
+        "applied": true,
+        "where": "DebateObserver.interests \u2014 listeners opt into the events they handle"
+      },
+      {
+        "principle": "DIP",
+        "applied": true,
+        "where": "DebateRoom depends on LLMProvider ABC, not a concrete HTTP client"
+      }
+    ]
+  }
+}

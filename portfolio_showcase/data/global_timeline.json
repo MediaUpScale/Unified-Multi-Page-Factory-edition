@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "created": "2026-08-19",
+  "purpose": "Architecture decision log for a later scrollytelling portfolio. Not a website. JSON keyed by pipeline node.",
+  "notes": {
+    "docs_architecture_at_start": "empty — the earlier documentation-module instruction never landed because Part 0 blocked it. This file is the first artifact in docs/architecture/.",
+    "json_vs_chroma": "Small curated Core Mode corpora (concrete_details, arc_templates, theme banks) stay JSON. Chroma is reserved for larger/fuzzier retrieval (asset library, cross-niche search) and is not used in Part 0. See chroma node when Part 2 lands.",
+    "portfolio_filter": "Write only module_close / root_cause_fix / architecture_decision / milestone. Never log QA attempts, regenerate_scene calls, or routine pipeline runs. Writer: portfolio_showcase/core/portfolio_log.py — not hooked to the reel pipeline.",
+    "last_backfill": "2026-08-21 ECONOMIC_REEL_LOFI Schnell module close"
+  },
+  "pipeline_nodes": {
+    "core_mode_rag": {
+      "entries": [
+        {
+          "date": "2026-08-19",
+          "what": "Relationship live bank already had 18/18 concrete_details via sidecar merge; parenting 6/6 were label-only.",
+          "why": "Part 0 discovery before any new schema work.",
+          "files": [
+            "core_engine/economic_reel_lofi/data/seed_concrete_details_relationship.json",
+            "core_engine/economic_reel_lofi/store/lofi_theme_bank_relationship.json",
+            "core_engine/economic_reel_lofi/store/lofi_theme_bank_parenting.json"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_inspiration_20260819_044050_v01.mp4",
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-19",
+          "what": "Added seed_concrete_details_parenting.json (7 details × 6 subthemes) and generalized sidecar merge to both modules. Also added setting_object_pairs on seed_themes_parenting.json so Core Mode visuals are not the relationship default pool.",
+          "why": "Momma Circle could not produce concrete Core Mode reels from labels alone.",
+          "files": [
+            "core_engine/economic_reel_lofi/data/seed_concrete_details_parenting.json",
+            "core_engine/economic_reel_lofi/data/seed_themes_parenting.json",
+            "core_engine/economic_reel_lofi/lofi_collections.py"
+          ],
+          "media": "outputs/momma_circle/clips/lofi_reel_patience_20260819_130105_v01.mp4",
+          "needs_media": false
+        }
+      ]
+    },
+    "script_fallback": {
+      "entries": [
+        {
+          "date": "2026-08-19",
+          "what": "_fallback_script now metabolizes retrieved_details into spoken lines and persists them (never []). Anchor/arc come from the retrieval, not generic cups/keys copy. LOFI_FORCE_SCRIPT_FALLBACK=1 skips the writer to prove the path.",
+          "why": "Claude JSON parse failure dropped retrieved_details to [] so LRU, performance events, and spoken copy all lied about what was retrieved.",
+          "files": [
+            "core_engine/economic_reel_lofi/script_agent.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_regret_20260819_131127_v01.mp4",
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-19",
+          "what": "First non-forced production tests: Wonder Feed writer JSON-failed then validator-rejected all retries (0/1 video). Momma Circle writer succeeded first try (fleeting_season reel).",
+          "why": "Part 0 fixes were proven on forced fallback; this run checked the live writer path.",
+          "files": [
+            "outputs/wonder_feed/clips/lofi_manual_review_20260819_134016_01.json",
+            "outputs/momma_circle/clips/lofi_reel_fleeting_season_20260819_134454_v01.mp4"
+          ],
+          "media": "outputs/momma_circle/clips/lofi_reel_fleeting_season_20260819_134454_v01.mp4",
+          "needs_media": false
+        }
+      ]
+    },
+    "lru_details": {
+      "entries": [
+        {
+          "date": "2026-08-19",
+          "what": "select_concrete_details ranks from the live bank and stamps last_used_date on retrieve (module-aware, including parenting).",
+          "why": "Relationship detail last_used_date was always null because fallback dropped retrieved_details and mark_core_rag_used had nothing to stamp.",
+          "files": [
+            "core_engine/economic_reel_lofi/lofi_collections.py"
+          ],
+          "media": null,
+          "needs_media": false
+        }
+      ]
+    },
+    "performance_score": {
+      "entries": [
+        {
+          "date": "2026-08-19",
+          "what": "Confirmed stub-only: assemble writes lofi_performance_events.json with views=null, completion_rate=null, performance_score=null. Formula exists but no platform backfill.",
+          "why": "Needed before Part 1 (YouTube/IG hybrid backfill). Not built in Part 0.",
+          "files": [
+            "core_engine/economic_reel_lofi/lofi_collections.py",
+            "core_engine/economic_reel_lofi/store/lofi_performance_events.json"
+          ],
+          "media": null,
+          "needs_media": false
+        }
+      ]
+    },
+    "asset_library": {
+      "entries": [
+        {
+          "date": "2026-08-20",
+          "what": "Posting queue is a clips-folder file scan (not a manifest). path_is_reproved() skips any path segment named Reproved/ so rejected videos under wonder_feed/clips/Reproved/ (and other channels) never enter scan_pending or B2 upload.",
+          "why": "User created Reproved/ for rejected cuts; iterdir already ignored subfolders, but an explicit path-pattern skip is required so recursive or future scans cannot pick them up.",
+          "files": [
+            "facebook_scheduler/media_scheduler_base.py",
+            "upload_clips_to_b2.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "QA exhaustion now holds the episode: no MP4 assemble, ok=False, sidecar manual_review=true is skipped by scan_pending and B2 upload the same way Reproved/ folders are skipped. Last failed stills stay in assets/ for inspection.",
+          "why": "manual_review was a log flag only. The last failed PNG was encoded and scan_pending never read the sidecar, so a photoreal/text-fail still could ship.",
+          "files": [
+            "core_engine/economic_reel_lofi/pipeline.py",
+            "facebook_scheduler/media_scheduler_base.py",
+            "upload_clips_to_b2.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "Discarded lofi_reel_vulnerability_20260820_130047_v01, lofi_reel_trust_20260817_131733_v01, and lofi_reel_trust_20260816_031601_v01 into wonder_feed/clips/Reproved/ (mp4 + sidecar + pulse_debug). Not deleted. No override, no re-render; any later use is a fresh run.",
+          "why": "User sign-off on the three stuck clips. Reproved/ is the existing rejected-cut record and is skipped by path_is_reproved / scan_pending.",
+          "files": [
+            "outputs/wonder_feed/clips/Reproved/lofi_reel_vulnerability_20260820_130047_v01.mp4",
+            "outputs/wonder_feed/clips/Reproved/lofi_reel_trust_20260817_131733_v01.mp4",
+            "outputs/wonder_feed/clips/Reproved/lofi_reel_trust_20260816_031601_v01.mp4"
+          ],
+          "media": null,
+          "needs_media": false
+        }
+      ]
+    },
+    "chroma": {
+      "entries": []
+    },
+    "visual_qa": {
+      "entries": [
+        {
+          "date": "2026-08-20",
+          "what": "LOFI critic now receives requested subject_type and hard-fails semantic mismatch (woman/man/couple/object_focus/silhouette). Pipeline retries with critic fix_instructions. Palette/duotone mismatch is no longer a hard fail.",
+          "why": "Critic previously judged style/anatomy/text/framing only. Couple beats that fused into one figure passed because subject_type was never in the QA prompt.",
+          "files": [
+            "VisualQA_Agent/visual_critic.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_attachment_20260820_133743_v01.mp4",
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "object_focus default is object-alone (no gripping hand). Criterion 6 no longer allows a floating grip as close framing: object_focus hands need a visible wrist+forearm or they hard-fail. Same Gemini call lists ALL fails (OBJECT + LIMB).",
+          "why": "Scene 4 mail-pile stills failed OBJECT (mug) three times but never LIMB, because object_focus explicitly allowed a hand 'if attached to an in-frame arm' and Gemini treated the ungrounded mug-grip as object-adjacent framing. The last failed PNG still shipped.",
+          "files": [
+            "VisualQA_Agent/visual_critic.py",
+            "core_engine/economic_reel_lofi/visual_identity.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "mail_pile_03 in the no-hand 5-gen probe DID go through Layer A (evaluate_image). It failed score 3.0 on readable 'MAILS' + mug dominance; photoreal/style-drift was not in flaws. Routing, not a missing critic call, is what would have shipped it. Criterion 1 (illustration vs photoreal) is a secondary gap.",
+          "why": "User asked whether the still was ungated or scored acceptably. It was gated and failed; the hold/scan_pending path was the hole.",
+          "files": [
+            "VisualQA_Agent/visual_critic.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": "outputs/wonder_feed/assets/object_focus_nohand_20260820_205533/mail_pile_03.png",
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "ElevenLabs settings/edit no longer holds an episode. audio_engine resolves ELEVENLABS_API_KEY via getattr + env so a shadowed config module cannot AttributeError. Production main.py already had the key; the hold-probe error was import-order, not a missing .env.",
+          "why": "Hold sidecar listed ElevenLabs voice settings/edit failed: module config has no attribute ELEVENLABS_API_KEY as a qa_flag, which skipped all VO and would hold a clean-image episode.",
+          "files": [
+            "avatar_engine/audio_engine.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "Cheap non-LLM default-object gate: locally-dark compact blobs vs bbox footprint, scoped to object_focus/silhouette. Prefix INTRUDER:. Calibrated to reject shipped 133743 scene_04 and hold 221118 scene_04; skips person shots. Does not judge photoreal.",
+          "why": "Gemini OBJECT match still let a mug+laptop desk still-life ship once; caption tied=1 is prompt-side. Need a pixel footprint gate independent of the LLM judge.",
+          "files": [
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-21",
+          "kind": "module_close",
+          "what": "Closed ECONOMIC_REEL_LOFI (Schnell). Problem: the visual critic had no explicit hand-anatomy check, and person-shot QA crops were corner-only, so hand/torso fusion (a hand appearing to merge into the chest) shipped with qa_passed=true. Fix: critic hard-fails fused/incorrect hands (wrong finger count, merge into torso/face/object, twisted or duplicated fingers) as 'deformed or anatomically incorrect hand' with deformed_hand_present=true; person shots now send a torso/mid-frame crop; regenerate_scene() replaces one still in a finished episode via the shared generate_and_qa_scene() loop without re-running script, voice, captions, or the other scenes. Upstream, the object/scene bank is restricted to silhouette, empty-handed characters, and pure backdrop (no handheld small objects), with a per-episode stem cap of 1. Outcome: scene 1 of lofi_reel_distance_20260821_211202_v01 regenerated and passed QA on attempt 1; reassembled video kept the original 9 VO files and captions; module closed.",
+          "why": "Corner crops could not see chest-level fusion, so a real anatomy fail never became a flaw. A full-episode rerun was the only recovery path. The writer also kept suggesting cup/mug because that lived in the suggestion bank, not only the negative ban list.",
+          "files": [
+            "VisualQA_Agent/visual_critic.py",
+            "core_engine/economic_reel_lofi/pipeline.py",
+            "core_engine/economic_reel_lofi/regen.py",
+            "core_engine/economic_reel_lofi/visual_identity.py",
+            "portfolio_showcase/core/portfolio_log.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_distance_20260821_211202_v01_regen.mp4",
+          "needs_media": false
+        }
+      ]
+    },
+    "visual_identity": {
+      "entries": [
+        {
+          "date": "2026-08-19",
+          "what": "Expanded concrete noun regex (parenting objects + sky/alley/rooftop) and added preferred_concrete_noun for fallback metabolize.",
+          "why": "Validator and visual fallback treated 'sky'/'sippy'/'bear' as abstract; last-noun extraction was picking place words (table/hallway) over objects.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-19",
+          "what": "Reconnected Schnell preview to assemble_v2_prompt / identity_v2 (painterly probe never entered the reel path). Collapsed stacked 'from a closer angle' suffixes. Thematic beats rotate unused pool pairs instead of accumulating crop text.",
+          "why": "Schnell is preview-only; Flux Dev+LoRA is the final look. The Aug 17 loss run is the cohesion bar.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_hope_20260819_220851_v01.mp4",
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "Meaning-cluster stand-ins replace the empty-chair/mug default. Clusters: disorder, leaving, depletion, conflict, peace, connection, learning, choice, proof. Same object stem capped at 2 uses per episode. Caption-only alias expansion (setting 'indoor' no longer matches caption 'door').",
+          "why": "Healing validation remapped 5/9 beats to empty chair and Schnell drew mugs on 5/9; abstract lines were 'tied' to any chair.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_vulnerability_20260820_130047_v01.mp4",
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "Restored object_focus/silhouette (target 5–6 person + 3–4 variety per 9-beat episode). Couple prompt now requires two distinct figures/faces; couple capped at 3 because Schnell at 4 steps still fuses bodies.",
+          "why": "Remapping silhouette/object_focus to woman/man/couple over-corrected caption disconnection: vulnerability used 9/9 person shots. Couple beats 3 and 6 fused.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py",
+            "core_engine/economic_reel_lofi/script_agent.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "Episode-level variety scoring (setting stems, subject_type mix, object stems, palette-by-arc). Printed as [LOFI variety] and persisted on stills/hold/assemble sidecars. Does not hold.",
+          "why": "Object-stem cap and framing mix existed, but there was no episode score for repeated settings or palette-outside-arc. Intended WARM/COLD/CONTRAST by act is not counted as palette repetition.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "object_focus/silhouette positive prompts now name the key_object as the only object and weave no mug/cup/coffee cup/glass/laptop (skipped when that IS the requested object). Desk/table settings add an empty-surface sentence. Hedged no-mug-unless and silhouette Do-not-wrap-a-mug lines removed because they named the mug.",
+          "why": "Schnell desk-still-life prior (mug+laptop) ignored the hedged exclusion on two real scene-4 mail-pile beats. Negatives are known-weak; this is positive-prompt structure.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py"
+          ],
+          "media": null,
+          "needs_media": false
+        },
+        {
+          "date": "2026-08-20",
+          "what": "object_focus prompts no longer name the room. Default is a tight macro crop of key_object on blurred negative space. INTRUDER retries escalate: tighter macro, then off-workspace place (windowsill/stoop). Silhouette keeps place on attempt 1 and only tightens after INTRUDER. Bank template in [setting] at [time_of_day] is not used.",
+          "why": "desk after a long night cued Schnell mug+screen still-life even with only-object exclusions. Dropping the setting removed the prior; gate stayed strict.",
+          "files": [
+            "core_engine/economic_reel_lofi/visual_identity.py",
+            "core_engine/economic_reel_lofi/pipeline.py"
+          ],
+          "media": "outputs/wonder_feed/assets/lofi_run_20260820_225455_01/scene_04.png",
+          "needs_media": false
+        }
+      ]
+    },
+    "image_provider": {
+      "entries": [
+        {
+          "date": "2026-08-20",
+          "what": "LOFI Schnell now POSTs DeepInfra native inference (https://api.deepinfra.com/v1/inference/black-forest-labs/FLUX-1-schnell) with num_inference_steps in the JSON body. Fallback is OpenAI-compat with top-level num_inference_steps, not extra_body. Cost: $0.0005*(w/1024)*(h/1024)*iters → 768×1344×4 = $0.00197/image.",
+          "why": "After the Together→DeepInfra switch, steps were sent via extra_body and could be stripped. DeepInfra's native default is 1 step, which produced the communication-reel hand/mug artifacts.",
+          "files": [
+            "avatar_engine/providers/together_image.py",
+            "core_engine/economic_reel_lofi/image_gen.py"
+          ],
+          "media": "outputs/wonder_feed/clips/economic_reels_tests/steps4_probe",
+          "needs_media": false
+        }
+      ]
+    },
+    "pacing": {
+      "entries": [
+        {
+          "date": "2026-08-20",
+          "what": "Thematic default locked to 9 beats / 27s. NEVER_TRIM_VOICEOVER: slot extends to max(3.0, vo+0.05s) instead of subclipping TTS. Writer/validator clamp to 9 beats.",
+          "why": "VO-extend plus 10–11 writer beats produced 32–44s reels; then a lock-to-3s path trimmed communication scene 10 mid-sentence.",
+          "files": [
+            "core_engine/economic_reel_lofi/config.py",
+            "core_engine/economic_reel_lofi/pipeline.py",
+            "core_engine/economic_reel_lofi/assembler.py"
+          ],
+          "media": "outputs/wonder_feed/clips/lofi_reel_healing_20260820_121743_v01.mp4",
+          "needs_media": false
+        }
+      ]
+    }
+  }
+}

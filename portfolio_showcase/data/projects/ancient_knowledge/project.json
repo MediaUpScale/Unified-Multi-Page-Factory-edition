@@ -1,0 +1,9 @@
+{
+  "slug": "ancient_knowledge",
+  "title": "Ancient Knowledge",
+  "codename": "AK",
+  "status": "registry",
+  "summary": "Mystery / ancient-world reel pipeline (narration, parallax, sequential CTA). Registry stub until architecture export lands.",
+  "engine_path": "channels_config/ancient_knowledge",
+  "tags": ["TTS", "MoviePy", "video_engine"]
+}

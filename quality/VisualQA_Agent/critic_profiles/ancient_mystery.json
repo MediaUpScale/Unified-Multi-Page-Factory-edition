@@ -1,0 +1,25 @@
+{
+  "name": "ancient_mystery",
+  "channel": "ancient_knowledge",
+  "quality_threshold": 5.5,
+  "max_retries": 1,
+  "max_generation_attempts": 2,
+  "hard_fail_below": 5.5,
+  "evaluation_rules": {
+    "accept_clean_flux_renders": true,
+    "require_film_grain": false,
+    "require_photoreal_35mm": false,
+    "require_geo_anchor": false,
+    "permit_fantasy_surreal": true,
+    "hard_fail_only": [
+      "severe anatomical deformations",
+      "unreadable floating artifacts",
+      "corrupt or broken renders"
+    ]
+  },
+  "scoring_guide": {
+    "9.0-10.0": "Strong atmospheric ancient-mystery still, usable as-is.",
+    "5.5-8.9": "Approvable. Clean FLUX polish, missing film grain, fantasy ruins, or unnamed monuments are OK.",
+    "below_5.5": "Reject only for severe anatomy, unreadable floating artifacts, or corrupt pixels."
+  }
+}

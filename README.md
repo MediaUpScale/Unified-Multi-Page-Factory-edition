@@ -48,7 +48,7 @@ main.py --page wonder_feed --post-type ECONOMIC_REEL --qty 3
          │
          ├─► _preparse_active_page() sets ACTIVE_PAGE env var
          ├─► config.py resolves all page-scoped paths
-         └─► page_loader.load_page_context() builds PageContext
+         └─► channel_loader.load_page_context() builds PageContext
                   │
                   └─► imports channels_config/{page_id}/page_config.py
                        └─► master_dna.json  (persona voice, environments, CTAs)
@@ -65,7 +65,7 @@ Each persona lives under `channels_config/{page_id}/`:
 | `logo/` | Brand watermark PNG |
 | `style_reference/` | Aesthetic reference screenshots for image-to-image guidance |
 
-Valid built-in pages: `anna_protocol`, `master_mei`, `wonder_feed`, `down_dirty`.
+Valid built-in pages: `anna_protocol`, `master_mei`, `wonder_feed`, `down_dirty`, `ancient_knowledge`, `momma_circle`, `principles_of_wealth_finance_economics`.
 
 All outputs are namespaced under `outputs/{page_id}/` — pages never share output directories.
 
@@ -127,7 +127,7 @@ Write helpers: `durable_library.py` — `write_atomic_json` / `merge_update_json
 
 ### Video Pipeline
 
-**File:** `avatar_engine/video_engine.py` → `compile_dynamic_reel()`
+**File:** `agents/media/video_engine.py` → `compile_dynamic_reel()`
 
 ```
 Graphite PNG (logo-free)
@@ -164,10 +164,10 @@ Duration = `max(page.REEL_DURATION, audio_length + 2s tail)`.
 | **Google Gemini** | Image generation, research, economic text brain | `providers/image_provider.py`, `providers/gemini_utils.py`, `caption_engine.py` |
 | **Anthropic Claude** | Premium caption polish / humanizer | `caption_engine.py` |
 | **DeepSeek** | Economic text brain (research, bait, captions) | `caption_engine.py` (OpenAI-compatible client) |
-| **ElevenLabs** | TTS voiceover + word timestamps + ambient SFX | `avatar_engine/audio_engine.py` |
-| **ImgBB** | Image hosting → MEDIA URL for static posts | `avatar_engine/imgbb_client.py` |
-| **Backblaze B2** | Video hosting → MEDIA URL for reels | `avatar_engine/b2_client.py` |
-| **Pinterest API v5** | Pin creation, OAuth, board listing, drip schedule | `pinterest_engine/publisher.py`, `scheduler.py` |
+| **ElevenLabs** | TTS voiceover + word timestamps + ambient SFX | `agents/media/audio_engine.py` |
+| **ImgBB** | Image hosting → MEDIA URL for static posts | `agents/media/imgbb_client.py` |
+| **Backblaze B2** | Video hosting → MEDIA URL for reels | `agents/media/b2_client.py` |
+| **Pinterest API v5** | Pin creation, OAuth, board listing, drip schedule | `agents/posting/pinterest_engine/publisher.py`, `scheduler.py` |
 
 > **Note:** Meta (Facebook/IG) and TikTok fields exist in the inventory schema as future-ready placeholders; live publishing to those platforms is not yet implemented.
 
@@ -228,60 +228,54 @@ main.py
 Unified Multi-Page Factory/
 ├── main.py                     # Primary CLI orchestrator
 ├── config.py                   # Credentials, model IDs, ACTIVE_PAGE paths
-├── page_loader.py              # PageContext builder and validator
-├── run_ledger.py               # Per-run model/banner registry
+├── channel_loader.py           # Channel-config bootstrap (PageContext; CLI `--page`)
+├── utils/run_ledger.py         # Per-run model/banner registry → outputs/logs/
 ├── requirements.txt
-├── .env                        # ← NOT committed
+├── .env                        # Factory secrets — NOT committed, stays at root
 │
-├── avatar_engine/
-│   ├── caption_engine.py       # Dual/triple LLM brain (DeepSeek + Gemini + Claude)
-│   ├── visual_architect.py     # Cinematic image prompt builder
-│   ├── subject_brain.py        # PDF corpus → content subjects
-│   ├── persona_dna.py          # master_dna.json accessors
-│   ├── brand_composer.py       # Post-image text/logo compositing
-│   ├── video_engine.py         # ECONOMIC_REEL MP4 compiler
-│   ├── video_converter.py      # HYBRID_VIDEO 7s Ken Burns loop
-│   ├── audio_engine.py         # ElevenLabs TTS + timestamps + ambient SFX
-│   ├── post_planner.py         # PostPlanner XLSX row management
-│   ├── content_library.py      # content_library.json helpers
-│   ├── durable_library.py      # Atomic per-post JSON write/merge
-│   ├── imgbb_client.py         # ImgBB HTTP upload
-│   ├── b2_client.py            # Backblaze B2 S3-compatible uploader
-│   ├── text_utils.py           # Shared text formatting helpers
-│   ├── knowledge/
-│   │   └── pdf_loader.py       # PDF chunking for research context
-│   └── providers/
-│       ├── image_provider.py   # Gemini image generation adapter
-│       └── gemini_utils.py     # Gemini model chains and text helpers
+├── agents/
+│   ├── writer/                 # Captions + LOFI scripts (script_agent, caption_engine)
+│   ├── rag/                    # Channel RAG + inspectable LOFI lookup (lofi_rag)
+│   ├── mcp/                    # model_api_flows.py + text_model.py (LOFI_SCRIPT_MODEL)
+│   ├── orchestrator/           # Agentic pipeline
+│   ├── media/                  # Audio, video, providers, VisualArchitect
+│   │   ├── avatar_engine/      # mei_visual + visual_architect
+│   │   └── providers/          # Image adapters (Together / Gemini / remote GPU)
+│   └── posting/                # YouTube / Pinterest / Facebook CLIs
+│       ├── pinterest_main.py
+│       ├── pinterest_oauth.py
+│       ├── publish_existing.py
+│       ├── youtube_publisher.py
+│       ├── facebook_scheduler/
+│       └── pinterest_engine/
+│
+├── core/                       # Reel engines (was core_engine/)
+│   ├── economic_reel_lofi/
+│   ├── principles_of_wealth/
+│   └── reel_sequence_engine.py
+│
+├── quality/VisualQA_Agent/     # Generate → critique → auto-correct
+├── utils/run_ledger.py         # Per-run model/banner registry
+├── infra/runpod/workflows/     # ComfyUI workflow JSON
+├── tests/                      # Former root test_*.py
+├── scripts/                    # One-offs
 │
 ├── channels_config/
 │   ├── wonder_feed/
-│   │   ├── page_config.py      # Page overrides, TOPIC_POOL, reel settings
-│   │   ├── persona_dna.py
-│   │   ├── master_dna.json
-│   │   ├── avatar_reference/
-│   │   ├── logo/
-│   │   └── style_reference/
 │   ├── anna_protocol/
 │   ├── master_mei/
-│   └── down_dirty/
+│   ├── down_dirty/
+│   ├── momma_circle/
+│   ├── ancient_knowledge/      # includes .env.ancient_knowledge + token_ancient_knowledge.json
+│   └── principles_of_wealth_finance_economics/
+│       └── wealth_main.py      # Library-ingest + YouTube publish CLI
 │
-├── pinterest_engine/
-│   ├── publisher.py            # Pinterest API v5 pin creation
-│   ├── scheduler.py            # Human-mimic drip scheduling
-│   ├── inventory.py            # master_inventory.json multi-platform source of truth
-│   └── image_transformer.py   # Library assets → 2:3 Pinterest sales pins
+├── docs/                       # Architecture + command docs
+│   └── architecture/           # DEPRECATED — artifacts live in portfolio_showcase/
 │
-├── pinterest_main.py           # Pinterest engine CLI
-├── pinterest_oauth.py          # One-shot OAuth token acquisition
-├── upload_clips_to_b2.py       # Retroactive B2 upload + PostPlanner generation
-├── sync_drive_assets.py        # Drive path repair + Pinterest metadata injection
-│
-└── outputs/                    # ← NOT committed (generated at runtime)
+└── outputs/                    # NOT committed (generated at runtime)
     └── {page_id}/
         ├── content_library.json
-        ├── session_hooks_cache.json
-        ├── automated_bulk_posts_import.xlsx
         ├── assets/
         └── library/
 ```
@@ -365,10 +359,10 @@ python upload_clips_to_b2.py --clips-dir outputs/wonder_feed/clips/
 
 ```bash
 # First-time OAuth
-python pinterest_oauth.py
+python agents/posting/pinterest_oauth.py
 
 # Sync, transform, and schedule pins
-python pinterest_main.py --action schedule --page wonder_feed
+python agents/posting/pinterest_main.py schedule --channel wonder_feed
 ```
 
 ---
@@ -418,7 +412,7 @@ Add a new page by:
 
 ## Pinterest Engine
 
-The Pinterest sub-engine operates independently via `pinterest_main.py`:
+The Pinterest sub-engine operates independently via `agents/posting/pinterest_main.py`:
 
 | Action | Description |
 |---|---|
@@ -427,7 +421,7 @@ The Pinterest sub-engine operates independently via `pinterest_main.py`:
 | `schedule` | Drip-publishes transformed pins with human-mimic delays |
 | `status` | Reports inventory readiness and scheduling queue |
 
-OAuth tokens are obtained once via `pinterest_oauth.py` and stored in `.env`.
+OAuth tokens are obtained once via `agents/posting/pinterest_oauth.py`. Channel tokens for Ancient Knowledge land in `channels_config/ancient_knowledge/.env.ancient_knowledge`; other channels use `channels_config/<id>/.env` or the factory-root `.env`.
 
 ---
 

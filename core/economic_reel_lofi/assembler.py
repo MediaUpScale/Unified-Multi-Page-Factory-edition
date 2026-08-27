@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import re
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -25,6 +26,83 @@ from core.economic_reel_lofi.caption_style_lofi import (
 )
 
 _LOG = logging.getLogger(__name__)
+_CAPTION_WORD_RE = re.compile(r"[A-Za-z0-9']+")
+
+
+def _caption_words(text: str) -> list[str]:
+    return _CAPTION_WORD_RE.findall(text or "")
+
+
+def caption_cycle_windows(
+    chunks: Sequence[str],
+    timings: Sequence[tuple[str, float, float]] | None,
+    scene_dur: float,
+) -> list[tuple[str, float, float, list[tuple[str, float, float]]]]:
+    """Map on-screen caption chunks onto a held still's VO timeline.
+
+    Returns (chunk_text, start_s, end_s, word_timings) covering [0, scene_dur].
+    One still stays on screen; captions replace each other in order.
+    """
+    cleaned = [str(c).strip() for c in (chunks or []) if str(c).strip()]
+    if not cleaned:
+        return []
+    dur = max(0.12, float(scene_dur or 0.0))
+    timed = [(str(w), float(s), float(e)) for w, s, e in (timings or [])]
+    windows: list[tuple[str, float, float, list[tuple[str, float, float]]]] = []
+    cursor = 0
+    if timed:
+        for i, chunk in enumerate(cleaned):
+            n = max(1, len(_caption_words(chunk)))
+            slice_t = timed[cursor : cursor + n]
+            if not slice_t and timed:
+                slice_t = [timed[-1]]
+            start = float(slice_t[0][1]) if slice_t else 0.0
+            end = float(slice_t[-1][2]) if slice_t else start
+            cursor += n
+            windows.append((chunk, start, end, slice_t))
+    else:
+        weights = [max(1, len(_caption_words(c))) for c in cleaned]
+        total_w = float(sum(weights)) or 1.0
+        t0 = 0.0
+        for chunk, w in zip(cleaned, weights):
+            span = dur * (w / total_w)
+            windows.append((chunk, t0, t0 + span, []))
+            t0 += span
+    if not windows:
+        return []
+    windows[0] = (windows[0][0], 0.0, windows[0][2], windows[0][3])
+    last = list(windows[-1])
+    last[2] = max(float(last[2]), dur)
+    windows[-1] = (last[0], last[1], last[2], last[3])
+    for i in range(len(windows) - 1):
+        text, start, end, loc = windows[i]
+        nxt = windows[i + 1][1]
+        if end < nxt:
+            windows[i] = (text, start, nxt, loc)
+    print(
+        f"[LOFI caption-cycle] chunks={len(windows)} "
+        + " ".join(f"{i + 1}:{w[1]:.2f}-{w[2]:.2f}s" for i, w in enumerate(windows))
+    )
+    return windows
+
+
+def active_caption_cycle(
+    windows: Sequence[tuple[str, float, float, list[tuple[str, float, float]]]],
+    t: float,
+) -> tuple[str, Sequence[tuple[str, float, float]] | None, float | None]:
+    """Pick the caption chunk visible at scene-local time t."""
+    if not windows:
+        return "", None, None
+    chosen = windows[0]
+    for row in windows:
+        if t + 1e-6 >= row[1]:
+            chosen = row
+        else:
+            break
+    text, start, end, loc = chosen
+    if t < start:
+        return "", None, max(0.12, end - start)
+    return text, loc or None, max(0.12, end - start)
 
 
 def apply_duotone(
@@ -1359,6 +1437,7 @@ def assemble_lofi_reel(
     bgm_path: Path | None = None,
     voice_paths: Sequence[Path | None] | None = None,
     word_timings_per_scene: Sequence[Sequence[tuple[str, float, float]] | None] | None = None,
+    caption_beats_per_scene: Sequence[Sequence[str] | None] | None = None,
     audit_out: dict[str, Any] | None = None,
 ) -> Path:
     """
@@ -1367,6 +1446,9 @@ def assemble_lofi_reel(
     Stack: base (no crushing LUT) → light pulse → uniform grain → dust →
     film multiply (behind text) → word-fade caption → logo.
     Mixes per-scene VO + library BGM. Does not affect Ancient Knowledge.
+
+    One still per written line. ``caption_beats_per_scene`` cycles shorter
+    on-screen captions over that held still, timed to the line's VO.
     """
     try:
         from moviepy import (  # type: ignore
@@ -1392,6 +1474,20 @@ def assemble_lofi_reel(
         raise ValueError("scene_images and captions length mismatch")
     if not scene_images:
         raise ValueError("no scenes to assemble")
+
+    from core.economic_reel_lofi.ship_gates import beat_integrity_blockers
+
+    _beat_blockers = beat_integrity_blockers(
+        script=None,
+        scene_images=list(scene_images),
+        captions=list(captions),
+        voice_paths=list(voice_paths) if voice_paths is not None else None,
+        require_voiceover=bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True))
+        and voice_paths is not None,
+        expected_beats=len(captions),
+    )
+    if _beat_blockers:
+        raise ValueError("; ".join(_beat_blockers))
 
     n_scenes = len(scene_images)
     scene_durs: list[float] = []
@@ -1604,6 +1700,14 @@ def assemble_lofi_reel(
         h, w = base.shape[:2]
         this_dur = float(scene_durs[idx])
         t_offset = float(sum(scene_durs[:idx]))
+        raw_beats = None
+        if caption_beats_per_scene is not None and idx < len(caption_beats_per_scene):
+            raw_beats = caption_beats_per_scene[idx]
+        cycle_chunks = [str(c).strip() for c in (raw_beats or []) if str(c).strip()]
+        if len(cycle_chunks) <= 1:
+            cycle_windows = []
+        else:
+            cycle_windows = caption_cycle_windows(cycle_chunks, timings, this_dur)
         # Alternate pan/zoom direction per scene (still slow ease)
         pan_sign = 1.0 if (idx % 2 == 0) else -1.0
         zoom_out = idx % 2 == 1
@@ -1615,6 +1719,7 @@ def assemble_lofi_reel(
             _idx=idx,
             _caption=str(caption),
             _timings=timings,
+            _cycle=cycle_windows,
             _t_offset=t_offset,
             _dur=this_dur,
             _pan_sign=pan_sign,
@@ -1667,9 +1772,13 @@ def assemble_lofi_reel(
             )
             # UI last: captions then logo, always above the grain overlay
 
+            cap_text = _caption
+            cap_timings = _timings
+            if _cycle:
+                cap_text, cap_timings, _span = active_caption_cycle(_cycle, float(t))
             cap = render_lofi_caption_layer_word_fade(
-                _caption,
-                _timings,
+                cap_text,
+                cap_timings,
                 float(t),
                 engine_root=engine_root,
                 style=style,

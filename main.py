@@ -139,7 +139,7 @@ from typing import Any, Optional
 from google import genai
 
 import config as app_config
-from avatar_engine.caption_engine import (
+from agents.writer.caption_engine import (
     CaptionEngine,
     build_gemini_researcher_instruction,
     economic_humanizer_instruction_preview,
@@ -148,9 +148,9 @@ from avatar_engine.caption_engine import (
     build_smart_bait_image_prompt,
     maybe_inject_horror_mutation,
 )
-from avatar_engine.b2_client import B2StorageCapError, B2VideoUploader
-from avatar_engine.imgbb_client import upload_image_file_to_imgbb
-from avatar_engine.publishers.youtube_publisher import (
+from agents.media.b2_client import B2StorageCapError, B2VideoUploader
+from agents.media.imgbb_client import upload_image_file_to_imgbb
+from agents.posting.youtube_publisher import (
     upload_short_from_envelope as _yt_upload_short,
     build_credentials as _yt_build_credentials,
     build_youtube_client as _yt_build_client,
@@ -160,18 +160,20 @@ from avatar_engine.publishers.youtube_publisher import (
     YouTubeQuotaExceededError,
     queue_pending_upload_from_envelope as _yt_queue_pending_upload,
     resume_pending_youtube_uploads as _yt_resume_pending_queue,
+    DailyUploadSafetyGate as _YtDailyUploadSafetyGate,
+    MAX_DAILY_UPLOADS as _YT_MAX_DAILY_UPLOADS,
 )
-from avatar_engine.audio_engine import (
+from agents.media.audio_engine import (
     apply_voice_loudnorm,
     generate_voiceover,
     generate_voiceover_with_timestamps,
     generate_ambient_track,
     generate_master_mei_soundscape,
 )
-from avatar_engine.video_engine import compile_dynamic_reel
-from core_engine.cost_tracker import CostTracker
-from core_engine.interfaces.factory import ChannelFactory
-from core_engine.reel_sequence_engine import (
+from agents.media.video_engine import compile_dynamic_reel
+from core.cost_tracker import CostTracker
+from core.interfaces.factory import ChannelFactory
+from core.reel_sequence_engine import (
     compile_sequence_reel as _core_compile_sequence_reel,
     build_sequence_script_prompt as _build_sequence_script_prompt,
     build_hook_body_act_durations as _build_hook_body_act_durations,
@@ -181,41 +183,41 @@ from core_engine.reel_sequence_engine import (
     segment_script_into_act_snippets as _segment_script_into_act_snippets,
     snippets_from_word_timings as _snippets_from_word_timings,
 )
-from core_engine.scene_pacing import (
+from core.scene_pacing import (
     describe_scene_plan as _describe_scene_plan,
     plan_scenes as _plan_scenes,
     scale_scene_durations as _scale_scene_durations,
 )
-from avatar_engine.brand_composer import (
+from agents.media.brand_composer import (
     apply_text_overlay as _brand_apply_text,
     apply_logo_watermark as _brand_apply_logo,
     burn_text_on_video as _brand_burn_video,
     generate_text_quote_background as _brand_text_quote_bg,
 )
-from avatar_engine.content_library import (
+from agents.media.content_library import (
     append_entry,
     build_library_metadata,
     dump_raw_research_to_log,
     recent_topics as _recent_library_topics,
 )
-from avatar_engine.durable_library import (
+from agents.media.durable_library import (
     PENDING_CAPTION,
     merge_update_json,
     path_under_engine,
     write_atomic_json,
 )
-from avatar_engine.knowledge.pdf_loader import list_pdf_relative_paths, load_digital_product_corpus
-from avatar_engine.post_planner import (
+from agents.rag.pdf_loader import list_pdf_relative_paths, load_digital_product_corpus
+from agents.posting.post_planner import (
     append_planner_row,
     append_postplanner_xlsx_row,
     scheduled_bulk_post_display,
     update_planner_row,
 )
-from avatar_engine.providers.gemini_utils import build_model_chain, get_latest_model
-from avatar_engine.persona_dna import contextual_cta_keyword
-from avatar_engine.providers.image_provider import GeminiImageAdapter, get_image_adapter
-from avatar_engine.subject_brain import imagine_subject, imagine_subject_instruction_preview, generate_bulk_topics
-from avatar_engine.batch_planner import (
+from agents.media.providers.gemini_utils import build_model_chain, get_latest_model
+from agents.media.persona_dna import contextual_cta_keyword
+from agents.media.providers.image_provider import GeminiImageAdapter, get_image_adapter
+from agents.media.subject_brain import imagine_subject, imagine_subject_instruction_preview, generate_bulk_topics
+from agents.media.batch_planner import (
     BatchAngle,
     BatchUniquenessGuard,
     MAX_UNIQUENESS_RETRIES,
@@ -223,9 +225,9 @@ from avatar_engine.batch_planner import (
     select_distinct_pool_topics,
     theme_key as _topic_theme_key,
 )
-from avatar_engine.text_utils import subject_slug
-from avatar_engine.visual_architect import VisualArchitect
-from page_loader import (
+from agents.media.text_utils import subject_slug
+from agents.media.avatar_engine.visual_architect import VisualArchitect
+from channel_loader import (
     PageContext,
     load_page_context,
     resolve_default_avatar_mode,
@@ -234,7 +236,7 @@ from page_loader import (
     VALID_AVATAR_MODES,
     VALID_FORMATS,
 )
-from run_ledger import (
+from utils.run_ledger import (
     PlannedModels,
     activate_run_ledger,
     configure_file_logging,
@@ -247,10 +249,15 @@ _LOG = logging.getLogger(__name__)
 # ECONOMIC_REEL + WAN_REEL share script/TTS/still generation in the variant worker.
 # WAN_REEL only diverges at compile (Wan img2vid vs Ken Burns).
 _SEQUENCE_VIDEO_POST_TYPES = frozenset({"ECONOMIC_REEL", "WAN_REEL"})
+_LOGO_ONLY_STILL_POST_TYPES = frozenset({"LONG_CAPTION_IMAGE", "CTA_CAPTION_IMAGE"})
 
 
 def _is_sequence_video_post(post_type: str) -> bool:
     return str(post_type or "").strip().upper() in _SEQUENCE_VIDEO_POST_TYPES
+
+
+def _is_logo_only_still(post_type: str) -> bool:
+    return str(post_type or "").strip().upper() in _LOGO_ONLY_STILL_POST_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +469,7 @@ def _emit_clean_api_error(exc: BaseException) -> None:
     if not snippet:
         snippet = repr(exc)
     print(dim + snippet + reset)
-    print(dim + "Detail: see logs/run_*.log in this project." + reset)
+    print(dim + "Detail: see outputs/logs/run_*.log in this project." + reset)
     print()
 
 
@@ -473,6 +480,7 @@ def _format_cost_block(
     scheduled_publish: str = "",
     n_reels: int = 1,
     per_reel_costs: "list[float] | None" = None,
+    post_type: str = "",
 ) -> str:
     """
     Render a formatted terminal cost-analysis block from a CostTracker snapshot.
@@ -485,7 +493,7 @@ def _format_cost_block(
     try:
         if not isinstance(breakdown, dict):
             return fallback
-        from core_engine.cost_tracker import CostTracker as _CT
+        from core.cost_tracker import CostTracker as _CT
 
         tmp = _CT(page_id=str(breakdown.get("page_id") or "summary"))
         cats = tmp.category_totals(breakdown.get("breakdown") or [])
@@ -515,8 +523,31 @@ def _format_cost_block(
 
         n = max(1, int(n_reels or 1))
         _fmt = (post_format or "").upper()
-        _is_reel = _fmt in ("SEQUENCE_REEL", "DYNAMIC_REEL", "HYBRID_VIDEO")
-        if _is_reel and n > 1:
+        _pt = (post_type or str(breakdown.get("post_type") or "")).upper().strip()
+        from core.cost_tracker import is_static_image_post as _is_static
+        from core.cost_tracker import slot_unit_label as _slot_unit
+
+        if _is_static(_pt):
+            _is_reel = False
+        elif _pt in (
+            "ECONOMIC_REEL", "ECONOMIC_REEL_LOFI", "WAN_REEL",
+            "REFERENCE_BASED_REELS", "DYNAMIC_REEL",
+        ) or _pt.endswith("REEL"):
+            _is_reel = True
+        else:
+            _is_reel = _fmt in ("SEQUENCE_REEL", "DYNAMIC_REEL", "HYBRID_VIDEO")
+
+        if _pt in _LOGO_ONLY_STILL_POST_TYPES:
+            _asset_desc = (
+                f"{display_img} AI Image{'s' if display_img != 1 else ''} "
+                f"({_pt})"
+            )
+        elif _pt == "ECONOMIC_REEL":
+            _asset_desc = (
+                f"{display_img} AI Image{'s' if display_img != 1 else ''} "
+                f"(ECONOMIC_REEL)"
+            )
+        elif _is_reel and n > 1:
             _asset_desc = (
                 f"{display_img} FLUX API images → {n} MP4 sequence reels"
             )
@@ -530,6 +561,19 @@ def _format_cost_block(
                 f"{display_img} AI Image{'s' if display_img != 1 else ''} (Static Post)"
             )
 
+        omit_audio = (not _is_reel) and tts_chars <= 0
+        if omit_audio:
+            audio_cost = 0.0
+
+        _audio_engine = "F5TTS"
+        try:
+            from core.remote_gpu_manager import is_remote_gpu_enabled as _rgpu_audio
+
+            if not _rgpu_audio("audio"):
+                _audio_engine = "ElevenLabs"
+        except Exception:
+            _audio_engine = "ElevenLabs"
+
         audio_bits = [f"{tts_chars:,} TTS chars"]
         if sfx_calls:
             audio_bits.append(f"{sfx_calls} SFX")
@@ -539,7 +583,8 @@ def _format_cost_block(
             )
         audio_note = ", ".join(audio_bits)
 
-        total = research_cost + image_cost + audio_cost
+        total = research_cost + image_cost + (0.0 if omit_audio else audio_cost)
+        unit, suffix = _slot_unit(_pt if _pt else ("ECONOMIC_REEL" if _is_reel else "LONG_CAPTION_IMAGE"))
         sep = "+" + "=" * 62 + "+"
         thin = "  " + "-" * 60
         lines = [
@@ -549,14 +594,29 @@ def _format_cost_block(
             f"| {'Tier: ' + tier:<60} |",
             sep,
             f"  {'Visual Assets:'.ljust(36)} {_asset_desc}",
+        ]
+        if _pt == "ECONOMIC_REEL":
+            lines.append(
+                f"  {'Audio Synthesis:'.ljust(36)} "
+                f"{tts_chars:,} chars ({_audio_engine})"
+            )
+        lines += [
             "",
             f"  - Research & Script (Gemini 2.5 Flash):".ljust(42)
             + f"${research_cost:.4f}  ({research_tokens:,} tokens)",
             f"  - Image Gen (FLUX Schnell):".ljust(42)
             + f"${image_cost:.4f}  ({img_note})",
-            f"  - Voice & Audio (ElevenLabs):".ljust(42)
-            + f"${audio_cost:.4f}  ({audio_note})",
         ]
+        if not omit_audio:
+            _voice_label = (
+                f"  - Voice ({_audio_engine}):"
+                if _pt == "ECONOMIC_REEL"
+                else "  - Voice & Audio (ElevenLabs):"
+            )
+            lines.append(
+                _voice_label.ljust(42)
+                + f"${audio_cost:.4f}  ({audio_note})"
+            )
         if _is_reel:
             lines.append(
                 f"  - Video Render (MoviePy/FFmpeg):".ljust(42)
@@ -567,16 +627,18 @@ def _format_cost_block(
                 f"  - Scheduled Publish (YouTube):".ljust(42)
                 + f"{scheduled_publish} (Shorts)"
             )
-        if per_reel_costs and n > 1:
+        if per_reel_costs and (n > 1 or not _is_reel or _pt == "ECONOMIC_REEL"):
             lines.append(thin)
             for i, rc in enumerate(per_reel_costs, 1):
                 lines.append(
-                    f"  Reel {i:>2}/{n}:".ljust(42) + f"${float(rc):.4f} USD"
+                    f"  {unit} {i}/{n}{suffix}:".ljust(42) + f"${float(rc):.4f} USD"
                 )
+        _batch_note = ""
+        if n > 1:
+            _batch_note = f"  ({n} {unit.lower()}s)"
         lines += [
             thin,
-            f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}"
-            + (f"  ({n} reels)" if n > 1 else ""),
+            f"  {'TOTAL ESTIMATED COST:'.ljust(36)} ${total:.4f}" + _batch_note,
             sep,
             "",
         ]
@@ -679,28 +741,42 @@ def _print_production_summary(
             scheduled_publish=_sched_display,
             n_reels=max(1, len(rows)),
             per_reel_costs=_per_reel,
+            post_type=str(envelope.get("post_type") or ""),
         ))
     print()
 
 
-def _snapshot_verified_models(*, economic_brain_mode: bool) -> PlannedModels:
+def _snapshot_verified_models(
+    *,
+    economic_brain_mode: bool,
+    page_ctx: PageContext | None = None,
+) -> PlannedModels:
     """Determine first-hop model IDs via cost-first Model Router."""
-    from avatar_engine.providers.model_router import image_model, text_model
-    from avatar_engine.providers.together_image import FLUX_SCHNELL_MODEL
+    from agents.media.providers.model_router import image_model, text_model
+    from agents.media.providers.together_image import FLUX_SCHNELL_MODEL
 
     gem_key = app_config.GEMINI_API_KEY
     text_route = text_model(
         task="caption" if economic_brain_mode else "research",
         log=True,
     )
-    img_route = image_model(task="image", log=True)
+    img_override = None
+    if page_ctx is not None:
+        img_override = page_ctx.image_model_override
+    img_route = image_model(
+        task="image",
+        model_override=img_override,
+        log=True,
+    )
     humanizer = (
         f"Gemini `{text_route.model_id}` (captions + research) [{text_route.tier}]"
         if economic_brain_mode
         else f"Anthropic Claude `{app_config.CLAUDE_MODEL}` / Gemini `{text_route.model_id}` [{text_route.tier}]"
     )
-    # Images always Together FLUX Schnell
-    img_pref = FLUX_SCHNELL_MODEL
+    if img_override and app_config.is_gemini_image_model(img_override):
+        img_pref = app_config.normalize_image_model_id(img_override)
+    else:
+        img_pref = img_route.model_id or FLUX_SCHNELL_MODEL
     research_pref = text_route.model_id
     if not gem_key:
         return PlannedModels(
@@ -717,10 +793,16 @@ def _snapshot_verified_models(*, economic_brain_mode: bool) -> PlannedModels:
         research_chain = [
             m for m in research_chain if "pro" not in m.lower() or "flash" in m.lower()
         ] or [research_pref]
-    _LOG.info(
-        "Image backend locked | Together AI `%s` (steps=4, ≈$0.003/img) | router_tier=%s",
-        img_pref, img_route.tier,
-    )
+    if app_config.is_gemini_image_model(img_pref):
+        _LOG.info(
+            "Image backend locked | Gemini `%s` | router_tier=%s",
+            img_pref, img_route.tier,
+        )
+    else:
+        _LOG.info(
+            "Image backend locked | Together AI `%s` (steps=4, ≈$0.003/img) | router_tier=%s",
+            img_pref, img_route.tier,
+        )
     return PlannedModels(
         image_primary_id=img_pref,
         research_primary_id=(research_chain[0] if research_chain else research_pref),
@@ -748,12 +830,20 @@ def _bootstrap_pipeline_intro(
 
     print(f"[bootstrap] Gemini API Key detected: {'Yes' if gem_ok else 'No'}")
     print(f"[bootstrap] Claude API Key detected: {'Yes' if claude_ok else 'No'}")
+    _img_shown = verified.image_primary_id
+    if page_ctx and page_ctx.image_model_override:
+        _img_shown = page_ctx.image_model_override
+    _img_kind = (
+        "gemini-native"
+        if app_config.is_gemini_image_model(_img_shown)
+        else "together-flux"
+    )
     print(
-        "[bootstrap] Gemini image pipeline:",
-        f"{app_config.GEMINI_ECONOMIC_IMAGE_MODEL if economic_brain_mode else app_config.GEMINI_IMAGE_MODEL}",
-        "(economic)" if economic_brain_mode else "(premium)",
+        "[bootstrap] Image pipeline:",
+        _img_shown,
+        f"({_img_kind})",
         "(aspect",
-        f"{app_config.GEMINI_IMAGE_ASPECT_RATIO})",
+        f"{(page_ctx.image_aspect_ratio if page_ctx and page_ctx.image_aspect_ratio else app_config.GEMINI_IMAGE_ASPECT_RATIO)})",
     )
     if economic_brain_mode:
         print(
@@ -814,7 +904,7 @@ def _maybe_convert_to_video(
     if page_ctx is None or not page_ctx.is_hybrid_video:
         return ""
     try:
-        from avatar_engine.video_converter import make_zoom_loop
+        from agents.media.video_converter import make_zoom_loop
         video_path = make_zoom_loop(image_path, duration_seconds=duration)
         return str(video_path)
     except ImportError:
@@ -1011,7 +1101,7 @@ def _synthesize_sequence_voice_track(
     gap between narration and CTA is fixed at 1.0 s (matches
     ``_stitch_audio_sequential`` default).
     """
-    from avatar_engine.audio_engine import _audio_file_duration_s
+    from agents.media.audio_engine import _audio_file_duration_s
 
     page_id = (page_ctx.page_id if page_ctx else "").lower()
     is_ak = page_id == "ancient_knowledge"
@@ -1029,7 +1119,7 @@ def _synthesize_sequence_voice_track(
     cta_text = (page_ctx.reel_cta_text if page_ctx else "") or ""
     if page_ctx is None or page_ctx.strip_audio_tags_before_tts:
         cta_text = _strip_audio_behavior_tags(cta_text)
-    from avatar_engine.mei_narrative import fix_cta_typos
+    from agents.media.mei_narrative import fix_cta_typos
     cta_text = fix_cta_typos(cta_text or "")
 
     _cta_silence_s: float = 1.0
@@ -1367,10 +1457,10 @@ def _extract_topic_visual_entities(subject: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Master Mei Visual Engine — delegates to avatar_engine.mei_visual
+# Master Mei Visual Engine — delegates to agents.media.avatar_engine.mei_visual
 # ---------------------------------------------------------------------------
 
-from avatar_engine.mei_visual import (  # noqa: E402
+from agents.media.avatar_engine.mei_visual import (  # noqa: E402
     MEI_DNA_FALLBACK as _MEI_DNA_FALLBACK,
     _BAN_PLAIN as _MEI_BAN_PLAIN_MODERN,
     _PHOTOREAL as _MEI_PHOTOREAL,
@@ -1415,7 +1505,7 @@ def _track_adapter_image(
     _gpu_s = float(getattr(adapter, "last_gpu_seconds", 0) or 0)
     if _gpu_s > 0 or str(_cost_key).startswith("image_remote"):
         try:
-            from core_engine.remote_gpu_manager import get_manager  # noqa: PLC0415
+            from core.remote_gpu_manager import get_manager  # noqa: PLC0415
 
             mode = str(getattr(get_manager().client, "mode", None) or "comfyui")
         except Exception:
@@ -1445,7 +1535,7 @@ def _track_remote_gpu_batch(
     if cost_tracker is None:
         return 0.0
     try:
-        from core_engine.remote_gpu_manager import get_manager  # noqa: PLC0415
+        from core.remote_gpu_manager import get_manager  # noqa: PLC0415
 
         client = get_manager().client
         after = float(getattr(client, "total_gpu_seconds", 0) or 0)
@@ -1469,7 +1559,7 @@ def _image_act_max_workers(default_legacy: int = 3) -> int:
     - Together legacy: small pool; adapter semaphore still serializes HTTP.
     """
     try:
-        from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+        from core.remote_gpu_manager import (  # noqa: PLC0415
             is_remote_gpu_enabled,
             remote_gpu_max_parallel,
         )
@@ -1500,11 +1590,20 @@ def _run_acts_parallel(
     batch. RunPod Flux (IMAGE_PROVIDER=remote_gpu): still one Comfy job per
     still — images no longer share the video worker pool when Together is on.
     """
-    from core_engine.remote_gpu_manager import run_parallel_jobs  # noqa: PLC0415
+    from core.remote_gpu_manager import run_parallel_jobs  # noqa: PLC0415
 
     if max_workers is None:
         max_workers = _image_act_max_workers()
     return run_parallel_jobs(jobs, max_workers=max_workers)
+
+
+def _reel_audio_is_f5() -> bool:
+    try:
+        from core.remote_gpu_manager import is_remote_gpu_enabled
+
+        return bool(is_remote_gpu_enabled("audio"))
+    except Exception:
+        return False
 
 
 def _print_video_cost_summary(
@@ -1517,10 +1616,12 @@ def _print_video_cost_summary(
     batch_images_so_far: int | None = None,
     reel_cost_usd: float | None = None,
     batch_cost_usd: float | None = None,
+    post_type: str = "ECONOMIC_REEL",
+    audio_label: str = "",
 ) -> None:
     """Print this-reel cost, then running batch total (never mix the two)."""
-    from core_engine.cost_tracker import print_cost_summary
-    from avatar_engine.providers.model_router import format_video_cost_summary
+    from core.cost_tracker import print_cost_summary
+    from agents.media.providers.model_router import format_video_cost_summary
 
     cats = cost_tracker.category_totals() if cost_tracker is not None else {}
     img_cost = float(cats.get("image_cost") or 0.0)
@@ -1546,6 +1647,9 @@ def _print_video_cost_summary(
         research_cost=float(cats.get("research_cost") or 0.0),
         image_cost=img_cost,
         audio_cost=float(cats.get("audio_cost") or 0.0),
+        post_type=str(post_type or "ECONOMIC_REEL"),
+        tts_chars=int(cats.get("tts_chars") or 0),
+        audio_label=str(audio_label or ""),
     )
     line = format_video_cost_summary(
         image_count=image_count,
@@ -1809,6 +1913,7 @@ def _produce_variant_worker(
     # PHASE B1: Caption types that run BEFORE image generation
     #   SMART_BAIT    — overlay_text drives the image prompt atmosphere
     #   LONG_CAPTION_IMAGE — caption is generated here; image uses illustration_style
+    #   CTA_CAPTION_IMAGE  — original Anna caption (research + Comment KEYWORD); logo-only still
     # ====================================================================
     overlay_text: str = ""
     visual_subject: str = ""  # LLM-authored scene description for image generation
@@ -2044,11 +2149,20 @@ def _produce_variant_worker(
     # SMART_BAIT forces avatar_mode="OFF" so the atmospheric context
     # derived from the text hook drives the image prompt unconditionally.
     # ====================================================================
-    # SMART_BAIT / LONG_CAPTION_IMAGE / CAROUSEL → atmospheric (avatar OFF).
+    # SMART_BAIT / CAROUSEL → atmospheric (avatar OFF).
+    # LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE: Gemini Pro + likeness only when --avatar ON is parsed.
+    # Omitted flag keeps cheap Flux (page DEFAULT_AVATAR_MODE does not switch models).
     # ECONOMIC_REEL → OFF by default, EXCEPT master_mei which MUST likeness-lock
     # Act 1 to channels_config/master_mei/avatar_reference/avatar.png.
-    if post_type in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "CAROUSEL"):
+    if post_type in ("SMART_BAIT", "CAROUSEL"):
         image_avatar_mode = "OFF"
+    elif post_type in ("LONG_CAPTION_IMAGE", "CTA_CAPTION_IMAGE"):
+        _cli_av = (
+            str((page_ctx.page_cfg.get("AVATAR_CLI") if page_ctx else None) or "")
+            .upper()
+            .strip()
+        )
+        image_avatar_mode = _cli_av if _cli_av in ("ON", "OFF") else "OFF"
     elif (
         post_type in ("ECONOMIC_REEL", "WAN_REEL")
         and page_ctx
@@ -2180,7 +2294,7 @@ def _produce_variant_worker(
         # Act-1 / Hook STRICT MANDATE: ROLE A Master Mei (traditional only).
         # Dynamic environment: ~70% high-altitude nature / ~30% open-air shrines.
         try:
-            from avatar_engine.visual_roles import (
+            from agents.media.visual_roles import (
                 compose_scene_01_prompt as _mei_s1,
                 pick_mei_meditation_environment as _mei_pick_env,
             )
@@ -2344,23 +2458,42 @@ def _produce_variant_worker(
             )
         img_model_id = None
         _page_cost = page_ctx.cost_tier if page_ctx is not None else None
-        # Page-level explicit override has highest priority — still logged via router.
-        # model_api_flows Together model (when active) wins over page IMAGE_MODEL_OVERRIDE.
+        # Precedence: --image-primary / page IMAGE_PRIMARY (Gemini SKUs) >
+        # explicit --img-production > page IMAGE_MODEL_OVERRIDE >
+        # explicit Together flow > router default.
         _override = None
         if page_ctx is not None and page_ctx.image_model_override:
             _override = page_ctx.image_model_override
         try:
-            from model_api_flows import (  # noqa: PLC0415
+            from agents.mcp.model_api_flows import (  # noqa: PLC0415
+                get_active_flow as _get_flow,
                 is_flow_explicitly_set as _flow_set,
                 resolved_together_image_model as _flow_img_model,
             )
+            import config as _img_cfg  # noqa: PLC0415
 
-            _flow_model = _flow_img_model()
-            if _flow_set() and _flow_model:
-                _override = _flow_model
+            _flow = _get_flow()
+            _cli_primary = bool(
+                page_ctx and page_ctx.page_cfg.get("IMAGE_PRIMARY_CLI")
+            )
+            _cli_img_prod = bool(
+                page_ctx and page_ctx.page_cfg.get("IMG_PRODUCTION_CLI")
+            )
+            if _flow_set() and _flow is not None and not _cli_primary:
+                _prov = getattr(_flow.image, "provider", "") or ""
+                if _prov == "gemini" and _flow.image.model:
+                    _override = _flow.image.model
+                elif _cli_img_prod and _prov == "together":
+                    _flow_model = _flow_img_model()
+                    if _flow_model:
+                        _override = _flow_model
+                elif not _img_cfg.is_gemini_image_model(_override):
+                    _flow_model = _flow_img_model()
+                    if _flow_model:
+                        _override = _flow_model
         except Exception:
             pass
-        from avatar_engine.providers.model_router import image_model as _route_image
+        from agents.media.providers.model_router import image_model as _route_image
         _img_route = _route_image(
             task="image",
             page_cost_tier=_page_cost,
@@ -2450,7 +2583,7 @@ def _produce_variant_worker(
             _act1_role = None
             _act1_neg = None
             if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
-                from avatar_engine.visual_roles import (
+                from agents.media.visual_roles import (
                     ROLE_A_NEGATIVE,
                     ROLE_MASTER,
                 )
@@ -2606,7 +2739,7 @@ def _produce_variant_worker(
         # Other pages: shared plan_scenes() engine (or legacy dense/hook).
         _planned_scene_durs: "list[float] | None" = None
         if _is_mm:
-            from avatar_engine.mei_narrative import resolve_mei_duration_profile
+            from agents.media.mei_narrative import resolve_mei_duration_profile
 
             _mei_prof = resolve_mei_duration_profile(page_ctx.reel_duration)
             _seq_n = int(_mei_prof["frames"])
@@ -2633,7 +2766,7 @@ def _produce_variant_worker(
             if post_type == "WAN_REEL":
                 # Isolated from ECONOMIC_REEL two-tier / progressive still pacing.
                 # page_config WAN_SCENE_DURATION=fixed:7 → ~10–12 longer clips.
-                from core_engine.scene_pacing import (
+                from core.scene_pacing import (
                     parse_scene_duration as _parse_wan_scene_dur,
                 )
 
@@ -2656,7 +2789,7 @@ def _produce_variant_worker(
                     page_ctx.wan_scene_duration, _wan_hold, _wan_dur, _seq_n,
                 )
             elif getattr(page_ctx, "use_two_tier_pacing", False):
-                from core_engine.reel_sequence_engine import (
+                from core.reel_sequence_engine import (
                     compute_two_tier_act_count as _compute_two_tier_act_count,
                 )
                 _tier1_n, _tier2_n, _seq_n = _compute_two_tier_act_count(
@@ -2890,7 +3023,7 @@ def _produce_variant_worker(
                 _ak_voice_ready = True
                 # Round-4 fix: hook/body-bucket/CTA planner runs AFTER measured
                 # audio (narration + silence + CTA) is known. Never estimates.
-                from core_engine.reel_sequence_engine import (
+                from core.reel_sequence_engine import (
                     plan_bucket_act_durations as _plan_bucket_act_durations,
                 )
                 # Per-act snippets from the FINAL script's own act boundaries —
@@ -2987,7 +3120,7 @@ def _produce_variant_worker(
 
         if _is_mm:
             try:
-                from avatar_engine.visual_roles import (
+                from agents.media.visual_roles import (
                     pick_mei_meditation_environment as _mei_pick_env_prod,
                 )
                 _hook_env = _mei_pick_env_prod(
@@ -2998,10 +3131,10 @@ def _produce_variant_worker(
                 )
             except Exception:
                 _hook_env = "towering jagged mountain cliff above a sea of clouds"
-            from avatar_engine.mei_visual import (
+            from agents.media.avatar_engine.mei_visual import (
                 MASTER_STYLE_ANCHOR_DEFAULT as _MM_STYLE_DEFAULT_PROD,
             )
-            from avatar_engine.style_reader import (
+            from agents.media.style_reader import (
                 default_master_mei_ref_folder as _mm_ref_folder_prod,
             )
             _mm_fixed_anchor = (
@@ -3041,7 +3174,7 @@ def _produce_variant_worker(
             if not page_ctx.sequence_force_avatar_off:
                 _mm_avatar_ref = _assert_mei_avatar(app_config.ENGINE_ROOT)
                 if not _mm_avatar_ref.is_file():
-                    # Fallback to page_loader path if assert path missing
+                    # Fallback to channel_loader path if assert path missing
                     _forced_mm = page_ctx.forced_avatar_reference_path
                     if _forced_mm is not None and _forced_mm.is_file():
                         _mm_avatar_ref = _forced_mm
@@ -3136,7 +3269,7 @@ def _produce_variant_worker(
 
             _mm_gpu_baseline = 0.0
             try:
-                from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+                from core.remote_gpu_manager import (  # noqa: PLC0415
                     get_manager as _get_rgpu_mm,
                     is_remote_gpu_enabled as _rgpu_on_mm,
                 )
@@ -3208,7 +3341,7 @@ def _produce_variant_worker(
             _topic_entity_prefix = (
                 f"TOPIC ANCHOR: {_topic_entity_ctx}. " if _topic_entity_ctx else ""
             )
-            from avatar_engine.prompt_alignment import (
+            from agents.media.prompt_alignment import (
                 build_aligned_visual_block,
                 plan_episode_visual_sequence,
             )
@@ -3232,7 +3365,7 @@ def _produce_variant_worker(
             # Injected into every act's prompt so FLUX also sees the RAG's
             # rules, not just the pool-driven subject/shot/lighting.
             try:
-                from core_engine.channel_rag_bridge import get_image_guidance  # noqa: PLC0415
+                from agents.rag.channel_rag import get_image_guidance  # noqa: PLC0415
 
                 _ak_rag_image_block = get_image_guidance(
                     (page_ctx.page_id or "") if page_ctx else ""
@@ -3339,21 +3472,26 @@ def _produce_variant_worker(
                 except Exception:
                     pass
                 _fallback_dest = _reel_img_dir / f"{stem}_act{_act_i + 1:02d}_fallback.png"
+                _act_stem = f"{stem}_act{_act_i + 1:02d}"
+                if post_type == "ECONOMIC_REEL":
+                    _act_stem = f"{_act_stem}_r01"
                 _sr_act_meta[_act_i] = {
                     "snippet": _snippet,
                     "fallback_dest": _fallback_dest,
+                    "prompt": _act_prompt,
+                    "stem": f"{stem}_act{_act_i + 1:02d}",
                 }
                 _sr_act_jobs[_act_i] = functools.partial(
                     adapter.generate,
                     _act_prompt,
-                    output_stem=f"{stem}_act{_act_i + 1:02d}",
+                    output_stem=_act_stem,
                     output_directory=_reel_img_dir,
                     avatar_mode="OFF",
                 )
 
             _gpu_baseline = 0.0
             try:
-                from core_engine.remote_gpu_manager import (  # noqa: PLC0415
+                from core.remote_gpu_manager import (  # noqa: PLC0415
                     get_manager as _get_rgpu,
                     is_remote_gpu_enabled as _rgpu_on,
                 )
@@ -3402,6 +3540,48 @@ def _produce_variant_worker(
                     cost_tracker.track_image(model_key="image_flux_schnell", count=_ok_acts)
                 _images_generated_this_variant += _ok_acts
 
+            _ak_qa_page = (page_ctx.page_id or "").lower() if page_ctx else ""
+            if (
+                post_type == "ECONOMIC_REEL"
+                and _ak_qa_page == "ancient_knowledge"
+                and adapter is not None
+                and _sequence_image_paths
+            ):
+                try:
+                    from modules.reel_visual_qa import apply_act_vision_qa
+
+                    _qa_acts: list[dict[str, Any]] = []
+                    _path_i = 0
+                    for _act_i in range(_seq_n):
+                        _meta = _sr_act_meta.get(_act_i) or {}
+                        _qa_acts.append({
+                            "path": (
+                                _sequence_image_paths[_path_i]
+                                if _path_i < len(_sequence_image_paths)
+                                else None
+                            ),
+                            "prompt": _meta.get("prompt") or "",
+                            "stem": _meta.get("stem") or f"{stem}_act{_act_i + 1:02d}",
+                        })
+                        _path_i += 1
+                    _qa_paths, _qa_extra = apply_act_vision_qa(
+                        acts=_qa_acts,
+                        generate_fn=adapter.generate,
+                        channel=_ak_qa_page,
+                        output_directory=_reel_img_dir,
+                        cost_tracker=cost_tracker,
+                    )
+                    if _qa_paths:
+                        _sequence_image_paths = list(_qa_paths)
+                    if _qa_extra:
+                        if cost_tracker is not None:
+                            cost_tracker.track_image(
+                                model_key="image_flux_schnell", count=_qa_extra,
+                            )
+                        _images_generated_this_variant += _qa_extra
+                except Exception as _qa_exc:  # noqa: BLE001
+                    _LOG.warning("REEL VisualQA skipped (%s) — compiling r01 stills.", _qa_exc)
+
         if _sequence_image_paths:
             _LOG.info(
                 "Sequence reel | frames=%d | api_image_units=%d",
@@ -3426,8 +3606,8 @@ def _produce_variant_worker(
             and len(_sequence_image_paths) >= 2
         ):
             try:
-                from avatar_engine.visual_inspector import inspect_sequence_images
-                from avatar_engine.visual_roles import (
+                from agents.media.visual_inspector import inspect_sequence_images
+                from agents.media.visual_roles import (
                     ROLE_MASTER,
                     assign_frame_beats,
                     build_role_prompt,
@@ -3509,6 +3689,7 @@ def _produce_variant_worker(
 
     # ---- Caption: STANDARD_QUOTE path -----------------------------------
     # SMART_BAIT, LONG_CAPTION_IMAGE, ECONOMIC_REEL, and CAROUSEL all generate captions in Phase B1.
+    # CTA_CAPTION_IMAGE uses this original Anna research + humanize path (no copyright footer).
     if post_type not in ("SMART_BAIT", "LONG_CAPTION_IMAGE", "ECONOMIC_REEL", "WAN_REEL", "CAROUSEL") and not skip_caption:
         assert caption_engine is not None
         caption_mode_tag = "humanized"
@@ -3593,6 +3774,7 @@ def _produce_variant_worker(
                 economic=economic,
                 model_id=econ_model if (economic and not caption_engine._deepseek) else None,
                 cta_enabled=cta_enabled,
+                cta_caption_format=(post_type == "CTA_CAPTION_IMAGE"),
             )
         else:
             caption_mode_tag = "researcher_fallback"
@@ -3605,9 +3787,9 @@ def _produce_variant_worker(
     )
     # Determine compositing mode:
     # - SMART_BAIT: full 4-layer stack (bg + mask + text + logo)
-    # - LONG_CAPTION_IMAGE: Layer 1 (bg) + Layer 4 (logo only) — clean standalone image
+    # - LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE: Layer 1 (bg) + Layer 4 (logo only) — clean standalone image
     # - IMAGE_BACKGROUND / IMAGE_QUOTE / TEXT_QUOTE: text overlay if overlay_text present
-    _is_long_caption_image = (post_type == "LONG_CAPTION_IMAGE")
+    _is_long_caption_image = _is_logo_only_still(post_type)
     _is_economic_reel      = _is_sequence_video_post(post_type)
     _is_wan_reel           = (post_type == "WAN_REEL")
     # ECONOMIC_REEL: background PNG must stay clean (logo only).
@@ -3638,9 +3820,10 @@ def _produce_variant_worker(
 
     if raw_bg_path is not None and raw_bg_path.is_file():
         if _is_long_caption_image:
-            # LONG_CAPTION_IMAGE:
-            #   Layer 1 — graphite background  (Gemini-generated)
+            # LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE:
+            #   Layer 1 — background (Gemini/Flux)
             #   Layer 4 — logo watermark baked in (static image shared as-is)
+            #   Caption lives in the post text, not on the image.
             if logo_path:
                 img_path_display = _brand_apply_logo(
                     raw_bg_path, logo_path,
@@ -3868,7 +4051,7 @@ def _produce_variant_worker(
             _tts_ssml = bool(page_ctx.tts_enable_ssml) if page_ctx else False
             if _is_mei_page:
                 # Purge emotion tags; keep strategic <break time="1.5s"/> for 100–120 s pacing
-                from avatar_engine.mei_narrative import (
+                from agents.media.mei_narrative import (
                     prepare_mei_tts_text,
                     strip_inline_follow_cta,
                 )
@@ -3924,7 +4107,7 @@ def _produce_variant_worker(
             #    Use generate_voiceover_with_timestamps so subtitle coverage extends
             #    across the full stitched track (narration + silence + CTA).
             _cta_text = (page_ctx.reel_cta_text if page_ctx else "") or ""
-            from avatar_engine.mei_narrative import approved_cta_text, fix_cta_typos
+            from agents.media.mei_narrative import approved_cta_text, fix_cta_typos
             if (page_ctx.page_id if page_ctx else "").lower() == "master_mei":
                 # Force the single approved CTA — never invent or duplicate variants
                 _cta_text = approved_cta_text()
@@ -3942,7 +4125,7 @@ def _produce_variant_worker(
                     )
                     if _is_mei_cta:
                         # Credit optimization: synthesize CTA once, reuse cache.
-                        from avatar_engine.audio_engine import (
+                        from agents.media.audio_engine import (
                             default_cta_cache_path,
                             ensure_cached_cta_voiceover,
                         )
@@ -4006,7 +4189,7 @@ def _produce_variant_worker(
                 # (remote F5 may write .flac while _narration_out still says .mp3).
                 _narr_dur: float = 0.0
                 try:
-                    from avatar_engine.audio_engine import (  # noqa: PLC0415
+                    from agents.media.audio_engine import (  # noqa: PLC0415
                         _audio_file_duration_s as _audio_dur_s,
                     )
                     _narr_dur = float(_audio_dur_s(Path(_voice_path)))
@@ -4031,7 +4214,7 @@ def _produce_variant_worker(
                 _cta_offset = _narr_dur + 1.0   # 1.0 s silence gap
                 if not _cta_word_timings:
                     try:
-                        from avatar_engine.audio_engine import (  # noqa: PLC0415
+                        from agents.media.audio_engine import (  # noqa: PLC0415
                             _audio_file_duration_s as _audio_dur_s2,
                             approximate_word_timings as _approx_wt,
                         )
@@ -4126,7 +4309,7 @@ def _produce_variant_worker(
                 )
                 if cost_tracker is not None:
                     try:
-                        from avatar_engine.audio_engine import LAST_MUSIC_COMPOSE_MODE
+                        from agents.media.audio_engine import LAST_MUSIC_COMPOSE_MODE
                         _mode = str(LAST_MUSIC_COMPOSE_MODE or "").strip().lower()
                         cost_tracker.track_music(
                             api=_mode not in ("", "local", "ambient", "none"),
@@ -4207,7 +4390,7 @@ def _produce_variant_worker(
         # Force ambient to 48 kHz (light loudnorm) before MoviePy mix
         if _ambient_path is not None and Path(_ambient_path).is_file():
             try:
-                from avatar_engine.audio_engine import resample_audio_48k as _rs48
+                from agents.media.audio_engine import resample_audio_48k as _rs48
                 # Copy into reel dir if using a shared asset, so we don't mutate originals
                 _amb_src = Path(_ambient_path)
                 if _amb_src.resolve().parent != _reel_dir.resolve():
@@ -4289,7 +4472,7 @@ def _produce_variant_worker(
                     _timeline_s = float(_reel_dur or page_ctx.reel_duration or 80.0)
                     if _voice_path is not None:
                         try:
-                            from avatar_engine.audio_engine import (  # noqa: PLC0415
+                            from agents.media.audio_engine import (  # noqa: PLC0415
                                 _audio_file_duration_s as _voice_dur_s,
                             )
                             _vd = float(_voice_dur_s(Path(_voice_path)))
@@ -4354,7 +4537,7 @@ def _produce_variant_worker(
                 )
                 _act_video_paths = None
                 if _is_wan_reel:
-                    from core_engine.wan_reel_production import (
+                    from core.wan_reel_production import (
                         generate_wan_act_videos as _gen_wan_acts,
                     )
 
@@ -4457,6 +4640,9 @@ def _produce_variant_worker(
                         float(locals().get("_narr_dur", -1.0)) + 0.3
                         if float(locals().get("_narr_dur", -1.0) or -1.0) > 0.5
                         else -1.0
+                    ),
+                    cta_y_position=(
+                        page_ctx.cta_subtitle_y_position if page_ctx else None
                     ),
                     narration_duration_s=(
                         float(locals().get("_narr_dur", -1.0))
@@ -4564,6 +4750,48 @@ def _produce_variant_worker(
             )
             video_path_str = str(reel_path)
             print(f"[reel] Video compiled -> {reel_path}")
+            try:
+                from modules.asset_library import register_asset
+
+                _lib_channel = (
+                    page_ctx.page_id if page_ctx else app_config.ACTIVE_PAGE
+                ) or "ancient_knowledge"
+                _lib_caption = caption if caption and caption != "(skipped)" else (
+                    locals().get("_early_seq_script") or overlay_text or ""
+                )
+                _lib_audio = float(
+                    locals().get("_ak_total_audio")
+                    or locals().get("_narr_dur")
+                    or 0.0
+                )
+                _lib_meta = locals().get("_sr_act_meta") or {}
+                _lib_video = str(reel_path)
+                for _si, _still in enumerate(_sequence_image_paths or []):
+                    _meta = _lib_meta.get(_si) or {}
+                    register_asset(
+                        channel=str(_lib_channel),
+                        post_type=str(post_type or "ECONOMIC_REEL"),
+                        local_path=str(_still),
+                        prompt=str(_meta.get("prompt") or ""),
+                        caption=str(_lib_caption),
+                        video_path=_lib_video if _si == 0 else "",
+                        audio_duration_s=_lib_audio if _lib_audio > 0 else None,
+                        asset_kind="still",
+                        platform="facebook",
+                    )
+                register_asset(
+                    channel=str(_lib_channel),
+                    post_type=str(post_type or "ECONOMIC_REEL"),
+                    local_path=_lib_video,
+                    prompt="",
+                    caption=str(_lib_caption),
+                    video_path=_lib_video,
+                    audio_duration_s=_lib_audio if _lib_audio > 0 else None,
+                    asset_kind="video",
+                    platform="facebook",
+                )
+            except Exception as _lib_exc:  # noqa: BLE001
+                _LOG.warning("asset_library reel register skipped (%s)", _lib_exc)
             if _is_wan_reel and _wan_stage_times:
                 _fb = [s for s in _wan_act_status if s != "wan"]
                 print(
@@ -4605,6 +4833,12 @@ def _produce_variant_worker(
                 batch_images_so_far=_batch_so_far,
                 reel_cost_usd=_reel_cost,
                 batch_cost_usd=_batch_usd,
+                post_type=post_type,
+                audio_label=(
+                    "F5TTS"
+                    if _reel_audio_is_f5()
+                    else "ElevenLabs"
+                ),
             )
 
             # ── PHASE E1: Backblaze B2 upload ────────────────────────────────
@@ -4701,7 +4935,7 @@ def _produce_variant_worker(
                 "created_utc": created_iso,
             }
             if (page_ctx.page_id if page_ctx else "").lower() == "master_mei":
-                from avatar_engine.mei_narrative import (
+                from agents.media.mei_narrative import (
                     build_seo_description,
                     build_seo_title,
                 )
@@ -4738,7 +4972,7 @@ def _produce_variant_worker(
         if caption_mode_tag == "researcher_fallback":
             _LOG.warning(
                 "All humanizers failed for variant %s of '%s'. "
-                "Variant skipped in Excel/CSV; research saved to logs/.",
+                "Variant skipped in Excel/CSV; research saved to outputs/logs/.",
                 variant + 1,
                 resolved_subject,
             )
@@ -4857,7 +5091,7 @@ def _produce_variant_worker(
     _seo_title = ""
     _seo_description = caption_str
     if (page_ctx.page_id if page_ctx else "").lower() == "master_mei":
-        from avatar_engine.mei_narrative import (
+        from agents.media.mei_narrative import (
             build_seo_description,
             build_seo_title,
         )
@@ -4969,8 +5203,8 @@ def _produce_agentic(
     envelope_base: dict[str, Any],
 ) -> dict[str, Any]:
     """Run PipelineOrchestrator and map results into a produce() envelope."""
-    from core_engine.agentic_pipeline import PipelineOrchestrator
-    from core_engine.agentic_pipeline.criteria import MAX_RETRIES as _AK_MAX_RETRIES
+    from agents.orchestrator import PipelineOrchestrator
+    from agents.orchestrator.criteria import MAX_RETRIES as _AK_MAX_RETRIES
 
     page_id = page_ctx.page_id if page_ctx else app_config.ACTIVE_PAGE
     out_dir = app_config.ASSETS_DIR / "agentic"
@@ -5084,6 +5318,24 @@ def _produce_agentic(
             )
         except Exception as dur_exc:  # noqa: BLE001
             _LOG.warning("Agentic durable JSON skipped (%s)", dur_exc)
+
+        try:
+            from modules.asset_library import register_generated_asset
+
+            _qa = str(row.get("qa_status") or "").lower()
+            _img = row.get("local_image_path") or row.get("image_path") or ""
+            if _img and _qa == "approved":
+                register_generated_asset(
+                    channel=str(page_id or "ancient_knowledge"),
+                    post_type=str(post_type or "LONG_CAPTION_IMAGE"),
+                    local_path=str(_img),
+                    remote_url=str(row.get("imgbb_url") or ""),
+                    prompt=str(row.get("image_prompt") or ""),
+                    caption=str(row.get("caption") or ""),
+                    platform="facebook",
+                )
+        except Exception as lib_exc:  # noqa: BLE001
+            _LOG.warning("asset_library register skipped (%s)", lib_exc)
 
     _persist_agentic_postplanner(
         items=items,
@@ -5226,7 +5478,10 @@ def produce(
     # Page-level aspect ratio override (falls back to global config if empty).
     page_aspect_ratio: str = (page_ctx.image_aspect_ratio if page_ctx else "") or ""
 
-    bm = bootstrap_models or _snapshot_verified_models(economic_brain_mode=economic)
+    bm = bootstrap_models or _snapshot_verified_models(
+        economic_brain_mode=economic,
+        page_ctx=page_ctx,
+    )
     _bootstrap_pipeline_intro(
         economic_brain_mode=economic,
         verified=bm,
@@ -5360,7 +5615,7 @@ def produce(
     ):
         resolved_subject = _rnd.choice(page_ctx.topic_pool)
         if _page_id_lower == "master_mei":
-            from avatar_engine.mei_narrative import episode_theme_meta
+            from agents.media.mei_narrative import episode_theme_meta
             _ep = episode_theme_meta(resolved_subject)
             _LOG.info(
                 "%s TOPIC LOCK | episode=%s | theme=%s | topic=%r (pool size=%d)",
@@ -5568,7 +5823,8 @@ def produce(
 
     envelope["resolved_subject"] = resolved_subject
 
-    from core_engine.agentic_pipeline import should_use_agentic_pipeline as _should_agentic
+    from agents.orchestrator import should_use_agentic_pipeline as _should_agentic
+    from agents.orchestrator.criteria import MAX_RETRIES as _AK_PRINT_RETRIES
 
     if _should_agentic(
         page_ctx.page_id if page_ctx else None,
@@ -5583,7 +5839,7 @@ def produce(
         print(
             "\n[agentic] 4-tier pipeline | "
             "ThemeCurator → Copywriter → VisualDirector ⇄ VisualQA "
-            f"(MAX_RETRIES=3) | qty={qty}"
+            f"(max_retries={_AK_PRINT_RETRIES} → r01+r02) | qty={qty}"
         )
         return _produce_agentic(
             resolved_subject=resolved_subject,
@@ -5600,7 +5856,7 @@ def produce(
 
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     postplanner_dir = app_config.PAGE_OUTPUTS_DIR / "postplanner"
-    logs_dir = app_config.ENGINE_ROOT / "logs"
+    logs_dir = app_config.ENGINE_ROOT / "outputs" / "logs"
 
     # ------------------------------------------------------------------
     # ONE-CALL BATCH RESEARCH: generate all variant narratives upfront.
@@ -5871,9 +6127,9 @@ def run_test_images_debug_mode(
     Bypasses ElevenLabs voiceover synthesis, MoviePy video compilation, and
     all YouTube / B2 / ImgBB uploads entirely.
     """
-    from page_loader import load_page_context
-    from avatar_engine.caption_engine import CaptionEngine
-    from avatar_engine.providers.model_router import image_model as _route_image_dbg
+    from channel_loader import load_page_context
+    from agents.writer.caption_engine import CaptionEngine
+    from agents.media.providers.model_router import image_model as _route_image_dbg
 
     n = max(1, int(n))
     page_ctx = load_page_context(page_id, avatar_mode=avatar_mode, post_format=post_format)
@@ -5942,13 +6198,13 @@ def run_test_images_debug_mode(
     # Build visual prompts for test previews.
     # Master Mei: force core Giger pillars (never Mei likeness).
     #   tech_slavery / warrior_forge / panopticon
-    from avatar_engine.mei_visual import (
+    from agents.media.avatar_engine.mei_visual import (
         MASTER_STYLE_ANCHOR_DEFAULT as _MM_STYLE_DEFAULT,
         TEST_PREVIEW_MODULES as _MM_TEST_MODULES,
         TEST_PREVIEW_MODULES_3 as _MM_TEST_MODULES_3,
         build_test_preview_prompts as _mm_build_test_previews,
     )
-    from avatar_engine.style_reader import default_master_mei_ref_folder as _mm_ref_folder
+    from agents.media.style_reader import default_master_mei_ref_folder as _mm_ref_folder
 
     _mm_pillar_keys: tuple = ()
     if is_mm:
@@ -5979,7 +6235,7 @@ def run_test_images_debug_mode(
         )
     else:
         mei_slots = set()
-        from avatar_engine.prompt_alignment import build_aligned_visual_block
+        from agents.media.prompt_alignment import build_aligned_visual_block
 
         spoken_snippets = _segment_script_into_act_snippets(script, seq_n)
         act_descriptors = _build_reel_act_descriptors(
@@ -6017,7 +6273,7 @@ def run_test_images_debug_mode(
             )
         preview_source = all_prompts
 
-    from avatar_engine.providers.together_image import sanitize_prompt_for_flux
+    from agents.media.providers.together_image import sanitize_prompt_for_flux
 
     # Sanitize BEFORE printing so the debug output matches EXACTLY what is
     # sent to Together/FLUX (TogetherImageAdapter.generate() re-applies the
@@ -6221,6 +6477,7 @@ def cli() -> None:
             "STANDARD_QUOTE",
             "SMART_BAIT",
             "LONG_CAPTION_IMAGE",
+            "CTA_CAPTION_IMAGE",
             "ECONOMIC_REEL",
             "ECONOMIC_REEL_LOFI",
             "WAN_REEL",
@@ -6234,6 +6491,10 @@ def cli() -> None:
             "viral hook + sarcastic one-liner caption. Uses illustration_style for Gemini prompt. "
             "LONG_CAPTION_IMAGE: contextual illustration image with ONLY a logo overlay (no text/mask). "
             "Deep long-form storytelling caption about relationships/character. "
+            "CTA_CAPTION_IMAGE: anna_protocol only. Same clean logo-only still as "
+            "LONG_CAPTION_IMAGE, but the original Holistic Legacy caption: 60%% one "
+            "paragraph (350-450 chars) / 40%% 3-4 short paragraphs (550-750 chars), "
+            "ending with Comment KEYWORD (GINGER, SALT, DETOX, …). No copyright signature. "
             "ECONOMIC_REEL: graphite image base (same pipeline as SMART_BAIT) compiled into a "
             "vertical 9:16 MP4 reel with ElevenLabs TTS voiceover, dark ambient soundscape, "
             "and cinematic Ken Burns zoom-in. Outputs .mp4 + durable JSON. "
@@ -6243,7 +6504,7 @@ def cli() -> None:
             "Does NOT share state with ECONOMIC_REEL. "
             "WAN_REEL: ancient_knowledge only. Reuses ECONOMIC_REEL script/TTS/"
             "still pipeline, then Wan2.2 img2vid per act (bucket holds) with "
-            "Ken Burns fallback. Smoke test: core_engine.wan_reel_engine.run_wan_reel_test. "
+            "Ken Burns fallback. Smoke test: core.wan_reel_engine.run_wan_reel_test. "
             "CAROUSEL: generates 3 visually cohesive images (slide_01..03) with distinct "
             "scene viewpoints for a 3-part visual narrative post. "
             "REFERENCE_BASED_REELS: extract a raw-footage clip, overlay an LLM hook text, "
@@ -6258,7 +6519,7 @@ def cli() -> None:
         metavar="SECONDS",
         help=(
             "ECONOMIC_REEL_LOFI: default 27s / 9 beats (thematic_arc). "
-            "Pass a value above 27 only to allow more beats. "
+            "Larger --duration adds beats at 3s each (max 90s). "
             "VO is never trimmed; a long line may extend its own slot slightly."
         ),
     )
@@ -6330,6 +6591,36 @@ def cli() -> None:
             "similarity check, print the full script and per-beat table, then "
             "stop before image generation / voiceover / render."
         ),
+    )
+    parser.add_argument(
+        "--lofi-no-review",
+        dest="lofi_no_review",
+        action="store_true",
+        default=False,
+        help=(
+            "ECONOMIC_REEL_LOFI: auto-pass Gate 1 (script) and Gate 2 "
+            "(assembled prompts after Stage 3). Default is "
+            "review_required=true — the run holds before any image or TTS cost."
+        ),
+    )
+    parser.add_argument(
+        "--lofi-resume-from",
+        dest="lofi_resume_from",
+        default=None,
+        metavar="JSON",
+        help=(
+            "ECONOMIC_REEL_LOFI: resume a held four-stage pipeline JSON "
+            "(lofi_pipeline_*.json)."
+        ),
+    )
+    parser.add_argument(
+        "--lofi-approve-gate",
+        dest="lofi_approve_gate",
+        type=int,
+        choices=[1, 2],
+        default=None,
+        metavar="N",
+        help="ECONOMIC_REEL_LOFI: approve Gate 1 (script) or Gate 2 (assembled prompts) and continue.",
     )
     parser.add_argument(
         "--test-preview",
@@ -6423,6 +6714,18 @@ def cli() -> None:
         ),
     )
     parser.add_argument(
+        "--limit",
+        dest="yt_upload_limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            f"Global YouTube upload safety cap for this run "
+            f"(default: {_YT_MAX_DAILY_UPLOADS}). Remaining videos are deferred "
+            "to credentials/pending_youtube_uploads.json for the next run."
+        ),
+    )
+    parser.add_argument(
         "--draw-style",
         dest="draw_style",
         default="SKETCH",
@@ -6489,7 +6792,7 @@ def cli() -> None:
             "Exits after resuming — does not generate new content."
         ),
     )
-    from model_api_flows import list_preset_names as _list_flow_presets
+    from agents.mcp.model_api_flows import list_preset_names as _list_flow_presets
 
     parser.add_argument(
         "--model-api-flow",
@@ -6511,8 +6814,23 @@ def cli() -> None:
         metavar="PROVIDER[/MODEL]",
         help=(
             "Per-media image override (wins over --model-api-flow for image only). "
-            "Examples: together/black-forest-labs/FLUX.1-schnell | remote_gpu | "
+            "Examples: gemini | gemini/models/gemini-2.5-flash-image | "
+            "together/black-forest-labs/FLUX.1-schnell | remote_gpu | "
             "remote_gpu/flux_dev_lora_txt_to_img.json"
+        ),
+    )
+    parser.add_argument(
+        "--image-primary",
+        dest="image_primary",
+        type=str,
+        default=None,
+        metavar="MODEL",
+        help=(
+            "Image model SKU override (highest priority). "
+            "Examples: models/gemini-3-pro-image-preview | "
+            "models/gemini-2.5-flash-image | black-forest-labs/FLUX.1-schnell. "
+            "Flux is the default; Gemini Pro is used when you pass --avatar ON "
+            "or this flag."
         ),
     )
     parser.add_argument(
@@ -6575,10 +6893,12 @@ def cli() -> None:
         ),
     )
     args = parser.parse_args()
+    # True CLI value before page locks (master_mei/anna) mutate args.avatar.
+    _avatar_from_cli: str | None = args.avatar
 
     # ── model_api_flows: resolve + apply before any generation ──────────────
     # Precedence: per-media flags > --model-api-flow > .env default.
-    from model_api_flows import (
+    from agents.mcp.model_api_flows import (
         apply_production_flow as _apply_flow,
         bootstrap_validate_all_presets as _validate_flow_presets,
         resolve_production_flow as _resolve_flow,
@@ -6618,7 +6938,10 @@ def cli() -> None:
             "[YouTube] --resume-youtube-queue: resuming pending upload queue"
             + (f" for page='{_resume_page}' …" if _resume_page else " for ALL pages …")
         )
-        _yt_resume_pending_queue(page_name=_resume_page)
+        _yt_resume_pending_queue(
+            page_name=_resume_page,
+            limit=getattr(args, "yt_upload_limit", None),
+        )
         return
 
     # ── PERMANENT WONDER_FEED STYLE LOCK ───────────────────────────────────
@@ -6669,6 +6992,20 @@ def cli() -> None:
             args.post_format = "REFERENCE_BASED_REELS"
             args.draw_style = "NATURAL"
 
+    # ── ANNA_PROTOCOL STYLE LOCK ───────────────────────────────────────────
+    # Photoreal stills (factory --draw-style default is SKETCH).
+    # Avatar / Gemini Pro are NOT implied — pass --avatar ON (or --image-primary).
+    if getattr(args, "page", "").lower() == "anna_protocol":
+        args.draw_style = "NATURAL"
+
+    if getattr(args, "post_type", "").upper() == "CTA_CAPTION_IMAGE":
+        if getattr(args, "page", "").lower() != "anna_protocol":
+            raise SystemExit(
+                "CTA_CAPTION_IMAGE is only available for --page anna_protocol. "
+                "Example: python main.py --page anna_protocol "
+                "--post-type CTA_CAPTION_IMAGE --quantity 1"
+            )
+
     if args.economic and args.premium:
         raise SystemExit("Choose either --economic or --premium-relay, not both.")
 
@@ -6681,7 +7018,7 @@ def cli() -> None:
     # Load page config to read per-page defaults.
     _tmp_page_cfg: dict = {}
     try:
-        from page_loader import (  # noqa: PLC0415
+        from channel_loader import (  # noqa: PLC0415
             _CHANNELS_CONFIG_ROOT,
             _LEGACY_PAGES_CONFIG_ROOT,
             _load_page_config,
@@ -6722,6 +7059,36 @@ def cli() -> None:
         page_ctx = load_page_context(page_id, avatar_mode=avatar_mode, post_format=post_format)
     except ValueError as ve:
         raise SystemExit(str(ve)) from ve
+
+    if getattr(args, "image_primary", None):
+        _img_primary = str(args.image_primary).strip()
+        if _img_primary:
+            page_ctx.page_cfg["IMAGE_PRIMARY_CLI"] = _img_primary
+            page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _img_primary
+            page_ctx.page_cfg["IMAGE_PRIMARY"] = _img_primary
+            print(f"[bootstrap] image_primary={_img_primary} (CLI override)")
+    if getattr(args, "img_production", None):
+        page_ctx.page_cfg["IMG_PRODUCTION_CLI"] = str(args.img_production).strip()
+    if _avatar_from_cli is not None:
+        page_ctx.page_cfg["AVATAR_CLI"] = str(_avatar_from_cli).upper()
+        print(f"[bootstrap] avatar={page_ctx.page_cfg['AVATAR_CLI']} (CLI)")
+        _img_prod_raw = str(page_ctx.page_cfg.get("IMG_PRODUCTION_CLI") or "").strip().lower()
+        _provider_forced = _img_prod_raw.startswith(
+            ("together", "remote_gpu", "flux")
+        )
+        if (
+            page_ctx.page_cfg["AVATAR_CLI"] == "ON"
+            and not page_ctx.page_cfg.get("IMAGE_PRIMARY_CLI")
+            and not _provider_forced
+        ):
+            _pro = getattr(
+                app_config, "GEMINI_PRO_IMAGE_MODEL", "models/gemini-3-pro-image-preview"
+            )
+            page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _pro
+            print(
+                f"[bootstrap] --avatar ON → image_primary={_pro} "
+                "(pass --image-primary or --img-production to override)"
+            )
 
     # Scene pacing overrides — CLI > channels_config > factory default.
     if getattr(args, "video_length", None) is not None:
@@ -6775,7 +7142,10 @@ def cli() -> None:
         )
         return
 
-    planned_models = _snapshot_verified_models(economic_brain_mode=econ_resolved)
+    planned_models = _snapshot_verified_models(
+        economic_brain_mode=econ_resolved,
+        page_ctx=page_ctx,
+    )
 
     logging.basicConfig(
         level=logging.WARNING,
@@ -6840,7 +7210,7 @@ def cli() -> None:
         # Aesthetic still review — never enters production / publish path.
         if getattr(args, "test_preview", False):
             try:
-                from core_engine.economic_reel_lofi.test_preview import (
+                from core.economic_reel_lofi.test_preview import (
                     run_lofi_test_preview,
                 )
 
@@ -6861,8 +7231,8 @@ def cli() -> None:
             return
 
         try:
-            import core_engine.economic_reel_lofi  # noqa: F401 — registers runner
-            from core_engine.post_type_registry import get_post_type_runner
+            import core.economic_reel_lofi  # noqa: F401 — registers runner
+            from core.post_type_registry import get_post_type_runner
 
             _lofi_runner = get_post_type_runner("ECONOMIC_REEL_LOFI")
             if _lofi_runner is None:
@@ -6883,6 +7253,11 @@ def cli() -> None:
                 script_only=bool(getattr(args, "script_only", False)),
                 stills_only=bool(getattr(args, "stills_only", False)),
                 locked_scripts=getattr(args, "lofi_scripts", None),
+                review_required=(
+                    False if bool(getattr(args, "lofi_no_review", False)) else None
+                ),
+                resume_from=getattr(args, "lofi_resume_from", None),
+                approve_gate=getattr(args, "lofi_approve_gate", None),
                 # Reuse existing per-page tree: outputs/<page>/{clips,assets}/
                 outputs_dir=page_ctx.outputs_dir,
             )
@@ -6908,11 +7283,11 @@ def cli() -> None:
         return
 
     # ── WAN_REEL production (registry) — reuses produce() / variant worker ──
-    # Smoke test remains core_engine.wan_reel_engine.run_wan_reel_test (not CLI).
+    # Smoke test remains core.wan_reel_engine.run_wan_reel_test (not CLI).
     if _active_post_type == "WAN_REEL":
-        import core_engine.wan_reel_production  # noqa: F401 — registers runner
-        from core_engine.post_type_registry import get_post_type_runner
-        from core_engine.wan_reel_production import assert_wan_reel_page
+        import core.wan_reel_production  # noqa: F401 — registers runner
+        from core.post_type_registry import get_post_type_runner
+        from core.wan_reel_production import assert_wan_reel_page
 
         assert_wan_reel_page(page_id)
         if get_post_type_runner("WAN_REEL") is None:
@@ -6926,7 +7301,7 @@ def cli() -> None:
     # Bypasses the full Gemini-image produce() pipeline — uses raw footage clips.
     if _active_post_type == "REFERENCE_BASED_REELS":
         try:
-            from core_engine.reference_reel_engine import ReferenceReelEngine
+            from core.reference_reel_engine import ReferenceReelEngine
             _ref_engine = ReferenceReelEngine(
                 page_ctx,
                 outputs_dir=page_ctx.outputs_dir,
@@ -7055,21 +7430,52 @@ def cli() -> None:
                 )
 
             _sched_anchor = datetime.now(timezone.utc)
+            _yt_gate = _YtDailyUploadSafetyGate(
+                limit=getattr(args, "yt_upload_limit", None)
+            )
             print(
                 f"[YouTube Scheduler] Scheduling {len(_yt_rows)} video(s) as Programado | "
                 f"privacy=private + publishAt | interval={_interval_h:g} h | "
                 f"random delay=0–{_rand_max_m} min | "
+                f"safety cap={_yt_gate.limit} | "
                 f"anchor={_sched_anchor.strftime('%Y-%m-%d %H:%M:%S')} UTC"
             )
             _LOG.info(
-                "YT schedule-uploads FORCED | page=%s videos=%d interval_h=%s rand_max_m=%d",
+                "YT schedule-uploads FORCED | page=%s videos=%d interval_h=%s "
+                "rand_max_m=%d safety_cap=%d",
                 page_id,
                 len(_yt_rows),
                 _interval_h,
                 _rand_max_m,
+                _yt_gate.limit,
             )
 
             for _i, _yt_row in enumerate(_yt_rows):
+                if not _yt_gate.can_upload():
+                    _yt_gate.notify_halt()
+                    _remaining_rows = _yt_rows[_i:]
+                    print(
+                        f"[YouTube] Queuing remaining {len(_remaining_rows)} video(s) → "
+                        "credentials/pending_youtube_uploads.json"
+                    )
+                    for _r_offset, _pending_row in enumerate(_remaining_rows):
+                        _pending_i = _i + _r_offset
+                        _pending_extra_min = (
+                            random.randint(0, _rand_max_m) if _rand_max_m > 0 else 0
+                        )
+                        _pending_publish_at = _sched_anchor + timedelta(
+                            hours=_interval_h * (_pending_i + 1),
+                            minutes=_pending_extra_min,
+                        )
+                        _yt_queue_pending_upload(
+                            row=_pending_row,
+                            page_name=page_id,
+                            privacy_status="private",
+                            publish_at=_pending_publish_at,
+                            reason="global_safety_cap",
+                        )
+                    break
+
                 _extra_min = random.randint(0, _rand_max_m) if _rand_max_m > 0 else 0
                 _publish_at = _sched_anchor + timedelta(
                     hours=_interval_h * (_i + 1),
@@ -7098,6 +7504,7 @@ def cli() -> None:
                     if _yt_vid_id:
                         _yt_row["youtube_video_id"] = _yt_vid_id
                         _yt_row["youtube_url"] = _yt_url
+                        _yt_gate.record_success()
                         if _yt_pa:
                             _yt_row["youtube_scheduled_at"] = _yt_pa.strftime(
                                 "%Y-%m-%d %H:%M UTC"

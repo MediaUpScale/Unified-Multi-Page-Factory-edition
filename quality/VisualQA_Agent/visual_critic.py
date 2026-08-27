@@ -28,6 +28,45 @@ from quality.VisualQA_Agent import config
 _LOG = logging.getLogger(__name__)
 _console = Console()
 
+_CRITIC_PROFILE_CACHE: dict[str, dict[str, Any]] = {}
+_ANCIENT_MYSTERY_DEFAULT_THRESHOLD: float = 5.5
+
+
+def load_critic_profile(name: str) -> dict[str, Any]:
+    """Load ``critic_profiles/{name}.json`` from the factory root (cached)."""
+    key = (name or "").strip().lower()
+    if not key:
+        return {}
+    cached = _CRITIC_PROFILE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    candidates = [
+        config.PROJECT_ROOT / "critic_profiles" / f"{key}.json",
+        Path(__file__).resolve().parent / "critic_profiles" / f"{key}.json",
+    ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    _CRITIC_PROFILE_CACHE[key] = data
+                    return data
+        except (OSError, json.JSONDecodeError) as exc:
+            _LOG.warning("critic profile %s unreadable (%s)", path, exc)
+    _CRITIC_PROFILE_CACHE[key] = {}
+    return {}
+
+
+def ancient_mystery_quality_threshold(fallback: float | None = None) -> float:
+    profile = load_critic_profile("ancient_mystery")
+    raw = profile.get("quality_threshold", fallback)
+    try:
+        return float(raw if raw is not None else _ANCIENT_MYSTERY_DEFAULT_THRESHOLD)
+    except (TypeError, ValueError):
+        return float(
+            fallback if fallback is not None else _ANCIENT_MYSTERY_DEFAULT_THRESHOLD
+        )
+
 _CLEAN_MODEL_FLAW_RE = re.compile(
     r"fitness\s*model|gym[\s-]?bro|clean[\s-]?skin|handsome|studio[\s-]?lit|"
     r"studio\s+lighting|softbox|commercial\s+fashion|fashion\s+shoot|"
@@ -235,9 +274,26 @@ def _semantic_fidelity_block(
     requested_subject: str | None,
     requested_object: str | None = None,
     close_variant: str | None = None,
+    licensed_objects: Sequence[str] | None = None,
 ) -> str:
     st = (requested_subject or "").strip().lower().replace(" ", "_")
     key_obj = " ".join(str(requested_object or "").strip().split())
+    licensed = [
+        str(x).strip()
+        for x in (licensed_objects or [])
+        if str(x).strip()
+    ]
+    if key_obj and key_obj not in licensed:
+        licensed = [key_obj, *licensed]
+    licensed_line = ", ".join(dict.fromkeys(licensed))
+    licensed_block = ""
+    if licensed_line:
+        licensed_block = f"""
+   LICENSED OBJECTS for this beat (shared with spoken_prop — do not flag as unspoken):
+   {licensed_line}.
+   Pronouns it/this/that in the spoken line refer to these. FAIL "unspoken"
+   only for props that are NOT in this list.
+"""
     if str(close_variant or "").strip().lower() == "portrait_close":
         return """
 5) SEMANTIC FIDELITY TO REQUEST (HARD FAIL if pixels mismatch) — portrait_close:
@@ -309,6 +365,7 @@ fix_instructions MUST tell Flux how to match {st}.
 
     return f"""
 {subject_block}
+{licensed_block}
 
 6) LIMB INTEGRITY (HARD FAIL on every beat, including object_focus / silhouette).
    This check is NEVER skipped or weakened for object_focus.
@@ -362,13 +419,17 @@ def _build_lofi_critic_instruction(
     prior_fail_criteria: Sequence[str] | None = None,
     style_profile: str | None = None,
     close_variant: str | None = None,
+    licensed_objects: Sequence[str] | None = None,
 ) -> str:
     forbidden = ", ".join(rules.get("forbidden_tokens") or [])
     mandatory = ", ".join(rules.get("mandatory_elements") or [])
     lighting = rules.get("lighting_style") or ""
     audience = rules.get("target_audience_rules") or ""
     semantic = _semantic_fidelity_block(
-        requested_subject, requested_object, close_variant=close_variant
+        requested_subject,
+        requested_object,
+        close_variant=close_variant,
+        licensed_objects=licensed_objects,
     )
     st_cov = (requested_subject or "").strip().lower().replace(" ", "_")
     cv_cov = str(close_variant or "").strip().lower()
@@ -528,6 +589,16 @@ def _build_ancient_mystery_critic_instruction(
     mandatory = ", ".join(rules.get("mandatory_elements") or [])
     lighting = rules.get("lighting_style") or ""
     audience = rules.get("target_audience_rules") or ""
+    profile = load_critic_profile("ancient_mystery")
+    eval_rules = profile.get("evaluation_rules") if isinstance(profile, dict) else {}
+    if not isinstance(eval_rules, dict):
+        eval_rules = {}
+    hard_only = eval_rules.get("hard_fail_only") or [
+        "severe anatomical deformations",
+        "unreadable floating artifacts",
+        "corrupt or broken renders",
+    ]
+    hard_block = "\n".join(f"   - {item}" for item in hard_only)
     return f"""
 You are an Art Director for the Ancient Knowledge documentary channel ("{channel_name}").
 
@@ -535,35 +606,36 @@ You are given:
 - IMAGE 1 = NEW CANDIDATE (judge the PIXELS, not the prompt text)
 - OPTIONAL REFERENCE STYLE IMAGES 1–{n_refs}
 
-MASTER CRITERIA (ALL must hold to pass):
-1) DYNAMIC LIGHTING — single dramatic source (warm amber torchlight or cold ethereal
-   moonlight), volumetric shafts through dust/haze, rim light on megalithic edges,
-   high-contrast chiaroscuro. FAIL flat, even, or muddy lighting.
-2) NOT A GENERIC FRONT-FACING 3D RENDER — no clean CGI, no plastic surfaces,
-   no studio-lit video-game screenshot, no symmetrical dead-on monument postcard.
-   Prefer oblique, aerial, low-angle, or first-person immersive camera.
-3) ANCIENT MYSTERY AESTHETIC — ultra-realistic cinematic historical photography of a
-   recognisable real-world monument with an anomalous/impossible detail woven in.
-   35mm documentary film grain, desaturated ochre and shadow-black grade.
-   No illustration, sketch, cartoon, or modern elements.
+EVALUATION POLICY (relaxed — do not over-reject usable FLUX stills):
+1) ACCEPT clean, high-atmosphere FLUX renders. Digital polish is NOT a defect.
+   Do NOT penalize missing 35mm film grain, missing analog texture, or a slightly
+   clean/digital look.
+2) Do NOT require a recognisable real-world monument (Pyramid, Baalbek, Göbekli
+   Tepe, etc.) unless the generation prompt explicitly named one. Invented or
+   unnamed ruins, artefacts, and structures are valid.
+3) Fantasy / surreal ancient-mystery interpretations ARE valid outputs.
+4) Atmospheric lighting is a plus, not a gate. Do not fail solely for lighting
+   that is less dramatic than torchlight chiaroscuro.
 
-CHANNEL RULES:
+CHANNEL RULES (guidance, not automatic fails):
 - FORBIDDEN: {forbidden}
 - MANDATORY: {mandatory}
 - LIGHTING: {lighting}
 - AUDIENCE: {audience}
 
-HARD FAIL (score must be < 4.0) if the still looks like CGI / Unreal / toy-3D /
-front-facing tourist postcard / illustration.
+STRICT FAILURE (score MUST be < {quality_threshold}) only for severe visual flaws:
+{hard_block}
+Also fail illustration, sketch, cartoon, or unusable garbage pixels.
 
 Do NOT apply Master Mei dystopian / body-horror / fitness-model criteria.
 
 SCORING GUIDE:
-- 9.0–10.0: production-ready cinematic mystery still
-- {quality_threshold}–8.9: minor issues, still approvable
-- Below {quality_threshold}: FAIL
+- 9.0–10.0: strong atmospheric ancient-mystery still, ready to post
+- {quality_threshold}–8.9: approvable (clean FLUX polish / fantasy ruins OK)
+- Below {quality_threshold}: FAIL — reserved for the severe flaws listed above
 
-Set passed=true ONLY if score >= {quality_threshold} AND all three master criteria hold.
+Set passed=true if score >= {quality_threshold} AND none of the strict-failure
+flaws are present. Do not fail for missing film grain or missing geo-anchors.
 
 Return JSON fields exactly:
   score (float 0–10),
@@ -584,6 +656,7 @@ def _build_critic_instruction(
     prior_fail_criteria: Sequence[str] | None = None,
     style_profile: str | None = None,
     close_variant: str | None = None,
+    licensed_objects: Sequence[str] | None = None,
 ) -> str:
     profile = str(rules.get("critic_profile") or channel_name or "").strip().lower()
     if profile == "lofi_economic" or channel_name == "lofi_economic":
@@ -594,6 +667,7 @@ def _build_critic_instruction(
             prior_fail_criteria=prior_fail_criteria,
             style_profile=style_profile,
             close_variant=close_variant,
+            licensed_objects=licensed_objects,
         )
     if profile in ("ancient_mystery", "ancient_knowledge") or channel_name == "ancient_knowledge":
         return _build_ancient_mystery_critic_instruction(
@@ -711,6 +785,7 @@ def evaluate_image(
     prior_fail_criteria: Sequence[str] | None = None,
     style_profile: str | None = None,
     close_variant: str | None = None,
+    licensed_objects: Sequence[str] | None = None,
 ) -> CriticVerdict:
     """
     Judge a generated image with Gemini Vision against ALL style refs + rules.
@@ -753,6 +828,8 @@ def evaluate_image(
         profile in ("ancient_mystery", "ancient_knowledge")
         or channel_name == "ancient_knowledge"
     )
+    if is_ancient and quality_threshold is None:
+        threshold = ancient_mystery_quality_threshold()
 
     contents: list[Any] = [
         "IMAGE 1 — NEW CANDIDATE TO JUDGE (inspect pixels):",
@@ -804,6 +881,7 @@ def evaluate_image(
             prior_fail_criteria=prior_fail_criteria,
             style_profile=style_profile,
             close_variant=close_variant,
+            licensed_objects=licensed_objects,
         )
     )
 

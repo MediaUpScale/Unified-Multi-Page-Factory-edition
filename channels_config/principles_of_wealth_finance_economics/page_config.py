@@ -6,7 +6,7 @@ Library-ingest channel: existing long-form episodes + Shorts live on the
 external production drive. The factory only needs read access to the source
 directory; processed (re-signed) files land in a Processed/ sibling folder.
 
-Entry point: ``python wealth_main.py``
+Entry point: ``python channels_config/principles_of_wealth_finance_economics/wealth_main.py``
 """
 from __future__ import annotations
 
@@ -54,53 +54,77 @@ SHORTS_TO_LONG_LINKING: bool = True
 YOUTUBE_CATEGORY_ID: str = "27"  # Education
 YOUTUBE_DEFAULT_PRIVACY_LONG: str = "unlisted"
 YOUTUBE_DEFAULT_PRIVACY_SHORT: str = "unlisted"
-YOUTUBE_PLAYLIST_TITLE: str = "ACT I - The Foundations of Wealth Strategy"
+YOUTUBE_PLAYLIST_TITLE: str = "Principles of Wealth: ACT I — Visualizing Financial Reality"
 YOUTUBE_PLAYLIST_DESCRIPTION: str = (
-    "ACT I of Principles of Wealth — the foundations of wealth strategy. "
-    "Independent educational analysis of economic frameworks and principles "
-    "of wealth creation. Not affiliated with Ray Dalio or Bridgewater Associates."
+    "A structured series by Principles of Wealth analyzing macroeconomics, "
+    "investor psychology, and resilient capital preservation strategies. "
+    "Decoupling market noise from institutional realities to build sustainable "
+    "long-term wealth.\n\n"
+    "Disclaimer: Strictly educational content on financial analysis and "
+    "macroeconomics. Not financial advice."
 )
 YOUTUBE_DEFAULT_TAGS: list = [
-    "financial education",
-    "wealth building",
-    "macroeconomics",
-    "investing",
-    "ray dalio analysis",
     "principles of wealth",
-    "personal finance",
-    "economics",
-    "investing psychology",
-    "wealth strategy",
+    "stock market analysis",
+    "S&P 500 strategy",
+    "top growth stocks",
+    "asset allocation",
+    "inflation protection",
+    "interest rate impact",
+    "market crash prep",
+    "macroeconomic framework",
+    "wealth building systems",
+    "institutional capital",
+    "risk management",
+    "wealth preservation",
+    "ray dalio",
+    "portfolio strategy",
 ]
 SEO_TARGETS: list = [
-    "Financial Education",
-    "Wealth Building",
-    "Macroeconomics",
-    "Investing",
-    "Ray Dalio Analysis",
+    "principles of wealth",
+    "stock market trend analysis",
+    "S&P 500 strategy",
+    "top growth stocks",
+    "asset allocation models",
+    "inflation protection strategies",
+    "interest rate impact on stocks",
+    "market crash preparation",
+    "macroeconomic framework",
+    "wealth building systems",
+    "institutional capital strategies",
+    "risk management investing",
+    "long term wealth preservation",
 ]
 
-YOUTUBE_TITLE_SUFFIX: str = " | Ray Dalio's Framework Analyzed (Financial Education)"
-YOUTUBE_SHORT_TITLE_SUFFIX: str = " - Ray Dalio Analysis #shorts"
+YOUTUBE_TITLE_SUFFIX: str = " | Principles of Wealth"
+YOUTUBE_SHORT_TITLE_SUFFIX: str = " | Principles of Wealth"
 
 YOUTUBE_DESCRIPTION_TEMPLATE: str = (
-    "In this educational analysis, we explore the economic frameworks and "
-    "principles of wealth creation based on the philosophy of Ray Dalio.\n\n"
-    "📈 Topics Covered: Macroeconomics, Investing Psychology, Wealth Building, "
-    "and Financial Education.\n\n"
-    "⚠️ Disclaimer: This channel provides independent educational curation and "
-    "financial analysis. We are not affiliated with, endorsed by, or sponsored "
-    "by Ray Dalio or Bridgewater Associates. All content is structured for "
-    "educational purposes under fair use.\n\n"
-    "#FinancialEducation #RayDalio #WealthBuilding #Investing #Economics"
+    "Most investors treat wealth as income, bonuses, and the latest index print — "
+    "then a rate shock shows the difference between a paycheck and a system.\n"
+    "Macroeconomic reality is colder: capital preservation is a designed machine "
+    "that survives inflation, Fed policy, and concentrated growth-stock drawdowns.\n"
+    "Welcome to Principles of Wealth.\n\n"
+    "Designed for deep, focused listening to help you absorb complex financial "
+    "concepts efficiently. Subscribe to Principles of Wealth for actionable "
+    "macro perspectives.\n\n"
+    "#PrinciplesOfWealth #WealthBuilding #Macroeconomics #PortfolioStrategy "
+    "#CapitalPreservation\n\n"
+    "Disclaimer: Strictly educational content on financial analysis and "
+    "macroeconomics. Not financial advice."
 )
 
 YOUTUBE_SHORT_DESCRIPTION_TEMPLATE: str = (
-    "Educational short based on Ray Dalio's principles of wealth.\n\n"
-    "⚠️ Disclaimer: Independent educational curation and financial analysis. "
-    "Not affiliated with, endorsed by, or sponsored by Ray Dalio or "
-    "Bridgewater Associates.\n\n"
-    "#FinancialEducation #RayDalio #WealthBuilding #Investing #Economics #shorts"
+    "As macroeconomic conditions shift, individual investors often fall into the "
+    "trap of short-term noise around SPY, Mag7 names, and Treasury yields. "
+    "Understanding how institutional capital navigates inflation data and "
+    "interest-rate trends is critical for capital preservation. The Principles "
+    "of Wealth model prioritizes long-term risk asymmetry over speculative timing.\n\n"
+    "Watch the full deep-dive breakdown on the Principles of Wealth channel or "
+    "access the linked playlist for the complete strategy.\n\n"
+    "#Shorts #PrinciplesOfWealth #Finance #Investing #StockMarket #WealthBuilding\n\n"
+    "Disclaimer: Strictly educational content on financial analysis and "
+    "macroeconomics. Not financial advice."
 )
 
 # ---------------------------------------------------------------------------
@@ -160,13 +184,15 @@ TOPIC_POOL: list = [
 # Niche disclaimer — injected into LLM prompts AND YouTube descriptions
 # ---------------------------------------------------------------------------
 NICHE_DISCLAIMER: str = (
-    "CHANNEL CONTEXT: Principles of Wealth — independent educational curation "
-    "and financial analysis. Frame every title, caption, and description as "
-    "Educational Curation / Analysis of economic frameworks. "
+    "CHANNEL CONTEXT: Principles of Wealth — independent educational analysis "
+    "of published wealth principles and macroeconomic frameworks. "
     "Never impersonate Ray Dalio or Bridgewater Associates. "
     "Never give personalised investment advice or stock tips. "
-    "Always include the affiliation disclaimer. "
-    "SEO targets: Financial Education, Wealth Building, Macroeconomics, "
-    "Investing, Ray Dalio Analysis. "
+    "Use dense SEO around capital preservation, asset allocation, inflation, "
+    "interest rates, S&P 500 strategy, and institutional capital behavior. "
+    "Titles end with '| Principles of Wealth'. "
+    "One plain-text disclaimer at the bottom, no emojis or warning icons: "
+    "Disclaimer: Strictly educational content on financial analysis and "
+    "macroeconomics. Not financial advice. "
     "Tone: clear, structured, professional, high-RPM finance education."
 )

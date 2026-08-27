@@ -1,0 +1,9 @@
+# Aiwake local state — regenerated every run, never source of truth.
+store/aiwake_memory.json
+store/openrouter_models.json
+store/transcripts/
+store/metrics/
+_local_outputs/
+.env
+__pycache__/
+*.py[cod]

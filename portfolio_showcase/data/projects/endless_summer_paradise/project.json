@@ -1,0 +1,9 @@
+{
+  "slug": "endless_summer_paradise",
+  "title": "Endless Summer Paradise",
+  "codename": "ESP",
+  "status": "registry",
+  "summary": "Factory channel in the unified multi-page ecosystem. Narrative and telemetry land here as they are exported.",
+  "engine_path": "channels_config/endless_summer_paradise",
+  "tags": ["content_factory"]
+}

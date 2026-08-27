@@ -1,0 +1,9 @@
+{
+  "slug": "momma_circle",
+  "title": "Momma Circle",
+  "codename": "MC",
+  "status": "registry",
+  "summary": "Parenting-channel factory plus Playwright Facebook scheduler (queue, humanized delays, screenshot-on-fail).",
+  "engine_path": "channels_config/momma_circle",
+  "tags": ["Playwright", "scheduler", "content_factory"]
+}

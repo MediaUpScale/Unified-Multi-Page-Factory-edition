@@ -154,7 +154,7 @@ PACING_SEQUENCE: list = [3, 3, 4, 4]  # legacy fallback shape only — AK now us
 REUSE_EXISTING_IMAGES: bool = True
 ENABLE_SUBTITLE_PADDING: bool = True
 ENCODING_PRESET: str = "ultrafast"
-# Shared pacing engine (core_engine/scene_pacing.py). CLI --scene-duration wins.
+# Shared pacing engine (core/scene_pacing.py). CLI --scene-duration wins.
 SCENE_DURATION: str = "progressive"
 SCENE_PROGRESSIVE_START_S: float = 4.0
 SCENE_PROGRESSIVE_STEP_EVERY: int = 3
@@ -166,7 +166,7 @@ ENABLE_SEQUENCE_REEL: bool = True
 REEL_IMAGE_MIN_COUNT: int = 8        # soft floor for plan_scenes / tier-1
 # REEL_IMAGE_COUNT is deliberately NOT set here — the AK per-variant loop
 # in main.py now uses the two-tier planner
-# (core_engine.reel_sequence_engine.compute_two_tier_act_count) which
+# (core.reel_sequence_engine.compute_two_tier_act_count) which
 # scales with page_ctx.reel_duration without any static ceiling. A page_
 # config REEL_IMAGE_COUNT would silently re-cap long-video reels to 16
 # stills (the Round-6 bug that made --video-length 180 render only 90 s
@@ -242,11 +242,12 @@ ENABLE_LIGHT_REFRACTION: bool = False  # prismatic crystal glow (enable per-topi
 # ---------------------------------------------------------------------------
 HOOK_Y_FRAC: float = 0.25             # hook headline in the upper quarter
 SUBTITLE_FONTSIZE: int = 56           # large, bold, legible on dark stone frames
-SUBTITLE_Y_POSITION: int = 1500       # safely in lower third
+SUBTITLE_Y_POSITION: int = 1450       # 50px above prior 1500 — lower third, clearer of logo
+CTA_SUBTITLE_Y_POSITION: int = 1400   # 50px above body captions — 2-line Follow CTA clears logo
 LOGO_WIDTH: int = 420          # 1.4× prior size (300→420) for mobile readability
 LOGO_MAX_HEIGHT: int = 115     # 1.4× prior cap  (82→115)
 LOGO_OPACITY: float = 0.75
-LOGO_BOTTOM_MARGIN: int = 90
+LOGO_BOTTOM_MARGIN: int = 240  # 150px above prior 90 — still bottom-center, not over subtitles
 
 # ---------------------------------------------------------------------------
 # Style flags

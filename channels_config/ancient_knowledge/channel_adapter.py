@@ -3,7 +3,7 @@
 AncientKnowledgeAdapter — Schema B only.
 
 Reads channels_config/ancient_knowledge/master_dna.json and page_config.py.
-Does not import avatar_engine.persona_dna. Does not load Anna / Mei / LOFI DNA.
+Does not import agents.media.persona_dna. Does not load Anna / Mei / LOFI DNA.
 
 Visual rules natively include the photoreal monument lock that currently
 lives as a page_id branch in main.py.
@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from core_engine.interfaces.channel import BaseChannelConfig, VisualRules
+from core.interfaces.channel import BaseChannelConfig, VisualRules
 
 _CHANNEL_DIR = Path(__file__).resolve().parent
 _DNA_PATH = _CHANNEL_DIR / "master_dna.json"
@@ -315,7 +315,7 @@ class AncientKnowledgeAdapter(BaseChannelConfig):
 
     def _visualqa_rules_block(self) -> str:
         try:
-            from VisualQA_Agent.channel_rag import (
+            from quality.VisualQA_Agent.channel_rag import (
                 get_channel_rules,
                 rules_as_prompt_block,
                 seed_default_channels,
@@ -330,7 +330,7 @@ class AncientKnowledgeAdapter(BaseChannelConfig):
     def _match_visual_concept(self, topic: str) -> str:
         lo = (topic or "").lower()
         try:
-            from VisualQA_Agent.channel_rag import get_channel_rules, seed_default_channels
+            from quality.VisualQA_Agent.channel_rag import get_channel_rules, seed_default_channels
 
             seed_default_channels(force=False)
             concepts = (get_channel_rules(self.channel_id).get("visual_concepts") or {})

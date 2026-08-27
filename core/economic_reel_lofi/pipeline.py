@@ -38,7 +38,6 @@ from core.economic_reel_lofi.riso_prompt_bank import (
 from agents.writer.script_agent import (
     _sanitize_caption_typos,
     assess_object_beat_continuity,
-    assess_story_quality,
     generate_script,
     get_script_cost_log,
     get_script_llm_call_log,
@@ -98,10 +97,28 @@ class LofiItemResult:
     script: dict[str, Any] | None = None
     work_dir: str | None = None
     stills_only: bool = False
+    hold_gate: int | None = None
+    pipeline_stage: str = ""
 
 
 def _utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+
+def _episode_slug(
+    script: dict[str, Any] | None = None,
+    *,
+    theme: str = "",
+    subtheme: str = "",
+) -> str:
+    """Folder/file stem: theme_subtheme, e.g. grief_learning_to_carry_it."""
+    row = script or {}
+    theme = str(theme or row.get("theme") or "").strip().lower()
+    sub = str(subtheme or row.get("subtheme") or "").strip().lower()
+    raw = "_".join(p for p in (theme, sub) if p) or "lofi"
+    slug = "".join(c if c.isalnum() else "_" for c in raw)
+    slug = re.sub(r"_+", "_", slug).strip("_")[:64]
+    return slug or "lofi"
 
 
 def _engine_root() -> Path:
@@ -273,10 +290,10 @@ def assess_default_object_intrusion(
         meta["skipped"] = True
         meta["skip_reason"] = "not_object_focus_or_silhouette"
         return True, [], meta
-    if obj and _INTRUDER_SELF.search(obj):
-        meta["skipped"] = True
-        meta["skip_reason"] = "key_object_is_default_intruder"
-        return True, [], meta
+    licensed_self = bool(obj and _INTRUDER_SELF.search(obj))
+    # Licensing mug/cup/coffee/laptop excludes THAT blob as intended —
+    # it must not disable the whole gate. Extra compact blobs (jar/plant)
+    # still fail. Windows are architectural; spoken_prop still catches them.
     try:
         _, gray = _load_lofi_thumb_gray(image_path, size=192)
         local = _uniform_gray(gray, 21)
@@ -295,13 +312,15 @@ def assess_default_object_intrusion(
         hardware = [b for b in intruders if b["bbox_frac"] < 0.06]
         compact = [b for b in intruders if b["bbox_frac"] >= 0.06]
         meta["n_hardware"] = len(hardware)
-        if obj and _COMPACT_INTENDED_RE.search(obj) and compact:
+        compact_intended = bool(obj and _COMPACT_INTENDED_RE.search(obj)) or licensed_self
+        if compact_intended and compact:
             # First compact mid-frame blob is the requested object; only a
             # second compact blob is a real extra prop.
             intended = compact[0]
             extras = compact[1:]
             top = extras[0] if extras else None
             meta["compact_as_intended"] = True
+            meta["licensed_blob_excluded"] = bool(licensed_self)
         else:
             intended = blobs[0] if blobs else None
             top = compact[0] if compact else None
@@ -331,7 +350,7 @@ def assess_default_object_intrusion(
             and intended is not None
             and top is not None
             and obj
-            and _COMPACT_INTENDED_RE.search(obj)
+            and compact_intended
             and abs(intr_bbox - intended_bbox) < 1e-6
         ):
             fail = False
@@ -484,8 +503,20 @@ def assess_photoreal_style(
         return True, [], meta
 
 
-def pixel_lighting_label(image_path: Path) -> tuple[str, dict[str, float]]:
-    """Classify lighting from the accepted still, not from the prompt tag."""
+def pixel_lighting_label(
+    image_path: Path,
+    *,
+    framing: str = "",
+    subject_type: str = "",
+) -> tuple[str, dict[str, float]]:
+    """Classify lighting from the accepted still, not from the prompt tag.
+
+    ``macro_no_setting`` / object_focus close-ups are not eligible for
+    sunset_doorway — a warm mug disc is not a doorway.
+    """
+    from core.economic_reel_lofi.style_modules import get_active_style
+
+    style = get_active_style()
     arr, gray = _load_lofi_thumb_gray(image_path, size=256)
     h = gray.shape[0]
     upper = arr[: int(h * 0.65)]
@@ -496,7 +527,21 @@ def pixel_lighting_label(image_path: Path) -> tuple[str, dict[str, float]]:
     warm_frac = float(warm.mean())
     mean_l = float(gray.mean())
     chroma = float(np.mean(np.abs(arr[..., 0].astype(np.float32) - arr[..., 2])))
-    if warm_frac >= 0.10:
+    st = (subject_type or "").strip().lower().replace(" ", "_")
+    fr = (framing or "").strip().lower()
+    is_macro = (not style.macro_sunset_eligible) and (
+        fr == "macro_no_setting" or st == "object_focus"
+    )
+    door_thr = float(style.warm_sunset_doorway)
+    lamp_thr = float(style.warm_indoor_lamp)
+    if is_macro:
+        if warm_frac >= lamp_thr:
+            label = "indoor_lamp_glow"
+        elif mean_l < 70 and chroma < 25:
+            label = "blue_hour_streetlight"
+        else:
+            label = "overcast_daylight"
+    elif warm_frac >= door_thr:
         label = "sunset_doorway"
     elif mean_l < 70 and chroma < 25:
         label = "blue_hour_streetlight"
@@ -504,7 +549,7 @@ def pixel_lighting_label(image_path: Path) -> tuple[str, dict[str, float]]:
         label = "rainy_grey"
     elif mean_l > 150 and chroma < 30:
         label = "morning_cool"
-    elif warm_frac >= 0.04:
+    elif warm_frac >= lamp_thr:
         label = "indoor_lamp_glow"
     else:
         label = "overcast_daylight"
@@ -512,6 +557,8 @@ def pixel_lighting_label(image_path: Path) -> tuple[str, dict[str, float]]:
         "warm_frac": round(warm_frac, 4),
         "mean_l": round(mean_l, 1),
         "chroma": round(chroma, 1),
+        "framing": fr or st,
+        "macro_no_sunset": bool(is_macro),
     }
     return label, meta
 
@@ -547,12 +594,20 @@ def _episode_style_class(rec: dict[str, Any], row: dict[str, Any] | None = None)
     close = str((row or {}).get("close_variant") or "")
     if close == "portrait_close":
         return "portrait_close"
+    framing = str((row or {}).get("framing") or "").strip().lower()
+    st = str((row or {}).get("subject_type") or "").strip().lower().replace(" ", "_")
+    from core.economic_reel_lofi.style_modules import get_active_style
+
+    style = get_active_style()
+    is_macro = (not style.macro_sunset_eligible) and (
+        framing == "macro_no_setting" or st == "object_focus"
+    )
     warm = float(rec.get("warm_frac") or 0)
     uniq = float(rec.get("uniq16") or 0)
     std = float(rec.get("std") or 0)
     edge = float(rec.get("edge") or 0)
     lap = float(rec.get("lap_var") or 0)
-    if warm >= 0.12:
+    if (not is_macro) and warm >= float(style.warm_sunset_disc):
         return "sunset_disc"
     if uniq <= 240 and std >= 55:
         return "vintage_photo"
@@ -586,7 +641,11 @@ def assess_cross_beat_style(
         if not path or not Path(path).is_file():
             continue
         st = _linework_stats(Path(path))
-        pix, pix_meta = pixel_lighting_label(Path(path))
+        pix, pix_meta = pixel_lighting_label(
+            Path(path),
+            framing=str(lines[i].get("framing") or "") if i < len(lines) and isinstance(lines[i], dict) else "",
+            subject_type=str(lines[i].get("subject_type") or "") if i < len(lines) and isinstance(lines[i], dict) else "",
+        )
         declared = ""
         if i < len(lines) and isinstance(lines[i], dict):
             declared = str(lines[i].get("lighting_condition") or "")
@@ -697,6 +756,10 @@ def assess_object_beat_visual_continuity(
         cond = str(rec.get("condition") or "")
         scene_i = int(rec.get("scene") or 0)
         idx = scene_i - 1
+        if cond == "intentional_objectless":
+            rec["shipping"] = "intentional_objectless"
+            beats.append(rec)
+            continue
         if cond in {"skip_no_concrete_object"}:
             rec["shipping"] = "skip"
             beats.append(rec)
@@ -876,6 +939,178 @@ def assess_anchor_object_identity(
         return False, [flaw], meta
     except Exception as exc:  # noqa: BLE001
         _LOG.warning("anchor-id skipped for %s (%s)", image_path.name, exc)
+        meta["skipped"] = True
+        meta["skip_reason"] = f"error:{exc}"
+        return True, [], meta
+
+
+def assess_spoken_line_prop_leak(
+    image_path: Path,
+    *,
+    caption: str = "",
+    window_allowed: bool = False,
+    lamp_allowed: bool = False,
+    licensed_object: str = "",
+    episode_motif: str = "",
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """Pixel gate: reject still-life nouns the spoken line did not license.
+
+    Prompt bans are not enough — Flux still invents kettle/mug/plant on a
+    tabletop. This reads the PNG. Fail-open only on API/parse errors.
+    Pronouns it/this/that resolve to licensed_object / episode_motif first.
+    """
+    from core.economic_reel_lofi.licensed_objects import (
+        licensed_display,
+        licensed_object_names,
+        licensed_stems_for_beat,
+    )
+    from core.economic_reel_lofi.visual_identity import (
+        INVENTED_STILL_LIFE_STEMS,
+        caption_has_object_anaphora,
+        spoken_licenses_key_object,
+    )
+
+    names = licensed_object_names(
+        {
+            "licensed_objects": [],
+            "key_object": licensed_object,
+            "episode_anchor_name": episode_motif,
+        }
+    )
+    # Caller may pass a beat via licensed_object already joined; keep motif.
+    motif = licensed_display(
+        {
+            "licensed_objects": names,
+            "key_object": licensed_object,
+            "episode_anchor_name": episode_motif,
+        }
+    ) or str(licensed_object or episode_motif or "").strip()
+    spoken_for_model = caption
+    if caption_has_object_anaphora(caption) and motif:
+        spoken_for_model = f"{caption} (this line's object is {motif})"
+
+    meta: dict[str, Any] = {
+        "caption": caption,
+        "window_allowed": bool(window_allowed),
+        "lamp_allowed": bool(lamp_allowed),
+        "licensed_object": motif,
+        "passed": True,
+        "skipped": False,
+        "named_objects": [],
+        "leaks": [],
+    }
+    try:
+        from google import genai
+        from google.genai import types
+        from quality.VisualQA_Agent import config as qa_cfg
+
+        if not qa_cfg.GEMINI_API_KEY:
+            meta["skipped"] = True
+            meta["skip_reason"] = "no_gemini_key"
+            return True, [], meta
+        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        model_id = qa_cfg.GEMINI_CRITIC_MODEL
+        if not str(model_id).startswith("models/"):
+            model_id = f"models/{model_id}"
+        banned = ", ".join(INVENTED_STILL_LIFE_STEMS)
+        window_rule = (
+            "A window pane or window frame is allowed."
+            if window_allowed
+            else (
+                "window_visible=true only if a pane, sash, sill, or handle "
+                "is readable. A pool of lamp light on a blank wall is not a window."
+            )
+        )
+        lamp_rule = (
+            "A lamp or lampshade is allowed."
+            if lamp_allowed
+            else "A lamp is a leak unless it is only distant street lighting."
+        )
+        prompt = (
+            "Look at this illustration. JSON only with keys: "
+            "named_objects (string array of distinct props you can see), "
+            "window_visible (bool), leaks (string array).\n"
+            f"Spoken line: {spoken_for_model or '(none)'}\n"
+            f"Licensed object for this line: {motif or 'none'}. "
+            "Pronouns it/this/that refer to that licensed object.\n"
+            "Do not put the licensed object in leaks.\n"
+            f"Banned supporting props unless named in that line: {banned}.\n"
+            f"{window_rule} {lamp_rule}\n"
+            "Generic environment is allowed: wall, floor, sky, pavement, "
+            "road, table surface, building mass, streetlamp on a street.\n"
+            "Put a banned prop, or a disallowed window, in leaks. "
+            "Use short stems: kettle, mug, vase, plant, curtain, window."
+        )
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[prompt, img],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = json.loads(raw) if raw else {}
+        named = [str(x).strip().lower() for x in (data.get("named_objects") or []) if str(x).strip()]
+        leaks = [str(x).strip().lower() for x in (data.get("leaks") or []) if str(x).strip()]
+        window_visible = bool(data.get("window_visible"))
+        if window_visible and not window_allowed and "window" not in leaks:
+            leaks.append("window")
+        # Keep only invented-still-life / window leaks. Ignore Gemini extras
+        # like "hair" or "sweater".
+        keep = []
+        for item in leaks:
+            stem = re.sub(r"[^a-z]+", "", item.split()[0] if item else "")
+            if stem in INVENTED_STILL_LIFE_STEMS or stem == "window":
+                keep.append(stem)
+            elif any(s in item for s in INVENTED_STILL_LIFE_STEMS) or "window" in item:
+                keep.append(item)
+        leaks = list(dict.fromkeys(keep))
+        licensed_stems = licensed_stems_for_beat(
+            {
+                "licensed_objects": names,
+                "key_object": motif,
+            }
+        )
+        if motif and (
+            spoken_licenses_key_object(caption, motif)
+            or caption_has_object_anaphora(caption)
+        ):
+            leaks = [
+                item
+                for item in leaks
+                if not any(
+                    s == re.sub(r"[^a-z]+", "", item.split()[0] if item else "")
+                    or s in item
+                    for s in licensed_stems
+                )
+            ]
+        meta.update(
+            {
+                "named_objects": named,
+                "leaks": leaks,
+                "window_visible": window_visible,
+            }
+        )
+        if not leaks:
+            print(
+                f"[LOFI spoken-prop] PASS {image_path.name} "
+                f"objects={named}"
+            )
+            return True, [], meta
+        meta["passed"] = False
+        flaw = f"SPOKEN-PROP: unspoken objects in pixels: {', '.join(leaks)}"
+        meta["fix_instructions"] = (
+            "Redraw with only the licensed subject. Empty floor or open sky. "
+            "If a figure: side profile toward off-frame light. One subject."
+        )
+        print(f"[LOFI spoken-prop] REJECT {image_path.name} {flaw}")
+        return False, [flaw], meta
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("spoken-prop skipped for %s (%s)", image_path.name, exc)
         meta["skipped"] = True
         meta["skip_reason"] = f"error:{exc}"
         return True, [], meta
@@ -1142,7 +1377,7 @@ def assess_hook_still(
 COVERAGE_FLAW = "COVERAGE: incomplete garment / exposed skin on a human figure"
 COVERAGE_FIX = (
     "fully covered by dress fabric, back and shoulders clothed, "
-    "chest and torso clothed; no bare back, no exposed shoulders"
+    "chest and torso clothed, high-neck sweater to the jaw"
 )
 _HUMAN_FIGURE_TYPES = frozenset({"woman", "man", "couple", "silhouette"})
 
@@ -1472,6 +1707,7 @@ def _qa_scene_image(
     *,
     subject_type: str = "",
     key_object: str = "",
+    licensed_objects: list[str] | None = None,
     prior_fail_criteria: list[str] | None = None,
     style_profile: str | None = None,
     close_variant: str | None = None,
@@ -1491,13 +1727,17 @@ def _qa_scene_image(
 
         set_channel_context("lofi_economic")
         rules = get_channel_rules("lofi_economic")
+        from core.economic_reel_lofi.licensed_objects import licensed_display
+
+        qa_obj = licensed_display({"licensed_objects": licensed_objects or [], "key_object": key_object}) or key_object
         verdict = evaluate_image(
             image_path,
             channel_name="lofi_economic",
             rules=rules,
             quality_threshold=6.0,
             requested_subject=subject_type or None,
-            requested_object=key_object or None,
+            requested_object=qa_obj or None,
+            licensed_objects=list(licensed_objects or []),
             prior_fail_criteria=prior_fail_criteria,
             style_profile=style_profile,
             close_variant=close_variant,
@@ -1539,6 +1779,37 @@ def apply_ad_hoc_guidance(visual_prompt: str, reason: str) -> str:
     return f"{base} {extra}"
 
 
+def _retry_prompt_extras(prompt_i: str, attempt: int, last_fix: str) -> str:
+    """Same licensed noun; vary angle/distance/light. Never name banned props.
+
+    Linework guard is style-module line-quality only (outlines / grain /
+    contrast). It must never re-inject clutter content such as
+    'detailed interior objects'.
+    """
+    from core.economic_reel_lofi.style_modules import get_active_style
+    from core.economic_reel_lofi.visual_identity import (
+        INVENTED_STILL_LIFE_STEMS,
+        retry_variation_clause,
+    )
+
+    vary = retry_variation_clause(attempt - 1)
+    if vary:
+        prompt_i = f"{prompt_i} {vary}"
+    guard = str(get_active_style().linework_guard or "").strip()
+    if re.search(r"interior objects|clutter|still[- ]life", guard, re.I):
+        guard = "fine black ink outlines, paper grain, hard-edged color planes"
+    fix = str(last_fix or "")
+    low = fix.lower()
+    if any(s in low for s in INVENTED_STILL_LIFE_STEMS) or "window" in low:
+        fix = ""
+    extras = [p for p in (guard, fix) if p]
+    if extras:
+        prompt_i = f"{prompt_i} {' '.join(extras)}"
+    from core.economic_reel_lofi.visual_identity import _strip_positive_negation
+
+    return _strip_positive_negation(prompt_i)
+
+
 def generate_and_qa_scene(
     row: dict[str, Any],
     out_img: Path,
@@ -1572,13 +1843,20 @@ def generate_and_qa_scene(
         "shadow": lofi_cfg.DUOTONE_SHADOW,
         "highlight": lofi_cfg.DUOTONE_HIGHLIGHT,
     })
+    from core.economic_reel_lofi.licensed_objects import licensed_display, licensed_object_names
+
+    mood_meta["licensed_object"] = licensed_display(row) or key_object
+    mood_meta["not_in_frame"] = list(row.get("not_in_frame") or [])
+    if str(row.get("negative_prompt") or "").strip():
+        mood_meta["negative_prompt"] = str(row.get("negative_prompt")).strip()
+    licensed_names = licensed_object_names(row)
     if attempt_budget is None:
         n_attempts = int(getattr(lofi_cfg, "IMAGE_ATTEMPTS_PER_SCENE", 0) or 0)
         if n_attempts < 1:
             n_attempts = int(lofi_cfg.IMAGE_MAX_RETRIES_PER_SCENE) + 1
+        n_attempts = max(1, min(n_attempts, 2))
     else:
-        n_attempts = max(1, int(attempt_budget))
-    n_attempts = max(1, min(n_attempts, 2))
+        n_attempts = max(1, min(int(attempt_budget), 4))
 
     ok_img = False
     last_flaws: list[str] = []
@@ -1595,6 +1873,7 @@ def generate_and_qa_scene(
     scene_attempts: list[dict[str, Any]] = []
     n_image_calls = 0
     n_critic_calls = 0
+    spoken_fallback: Path | None = None
 
     for attempt in range(1, n_attempts + 1):
         prompt_i = apply_ad_hoc_guidance(visual, extra)
@@ -1609,20 +1888,20 @@ def generate_and_qa_scene(
                 and str(row.get("close_variant") or "") != "eye_close"
             ):
                 focus_step = min(focus_step + 1, 2)
-            rebuilt = assemble_fn(row, focus_step=focus_step)
-            row["visual_prompt"] = rebuilt
-            visual = rebuilt
-            prompt_i = apply_ad_hoc_guidance(rebuilt, extra)
-            print(
-                f"[LOFI framing] scene={scene_i} attempt={attempt} "
-                f"step={focus_step} kind={row.get('object_focus_framing')} "
-                f"escalate_intruder={int(last_intruder)}"
-            )
-            if attempt > 1 and last_fix:
-                guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
-                extras = [p for p in (guard, last_fix) if p]
-                if extras:
-                    prompt_i = f"{prompt_i} {' '.join(extras)}"
+            # Attempt 1 keeps the Gate-2-approved prompt. Reassemble only on
+            # retry/escalate or if Stage 3 never stamped visual_prompt.
+            if escalate or not visual.strip():
+                rebuilt = assemble_fn(row, focus_step=focus_step)
+                row["visual_prompt"] = rebuilt
+                visual = rebuilt
+                prompt_i = apply_ad_hoc_guidance(rebuilt, extra)
+                print(
+                    f"[LOFI framing] scene={scene_i} attempt={attempt} "
+                    f"step={focus_step} kind={row.get('object_focus_framing')} "
+                    f"escalate_intruder={int(last_intruder)}"
+                )
+                if attempt > 1:
+                    prompt_i = _retry_prompt_extras(prompt_i, attempt, last_fix)
         elif st_l in {"object_focus", "silhouette"}:
             if last_intruder:
                 focus_step = min(focus_step + 1, 2)
@@ -1639,16 +1918,13 @@ def generate_and_qa_scene(
                 f"step={focus_step} kind={row.get('object_focus_framing')} "
                 f"escalate_intruder={int(last_intruder)}"
             )
-            if attempt > 1 and last_fix:
-                guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
-                extras = [p for p in (guard, last_fix) if p]
-                if extras:
-                    prompt_i = f"{prompt_i} {' '.join(extras)}"
+            if attempt > 1:
+                prompt_i = _retry_prompt_extras(prompt_i, attempt, last_fix)
         elif attempt > 1:
-            guard = str(getattr(lofi_cfg, "LOFI_PROMPT_LINEWORK_GUARD", "") or "")
-            extras = [p for p in (guard, last_fix) if p]
-            if extras:
-                prompt_i = f"{apply_ad_hoc_guidance(visual, extra)} {' '.join(extras)}"
+            prompt_i = _retry_prompt_extras(prompt_i, attempt, last_fix)
+        from core.economic_reel_lofi.licensed_objects import scrub_assembled_prompt
+
+        prompt_i = scrub_assembled_prompt(prompt_i, row)
         try:
             _, mood_meta = gen_image(
                 prompt_i,
@@ -1678,6 +1954,7 @@ def generate_and_qa_scene(
             out_img, visual,
             subject_type=subject_type,
             key_object=qa_object,
+            licensed_objects=licensed_names,
             prior_fail_criteria=[
                 f for f in last_flaws
                 if f and not str(f).startswith("image gen failed")
@@ -1835,6 +2112,41 @@ def generate_and_qa_scene(
                     "image": str(out_img),
                 }
             )
+        from core.economic_reel_lofi.visual_identity import (
+            spoken_line_licenses_lamp,
+            spoken_line_licenses_window,
+        )
+
+        from core.economic_reel_lofi.licensed_objects import licensed_display as _lic_disp
+
+        prop_ok, prop_flaws, prop_meta = assess_spoken_line_prop_leak(
+            out_img,
+            caption=str(row.get("text") or row.get("beat_text") or ""),
+            window_allowed=spoken_line_licenses_window(row),
+            lamp_allowed=spoken_line_licenses_lamp(row),
+            licensed_object=_lic_disp(row) or str(row.get("key_object") or key_object or ""),
+            episode_motif=str(
+                row.get("episode_anchor_name")
+                or row.get("episode_spoken_motif")
+                or ""
+            ),
+        )
+        del prop_ok
+        gate_meta["spoken_prop"] = prop_meta
+        if prop_flaws:
+            flaws = list(flaws) + prop_flaws
+            passed = False
+            extra_fix = str(prop_meta.get("fix_instructions") or "").strip()
+            if extra_fix:
+                last_fix = f"{last_fix} {extra_fix}".strip() if last_fix else extra_fix
+        hard_leaks = [
+            x for x in (prop_meta.get("leaks") or [])
+            if x and x != "window"
+        ]
+        if not hard_leaks:
+            dest = out_img.with_name(f"{out_img.stem}_spoken_ok.png")
+            shutil.copy2(out_img, dest)
+            spoken_fallback = dest
         if scene_i == 1:
             print(
                 f"[LOFI hook] still scene=1 "
@@ -1856,7 +2168,7 @@ def generate_and_qa_scene(
             break
         last_flaws = flaws
         scene_attempts.append(dict(last_gate))
-        if attempt >= 2:
+        if attempt >= n_attempts:
             print(
                 f"[LOFI retry-stop] scene={scene_i} attempt={attempt} "
                 f"same named fail — not spending another call. flaws={flaws}"
@@ -1870,6 +2182,27 @@ def generate_and_qa_scene(
             "; ".join(flaws),
         )
 
+    style_hard = any(
+        any(
+            k in str(f).lower()
+            for k in (
+                "photoreal",
+                "rendered-skin",
+                "rendered skin",
+                "lit portrait",
+                "camera portrait",
+            )
+        )
+        for f in (last_flaws or [])
+    )
+    if not ok_img and spoken_fallback and spoken_fallback.is_file() and not style_hard:
+        shutil.copy2(spoken_fallback, out_img)
+        print(f"[LOFI spoken-prop] restored hard-clean fallback {spoken_fallback.name}")
+    elif not ok_img and style_hard:
+        print(
+            "[LOFI spoken-prop] skip fallback restore — last attempt failed "
+            "photoreal/portrait style; keeping last pixels for review"
+        )
     last_gate["image_ok"] = ok_img
     last_gate["attempts"] = scene_attempts
     last_gate["attempts_used"] = n_image_calls
@@ -1933,9 +2266,14 @@ def _generate_validated_script(
                     "not retrying the whole episode"
                 )
         if result.ok and result.script:
+            result.script["script_ship_ok"] = True
+            result.script["script_ship_errors"] = []
             note_batch_structure_id(str(result.script.get("structure_id") or ""))
             rag.note_batch_script(result.script)
             return result.script, [], False
+        if last_script is not None:
+            last_script["script_ship_ok"] = False
+            last_script["script_ship_errors"] = list(result.reasons)
         last_errors = list(result.reasons)
         feedback = result.feedback()
         print(f"[LOFI script] attempt {attempt}/{lofi_cfg.SCRIPT_MAX_RETRIES} rejected: {feedback}")
@@ -1992,9 +2330,14 @@ def _generate_validated_script(
     )
     if result.ok and result.script:
         print("[LOFI script] using fallback after validator retries")
+        result.script["script_ship_ok"] = True
+        result.script["script_ship_errors"] = []
         return result.script, [], False
     fallback_reasons = list(result.reasons)
     print(f"[LOFI validator] last-resort REJECT: {result.feedback()}")
+    if last_script is not None:
+        last_script["script_ship_ok"] = False
+        last_script["script_ship_errors"] = fallback_reasons or last_errors
     return None, fallback_reasons or last_errors or ["script validation failed"], True
 
 
@@ -2031,6 +2374,25 @@ def _load_locked_script(path: Path | str) -> dict[str, Any]:
     else:
         raise ValueError(f"locked script is not a JSON object: {p}")
     if not (script.get("lines") or script.get("monologue")):
+        spoken = script.get("spoken_lines")
+        if isinstance(spoken, list) and spoken:
+            script["lines"] = [
+                {
+                    "scene": i + 1,
+                    "text": str(t).strip(),
+                    "beat_text": str(t).strip(),
+                }
+                for i, t in enumerate(spoken)
+                if str(t).strip()
+            ]
+            script["monologue"] = " ".join(
+                str(r.get("text") or "") for r in script["lines"]
+            )
+            script["writer"] = str(script.get("writer") or "locked_pack")
+            print(
+                f"[LOFI pipeline] pack spoken_lines → {len(script['lines'])} beats"
+            )
+    if not (script.get("lines") or script.get("monologue")):
         raise ValueError(f"locked script has no lines/monologue: {p}")
     extras = {
         "scene_images": list(envelope.get("scene_images") or []),
@@ -2043,6 +2405,155 @@ def _load_locked_script(path: Path | str) -> dict[str, Any]:
     script["_locked_sidecar_assets"] = extras
     print(f"[LOFI pipeline] loaded locked script → {p}")
     return script
+
+
+def _stamp_assembled_negatives(lines: list[dict[str, Any]]) -> None:
+    """Stage 3: per-beat negative from style + not_in_frame, minus licensed stems."""
+    from core.economic_reel_lofi.licensed_objects import licensed_display
+
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        licensed = licensed_display(row) or str(row.get("key_object") or "")
+        nots = list(row.get("not_in_frame") or [])
+        row["negative_prompt"] = lofi_cfg.compose_beat_negative(
+            licensed_object=licensed,
+            not_in_frame=nots,
+        )
+
+
+def _gate2_review_rows(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Human-review payload: meaning / who / shot / env / warm-cool. No prompt dump."""
+    from core.economic_reel_lofi.visual_identity import beat_shot_type, beat_who_label
+
+    out: list[dict[str, Any]] = []
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        meaning = str(row.get("meaning") or "").strip()
+        if not meaning:
+            meaning = str(row.get("visual_concept") or row.get("text") or "").strip()
+        out.append(
+            {
+                "scene": row.get("scene"),
+                "text": row.get("text") or row.get("beat_text"),
+                "meaning": meaning,
+                "who": beat_who_label(row),
+                "shot_type": row.get("shot_type") or beat_shot_type(row),
+                "environment": row.get("setting") or row.get("episode_place"),
+                "palette_temp": row.get("palette_temp") or row.get("palette_key"),
+                "arc_position": row.get("arc_position"),
+                "subject_type": row.get("subject_type"),
+                "lighting_condition": row.get("lighting_condition"),
+            }
+        )
+    return out
+
+
+def _assemble_stage3_prompts(
+    script: dict[str, Any],
+    *,
+    theme_row: dict[str, Any] | None,
+    lock_visuals: bool,
+    clips_dir: Path,
+    stamp: str,
+    scene_count: int,
+) -> dict[str, Any]:
+    """Style-module prompt assembly. No Flux, no TTS."""
+    lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+    episode_variety: dict[str, Any] = {}
+    use_dev = bool(lofi_cfg.uses_flux_dev())
+    if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
+        if use_dev:
+            from core.economic_reel_lofi.visual_identity import (
+                apply_v2_prompts_to_lines_dev,
+            )
+
+            print(
+                "[LOFI stage3] flux=dev | "
+                f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
+                "assemble=assemble_v2_prompt_dev"
+            )
+            apply_v2_prompts_to_lines_dev(
+                lines,
+                theme_row=theme_row,
+                vary_imagery=lofi_cfg.is_thematic_arc(
+                    str(script.get("arc_template") or "")
+                ),
+                lock_visuals=lock_visuals,
+            )
+        else:
+            from core.economic_reel_lofi.visual_identity import (
+                apply_v2_prompts_to_lines,
+            )
+
+            apply_v2_prompts_to_lines(
+                lines,
+                theme_row=theme_row,
+                vary_imagery=lofi_cfg.is_thematic_arc(
+                    str(script.get("arc_template") or "")
+                ),
+                lock_visuals=lock_visuals,
+            )
+        if lines and isinstance(lines[0], dict):
+            raw_var = lines[0].pop("episode_variety", None)
+            if isinstance(raw_var, dict):
+                episode_variety = raw_var
+        if episode_variety:
+            script["episode_variety"] = episode_variety
+        if lines and isinstance(lines[0], dict) and isinstance(
+            lines[0].get("episode_atmosphere"), dict
+        ):
+            script["episode_atmosphere"] = dict(lines[0]["episode_atmosphere"])
+        rag.stamp_close_variant_on_script(script, lines)
+        rag.stamp_lighting_on_script(script, lines)
+        for row in lines:
+            print(
+                f"[LOFI stage3] scene={row.get('scene')} "
+                f"type={row.get('subject_type')} framing={row.get('framing')} "
+                f"object={row.get('key_object')!r}"
+            )
+    elif bool(getattr(lofi_cfg, "USE_RISO_PROMPT_LIBRARY", True)):
+        from core.economic_reel_lofi.riso_prompt_bank import load_riso_library
+
+        lib_diff = export_active_library_diff()
+        try:
+            live_dump = clips_dir / f"riso_library_live_{stamp}.json"
+            live_dump.write_text(
+                json.dumps(load_riso_library(), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"[LOFI riso] full live library exported -> {live_dump}")
+            print(
+                f"[LOFI riso] diff added={lib_diff.get('added')} "
+                f"removed={lib_diff.get('removed')}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("library export failed: %s", exc)
+        emotions = [str(r.get("emotion") or r.get("mood") or "") for r in lines]
+        arcs = [str(r.get("arc_position") or "") for r in lines]
+        riso_rows = assign_riso_prompts_for_scenes(
+            len(lines) if lines else scene_count,
+            theme=str(script.get("theme") or ""),
+            seed=None,
+            scene_emotions=emotions,
+            scene_arcs=arcs,
+        )
+        for i, row in enumerate(lines):
+            if i >= len(riso_rows):
+                break
+            r = riso_rows[i]
+            row["visual_prompt"] = str(r.get("prompt") or "")
+            row["riso_id"] = r.get("id")
+            row["riso_palette"] = r.get("palette")
+            row["riso_mood"] = r.get("mood")
+            row["riso_scene_type"] = r.get("scene_type")
+            row["riso_emotion_tags"] = r.get("emotion_tags")
+            row["riso_arc_position"] = r.get("arc_position")
+            row.pop("lighting_mood", None)
+    _stamp_assembled_negatives(lines)
+    script["lines"] = lines
+    return episode_variety
 
 
 def _print_script_report(script: dict[str, Any], *, index: int, qty: int) -> None:
@@ -2083,10 +2594,45 @@ def _produce_one(
     stills_only: bool = False,
     batch_qty: int = 1,
     locked_script: dict[str, Any] | None = None,
+    review_required: bool | None = None,
+    resume_from: str | None = None,
+    approve_gate: int | None = None,
 ) -> LofiItemResult:
     scene_count = lofi_cfg.scene_count_for_duration(duration_s, thematic=True)
     stamp = _utc_stamp()
     persist_on_pass = not script_only and not stills_only
+    review_required = bool(
+        lofi_cfg.REVIEW_REQUIRED if review_required is None else review_required
+    )
+    from core.economic_reel_lofi.niche_config import niche_stage1_notes
+    from core.economic_reel_lofi.review_gates import (
+        auto_pass_gates,
+        load_state,
+        mark_approved,
+        write_state,
+    )
+    from core.economic_reel_lofi.visual_concept import (
+        stamp_stage1_timing,
+        strip_visual_fields,
+        translate_episode_visuals,
+    )
+
+    resume_state: dict[str, Any] | None = None
+    if resume_from:
+        resume_state = load_state(resume_from)
+        print(f"[LOFI pipeline] resume ← {resume_state.get('source')}")
+        if approve_gate in {1, 2}:
+            mark_approved(resume_state, int(approve_gate), reason="cli")
+        if isinstance(resume_state.get("script"), dict) and not locked_script:
+            locked_script = dict(resume_state["script"])
+            print("[LOFI pipeline] resume loaded script — skipping writer")
+
+    niche_notes = niche_stage1_notes(module)
+    print(
+        f"[LOFI pipeline] four-stage | review_required={int(review_required)} "
+        f"niche={niche_notes.get('niche_id')} duration_s={duration_s} "
+        f"scenes={scene_count}"
+    )
 
     reset_script_llm_call_log()
     if isinstance(locked_script, dict) and (locked_script.get("lines") or locked_script.get("monologue")):
@@ -2112,18 +2658,22 @@ def _produce_one(
             f"theme={script.get('theme')} subtheme={script.get('subtheme')} "
             f"beats={len(script.get('lines') or [])}"
         )
-        story = assess_story_quality(
-            script.get("lines") or [],
-            theme=str(script.get("theme") or ""),
+        # Same full validator as free writer (not story_quality alone).
+        locked_result = validate_script(
+            script,
+            module=module,
+            scene_count=scene_count,
+            persist_on_pass=False,
         )
-        script["story_quality"] = story
-        if story.get("fails"):
+        script["script_ship_ok"] = bool(locked_result.ok)
+        script["script_ship_errors"] = list(locked_result.reasons)
+        if not locked_result.ok:
             print(
-                "[LOFI pipeline] LOCKED script failed story-quality gate — "
-                "not generating stills. Back to writer/validator."
+                "[LOFI pipeline] LOCKED script failed validator — "
+                "not generating stills. Hard stop (no assemble path)."
             )
             _print_script_report(script, index=index, qty=batch_qty)
-            errs = list(story.get("fails") or [])
+            errs = list(locked_result.reasons)
             review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
             review_path.write_text(
                 json.dumps(
@@ -2132,7 +2682,7 @@ def _produce_one(
                         "theme": theme_row,
                         "module": module,
                         "script": script,
-                        "gate": "story_quality",
+                        "gate": "validate_script",
                     },
                     indent=2,
                     ensure_ascii=False,
@@ -2150,7 +2700,11 @@ def _produce_one(
                 meta_path=str(review_path),
                 script=script,
             )
-        print("[LOFI pipeline] LOCKED script cleared story-quality gate")
+        if locked_result.script:
+            script = locked_result.script
+            script["script_ship_ok"] = True
+            script["script_ship_errors"] = []
+        print("[LOFI pipeline] LOCKED script cleared full validator gate")
         _print_script_report(script, index=index, qty=batch_qty)
         errs: list[str] = []
     else:
@@ -2197,10 +2751,7 @@ def _produce_one(
         if theme:
             rag.mark_theme_used(module, theme, sub or None)
         _print_script_report(script, index=index, qty=batch_qty)
-        theme_slug = "".join(
-            c if c.isalnum() else "_"
-            for c in theme.lower()
-        ).strip("_")[:32] or "lofi"
+        theme_slug = _episode_slug(script, theme=theme, subtheme=sub)
         meta_path = clips_dir / f"lofi_script_{theme_slug}_{stamp}_v{index:02d}.json"
         meta = {
             "post_type": "ECONOMIC_REEL_LOFI",
@@ -2222,6 +2773,8 @@ def _produce_one(
             "script_llm_cost_usd": script_llm_cost_usd,
             "est_cost_usd": round(script_llm_cost_usd, 5),
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "pipeline_stage": "1_script",
+            "niche": niche_notes,
         }
         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         lines = list(script.get("lines") or [])
@@ -2237,121 +2790,173 @@ def _produce_one(
             manual_review=False,
             errors=[],
             script=script,
+            pipeline_stage="1_script",
         )
 
-    # Working stills live under assets/; final deliverables go to clips/.
-    run_dir = assets_dir / f"lofi_run_{stamp}_{index:02d}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    has_any_concept = any(
+        isinstance(r, dict) and str(r.get("visual_concept") or r.get("scene_description") or "").strip()
+        for r in (script.get("lines") or [])
+    )
+    missing_concept = any(
+        isinstance(r, dict)
+        and not str(r.get("visual_concept") or r.get("scene_description") or "").strip()
+        for r in (script.get("lines") or [])
+    )
+    if missing_concept and not has_any_concept:
+        script = strip_visual_fields(script)
+        stamp_stage1_timing(
+            script,
+            beat_s=lofi_cfg.beat_duration_s(),
+            duration_s=float(duration_s),
+        )
+        for row in script.get("lines") or []:
+            if isinstance(row, dict):
+                row.pop("subject_type", None)
 
-    lines = list(script.get("lines") or [])
-    if lines and isinstance(lines[0], dict):
-        lines[0]["episode_theme"] = str(script.get("theme") or force_theme or "")
-        lines[0]["episode_module"] = module
-    episode_variety: dict[str, Any] = {}
-    use_dev = bool(lofi_cfg.uses_flux_dev())
+    def _hold(gate: int, state: dict[str, Any], path: Path) -> LofiItemResult:
+        write_state(path, state)
+        print(
+            f"[LOFI GATE {gate}] HOLD — no image/TTS until approved. Resume:\n"
+            f"  python main.py --page {page_id} --post-type ECONOMIC_REEL_LOFI "
+            f"--lofi-resume-from {path} --lofi-approve-gate {gate}"
+        )
+        if gate == 2:
+            print("[LOFI GATE 2] concept list — approve before any Flux calls:")
+            lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+            by_scene = {int(r.get("scene") or 0): r for r in lines}
+            for row in _gate2_review_rows(lines):
+                src = by_scene.get(int(row.get("scene") or 0), {})
+                desc = str(src.get("scene_description") or src.get("visual_concept") or "")
+                desc = " ".join(desc.split())
+                print(
+                    f"  #{row.get('scene')} meaning={row.get('meaning')!r} | "
+                    f"who={row.get('who')} | shot={row.get('shot_type')} | "
+                    f"env={row.get('environment')!r} | temp={row.get('palette_temp')} "
+                    f"({row.get('arc_position')})"
+                )
+                print(
+                    f"      object={src.get('key_object')!r} | {desc[:180]}"
+                )
+        return LofiItemResult(
+            ok=True,
+            meta_path=str(path),
+            module=module,
+            theme=str(script.get("theme") or ""),
+            hook_type=str(script.get("hook_type") or ""),
+            scene_count=len(script.get("lines") or []),
+            duration_s=float(script.get("duration_s") or duration_s),
+            manual_review=True,
+            errors=[f"hold_gate_{gate}"],
+            script=script,
+            hold_gate=gate,
+            pipeline_stage=f"gate{gate}_hold",
+        )
+
+    state_path = clips_dir / f"lofi_pipeline_{stamp}_{index:02d}.json"
+    if resume_state and resume_state.get("source"):
+        src = Path(str(resume_state["source"]))
+        if src.is_file() and "lofi_pipeline_" in src.name:
+            state_path = src
+    pipe_state: dict[str, Any] = dict(resume_state or {})
+    pipe_state["script"] = script
+    pipe_state["page"] = page_id
+    pipe_state["module"] = module
+    pipe_state["review_required"] = review_required
+    pipe_state["niche"] = niche_notes
+    pipe_state["stage_completed"] = max(int(pipe_state.get("stage_completed") or 0), 1)
+
+    if not review_required:
+        auto_pass_gates(pipe_state)
+    elif locked_script is not None and not resume_from:
+        mark_approved(pipe_state, 1, reason="locked_script")
+    elif resume_from and approve_gate == 1:
+        mark_approved(pipe_state, 1, reason="cli")
+
+    gate1_ok = str((pipe_state.get("gate1") or {}).get("status") or "") in {
+        "approved",
+        "auto_pass",
+    }
+    if review_required and not gate1_ok:
+        pipe_state["gate1"] = {"status": "pending"}
+        pipe_state["gate2"] = pipe_state.get("gate2") or {"status": "pending"}
+        return _hold(1, pipe_state, state_path)
+
+    if missing_concept:
+        print("[LOFI stage2] translating beats (LLM). _EPISODE_WORLDS is not used.")
+        translate_episode_visuals(script, module=module)
+        from core.economic_reel_lofi.visual_identity import stamp_episode_anchor
+
+        motif = str(
+            ((script.get("lines") or [{}])[0] or {}).get("episode_visual_state", {}).get("motif")
+            or ""
+        )
+        if motif:
+            stamp_episode_anchor(list(script.get("lines") or []), motif)
+        for row in script.get("lines") or []:
+            if isinstance(row, dict):
+                row.pop("visual_prompt", None)
+        pipe_state["script"] = script
+        pipe_state["stage_completed"] = 2
+
+    # Stage 3 — assemble positive+negative (no Flux, no TTS). Gate 2 reviews this.
     sidecar = dict(script.get("_locked_sidecar_assets") or {})
     has_locked_stills = any(str(p).strip() for p in (sidecar.get("scene_images") or []))
     lock_visuals = bool(locked_script) and has_locked_stills
-    # V2 identity bank assembles prompts from beat fields (live riso JSON untouched).
-    if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
-        if use_dev:
-            from core.economic_reel_lofi.visual_identity import (
-                apply_v2_prompts_to_lines_dev,
-            )
+    lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+    if lines:
+        lines[0]["episode_theme"] = str(script.get("theme") or force_theme or "")
+        lines[0]["episode_module"] = module
+        lines[0]["episode_thesis"] = str(script.get("thesis") or "")
+    script["lines"] = lines
+    has_stage3 = any(str(r.get("visual_prompt") or "").strip() for r in lines)
+    episode_variety: dict[str, Any] = dict(script.get("episode_variety") or {})
+    if not has_stage3:
+        print("[LOFI stage3] assembling prompts (style module + episode_anchor_stem)")
+        episode_variety = _assemble_stage3_prompts(
+            script,
+            theme_row=theme_row,
+            lock_visuals=lock_visuals,
+            clips_dir=clips_dir,
+            stamp=stamp,
+            scene_count=scene_count,
+        ) or episode_variety
+        pipe_state["stage_completed"] = 3
+        has_stage3 = True
+    else:
+        print("[LOFI stage3] skip — visual_prompt already stamped")
+    pipe_state["script"] = script
+    pipe_state["gate2_prompts"] = _gate2_review_rows(
+        [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+    )
 
-            print(
-                "[LOFI backend] flux=dev | "
-                f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
-                "assemble=assemble_v2_prompt_dev | "
-                f"gen={lofi_cfg.LOFI_IMAGE_WIDTH}x{lofi_cfg.LOFI_IMAGE_HEIGHT} "
-                f"delivery={lofi_cfg.REEL_WIDTH}x{lofi_cfg.REEL_HEIGHT} "
-                f"aspect={lofi_cfg.LOFI_IMAGE_WIDTH / lofi_cfg.LOFI_IMAGE_HEIGHT:.6f}"
-            )
-            apply_v2_prompts_to_lines_dev(
-                lines,
-                theme_row=theme_row,
-                vary_imagery=lofi_cfg.is_thematic_arc(
-                    str(script.get("arc_template") or "")
-                ),
-                lock_visuals=lock_visuals,
-            )
-        else:
-            from core.economic_reel_lofi.visual_identity import (
-                apply_v2_prompts_to_lines,
-            )
+    gate2_ok = str((pipe_state.get("gate2") or {}).get("status") or "") in {
+        "approved",
+        "auto_pass",
+    }
+    if resume_from and approve_gate == 2:
+        mark_approved(pipe_state, 2, reason="cli")
+        gate2_ok = True
+    if review_required and not gate2_ok:
+        pipe_state["gate2"] = {"status": "pending"}
+        return _hold(2, pipe_state, state_path)
 
-            apply_v2_prompts_to_lines(
-                lines,
-                theme_row=theme_row,
-                vary_imagery=lofi_cfg.is_thematic_arc(
-                    str(script.get("arc_template") or "")
-                ),
-                lock_visuals=lock_visuals,
-            )
-        if lines and isinstance(lines[0], dict):
-            raw_var = lines[0].pop("episode_variety", None)
-            if isinstance(raw_var, dict):
-                episode_variety = raw_var
-        if episode_variety:
-            script["episode_variety"] = episode_variety
-        rag.stamp_close_variant_on_script(script, lines)
-        rag.stamp_lighting_on_script(script, lines)
-        for row in lines:
-            if not isinstance(row, dict):
-                continue
-            print(
-                f"[LOFI identity v2] scene={row.get('scene')} "
-                f"type={row.get('subject_type')} expr={row.get('subject_expression')!r} "
-                f"setting={row.get('setting')!r} object={row.get('key_object')!r} "
-                f"tod={row.get('time_of_day')} light={row.get('lighting_condition')} "
-                f"close={row.get('close_variant') or '-'} "
-                f"pal={row.get('palette_key')} "
-                f"act={row.get('arc_position')}"
-            )
-            print(f"[LOFI identity v2] prompt={row.get('visual_prompt')!r}")
-    elif bool(getattr(lofi_cfg, "USE_RISO_PROMPT_LIBRARY", True)):
-        lib_diff = export_active_library_diff()
-        try:
-            from core.economic_reel_lofi.riso_prompt_bank import load_riso_library
+    write_state(state_path, pipe_state)
+    print("[LOFI GATE 2] cleared — Stage 4 image/TTS")
+    use_dev = bool(lofi_cfg.uses_flux_dev())
+    print(
+        "[LOFI backend] "
+        f"flux={'dev' if use_dev else 'schnell'} | "
+        f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
+        f"gen={lofi_cfg.LOFI_IMAGE_WIDTH}x{lofi_cfg.LOFI_IMAGE_HEIGHT} "
+        f"delivery={lofi_cfg.REEL_WIDTH}x{lofi_cfg.REEL_HEIGHT}"
+    )
 
-            live_dump = clips_dir / f"riso_library_live_{stamp}.json"
-            live_dump.write_text(
-                json.dumps(load_riso_library(), indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            print(f"[LOFI riso] full live library exported -> {live_dump}")
-            print(f"[LOFI riso] diff added={lib_diff.get('added')} removed={lib_diff.get('removed')}")
-        except Exception as exc:  # noqa: BLE001
-            _LOG.warning("library export failed: %s", exc)
-        emotions = [str(r.get("emotion") or r.get("mood") or "") for r in lines]
-        arcs = [str(r.get("arc_position") or "") for r in lines]
-        riso_rows = assign_riso_prompts_for_scenes(
-            len(lines) if lines else scene_count,
-            theme=str(script.get("theme") or ""),
-            seed=None,
-            scene_emotions=emotions,
-            scene_arcs=arcs,
-        )
-        for i, row in enumerate(lines):
-            if i >= len(riso_rows):
-                break
-            r = riso_rows[i]
-            row["visual_prompt"] = str(r.get("prompt") or "")
-            row["riso_id"] = r.get("id")
-            row["riso_palette"] = r.get("palette")
-            row["riso_mood"] = r.get("mood")
-            row["riso_scene_type"] = r.get("scene_type")
-            row["riso_emotion_tags"] = r.get("emotion_tags")
-            row["riso_arc_position"] = r.get("arc_position")
-            row.pop("lighting_mood", None)
-        ids = [str(r.get("id")) for r in riso_rows[: len(lines)]]
-        print("[LOFI pipeline] riso prompts assigned: " + ", ".join(ids))
-        if len(ids) != len(set(ids)):
-            raise RuntimeError(f"duplicate riso ids in one video: {ids}")
-        print(
-            "[LOFI pipeline] riso_013/014 distinct scenes: "
-            f"013={'riso_013' in ids} 014={'riso_014' in ids}"
-        )
+    # Working stills live under assets/; final deliverables go to clips/.
+    run_dir = assets_dir / f"lofi_run_{_episode_slug(script)}_{stamp}_{index:02d}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    lines = list(script.get("lines") or [])
+    episode_variety = dict(script.get("episode_variety") or episode_variety)
 
     locked_assets = script.pop("_locked_sidecar_assets", None) or {}
     accept_scenes = {int(x) for x in (locked_assets.get("manual_accept_scenes") or [])}
@@ -2676,10 +3281,7 @@ def _produce_one(
             }
             lines[i]["pixel_lighting"] = rec["pixel_lighting"]
 
-    theme_slug = "".join(
-        c if c.isalnum() else "_"
-        for c in str(script.get("theme") or "lofi").lower()
-    ).strip("_")[:32] or "lofi"
+    theme_slug = _episode_slug(script)
 
     print("[LOFI object-gate] per-beat")
     for g in object_gate_by_scene:
@@ -3026,6 +3628,29 @@ def _produce_one(
             f"beats={len(scene_paths)}"
         )
     try:
+        from core.economic_reel_lofi.ship_gates import (
+            ShipGateError,
+            assert_script_cleared_for_assemble,
+            beat_integrity_blockers,
+        )
+
+        assert_script_cleared_for_assemble(
+            script, module=module, scene_count=n_beats
+        )
+        if qa_flags:
+            raise ShipGateError(
+                "visual_qa_hold still set at assemble — hard stop"
+            )
+        _integrity = beat_integrity_blockers(
+            script=script,
+            scene_images=scene_paths,
+            captions=captions,
+            voice_paths=voice_paths,
+            require_voiceover=bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True)),
+            expected_beats=n_beats,
+        )
+        if _integrity:
+            raise ShipGateError("; ".join(_integrity))
         assemble_audit: dict[str, Any] = {}
         assemble_lofi_reel(
             scene_paths,
@@ -3039,7 +3664,44 @@ def _produce_one(
             caption_style=lofi_cfg.DEFAULT_CAPTION_STYLE,
             voice_paths=voice_paths,
             word_timings_per_scene=word_timings_per_scene,
+            caption_beats_per_scene=[
+                list(r.get("caption_beats") or [])
+                if isinstance(r, dict)
+                else []
+                for r in lines
+            ],
             audit_out=assemble_audit,
+        )
+    except ShipGateError as exc:
+        _LOG.error("ship gate blocked assemble: %s", exc)
+        hold_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
+        hold_path.write_text(
+            json.dumps(
+                {
+                    "errors": [str(exc)],
+                    "gate": "ship_gate_pre_assemble",
+                    "module": module,
+                    "script": script,
+                    "visual_qa_flags": qa_flags,
+                },
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+        return LofiItemResult(
+            ok=False,
+            module=module,
+            theme=str(script.get("theme") or ""),
+            hook_type=str(script.get("hook_type") or ""),
+            scene_count=scene_count,
+            duration_s=actual_dur,
+            manual_review=True,
+            errors=[str(exc)],
+            script=script,
+            meta_path=str(hold_path),
+            work_dir=str(run_dir),
         )
     except Exception as exc:  # noqa: BLE001
         _LOG.error("assemble failed: %s", exc, exc_info=True)
@@ -3169,18 +3831,29 @@ def run_economic_reel_lofi(
     script_only: bool = False,
     stills_only: bool = False,
     locked_scripts: list[str] | None = None,
+    review_required: bool | None = None,
+    resume_from: str | None = None,
+    approve_gate: int | None = None,
     **_: Any,
 ) -> dict[str, Any]:
     """
     Registry entrypoint for ECONOMIC_REEL_LOFI.
 
     Final MP4 + metadata → ``outputs/<page>/clips/``
-    Working scene stills → ``outputs/<page>/assets/lofi_run_*/``
+    Working scene stills → ``outputs/<page>/assets/lofi_run_<episode>_*/``
     """
     page = (page_id or "").strip().lower()
     mod = lofi_cfg.validate_module_for_page(module or "relationship", page)
     dur = lofi_cfg.validate_duration(duration if duration is not None else lofi_cfg.DEFAULT_DURATION_S)
     qty = max(1, int(quantity))
+    if review_required is None:
+        env = str(os.environ.get("LOFI_REVIEW_REQUIRED") or "").strip().lower()
+        if env in {"0", "false", "no", "off"}:
+            review_required = False
+        elif env in {"1", "true", "yes", "on"}:
+            review_required = True
+        else:
+            review_required = bool(lofi_cfg.REVIEW_REQUIRED)
 
     rag.ensure_seeded()
     reset_batch_structure_ids()
@@ -3219,6 +3892,9 @@ def run_economic_reel_lofi(
             stills_only=stills_only,
             batch_qty=qty,
             locked_script=locked_rows[i - 1] if i <= len(locked_rows) else None,
+            review_required=review_required,
+            resume_from=resume_from,
+            approve_gate=approve_gate,
         )
         item = asdict(result)
         items.append(item)

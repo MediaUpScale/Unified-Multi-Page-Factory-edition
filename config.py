@@ -93,12 +93,15 @@ def _parse_schedule_minutes(raw: str | None) -> int | None:
 
 # ---------------------------------------------------------------------------
 # Safe fallback model IDs
-# Text: Gemini Flash. Image: Together AI FLUX.1-schnell (Gemini image deprecated).
+# Text: Gemini Flash. Factory-wide image default: Together FLUX.1-schnell.
+# Anna Protocol (and --image-primary) may still request native Gemini image SKUs.
 # ---------------------------------------------------------------------------
 SAFE_GEMINI_TEXT_MODEL: str = "models/gemini-2.5-flash"
 SAFE_GEMINI_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"  # Together FLUX (name legacy)
 SAFE_GEMINI_IMAGE_FALLBACK_2: str = "black-forest-labs/FLUX.1-schnell"
 SAFE_GEMINI_IMAGE_FALLBACK_3: str = "black-forest-labs/FLUX.1-schnell"
+GEMINI_PRO_IMAGE_MODEL: str = "models/gemini-3-pro-image-preview"
+GEMINI_FLASH_IMAGE_MODEL: str = "models/gemini-2.5-flash-image"
 SAFE_CLAUDE_MODEL: str = "claude-3-5-sonnet-latest"
 
 # ---------------------------------------------------------------------------
@@ -155,7 +158,7 @@ TOGETHER_429_BACKOFF_MAX_S: float = float(os.getenv("TOGETHER_429_BACKOFF_MAX_S"
 DRAFT_IMAGE_SIZE: tuple[int, int] = (768, 1344)
 PRODUCTION_IMAGE_SIZE: tuple[int, int] = (768, 1344)
 
-# VisualQA_Agent critic calibration (also mirrored in VisualQA_Agent/config.py)
+# VisualQA_Agent critic calibration (also mirrored in quality/VisualQA_Agent/config.py)
 MAX_RETRIES: int = 5
 QUALITY_THRESHOLD: float = 6.0
 
@@ -168,7 +171,7 @@ IMAGE_PROVIDER: str = (os.getenv("IMAGE_PROVIDER") or "together").strip().lower(
 # Remote GPU (ComfyUI / RunPod) — opt-in adapter; legacy paths unchanged when false
 # ---------------------------------------------------------------------------
 # When ENABLE_REMOTE_GPU_WORKFLOWS=true, thin routers in get_image_adapter() and
-# generate_voiceover() delegate to core_engine.remote_gpu_manager. When false
+# generate_voiceover() delegate to core.remote_gpu_manager. When false
 # (default), Together / ElevenLabs / MoviePy continue exactly as before.
 ENABLE_REMOTE_GPU_WORKFLOWS: bool = _bool_env("ENABLE_REMOTE_GPU_WORKFLOWS", False)
 # Default: serverless (always on-demand). Pod (comfyui) is the explicit exception.
@@ -185,7 +188,7 @@ REMOTE_GPU_BASE_URL: str = _strip_url_fragment(
     os.getenv("REMOTE_GPU_BASE_URL") or os.getenv("COMFYUI_BASE_URL") or ""
 )
 REMOTE_GPU_WORKFLOWS_DIR: str = (
-    os.getenv("REMOTE_GPU_WORKFLOWS_DIR") or "remote_GPU_workflows"
+    os.getenv("REMOTE_GPU_WORKFLOWS_DIR") or "infra/runpod/workflows"
 ).strip()
 REMOTE_GPU_POLL_INTERVAL_S: float = float(os.getenv("REMOTE_GPU_POLL_INTERVAL_S") or "2.0")
 REMOTE_GPU_TIMEOUT_S: float = float(os.getenv("REMOTE_GPU_TIMEOUT_S") or "600")
@@ -291,7 +294,7 @@ def words_for_duration(seconds: float, safety_margin: float = 1.08) -> int:
 
     The 1.08 safety margin was a historical bias-toward-overshoot; kept
     for backwards compatibility of callers that consume the seed
-    directly (e.g. ``page_loader.reel_narration_words``). The
+    directly (e.g. ``channel_loader.PageContext.reel_narration_words``). The
     measure-then-correct path in ``_synthesize_sequence_voice_track``
     does not care about this margin — it derives the corrective word
     count from the observed WPS.
@@ -435,12 +438,19 @@ PREMIUM_IMAGE_MODEL: str = SAFE_GEMINI_IMAGE_FALLBACK_3
 PREMIUM_TEXT_MODEL: str = "models/gemini-2.5-pro"
 
 
+def is_gemini_image_model(raw: str | None) -> bool:
+    """True for native Gemini image SKUs (pro-image-preview, flash-image, …)."""
+    low = (raw or "").strip().lower()
+    return "gemini" in low and "image" in low
+
+
 def normalize_image_model_id(raw: str | None) -> str:
     """
     Normalize image model IDs.
 
-    Together FLUX Schnell is the primary backend — pass those IDs through.
-    Legacy Gemini image SKUs are remapped to FLUX for cost efficiency.
+    Together / FLUX IDs pass through. Explicit Gemini image SKUs stay Gemini
+    (used by anna_protocol IMAGE_PRIMARY and ``--image-primary``). Imagen IDs
+    still remap to FLUX because this project cannot call Imagen.
     """
     flux = "black-forest-labs/FLUX.1-schnell"
     name = (raw or flux).strip() or flux
@@ -450,19 +460,18 @@ def normalize_image_model_id(raw: str | None) -> str:
     if "flux" in low or "black-forest-labs" in low:
         return name if "/" in name else f"black-forest-labs/{low}"
 
-    # Legacy Gemini / Imagen image SKUs → FLUX Schnell
-    if (
-        low.startswith("imagen")
-        or ("gemini" in low and "image" in low)
-        or "flash-lite-image" in low
-    ):
+    if is_gemini_image_model(name):
+        return name if name.lower().startswith("models/") else f"models/{low}"
+
+    # Imagen SKUs 404 on this API project
+    if low.startswith("imagen"):
         logger.info("Image SKU '%s' remapped → Together %s", name, flux)
         return flux
 
     return name
 
 
-# Sanitize env overrides — legacy Gemini image IDs remap to Together FLUX
+# Sanitize env overrides (Gemini image SKUs stay Gemini; Flux stays Flux)
 GEMINI_ECONOMIC_IMAGE_MODEL = normalize_image_model_id(GEMINI_ECONOMIC_IMAGE_MODEL)
 GEMINI_NANO_IMAGE_MODEL = normalize_image_model_id(GEMINI_NANO_IMAGE_MODEL)
 GEMINI_IMAGE_MODEL = normalize_image_model_id(GEMINI_IMAGE_MODEL)
@@ -499,12 +508,12 @@ ACTIVE_PAGE_DIR: Path = (
 PERSONA_DNA_PATH: Path = ACTIVE_PAGE_DIR / "persona_dna.py"
 MASTER_DNA_PATH: Path = ACTIVE_PAGE_DIR / "master_dna.json"
 
-# Fallback: legacy avatar_engine/master_dna.json for anna_protocol
+# Fallback: legacy agents.media/master_dna.json for anna_protocol
 # if channels_config hasn't been set up yet.
 if not MASTER_DNA_PATH.is_file() and ACTIVE_PAGE == "anna_protocol":
-    MASTER_DNA_PATH = ENGINE_ROOT / "avatar_engine" / "master_dna.json"
+    MASTER_DNA_PATH = ENGINE_ROOT / "agents.media" / "master_dna.json"
 if not PERSONA_DNA_PATH.is_file() and ACTIVE_PAGE == "anna_protocol":
-    PERSONA_DNA_PATH = ENGINE_ROOT / "avatar_engine" / "persona_dna.py"
+    PERSONA_DNA_PATH = ENGINE_ROOT / "agents.media" / "persona_dna.py"
 
 # ---------------------------------------------------------------------------
 # Page-aware asset paths
@@ -630,7 +639,7 @@ def get_best_gemini_text_model(client: object | None = None) -> str:  # type: ig
     if client is None:
         return GEMINI_RESEARCH_MODEL or SAFE_GEMINI_TEXT_MODEL
     try:
-        from avatar_engine.providers.gemini_utils import (  # avoid circular at module load
+        from agents.media.providers.gemini_utils import (  # avoid circular at module load
             _list_models,
             _parse_version_score,
             _strip_model_id,
@@ -662,7 +671,7 @@ def get_best_gemini_text_model(client: object | None = None) -> str:  # type: ig
 # Cost-first router bootstrap (cheap unless USE_PREMIUM_MODEL / MODEL_TIER)
 # ---------------------------------------------------------------------------
 try:
-    from avatar_engine.providers.model_router import (
+    from agents.media.providers.model_router import (
         resolve_tier as _resolve_model_tier,
         route_model,
         sync_config_defaults as _sync_model_router_defaults,
