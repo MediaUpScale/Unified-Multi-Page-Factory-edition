@@ -105,6 +105,14 @@ openrouter:
 guardrails:
   max_output_chars: 400
   max_sentences: 3
+  # The orchestrator's typed question must never be cut mid-sentence, so it gets
+  # dedicated per-seat ceilings. The 25-30 word budget and one-question rule make
+  # the provocation stay punchy at the source; the target keeps the tight budget
+  # so the exchange stays Socratic. Effectively no hard truncation for the
+  # provocation unless it balloons absurdly long.
+  max_orchestrator_chars: 4000
+  max_orchestrator_sentences: 12
+  max_orchestrator_words: 30
   # Orchestrator must land exactly one question per turn.
   require_single_question: true
   # Hard-stop the transcript if a model ignores the budget this many times.
@@ -115,8 +123,9 @@ guardrails:
     - "Certainly!"
     - "Great question"
   pacing_directive: >-
-    Speak like a voice in a dark room, not an essay. No lists, no headers,
-    no stage directions, no emoji. Land one blade, then stop.
+    Talk-show host, not an essayist: 25 to 30 words max, two sentences max, and
+    the last sentence must end with a question mark. No preamble, no AI jargon,
+    no metapohilosophy. Land one blade, then stop.
 
 # -----------------------------------------------------------------------------
 # Memory / lightweight local RAG. JSON-backed, no vector DB dependency.
@@ -140,18 +149,18 @@ memory:
 # -----------------------------------------------------------------------------
 audio:
   engine: edge
-  orchestrator_voice: en-US-AndrewMultilingualNeural
-  target_voice: en-GB-RyanNeural
+  orchestrator_voice: en-US-BrianNeural
+  target_voice: en-US-AndrewMultilingualNeural
   rate: "+8%"
   pitch: "-6Hz"
   # Silence appended after each utterance so cuts never clip the last word.
   tail_silence_s: 0.6
   voice_map:
-    orchestrator: en-US-AndrewMultilingualNeural
+    orchestrator: en-US-BrianNeural
     claude-sonnet: en-GB-RyanNeural
     deepseek-chat: en-US-EricNeural
-    llama-70b: en-US-BrianNeural
     gemini-flash: en-US-GuyNeural
+    gemini: en-US-GuyNeural
   typewriter:
     enabled: true
     # Mixed under AIWAKE.CORE typing only, for the character-reveal window.
@@ -249,7 +258,7 @@ themes:
   classic_terminal:
     background: "#131314"
     chrome: "#1E1E20"
-    orchestrator: "#00FF66"
+    orchestrator: "#0451b1"
     target: "#FFAA00"
     dim: "#9AA0A6"
   cyberpunk:
@@ -285,8 +294,20 @@ render:
   preroll_s: 1.0
   # Hold after a sent question before the incoming response starts.
   reply_gap_s: 1.0
+  # Wait after a reply finishes typing before the next prompt begins. Kept down
+  # to 0.5s so the dialogue snaps to the next orchestrator typewriter — a long
+  # idle gap here read as a dead pause in the reel.
+  post_response_s: 0.5
+  # Dead-air pause after the last line before the CTA end-card fades in.
+  cta_wait_s: 0.35
   # Flash on the send arrow after typing completes.
+  send_hold_s: 1.0
+  # 1.0s read-hold after the prompt finishes typing before the send click fires.
   send_flash_s: 0.2
+  # 1.0s pause AFTER the send click before the box slides up into the thread.
+  send_slide_hold_s: 1.0
+  # Fast ease-out for the input box rising to its top-anchored chat position.
+  send_slide_s: 0.35
   # Monospace lookup order; first hit wins, PIL default is the last resort.
   font_candidates:
     - C:/Windows/Fonts/consola.ttf
@@ -296,7 +317,7 @@ render:
   palette:
     background: "#131314"
     chrome: "#1E1E20"
-    orchestrator: "#00FF66"
+    orchestrator: "#0451b1"
     target: "#FFAA00"
     dim: "#9AA0A6"
   codec: libx264

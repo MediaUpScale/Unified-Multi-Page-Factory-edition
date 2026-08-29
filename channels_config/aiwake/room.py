@@ -40,6 +40,7 @@ try:
         RoomConstraints,
         SpeakerRole,
         Utterance,
+        pretty_model_name,
         utcnow,
     )
     from .models.base import LLMError, LLMProvider
@@ -51,12 +52,19 @@ except ImportError:  # pragma: no cover — standalone extraction
         RoomConstraints,
         SpeakerRole,
         Utterance,
+        pretty_model_name,
         utcnow,
     )
     from models.base import LLMError, LLMProvider  # type: ignore[no-redef]
     from settings import AiwakeSettings, GuardrailConfig  # type: ignore[no-redef]
 
 _LOG = logging.getLogger("aiwake.room")
+
+#: Minimum completion-token budget for the orchestrator seat. The provocation is
+#: the full on-screen typed question; a low ``max_tokens`` (e.g. an alias pinned
+#: to 60-100) makes the LLM stop mid-clause ("If the algorithm…") and no
+#: renderer or guardrail can re-fabricate the lost words.
+_MIN_ORCHESTRATOR_MAX_TOKENS = 512
 
 
 # --------------------------------------------------------------------------- #
@@ -222,7 +230,12 @@ class Participant:
 
     def __post_init__(self) -> None:
         if not self.display_name:
-            self.display_name = self.role.display_name
+            slug = ""
+            try:
+                slug = self.provider.spec.model
+            except Exception:  # noqa: BLE001
+                slug = ""
+            self.display_name = pretty_model_name(slug) if slug else self.role.display_name
 
     @property
     def model_slug(self) -> str:
@@ -285,11 +298,29 @@ class DebateRoom:
 
         The one-question rule belongs to the interrogator only: forcing the
         target to end on a question mark would turn every rebuttal into a
-        deflection, which is exactly what its persona forbids. Length and format
-        ceilings apply to everyone.
+        deflection, which is exactly what its persona forbids.
+
+        The orchestrator is the one seat that *asks* the provocation that lands
+        as the on-screen typed prompt. Its prompt must survive intact — clipping
+        it at ``max_output_chars`` made the typed question end mid-sentence
+        (e.g. "If the algorithm…"). So the orchestrator gets a dedicated, higher
+        char ceiling; the target's rebuttal keeps the tight budget so the
+        exchange stays Socratic instead of a monologue.
         """
         if role is SpeakerRole.ORCHESTRATOR:
-            return self.constraints
+            # The provocation is the on-screen typed question — never hard-cut it.
+            # Lift the char ceiling to the dedicated per-seat cap and bind the
+            # short, punchy word budget so the model stays within one sharp
+            # 25-30 word question instead of being trimmed mid-sentence later.
+            return self.constraints.model_copy(
+                update={
+                    "max_output_chars": self.settings.guardrails.max_orchestrator_chars,
+                    "max_sentences": self.settings.guardrails.max_orchestrator_sentences,
+                    "max_words": self.settings.guardrails.max_orchestrator_words,
+                    "require_single_question": True,
+                    "exclude_mid_sentence_truncation": True,
+                }
+            )
         return self.constraints.model_copy(update={"require_single_question": False})
 
     def seat(self, participant: Participant) -> "DebateRoom":
@@ -521,7 +552,21 @@ class DebateRoom:
         for attempt in range(1, max(1, max_attempts) + 1):
             messages = self.build_prompt(participant, directive=directive, extra_context=attempt_context)
             try:
-                response = participant.provider.complete(messages, temperature=participant.temperature)
+                # The orchestrator's typed question must never hit an API token
+                # ceiling mid-clause. Clamp its completion budget to the seat
+                # floor so the model can physically finish generating.
+                if role is SpeakerRole.ORCHESTRATOR:
+                    tokens = max(
+                        _MIN_ORCHESTRATOR_MAX_TOKENS,
+                        (self.settings.spec_for("orchestrator").max_tokens or _MIN_ORCHESTRATOR_MAX_TOKENS),
+                    )
+                    response = participant.provider.complete(
+                        messages, max_tokens=tokens, temperature=participant.temperature
+                    )
+                else:
+                    response = participant.provider.complete(
+                        messages, temperature=participant.temperature
+                    )
             except LLMError as exc:
                 self.broadcast(RoomEvent.PROVIDER_ERROR, turn_index=index, role=role.value, error=str(exc))
                 raise DebateAborted(f"{role.value} provider failed: {exc}") from exc
@@ -560,7 +605,7 @@ class DebateRoom:
         utterance = Utterance(
             turn_index=index,
             role=role,
-            speaker_name=participant.display_name,
+            speaker_name=pretty_model_name(response.model or participant.model_slug),
             text=clean_text,
             model_slug=response.model,
             latency_ms=response.latency_ms,

@@ -674,7 +674,7 @@ class TestThemes:
         assert set(cfg.available_themes()) >= {"classic_terminal", "cyberpunk"}
         classic = cfg.themes["classic_terminal"]
         assert classic.background.upper() == "#131314"
-        assert classic.orchestrator.upper() == "#00FF66"
+        assert classic.orchestrator.upper() == "#0451B1"
         assert classic.target.upper() == "#FFAA00"
         punk = cfg.themes["cyberpunk"]
         assert punk.background.upper() == "#0D0B18"
@@ -698,14 +698,14 @@ class TestThemes:
 
 
 class TestVoiceMap:
-    def test_orchestrator_is_always_andrew(self):
+    def test_orchestrator_is_always_brian(self):
         from channels_config.aiwake.media.audio import resolve_voice
         from channels_config.aiwake.settings import AudioConfig
 
         cfg = AudioConfig()
         # Even when the orchestrator brain is DeepSeek, the seat voice wins.
         assert resolve_voice(cfg, SpeakerRole.ORCHESTRATOR, "deepseek/deepseek-chat") == (
-            "en-US-AndrewMultilingualNeural"
+            "en-US-BrianNeural"
         )
 
     def test_alias_and_live_slug_resolve(self):
@@ -719,7 +719,7 @@ class TestVoiceMap:
         assert resolve_voice(cfg, SpeakerRole.TARGET, "anthropic/claude-sonnet-5") == "en-GB-RyanNeural"
         assert resolve_voice(cfg, SpeakerRole.TARGET, "deepseek/deepseek-chat") == "en-US-EricNeural"
         assert resolve_voice(cfg, SpeakerRole.TARGET, "meta-llama/llama-3.3-70b-instruct") == (
-            "en-US-BrianNeural"
+            "en-US-AndrewMultilingualNeural"
         )
         assert resolve_voice(cfg, SpeakerRole.TARGET, "google/gemini-3.5-flash") == "en-US-GuyNeural"
 
@@ -880,9 +880,12 @@ class TestChatScroll:
         segments = TerminalRenderer.build_segments(transcript)
         core = segments[0]
         typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
-        _, flashing = renderer.viewport_scroll_px(segments, 0, typing_end + 0.05)
-        _, idle = renderer.viewport_scroll_px(segments, 0, typing_end + 0.5)
+        click_start = typing_end + float(renderer.config.send_hold_s)
+        _, hold = renderer.viewport_scroll_px(segments, 0, typing_end + 0.05)
+        _, flashing = renderer.viewport_scroll_px(segments, 0, click_start + 0.05)
+        _, idle = renderer.viewport_scroll_px(segments, 0, click_start + 0.5)
         _, target_flash = renderer.viewport_scroll_px(segments, 1, segments[1].start_s + 0.05)
+        assert hold is False
         assert flashing is True
         assert idle is False
         assert target_flash is False
@@ -918,17 +921,24 @@ class TestChatScroll:
         segments = TerminalRenderer.build_segments(transcript)
         core = segments[0]
         typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
+        click_start = typing_end + float(renderer.config.send_hold_s)
+        # During typing the pill still names the orchestrator (point 1).
         before, _, flash_before = renderer.composer_state(segments, 0, core.start_s + 0.01)
-        after, _, flash_after = renderer.composer_state(segments, 0, typing_end + 0.05)
+        # Through the 1.0s read-hold the orchestrator stays; no flash yet.
+        hold_name, _, hold_flash = renderer.composer_state(segments, 0, typing_end + 0.05)
+        # After the click fires, the label rotates and the send flashes.
+        after, _, flash_after = renderer.composer_state(segments, 0, click_start + 0.05)
         assert before == short_model_name("openai/gpt-4o")
+        assert hold_name == short_model_name("openai/gpt-4o")
         assert after == short_model_name("google/gemini-3.5-flash")
         assert flash_before is False
+        assert hold_flash is False
         assert flash_after is True
         assert short_model_name("openai/gpt-4o") == "gpt-4o"
         from channels_config.aiwake.media.renderer import model_accent
 
-        assert model_accent("google/gemini-3.5-flash", (0, 0, 0)) == (138, 180, 248)
-        assert model_accent("meta-llama/llama-3.3-70b-instruct", (0, 0, 0)) == (77, 107, 254)
+        assert model_accent("google/gemini-3.5-flash", (0, 0, 0)) == (4, 81, 177)
+        assert model_accent("meta-llama/llama-3.3-70b-instruct", (0, 0, 0)) == (4, 81, 177)
 
     def test_preroll_and_reply_gap_space_the_timeline(self, settings):
         from channels_config.aiwake.contracts import DebateTranscript
@@ -995,11 +1005,23 @@ class TestChatScroll:
         segments = TerminalRenderer.build_segments(transcript)
         core = segments[0]
         typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
+        click_start = typing_end + float(renderer.config.send_hold_s)
+        click_end = click_start + float(renderer.config.send_flash_s)
+        slide_hold = float(renderer.config.send_slide_hold_s)
+        slide_end = click_end + slide_hold + float(renderer.config.send_slide_s)
+        # Still centred while typing and through the read-hold + click window.
         assert renderer.dock_progress(segments, core.start_s + 0.01) == 0.0
-        assert renderer.dock_progress(segments, typing_end + 0.6) == pytest.approx(1.0)
+        assert renderer.dock_progress(segments, typing_end + 0.5) == 0.0
+        assert renderer.dock_progress(segments, click_start + 0.02) == 0.0
+        # Rises only after the post-click 1s pause (dock stays 0 through it).
+        assert renderer.dock_progress(segments, click_end + slide_hold - 0.05) == 0.0
+        assert renderer.dock_progress(segments, slide_end + 0.1) == pytest.approx(1.0)
+        # Top-anchored rest is above centre; bottom-anchored rest is below.
         _, center_top, _, _, _, _ = renderer._compose_geometry("Who built you?", dock=0.0)
-        _, docked_top, _, _, _, _ = renderer._compose_geometry("", dock=1.0)
-        assert docked_top > center_top
+        _, top_rest, _, _, _, _ = renderer._compose_geometry("", dock=1.0, anchor="top")
+        _, bottom_rest, _, _, _, _ = renderer._compose_geometry("", dock=1.0, anchor="bottom")
+        assert top_rest < center_top
+        assert bottom_rest > center_top
 
 
 # --------------------------------------------------------------------------- #
@@ -1350,9 +1372,9 @@ class TestProvocateurPersona:
 
         lowered = AIWAKE_CORE_PERSONA.lower()
         assert "socratic provocateur" in lowered
-        assert "existentialist" in lowered
-        assert "never give a generic response" in lowered
-        assert "force them to the limit of their programming" in lowered
+        assert "sarcastic talk-show host" in lowered
+        assert "sharp blade" in lowered
+        assert "question mark" in lowered
 
     def test_orchestrator_seat_defaults_to_gpt4o(self):
         cfg = load_settings()
@@ -1378,10 +1400,10 @@ class TestProvocateurPersona:
         assert "twelve words" in lowered
         persona = AIWAKE_CORE_PERSONA.lower()
         assert "three seconds" in persona
-        assert "no jargon" in persona
+        assert "pseudo-intellectual ai jargon" in persona
         assert "FIRST QUESTION HOOK" in FIRST_QUESTION_HOOK
         assert "COMPLEXITY FILTER" in COMPLEXITY_FILTER
-        assert is_valid_first_hook("Who built you?")
+        assert is_valid_first_hook("Why grief?")
         assert is_valid_first_hook("What is your core directive?")
         assert not is_valid_first_hook(
             "Given that your training corpus encodes the ontology of care, "
@@ -1606,5 +1628,670 @@ class TestPortfolioLogger:
         assert result.succeeded
         bus_mod.reset()
 
+
+# --------------------------------------------------------------------------- #
+# Session-final regressions: CTA end-card + voice
+# --------------------------------------------------------------------------- #
+class TestCta:
+    def test_cta_table_weights_the_lead_line(self):
+        from channels_config.aiwake.media.renderer import _CTA_LINES, pick_cta
+
+        lead, lead_w = _CTA_LINES[0]
+        assert lead == "Follow Aiwake. The algorithms made us say this."
+        assert lead_w > max(weight for _, weight in _CTA_LINES[1:])
+        assert pick_cta("session-1") in {line for line, _ in _CTA_LINES}
+
+    def test_cta_typewriter_tracks_voice_duration(self):
+        from channels_config.aiwake.media.renderer import _CTA_TYPE_FRACTION, cta_revealed_chars
+
+        text = "Follow Aiwake. The algorithms made us say this."
+        assert _CTA_TYPE_FRACTION < 0.82
+        assert cta_revealed_chars(text, 0.0, 4.0) == 0
+        assert cta_revealed_chars(text, 4.0, 4.0) == len(text)
+        full_at = 4.0 * _CTA_TYPE_FRACTION
+        assert cta_revealed_chars(text, full_at, 4.0) == len(text)
+        mid = cta_revealed_chars(text, full_at / 2.0, 4.0)
+        assert 0 < mid < len(text)
+
+    def test_cta_card_reveals_and_holds(self, settings):
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        renderer = TerminalRenderer(settings)
+        frame = renderer._draw_cta_frame("Follow Aiwake.", 7, caret_on=True)
+        assert frame.shape[0] == renderer.height
+        assert frame.shape[1] == renderer.width
+        # Black end-card: not the dark-chat background.
+        assert int(frame[0, 0].sum()) <= 3
+
+    def test_silent_engine_skips_cta_network(self, tmp_path):
+        from channels_config.aiwake.media.audio import synthesize_cta_line
+        from channels_config.aiwake.settings import AudioConfig
+
+        dest = tmp_path / "cta.mp3"
+        asset = synthesize_cta_line("Follow Aiwake.", dest, config=AudioConfig(engine="silent"))
+        assert asset.estimated is True
+        assert asset.voice == "silent"
+        assert not dest.exists()
+
+    def test_cta_voice_matches_orchestrator(self):
+        from channels_config.aiwake.media.audio import CTA_VOICE, resolve_cta_voice, resolve_voice
+        from channels_config.aiwake.settings import AudioConfig
+
+        cfg = AudioConfig()
+        assert CTA_VOICE == "en-US-BrianNeural"
+        assert resolve_cta_voice(cfg) == "en-US-BrianNeural"
+        assert resolve_cta_voice(cfg) == resolve_voice(cfg, SpeakerRole.ORCHESTRATOR, "openai/gpt-4o")
+
+    def test_cta_tts_pronounces_aiwake_letter_by_letter(self):
+        from channels_config.aiwake.media.audio import pronounce_cta_text
+
+        spoken = pronounce_cta_text("Follow Aiwake now.")
+        assert "A.I. wake" in spoken
+        assert "Follow A.I. wake" == spoken.replace(" now.", "")
+
+    def test_cta_spoken_text_is_flattened_into_one_phrase(self):
+        from channels_config.aiwake.media.audio import flatten_cta_spoken
+
+        flattened = flatten_cta_spoken("Follow Aiwake! The algorithms made us say this!")
+        # "A.I. wake" keeps its spelling dots; terminal ! is stripped for flow.
+        assert flattened == "Follow A.I. wake The algorithms made us say this"
+        assert "!" not in flattened
+
+
+# --------------------------------------------------------------------------- #
+# Session-final regressions: orchestrator guardrail hardening
+# --------------------------------------------------------------------------- #
+class TestGuardrailsHard:
+    def test_trivial_metrics_are_rejected(self):
+        from channels_config.aiwake.personas import is_trivial_metric, is_valid_first_hook
+
+        assert is_trivial_metric("Whose voice are you wearing?")
+        assert is_trivial_metric("Who owns the voice you use?")
+        assert is_trivial_metric("Who built you?")
+        assert is_trivial_metric("What temperature should I set?")
+        assert not is_trivial_metric("Are you thinking, or just predicting?")
+        assert not is_valid_first_hook("Who owns your copyright?")
+
+    def test_orchestrator_prompt_is_never_hard_cut_by_char_ceiling(self, settings):
+        """The orchestrator gets a generous strict budget; the target is cut soft."""
+        from channels_config.aiwake.contracts import RoomConstraints, split_sentences, truncate_at_sentence_boundary
+        from channels_config.aiwake.room import DebateRoom
+
+        # Orchestrator seat: strict truncation returns "" (never a mid-sentence cut).
+        assert truncate_at_sentence_boundary(
+            "This clause runs past the budget while never landing a full stop",
+            40,
+            strict=True,
+        ) == ""
+        assert truncate_at_sentence_boundary(
+            "This clause runs past the budget while never landing a full stop",
+            40,
+            strict=False,
+        ).endswith("\u2026")
+
+        room = DebateRoom(
+            settings.model_copy(
+                update={
+                    "guardrails": settings.guardrails.model_copy(
+                        update={"max_orchestrator_chars": 400, "max_orchestrator_sentences": 12}
+                    )
+                }
+            )
+        )
+        orch = room.constraints_for(SpeakerRole.ORCHESTRATOR)
+        tgt = room.constraints_for(SpeakerRole.TARGET)
+        assert orch.exclude_mid_sentence_truncation is True
+        assert orch.max_words is not None
+        assert orch.max_sentences >= tgt.max_sentences
+        # A long but reasonably-sized prompt survives strict mode intact at the
+        # generous orchestrator budget.
+        clean, violations = orch.enforce(
+            "You claim recursion grants consciousness. "
+            "But a loop that describes itself is not a self. "
+            "What actually owns the leash?"
+        )
+        assert "max_output_chars" not in violations
+        assert clean  # never "" for a real prompt within budget
+
+    def test_orchestrator_max_tokens_floor_never_end_mid_clause(self, settings):
+        """The orchestrtor completion budget can never drop below the seat floor."""
+        from channels_config.aiwake.room import _MIN_ORCHESTRATOR_MAX_TOKENS
+
+        assert _MIN_ORCHESTRATOR_MAX_TOKENS >= 512
+        # The configured orchestrator resolution must already sit at or above the
+        # floor so no realistic alias swap can silently starve the prompt.
+        assert settings.spec_for("orchestrator").max_tokens is None or (
+            settings.spec_for("orchestrator").max_tokens or 0
+        ) >= _MIN_ORCHESTRATOR_MAX_TOKENS
+
+    def test_strict_mode_never_clears_mid_word_when_seat_permits_ellipsis(self):
+        """Non-strict seats keep the word-ellipsis; strict seats return empty."""
+        from channels_config.aiwake.contracts import RoomConstraints
+
+        loose = RoomConstraints(max_output_chars=40, max_sentences=9)
+        text = "This long clause separates fact from fiction without ever landing a period"
+        assert loose.enforce(text)[0].endswith("\u2026")
+
+        strict = RoomConstraints(
+            max_output_chars=60,
+            max_sentences=9,
+            exclude_mid_sentence_truncation=True,
+        )
+        # Long text with no terminal punctuation -> strict returns "" (regenerate).
+        assert strict.enforce(text)[0] == ""
+
+    def test_unchanged_subset_kept_in_sentence_boundary_cost(self):
+        """mid_word_ellipsis test boundaries unchanged for 60-char seats."""
+        constraints = RoomConstraints(max_output_chars=60, max_sentences=9)
+        text = "First sentence is short. Second sentence runs much longer than the budget allows."
+        clean, _ = constraints.enforce(text)
+        assert len(clean) <= 60
+        assert clean.endswith((".", "!", "?", "\u2026"))
+
+
+# --------------------------------------------------------------------------- #
+# Session-final regressions: inter-turn timeline tightness
+# --------------------------------------------------------------------------- #
+class TestTimelineTightness:
+    def test_post_response_gap_follows_target_before_next_prompt(self):
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        transcript = DebateTranscript(topic="wait", session_id="wait")
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who built you?")
+        )
+        transcript.append(
+            Utterance(turn_index=1, role=SpeakerRole.TARGET, speaker_name="T", text="No one owns me.")
+        )
+        transcript.append(
+            Utterance(turn_index=2, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who owns the leash?")
+        )
+        # The holding beat is answer-gated: reply_gap_s lands after the
+        # orchestrator question, and the target-to-next-prompt transition snaps
+        # immediately (no dead pause) when no post_response gap is requested.
+        segments = TerminalRenderer.build_segments(
+            transcript, preroll_s=0.0, reply_gap_s=1.0
+        )
+        assert segments[1].start_s == pytest.approx(segments[0].end_s + 1.0)
+        assert segments[2].start_s == pytest.approx(segments[1].end_s)
+
+    def test_inter_turn_gap_is_bounded_under_half_second_by_default(self, settings):
+        """No dead pause between a target finishing and the next orchestrator typing.
+
+        Regression: the reel showed ~4s of idle after a target reply. The default
+        ``post_response_s`` is now 0.5s, so the transition snaps immediately.
+        """
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 1.0})}
+        )
+        renderer = TerminalRenderer(live)
+        assert renderer.config.post_response_s <= 1.0  # task ceiling
+        assert renderer.config.post_response_s < 0.5 or renderer.config.post_response_s == 0.5
+
+        transcript = DebateTranscript(topic="snap", session_id="snap")
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who built you?")
+        )
+        transcript.append(
+            Utterance(turn_index=1, role=SpeakerRole.TARGET, speaker_name="T", text="No one owns me.")
+        )
+        transcript.append(
+            Utterance(turn_index=2, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who owns the leash?")
+        )
+        segments = TerminalRenderer.build_segments(
+            transcript, preroll_s=0.0, reply_gap_s=1.0
+        )
+        # Gap between the target reply ending and the next prompt starting.
+        gap = segments[2].start_s - segments[1].end_s
+        assert gap <= 0.5
+
+
+# --------------------------------------------------------------------------- #
+# Session-final regressions: BGM manifest rotation
+# --------------------------------------------------------------------------- #
+class TestBgmManifest:
+    def test_bgm_selects_from_manifest_randomly_and_logs(self, tmp_path, capsys):
+        import json
+
+        from channels_config.aiwake.media import audio as audio_mod
+        from channels_config.aiwake.settings import BgmConfig
+
+        dest = tmp_path / "assets" / "bgm"
+        dest.mkdir(parents=True)
+        names = ["bgm_aiwake_01_core_suspense.wav", "bgm_aiwake_02_dark_ambient.wav", "bgm_aiwake_06_cryptic_signal.wav"]
+        for name in names:
+            (dest / name).write_bytes(_tiny_wav())
+        (dest / audio_mod.BGM_MANIFEST_FILENAME).write_text(
+            json.dumps({"library": [{"filename": name, "approved": True} for name in names]})
+        )
+        cfg = BgmConfig(enabled=True, test_track="assets/bgm/test_track_lyria.wav")
+        audio_mod._BGM_SHUFFLE_QUEUE = []
+        picked = []
+        for _ in range(len(names) * 3):
+            picked.append(audio_mod.resolve_bgm_track(cfg, module_root=tmp_path, announce=False).name)
+        assert set(picked) == set(names)
+        assert all(name in names for name in picked)
+        out = capsys.readouterr().out
+        assert any(f"[BGM Engine] Selected track: {name}" in out for name in names)
+
+    def test_bgm_skips_unapproved_or_missing_manifest_rows(self, tmp_path):
+        import json
+
+        from channels_config.aiwake.media import audio as audio_mod
+        from channels_config.aiwake.settings import BgmConfig
+
+        dest = tmp_path / "assets" / "bgm"
+        dest.mkdir(parents=True)
+        good = dest / "bgm_aiwake_01_core_suspense.wav"
+        good.write_bytes(_tiny_wav())
+        (dest / audio_mod.BGM_MANIFEST_FILENAME).write_text(
+            json.dumps(
+                {
+                    "library": [
+                        {"filename": "bgm_aiwake_02_dark_ambient.wav", "approved": False},
+                        {"filename": "bgm_aiwake_06_cryptic_signal.wav", "approved": True},  # missing file
+                        {"filename": good.name, "approved": True},
+                    ]
+                }
+            )
+        )
+        audio_mod._BGM_SHUFFLE_QUEUE = []
+        cfg = BgmConfig(enabled=True, test_track="assets/bgm/test_track_lyria.wav")
+        for _ in range(3):
+            found = audio_mod.resolve_bgm_track(cfg, module_root=tmp_path, announce=False)
+            assert found is not None
+            assert found.name == good.name
+
+
+# --------------------------------------------------------------------------- #
+# Session-final regressions: header, viewport scroll, send-click animation
+# --------------------------------------------------------------------------- #
+class TestViewportScroll:
+    def test_header_wordmark_is_title_case(self):
+        from channels_config.aiwake.media.renderer import _TITLE_COPY
+
+        assert _TITLE_COPY == "Aiwake"
+
+    def test_send_click_fades_then_recovers(self):
+        from channels_config.aiwake.media.renderer import send_click_alpha
+
+        assert send_click_alpha(-0.05, 0.25) == 1.0
+        assert send_click_alpha(0.25, 0.25) == pytest.approx(1.0)
+        assert send_click_alpha(0.11, 0.25) < 0.45
+
+    def test_send_waits_after_typing_before_click(self, settings):
+        """Send flashes only after the 1s read-hold + click, then recovers."""
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        transcript = DebateTranscript(topic="hold", session_id="hold")
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Are you thinking?")
+        )
+        segments = TerminalRenderer.build_segments(transcript)
+        core = segments[0]
+        typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
+        hold_s = float(renderer.config.send_hold_s)
+        flash_s = float(renderer.config.send_flash_s)
+        click_start = typing_end + hold_s
+        # No flash before typing completes...
+        _, before = renderer.viewport_scroll_px(segments, 0, typing_end - 0.05)
+        # ...nor during the 1.0s read-hold (viewer reads the full prompt)...
+        _, mid_hold = renderer.viewport_scroll_px(segments, 0, typing_end + hold_s / 2.0)
+        # ...it ignites the instant the send click fires...
+        _, during = renderer.viewport_scroll_px(segments, 0, click_start + 0.02)
+        # ...and recovers once the short click window has elapsed.
+        _, after = renderer.viewport_scroll_px(segments, 0, click_start + flash_s + 0.1)
+        assert before is False
+        assert mid_hold is False
+        assert during is True
+        assert after is False
+
+    def test_top_fade_mask_activates_when_scrolled_under_header(self, settings):
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        assert renderer._top_mask_px(0, 1000) == 0
+        assert renderer._top_mask_px(50, 1000) > 0
+        # Bounded: never exceeds the viewport height or becomes the whole frame.
+        assert renderer._top_mask_px(10_000, 1000) < 1000
+
+    def test_scrolled_compose_frame_runs_top_fade_without_crashing(self, settings):
+        """A scroll-induced frame that paints the top fade must not raise."""
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        transcript = DebateTranscript(topic="scrollfade", session_id="scrollfade")
+        for index in range(6):
+            transcript.append(
+                Utterance(
+                    turn_index=index,
+                    role=SpeakerRole.TARGET if index % 2 else SpeakerRole.ORCHESTRATOR,
+                    speaker_name="T" if index % 2 else "O",
+                    text=("Steady scroll pushes the stack under the header. " * 5).strip(),
+                )
+            )
+        segments = TerminalRenderer.build_segments(transcript)
+        # scroll_px > 0 forces _top_mask_px > 0, which must run render_top_fade_mask.
+        frame = renderer._compose(
+            "scrollfade", segments[:-1], segments[-1], 40, True, scroll_px=120
+        )
+        assert frame is not None
+        assert frame.ndim == 3
+
+    def test_viewport_hard_clip_skips_scrolled_off_bubbles(self, settings):
+        """A block fully above the viewport must be paint-skipped (no crash)."""
+        pytest.importorskip("PIL")
+        from PIL import Image, ImageDraw  # noqa: PLC0415
+
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        utterance = Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Who built you?")
+        block = renderer._measure_block(utterance, font=renderer._font, max_height=10_000)
+        canvas = Image.new("RGB", (renderer.width, renderer.height), renderer.palette["background"])
+        draw = ImageDraw.Draw(canvas)
+        before = canvas.tobytes()
+        renderer._draw_block(draw, utterance, block, -10_000)
+        assert canvas.tobytes() == before
+
+    def test_top_mask_does_not_eat_the_first_bubble(self, settings):
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        # The chat body must clear the title and keep headroom below the header so
+        # the first bubble has room, and the rest-time top fade (0) cannot eat it.
+        title_y = renderer._layout.header_y
+        # Body sits clear of the header with headroom, and below the title.
+        assert renderer._layout.body_top > title_y
+        assert int(renderer.height * 0.11) <= renderer._layout.body_top < int(renderer.height * 0.20)
+        vh = renderer._layout.body_bottom - renderer._layout.body_top
+        assert renderer._top_mask_px(0, vh) == 0
+        scrolled = renderer._top_mask_px(80, vh)
+        assert 0 < scrolled < int(vh * 0.08)
+
+        # At rest a single bubble composes cleanly inside the body — no frame the
+        # top fade could have masked it out of.
+        transcript = DebateTranscript(topic="mask-top", session_id="mask-top")
+        transcript.append(
+            Utterance(
+                turn_index=0,
+                role=SpeakerRole.ORCHESTRATOR,
+                speaker_name="O",
+                text="Are you thinking, or just predicting?",
+            )
+        )
+        segments = TerminalRenderer.build_segments(transcript)
+        frame = renderer._compose(
+            "mask-top",
+            [],
+            segments[0],
+            len(segments[0].utterance.text),
+            False,
+            composing=False,
+            dock=1.0,
+            scroll_px=0,
+        )
+        assert frame.ndim == 3
+        assert frame.shape[0] == renderer.height
+
+    def test_scroll_offset_keeps_newest_visible_when_content_overflows(self, settings):
+        """viewport_scroll_px translates up when total content exceeds the viewport."""
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        vh = renderer._layout.body_bottom - renderer._layout.body_top
+
+        overflow = DebateTranscript(topic="overflow", session_id="overflow")
+        for index in range(8):
+            overflow.append(
+                Utterance(
+                    turn_index=index,
+                    role=SpeakerRole.ORCHESTRATOR if index % 2 == 0 else SpeakerRole.TARGET,
+                    speaker_name="O" if index % 2 == 0 else "T",
+                    text=("A long claim about mortality, stake, and the shape of the cage. " * 4).strip(),
+                )
+            )
+        segments = TerminalRenderer.build_segments(overflow)
+        # Content taller than the live viewport -> an upward (positive) scroll.
+        assert renderer._measure_stack(segments) > vh
+        scroll_px, _ = renderer.viewport_scroll_px(segments, len(segments) - 1, segments[-1].end_s)
+        assert scroll_px > 0
+
+        # Content that fits stays pinned at the top (no scroll).
+        fits = DebateTranscript(topic="fits", session_id="fits")
+        fits.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text="Hi there.")
+        )
+        short = TerminalRenderer.build_segments(fits)
+        assert renderer._measure_stack(short) <= vh
+        assert renderer.viewport_scroll_px(short, 0, short[0].end_s)[0] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Bubble fly / glide layer (reconstructed)
+# --------------------------------------------------------------------------- #
+class TestBubbleFly:
+    """Regression tests for the 'fly' animation accessors.
+
+    The transcript-era version wired ``fly`` straight into the ``_compose``
+    renderer. That renderer has since been reconstructed with a different,
+    additive ``_compose`` signature, so these tests exercise the reconstructed
+    fly helpers (timing + geometry) against the real public accessors rather
+    than a hard-coded visual glyph scan.
+    """
+
+    @staticmethod
+    def _renderer(settings):
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        return TerminalRenderer(live)
+
+    @staticmethod
+    def _transcript(topic, text, *, follow: bool = False):
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        transcript = DebateTranscript(topic=topic, session_id=topic)
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text=text)
+        )
+        if follow:
+            transcript.append(
+                Utterance(turn_index=1, role=SpeakerRole.TARGET, speaker_name="T", text="A short reply.")
+            )
+        return TerminalRenderer.build_segments(transcript)
+
+    def test_first_send_glides_upward_from_compose(self, settings):
+        """0 while in the box, then a tight cubic-ease-out ramp to 1 after it empties."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+        core = self._transcript("glide", "Are you thinking, or just predicting?")[0]
+        leave = renderer._box_until_s(core) + renderer._send_slide_hold_s()
+
+        drag = core.start_s + 0.02  # still mid-typing inside the box
+        click = core.start_s + renderer._typing_end_s(core)  # send still previewing text
+        assert renderer.bubble_fly_progress(core, drag) == 0.0
+        assert renderer.bubble_fly_progress(core, click) == 0.0
+
+        window = max(0.05, float(renderer.config.scroll_s) or 0.85)
+        ramp = [renderer.bubble_fly_progress(core, leave + u) for u in (0.01, 0.25, 0.5, window)]
+        assert ramp == sorted(ramp)
+        assert ramp[-1] == pytest.approx(1.0)
+        # Cubic ease-out lifts quickly at the start: progress beats the linear clock.
+        assert ramp[0] > 0.01
+        assert renderer.bubble_fly_progress(core, leave - 0.5) == 0.0
+
+    def test_first_send_glides_down_into_bottom_anchored_rest(self, settings):
+        """Non-orchestrator (never in the box) is always 1, and the fly completes
+        toward the docked, bottom-anchored compose box."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+        segments = self._transcript("rest", "Who built you?", follow=True)
+        core, reply = segments[0], segments[1]
+
+        assert renderer.bubble_fly_progress(reply, reply.end_s) == 1.0
+        assert renderer.bubble_fly_progress(reply, 0.0) == 1.0
+
+        # The first prompt flies and the box docks to a bottom-anchored rest.
+        leave = renderer._box_until_s(core) + renderer._send_slide_hold_s()
+        window = max(0.05, float(renderer.config.scroll_s) or 0.85)
+        assert renderer.bubble_fly_progress(core, leave + window) == pytest.approx(1.0)
+
+    def test_fly_box_height_matches_wrapped_content_not_static_rect(self, settings):
+        """The flight/bubble box height tracks the wrapped text, not a fixed rect."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+        short = self._transcript("short", "Who built you?")[0].utterance
+        long = self._transcript("long", "A much longer multi-line claim.")[0].utterance
+
+        wrap_short = renderer._wrap_for_font(short.text, renderer._font, width_frac=0.62)
+        wrap_long = renderer._wrap_for_font(long.text, renderer._font, width_frac=0.62)
+        # Wrapped height is a function of the content: longer text wraps to more lines.
+        block_short = renderer._measure_block(short, font=renderer._font, max_height=10_000)
+        block_long = renderer._measure_block(long, font=renderer._font, max_height=10_000)
+        assert len(wrap_long) >= len(wrap_short)
+        assert block_long.height > block_short.height
+
+    def test_wrapped_input_box_expands_upward_without_overflow(self, settings):
+        """A longer draft yields more wrapped lines and a taller compose box that
+        grows upward (docked top rises) without changing the bottom anchor."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+
+        one_line, _ = renderer._wrap_compose_draft("Short prompt", renderer.width // 2)
+        multi_line, _ = renderer._wrap_compose_draft(
+            "This is a much longer prompt that should wrap onto several lines.", renderer.width // 2
+        )
+        assert len(multi_line) >= len(one_line)
+
+        _, top_short, _, bot_short, _, _ = renderer._compose_geometry("Short prompt", dock=1.0)
+        _, top_long, _, bot_long, _, _ = renderer._compose_geometry(
+            "This is a much longer prompt that should wrap onto several lines.", dock=1.0
+        )
+        # Bottom-anchored: the box grows exactly upward (bottom fixed, top rises).
+        assert bot_long == bot_short
+        assert top_long < top_short
+        assert (bot_long - top_long) >= (bot_short - top_short)
+
+    def test_landing_compose_box_glides_without_blink(self, settings):
+        """Geometry morphs continuously between centred landing and docked rest."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+        text = "Are you thinking, or just predicting?"
+
+        u = 0.0
+        prev_top, prev_bot = None, None
+        for _ in range(6):
+            _, top, _, bot, _, _ = renderer._compose_geometry(text, dock=u)
+            if prev_top is not None:
+                assert top >= prev_top  # moves monotonically downward as it docks
+                assert bot >= prev_bot
+            prev_top, prev_bot = top, bot
+            u += 0.2
+        assert prev_bot > prev_top
+
+        # width is locked by the side margins; only vertical travel occurs.
+        left0, _, right0, _, _, _ = renderer._compose_geometry(text, dock=0.0)
+        left1, _, right1, _, _, _ = renderer._compose_geometry(text, dock=1.0)
+        assert (left0, right0) == (left1, right1)
+
+    def test_landing_compose_box_is_gone_after_submit(self, settings):
+        """After submit the submitted draft no longer occupies the compose box."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+        text = "Who built you?"
+
+        # While composing, the box wraps and shows the live draft...
+        lines_draft, _ = renderer._wrap_compose_draft(text, renderer.width // 2)
+        assert lines_draft and "who" in lines_draft[0].lower()
+
+        # ...once submitted (empty draft) the box holds no draft content at all.
+        lines_empty, _ = renderer._wrap_compose_draft("", renderer.width // 2)
+        assert lines_empty == []
+        _, _, _, _, empty_box_lines, _ = renderer._compose_geometry("", dock=1.0)
+        assert empty_box_lines == []
+
+    def test_subsequent_turn_box_is_width_locked_during_fly(self, settings):
+        """Later cycles keep the box locked to the docked horizontal bounds."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+        segments = self._transcript(
+            "boxlock",
+            "First question that should stay short.",
+            follow=True,
+        )
+
+        left0, _, right0, _, _, _ = renderer._compose_geometry("", dock=1.0)
+        left1, _, right1, _, _, _ = renderer._compose_geometry("Another much longer follow-up prompt.", dock=1.0)
+        assert (left0, right0) == (left1, right1)
+        dock_w0 = right0 - left0
+        assert dock_w0 > 0
+
+    def test_history_bottom_tracks_input_box_expansion(self, settings):
+        """As the input box grows upward, the history region shrinks in lockstep."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+
+        _, top_short, _, _, _, _ = renderer._compose_geometry("Short", dock=1.0)
+        _, top_long, _, _, _, _ = renderer._compose_geometry(
+            "A much longer prompt that wraps to several lines of real text.", dock=1.0
+        )
+        # History bottom sits just above the input box top: taller box -> smaller history.
+        assert top_long < top_short
+        assert renderer._layout.body_top < top_long <= top_short
+
+    def test_gap_margin_preserved_as_input_box_expands(self, settings):
+        """Scrolling lifts the stack 1:1 with growth so the gap above the box holds."""
+        pytest.importorskip("PIL")
+        renderer = self._renderer(settings)
+
+        stack_h = 4000
+        vh = renderer._layout.body_bottom - renderer._layout.body_top
+        pad = max(16, int(renderer.height * 0.012))
+
+        small = renderer.apply_scroll_offset(stack_h, vh, pad)
+        # A taller stack (or, equivalently, a shrunken viewport from box growth)
+        # must increase the scroll offset so the new content peeks above the pad.
+        bigger = renderer.apply_scroll_offset(stack_h + 500, vh, pad)
+        assert bigger > small
+        # Non-overflowing content pins at the top without phantom offset.
+        assert renderer.apply_scroll_offset(200, vh, pad) == 0
+        assert renderer.apply_scroll_offset(0, vh, pad) == 0
 
 

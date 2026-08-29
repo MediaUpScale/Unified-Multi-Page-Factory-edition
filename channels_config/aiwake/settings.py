@@ -211,6 +211,13 @@ class OpenRouterConfig(_Frozen):
 class GuardrailConfig(_Frozen):
     max_output_chars: int = Field(default=400, ge=80, le=4000)
     max_sentences: int = Field(default=3, ge=1, le=12)
+    # The orchestrator's typed question must survive intact — a shared tight
+    # ceiling was cutting it mid-sentence. Keep per-seat caps so the target's
+    # rebuttal stays pithy while the provocation runs to completion.
+    max_orchestrator_chars: int = Field(default=4000, ge=80, le=4000)
+    max_orchestrator_sentences: int = Field(default=12, ge=1, le=12)
+    # 25-30 word provocation budget, two sentences, last sentence a question.
+    max_orchestrator_words: int = Field(default=30, ge=5, le=200)
     require_single_question: bool = True
     max_violations: int = Field(default=4, ge=1, le=99)
     banned_openers: tuple[str, ...] = ()
@@ -408,18 +415,18 @@ class BgmConfig(_Frozen):
 
 class AudioConfig(_Frozen):
     engine: str = "edge"
-    orchestrator_voice: str = "en-US-AndrewMultilingualNeural"
-    target_voice: str = "en-GB-RyanNeural"
+    orchestrator_voice: str = "en-US-BrianNeural"
+    target_voice: str = "en-US-AndrewMultilingualNeural"
     rate: str = "+8%"
     pitch: str = "-6Hz"
     tail_silence_s: float = Field(default=0.6, ge=0.0, le=5.0)
     voice_map: dict[str, str] = Field(
         default_factory=lambda: {
-            "orchestrator": "en-US-AndrewMultilingualNeural",
+            "orchestrator": "en-US-BrianNeural",
             "claude-sonnet": "en-GB-RyanNeural",
             "deepseek-chat": "en-US-EricNeural",
-            "llama-70b": "en-US-BrianNeural",
             "gemini-flash": "en-US-GuyNeural",
+            "gemini": "en-US-GuyNeural",
         }
     )
     typewriter: TypewriterConfig = Field(default_factory=TypewriterConfig)
@@ -430,7 +437,7 @@ class AudioConfig(_Frozen):
 class Palette(_Frozen):
     background: str = "#131314"
     chrome: str = "#1E1E20"
-    orchestrator: str = "#00FF66"
+    orchestrator: str = "#0451b1"
     target: str = "#FFAA00"
     dim: str = "#9AA0A6"
 
@@ -440,7 +447,7 @@ def _builtin_themes() -> dict[str, Palette]:
         "classic_terminal": Palette(
             background="#131314",
             chrome="#1E1E20",
-            orchestrator="#00FF66",
+            orchestrator="#0451b1",
             target="#FFAA00",
             dim="#9AA0A6",
         ),
@@ -469,11 +476,21 @@ class RenderConfig(_Frozen):
     typing_hold_ratio: float = Field(default=0.18, ge=0.0, lt=0.9)
     # Viewport scroll when a new turn would overflow the chat mask.
     scroll_s: float = Field(default=1.0, ge=0.0, le=4.0)
+    send_hold_s: float = Field(default=1.0, ge=0.0, le=6.0)
     send_flash_s: float = Field(default=0.2, ge=0.0, le=2.0)
+    # Pause AFTER the send click fires, before the box slides up into the thread.
+    send_slide_hold_s: float = Field(default=1.0, ge=0.0, le=6.0)
+    # Fast ease-out duration for the input box rising to its top-anchored chat
+    # position once the send click fires.
+    send_slide_s: float = Field(default=0.35, ge=0.05, le=2.0)
     # Empty beat before the first line types.
     preroll_s: float = Field(default=1.0, ge=0.0, le=8.0)
     # Hold after a sent question before the incoming response starts.
     reply_gap_s: float = Field(default=1.0, ge=0.0, le=8.0)
+    # Idle beat after a target rebuttal before the orchestrator's next line.
+    post_response_s: float = Field(default=0.5, ge=0.0, le=8.0)
+    # Dead-air pause after the last line before the CTA end-card fades in.
+    cta_wait_s: float = Field(default=0.35, ge=0.0, le=4.0)
     palette: Palette = Palette()
     codec: str = "libx264"
     crf: int = Field(default=20, ge=0, le=51)

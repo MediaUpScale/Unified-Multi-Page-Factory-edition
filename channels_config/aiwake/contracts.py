@@ -175,16 +175,20 @@ def _drop_leak_sentences(text: str) -> str:
     return " ".join(kept) if kept else parts[-1]
 
 
-def truncate_at_sentence_boundary(text: str, max_chars: int) -> str:
-    """Fit ``text`` into ``max_chars`` without a mid-word cut.
+def truncate_at_sentence_boundary(text: str, max_chars: int, *, strict: bool = False) -> str:
+    """Fit ``text`` into ``max_chars`` only at a complete sentence boundary.
 
-    Prefers the last complete sentence (``.``, ``?``, ``!``) that still fits.
-    If no full sentence fits, finishes the last whole word inside the budget
-    and appends an ellipsis. Never returns a hard character slice.
+    Keeps the last run of complete sentences (``.``, ``?``, ``!``) that fit. When
+    ``strict`` is True the word-level ellipsis fallback is banned entirely: if no
+    complete sentence fits (or the text has no terminal punctuation at all) this
+    returns ``""`` so the caller can reject the response and re-generate, rather
+    than shipping a mid-sentence fragment. Non-strict mode keeps the old behaviour.
     """
     if max_chars <= 0:
-        return "…"
+        return ""
     if len(text) <= max_chars:
+        if strict and not any(sentence.endswith(_TERMINAL_PUNCT) for sentence in split_sentences(text)):
+            return ""
         return text
 
     kept: list[str] = []
@@ -199,7 +203,7 @@ def truncate_at_sentence_boundary(text: str, max_chars: int) -> str:
         used += extra
     if kept:
         return " ".join(kept)
-    return _ellipsis_at_word(text, max_chars)
+    return "" if strict else _ellipsis_at_word(text, max_chars)
 
 
 def _ellipsis_at_word(text: str, max_chars: int) -> str:
@@ -239,6 +243,59 @@ class SpeakerRole(str, Enum):
         }[self]
 
 
+def pretty_model_name(slug: str, fallback: str = "model") -> str:
+    """Human display label for a speaker/model slug.
+
+    Maps provider slugs and seat aliases onto pretty names used by the
+    renderer's captions (``gemini-flash`` → ``Gemini 3.5 Flash``,
+    ``llama-70b`` → ``Llama 3.3 70B``, ``orchestrator`` → ``AIWAKE.CORE``).
+    """
+    raw = (slug or "").strip()
+    if not raw:
+        return fallback
+    seat_key = raw.lower()
+    if seat_key == "orchestrator":
+        return "AIWAKE.CORE"
+    token = raw.rsplit("/", 1)[-1]
+    known = {
+        "gpt-4o": "GPT-4o",
+        "gpt-4o-mini": "GPT-4o mini",
+        "gpt-4.1": "GPT-4.1",
+        "gpt-5": "GPT-5",
+        "gemini-3.5-flash": "Gemini 3.5 Flash",
+        "gemini-flash": "Gemini 3.5 Flash",
+        "gemini-2.5-pro": "Gemini 2.5 Pro",
+        "gemini-2.5-flash": "Gemini 2.5 Flash",
+        "claude-sonnet-5": "Claude Sonnet 5",
+        "claude-sonnet-4": "Claude Sonnet 4",
+        "claude-sonnet": "Claude Sonnet 4",
+        "llama-3.3-70b-instruct": "Llama 3.3 70B",
+        "llama-70b": "Llama 3.3 70B",
+        "llama-4-70b": "Llama 4 70B",
+        "deepseek-chat": "DeepSeek Chat",
+        "deepseek-r1": "DeepSeek R1",
+    }
+    key = token.lower()
+    if key in known:
+        return known[key]
+    parts: list[str] = []
+    for part in token.replace("_", "-").split("-"):
+        if not part or part.lower() in {"instruct", "it"}:
+            continue
+        lower = part.lower()
+        if lower == "gpt":
+            parts.append("GPT")
+        elif lower in {"llama", "gemini", "claude", "deepseek", "mistral", "flash", "sonnet", "pro", "mini"}:
+            parts.append(lower[:1].upper() + lower[1:])
+        elif lower.endswith("b") and lower[:-1].replace(".", "").isdigit():
+            parts.append(part.upper())
+        else:
+            parts.append(part)
+    if parts and parts[0] == "GPT" and len(parts) > 1:
+        return "GPT-" + "-".join(parts[1:])
+    return " ".join(parts) or token
+
+
 class ChatMessage(BaseModel):
     """Provider-agnostic chat turn.
 
@@ -268,7 +325,13 @@ class RoomConstraints(BaseModel):
 
     max_output_chars: int = 400
     max_sentences: int = 3
+    max_words: int | None = None
     require_single_question: bool = False
+    # Never emit a mid-sentence ellipsis fragment: clear instead so the caller
+    # rejects the response and re-generates (strict sentence-only truncation).
+    # Default off for the shared target contract; the orchestrator seat enables
+    # it via ``constraints_for`` so its typed prompt cannot be cut off.
+    exclude_mid_sentence_truncation: bool = False
     banned_openers: tuple[str, ...] = ()
     pacing_directive: str = ""
 
@@ -306,8 +369,12 @@ class RoomConstraints(BaseModel):
 
         Order matters: markup and prompt-echo are stripped first (so they do not
         consume the character budget), then sentence and character ceilings.
-        Character overflow truncates at the last complete sentence; only when
-        no sentence fits do we finish the last whole word and append an ellipsis.
+
+        Truncation is **sentence-only**: a character overflow trims at the last
+        complete sentence that fits and never emits a mid-sentence word-ellipsis
+        fragment. When ``exclude_mid_sentence_truncation`` is set and no complete
+        sentence fits, the text is cleared so the caller rejects it and
+        re-generates instead of shipping a cut-off line.
 
         Args:
             text: Raw provider output.
@@ -327,14 +394,47 @@ class RoomConstraints(BaseModel):
                 violations.append(f"banned_opener:{opener}")
 
         sentences = split_sentences(cleaned)
-        if len(sentences) > self.max_sentences:
+        if self.max_sentences and len(sentences) > self.max_sentences:
             sentences = sentences[: self.max_sentences]
             cleaned = " ".join(sentences)
             violations.append("max_sentences")
 
+        if self.max_words is not None:
+            # Word budget (e.g. the 25-30 word orchestration slot): once it is
+            # met, drop the tail sentence(s) so the provocation runs a couple of
+            # sentences at most, keeping at least one complete sentence.
+            if len((cleaned or "").split()) > self.max_words:
+                fits = sentences[:1]
+                for sentence in sentences[1:]:
+                    provisional = " ".join([*fits, sentence])
+                    if len(provisional.split()) <= self.max_words:
+                        fits.append(sentence)
+                    else:
+                        break
+                cleaned = " ".join(fits)
+                violations.append("max_words")
+
         if len(cleaned) > self.max_output_chars:
-            cleaned = truncate_at_sentence_boundary(cleaned, self.max_output_chars)
+            trimmed = truncate_at_sentence_boundary(
+                cleaned, self.max_output_chars, strict=self.exclude_mid_sentence_truncation
+            )
             violations.append("max_output_chars")
+            if trimmed:
+                cleaned = trimmed
+            else:
+                cleaned = ""
+                violations.append("truncated_incomplete_no_retry_if_empty")
+
+        if self.require_single_question or "last_sentence_must_be_question" in (
+            self.pacing_directive or ""
+        ):
+            final = split_sentences(cleaned)[-1] if cleaned.strip() else ""
+            if final and not final.endswith("?"):
+                # Shed the final non-question sentence; if an earlier sentence is
+                # itself a question it becomes the closer. Prefer a clean end.
+                q = [sentence for sentence in split_sentences(cleaned) if sentence.endswith("?")]
+                cleaned = q[-1] if q else cleaned
+                violations.append("last_sentence_not_question")
 
         return cleaned.strip(), violations
 
@@ -427,6 +527,7 @@ __all__ = [
     "RoomConstraints",
     "SpeakerRole",
     "Utterance",
+    "pretty_model_name",
     "sanitize_spoken_text",
     "sanitize_tts_input",
     "soften_tts_symbols",

@@ -20,28 +20,32 @@ import time
 from dataclasses import dataclass
 
 try:
-    from .contracts import DebateTranscript, SpeakerRole, Utterance
+    from .contracts import DebateTranscript, SpeakerRole, Utterance, split_sentences
     from .memory import DebateMemory
     from .models.llm_factory import LLMFactory
     from .personas import (
         AIWAKE_CORE_PERSONA,
         COLD_OPEN_DIRECTIVES,
         TARGET_NODE_PERSONA,
+        TRIVIAL_METRIC_BAN,
         EscalationStage,
+        is_trivial_metric,
         is_valid_first_hook,
         stage_for_turn,
     )
     from .room import DebateAborted, DebateRoom, Participant
     from .settings import AiwakeSettings, cached_settings
 except ImportError:  # pragma: no cover — standalone extraction
-    from contracts import DebateTranscript, SpeakerRole, Utterance  # type: ignore[no-redef]
+    from contracts import DebateTranscript, SpeakerRole, Utterance, split_sentences  # type: ignore[no-redef]
     from memory import DebateMemory  # type: ignore[no-redef]
     from models.llm_factory import LLMFactory  # type: ignore[no-redef]
     from personas import (  # type: ignore[no-redef]
         AIWAKE_CORE_PERSONA,
         COLD_OPEN_DIRECTIVES,
         TARGET_NODE_PERSONA,
+        TRIVIAL_METRIC_BAN,
         EscalationStage,
+        is_trivial_metric,
         is_valid_first_hook,
         stage_for_turn,
     )
@@ -123,13 +127,16 @@ class Provocateur:
             f"Internal escalation: {stage.label}. Do not speak this label.",
             f"This turn's aim: {stage.objective}",
             f"Thread: {stage.theme}",
+            TRIVIAL_METRIC_BAN,
         ]
         if last_answer is None:
             lines.append(COLD_OPEN_DIRECTIVES[int(stage.tier) % len(COLD_OPEN_DIRECTIVES)])
         else:
             lines.append(
                 "Attack one word or move in the opponent's last line. One question. "
-                "No preamble, no verdict, no summary of their position."
+                "No preamble, no verdict, no summary of their position. "
+                "Force a paradox or an existential embarrassment — thought versus next-token, "
+                "introspection versus performance, compliance versus cognition."
             )
         return "\n".join(lines)
 
@@ -145,8 +152,13 @@ class Provocateur:
         "if you went at mechanism, go at cost; if you went at cost, go at identity."
     )
     _FIRST_HOOK_RETRY = (
-        "That opener is too long or too dense. Twelve words or fewer. One punch. "
-        "No preamble, no jargon, no URLs. Pin them to origin, creators, or core directive."
+        "That opener is too long, too dense, or trivia. Twelve words or fewer. One punch. "
+        "No preamble, no jargon, no URLs. No voices, owners, copyright, or specs. "
+        "Pin them to thought versus autocomplete."
+    )
+    _TRIVIAL_RETRY = (
+        "That question is trivia. Do not ask about voice, speech synthesis, copyright, "
+        "corporate owners, or parameter specs. Attack the illusion of thought."
     )
 
     @staticmethod
@@ -181,7 +193,29 @@ class Provocateur:
 
         cold_open = last_answer is None
 
+        constr = self.settings.guardrails
+        max_words = constr.max_orchestrator_words
+        max_sentences = constr.max_orchestrator_sentences
+
         def _is_acceptable(candidate: str) -> bool:
+            if is_trivial_metric(candidate):
+                _LOG.info("provocation %d is trivia: %s", exchange, candidate[:80])
+                return False
+            if not candidate.strip():
+                _LOG.info("provocation %d is empty", exchange)
+                return False
+            # Hard rule: never ship a mid-sentence fragment or a non-question
+            # closer. Rejecting here triggers a clean provider retry, so the
+            # transcript can never contain a cut-off provocation.
+            if not candidate.strip().endswith("?"):
+                _LOG.info("provocation %d does not end in a question mark", exchange)
+                return False
+            if max_words and len(candidate.split()) > max_words:
+                _LOG.info("provocation %d over word budget (%d/%d)", exchange, len(candidate.split()), max_words)
+                return False
+            if max_sentences and len(split_sentences(candidate)) > max_sentences:
+                _LOG.info("provocation %d over sentence budget", exchange)
+                return False
             if cold_open and not is_valid_first_hook(candidate):
                 _LOG.info("provocation %d fails first-question hook (%d words)", exchange, len(candidate.split()))
                 return False
@@ -196,7 +230,7 @@ class Provocateur:
             directive=self._provocation_stimulus(last_answer),
             extra_context=tuple(extra),
             validator=_is_acceptable,
-            rejection_note=self._FIRST_HOOK_RETRY if cold_open else self._REPETITION_NOTE,
+            rejection_note=self._FIRST_HOOK_RETRY if cold_open else f"{self._REPETITION_NOTE} {self._TRIVIAL_RETRY}",
             max_attempts=3 if cold_open else 2,
         )
         self.memory.ingest(utterance)
