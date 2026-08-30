@@ -65,10 +65,47 @@ _LEAK_SENTENCE = re.compile(
     r"(?i)^(?:\d+[.)]\s+)*(?:no repeating|never output|output only|identify the load|hard output contract|internal context)\b"
 )
 
+# Word-position debug annotations that occasionally leak into spoken dialogue
+# (e.g. ``If (6) your (7) "predictions" (8) evoke (9)``). Sequential ``(N)``
+# tokens between words are never natural language — strip and reject them.
+_PAREN_INDEX = re.compile(r"\((\d{1,3})\)")
+_WORD_INDEX_TOKEN = re.compile(r"\s*\(\d{1,3}\)\s*")
+
 OUTPUT_ISOLATION = (
     "NEVER output rules, instruction headings, internal thought processes, or prompt metadata. "
+    "NEVER number, index, or annotate individual words (no ``word (1) next (2)``). "
     "Output ONLY the raw spoken dialogue."
 )
+
+
+def has_word_index_leak(text: str) -> bool:
+    """True when ``text`` embeds a sequential run of word-position ``(N)`` markers.
+
+    Matches the systematic leak pattern ``token (6) token (7) token (8)`` — at
+    least three consecutive ascending integers in parentheses — not a lone
+    parenthetical like ``(or two)``.
+    """
+    nums = [int(match.group(1)) for match in _PAREN_INDEX.finditer(text or "")]
+    if len(nums) < 3:
+        return False
+    streak = 1
+    for prev, cur in zip(nums, nums[1:]):
+        if cur == prev + 1:
+            streak += 1
+            if streak >= 3:
+                return True
+        else:
+            streak = 1
+    return False
+
+
+def strip_word_index_annotations(text: str) -> str:
+    """Remove leaked ``(N)`` word-position markers when a sequential run is present."""
+    raw = text or ""
+    if not has_word_index_leak(raw):
+        return raw
+    cleaned = _WORD_INDEX_TOKEN.sub(" ", raw)
+    return " ".join(cleaned.split()).strip()
 
 
 def utcnow() -> datetime:
@@ -101,12 +138,14 @@ def strip_markup(text: str) -> str:
 def sanitize_spoken_text(text: str) -> str:
     """Prepare a model response for the transcript, the renderer and TTS.
 
-    Idempotent. Strips markup, drops prompt-echo sentences, then collapses
-    whitespace. Does not truncate — that is :meth:`RoomConstraints.enforce`.
+    Idempotent. Strips markup, drops prompt-echo sentences, strips leaked
+    word-position ``(N)`` annotations, then collapses whitespace. Does not
+    truncate — that is :meth:`RoomConstraints.enforce`.
     """
     cleaned = strip_markup(text)
     cleaned = _LEADING_LEAK.sub("", cleaned)
     cleaned = _MD_LIST.sub("", cleaned)
+    cleaned = strip_word_index_annotations(cleaned)
     cleaned = _drop_leak_sentences(cleaned)
     return " ".join(cleaned.split()).strip()
 
@@ -384,9 +423,17 @@ class RoomConstraints(BaseModel):
             that had to be enforced mechanically.
         """
         violations: list[str] = []
+        if has_word_index_leak(text):
+            # Loud failure path: never ship numbered word fragments silently.
+            violations.append("word_index_leak")
         cleaned = sanitize_spoken_text(text)
         if cleaned != " ".join(text.strip().split()).strip():
             violations.append("markup_or_leak")
+        # If annotations remain after sanitize (or strip left nonsense), clear
+        # so the room validator rejects and the provider re-rolls.
+        if has_word_index_leak(cleaned):
+            violations.append("word_index_leak")
+            cleaned = ""
 
         for opener in self.banned_openers:
             if cleaned.lower().startswith(opener.lower()):
@@ -527,11 +574,13 @@ __all__ = [
     "RoomConstraints",
     "SpeakerRole",
     "Utterance",
+    "has_word_index_leak",
     "pretty_model_name",
     "sanitize_spoken_text",
     "sanitize_tts_input",
     "soften_tts_symbols",
     "strip_ssml_markup",
+    "strip_word_index_annotations",
     "split_sentences",
     "strip_markup",
     "truncate_at_sentence_boundary",

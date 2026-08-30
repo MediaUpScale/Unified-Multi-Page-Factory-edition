@@ -168,8 +168,10 @@ audio:
     asset: assets/sfx/keyboard_typing.wav
   send_sfx:
     enabled: true
-    gain_db: -12.0
+    gain_db: -8.0
     asset: assets/sfx/message_sent.wav
+  # Overall loudness boost after relative TTS/SFX/BGM gains are applied.
+  master_gain_db: 6.0
   bgm:
     # Locked inspection bed for high-tension debate (Aiwake / Ancient Knowledge).
     # Mix: -21 dB vs TTS, 1.5 s equal-power loop crossfade.
@@ -299,14 +301,14 @@ render:
   # idle gap here read as a dead pause in the reel.
   post_response_s: 0.5
   # Dead-air pause after the last line before the CTA end-card fades in.
-  cta_wait_s: 0.35
+  cta_wait_s: 0.15
   # Flash on the send arrow after typing completes.
   send_hold_s: 1.0
   # 1.0s read-hold after the prompt finishes typing before the send click fires.
   send_flash_s: 0.2
-  # 1.0s pause AFTER the send click before the box slides up into the thread.
-  send_slide_hold_s: 1.0
-  # Fast ease-out for the input box rising to its top-anchored chat position.
+  # Legacy post-click pause (fly/dock leave at the send click — keep at 0).
+  send_slide_hold_s: 0.0
+  # Fast ease-out for the empty chrome morphing down to the docked footer.
   send_slide_s: 0.35
   # Monospace lookup order; first hit wins, PIL default is the last resort.
   font_candidates:

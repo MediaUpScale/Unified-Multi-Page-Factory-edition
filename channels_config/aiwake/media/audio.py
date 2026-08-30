@@ -370,7 +370,8 @@ def synthesize_cta_line(
     phrase = flatten_cta_spoken(spoken)
 
     async def _run() -> None:
-        communicate = edge_tts.Communicate(phrase, voice=voice)
+        # Faster spoken CTA so the end-card VO keeps pace with the quicker typewriter.
+        communicate = edge_tts.Communicate(phrase, voice=voice, rate="+28%")
         await communicate.save(str(destination))
 
     def _synthesise() -> None:
@@ -1624,6 +1625,7 @@ def concat_audio(
     typing_hold_ratio: float = _DEFAULT_HOLD_RATIO,
     bgm: BgmConfig | None = None,
     send_sfx: SendSfxConfig | None = None,
+    master_gain_db: float = 6.0,
 ) -> Path | None:
     """Stitch voice tracks into one continuous timeline.
 
@@ -1674,6 +1676,7 @@ def concat_audio(
             _LOG.debug("message_sent.wav ensure skipped: %s", exc)
     clips = []
     opened = []
+    deferred_postroll_click_at: float | None = None
     try:
         lead = AudioFileClip(str(real[0].path))
         opened.append(lead)
@@ -1686,6 +1689,7 @@ def concat_audio(
                 )
             )
         for index, asset in enumerate(real):
+            pending_gap_click_at: float | None = None
             clip = lead if index == 0 else AudioFileClip(str(asset.path))
             if index != 0:
                 opened.append(clip)
@@ -1723,23 +1727,32 @@ def concat_audio(
                     _LOG.debug("typewriter mix skipped for %s: %s", asset.path.name, exc)
             if mix_send and send_sfx is not None and asset.role == _CORE_ROLE:
                 typing_s = min(float(voice_full.duration or 0.0), asset.duration_s * typing_window)
-                try:
-                    click = AudioArrayClip(
-                        send_click_on_timeline(
-                            asset.duration_s,
-                            typing_s,
-                            send_sfx,
+                # Fire the click at the same instant as the visual send flash:
+                # after the read-hold that follows typing completion. When that
+                # lands past the voice clip (into reply_gap / postroll), stash
+                # the offset so the following silence carries the click.
+                click_at = typing_s + max(0.0, float(send_hold_s))
+                if click_at + 0.04 <= float(asset.duration_s):
+                    try:
+                        click = AudioArrayClip(
+                            send_click_on_timeline(
+                                asset.duration_s,
+                                click_at,
+                                send_sfx,
+                                fps=fps,
+                            ),
                             fps=fps,
-                        ),
-                        fps=fps,
-                    )
-                    mixed = CompositeAudioClip([voice_full, click]).with_duration(asset.duration_s)
-                    opened.append(click)
-                    opened.append(mixed)
-                    clips.append(mixed)
-                except Exception as exc:  # noqa: BLE001
-                    _LOG.debug("send sfx mix skipped for %s: %s", asset.path.name, exc)
+                        )
+                        mixed = CompositeAudioClip([voice_full, click]).with_duration(asset.duration_s)
+                        opened.append(click)
+                        opened.append(mixed)
+                        clips.append(mixed)
+                    except Exception as exc:  # noqa: BLE001
+                        _LOG.debug("send sfx mix skipped for %s: %s", asset.path.name, exc)
+                        clips.append(voice_full)
+                else:
                     clips.append(voice_full)
+                    pending_gap_click_at = click_at - float(asset.duration_s)
             else:
                 clips.append(voice_full)
 
@@ -1751,20 +1764,63 @@ def concat_audio(
                 else:
                     extra_gap = max(extra_gap, float(post_response_s))
             if extra_gap > 0.01:
+                if pending_gap_click_at is not None and mix_send and send_sfx is not None:
+                    try:
+                        gap_buf = send_click_on_timeline(
+                            extra_gap,
+                            max(0.0, min(float(pending_gap_click_at), max(0.0, extra_gap - 0.05))),
+                            send_sfx,
+                            fps=fps,
+                        )
+                        clips.append(AudioArrayClip(gap_buf, fps=fps))
+                        pending_gap_click_at = None
+                    except Exception as exc:  # noqa: BLE001
+                        _LOG.debug("send sfx gap mix skipped for %s: %s", asset.path.name, exc)
+                        clips.append(
+                            AudioArrayClip(
+                                np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
+                                fps=fps,
+                            )
+                        )
+                else:
+                    clips.append(
+                        AudioArrayClip(
+                            np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
+                            fps=fps,
+                        )
+                    )
+            elif pending_gap_click_at is not None:
+                # Last CORE line: fold the click into the postroll bed so we do
+                # not invent audio-only gap time that desyncs A/V.
+                deferred_postroll_click_at = pending_gap_click_at
+                pending_gap_click_at = None
+
+        postroll_click_at = deferred_postroll_click_at
+        if float(postroll_s) > 0.01:
+            if postroll_click_at is not None and mix_send and send_sfx is not None:
+                try:
+                    post_buf = send_click_on_timeline(
+                        float(postroll_s),
+                        max(0.0, min(float(postroll_click_at), max(0.0, float(postroll_s) - 0.05))),
+                        send_sfx,
+                        fps=mix_fps,
+                    )
+                    clips.append(AudioArrayClip(post_buf, fps=mix_fps))
+                except Exception as exc:  # noqa: BLE001
+                    _LOG.debug("send sfx postroll mix skipped: %s", exc)
+                    clips.append(
+                        AudioArrayClip(
+                            np.zeros((max(1, int(mix_fps * postroll_s)), 2), dtype="float32"),
+                            fps=mix_fps,
+                        )
+                    )
+            else:
                 clips.append(
                     AudioArrayClip(
-                        np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
-                        fps=fps,
+                        np.zeros((max(1, int(mix_fps * postroll_s)), 2), dtype="float32"),
+                        fps=mix_fps,
                     )
                 )
-
-        if float(postroll_s) > 0.01:
-            clips.append(
-                AudioArrayClip(
-                    np.zeros((max(1, int(mix_fps * postroll_s)), 2), dtype="float32"),
-                    fps=mix_fps,
-                )
-            )
 
         stitched = concatenate_audioclips(clips)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1792,7 +1848,7 @@ def concat_audio(
         bgm_path = resolve_bgm_track(bgm)
         if bgm_path is not None and bgm is not None:
             try:
-                duration = float(stitched.duration or 0.0)
+                duration = float(mix_target.duration or stitched.duration or 0.0)
                 bgm_src = AudioFileClip(str(bgm_path))
                 opened.append(bgm_src)
                 src_fps = int(getattr(bgm_src, "fps", 44100) or 44100)
@@ -1807,11 +1863,23 @@ def concat_audio(
                 )
                 bgm_clip = AudioArrayClip(bed, fps=src_fps).with_duration(duration)
                 opened.append(bgm_clip)
-                mix_target = CompositeAudioClip([stitched, bgm_clip]).with_duration(duration)
+                mix_target = CompositeAudioClip([mix_target, bgm_clip]).with_duration(duration)
                 opened.append(mix_target)
             except Exception as exc:  # noqa: BLE001
                 _LOG.warning("BGM overlay skipped: %s", exc)
-                mix_target = stitched
+        # Master loudness boost — preserves relative TTS/SFX/BGM balance.
+        master_db = float(master_gain_db or 0.0)
+        if abs(master_db) > 1e-6:
+            factor = float(10.0 ** (master_db / 20.0))
+            try:
+                mix_target = mix_target.with_volume_scaled(factor)
+                opened.append(mix_target)
+            except Exception:  # noqa: BLE001
+                try:
+                    mix_target = mix_target.volumex(factor)  # type: ignore[attr-defined]
+                    opened.append(mix_target)
+                except Exception as exc:  # noqa: BLE001
+                    _LOG.debug("master gain skipped: %s", exc)
         mix_target.write_audiofile(str(destination), logger=None)
         if mix_target is not stitched:
             mix_target.close()

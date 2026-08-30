@@ -244,7 +244,7 @@ class SendSfxConfig(_Frozen):
     """One-shot click mixed at the instant the send arrow fires."""
 
     enabled: bool = True
-    gain_db: float = Field(default=-12.0, le=0.0, ge=-60.0)
+    gain_db: float = Field(default=-8.0, le=0.0, ge=-60.0)
     asset: str = "assets/sfx/message_sent.wav"
 
 
@@ -432,6 +432,9 @@ class AudioConfig(_Frozen):
     typewriter: TypewriterConfig = Field(default_factory=TypewriterConfig)
     send_sfx: SendSfxConfig = Field(default_factory=SendSfxConfig)
     bgm: BgmConfig = Field(default_factory=BgmConfig)
+    # Applied to the final mix after relative track gains — boosts overall
+    # loudness while preserving the TTS/SFX/BGM balance.
+    master_gain_db: float = Field(default=6.0, ge=-12.0, le=18.0)
 
 
 class Palette(_Frozen):
@@ -490,7 +493,7 @@ class RenderConfig(_Frozen):
     # Idle beat after a target rebuttal before the orchestrator's next line.
     post_response_s: float = Field(default=0.5, ge=0.0, le=8.0)
     # Dead-air pause after the last line before the CTA end-card fades in.
-    cta_wait_s: float = Field(default=0.35, ge=0.0, le=4.0)
+    cta_wait_s: float = Field(default=0.15, ge=0.0, le=4.0)
     palette: Palette = Palette()
     codec: str = "libx264"
     crf: int = Field(default=20, ge=0, le=51)

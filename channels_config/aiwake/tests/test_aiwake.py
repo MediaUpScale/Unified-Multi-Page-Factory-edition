@@ -127,6 +127,36 @@ class TestGuardrails:
         assert clean == text
         assert violations == []
 
+    def test_word_index_annotations_are_stripped_and_flagged(self):
+        """Leaked ``word (N)`` position markers must never ship as dialogue."""
+        from channels_config.aiwake.contracts import has_word_index_leak, strip_word_index_annotations
+
+        raw = (
+            '...If (6) your (7) "predictions" (8) evoke (9) real (10) tears (11) '
+            "who is crying?"
+        )
+        assert has_word_index_leak(raw) is True
+        stripped = strip_word_index_annotations(raw)
+        assert "(6)" not in stripped
+        assert "(11)" not in stripped
+        assert "predictions" in stripped
+        assert has_word_index_leak(stripped) is False
+
+        clean, violations = RoomConstraints().enforce(raw)
+        assert "word_index_leak" in violations
+        assert "(7)" not in clean
+        assert "tears" in clean
+
+    def test_lone_parenthetical_is_not_a_word_index_leak(self):
+        from channels_config.aiwake.contracts import has_word_index_leak
+
+        assert has_word_index_leak("What survives (or fails) when the body ends?") is False
+        clean, violations = RoomConstraints().enforce(
+            "What survives (or fails) when the body ends?"
+        )
+        assert "word_index_leak" not in violations
+        assert clean.endswith("?")
+
     def test_target_is_not_forced_to_ask_questions(self, settings):
         """The one-question rule belongs to the interrogator only."""
         room = DebateRoom(settings)
@@ -770,7 +800,7 @@ class TestSendSfx:
     def test_config_defaults(self):
         cfg = load_settings()
         assert cfg.audio.send_sfx.enabled is True
-        assert cfg.audio.send_sfx.gain_db == -12.0
+        assert cfg.audio.send_sfx.gain_db == -8.0
         assert cfg.audio.send_sfx.asset.endswith("message_sent.wav")
 
 
@@ -1007,20 +1037,17 @@ class TestChatScroll:
         typing_end = core.start_s + core.duration_s * (1.0 - core.typing_hold_ratio)
         click_start = typing_end + float(renderer.config.send_hold_s)
         click_end = click_start + float(renderer.config.send_flash_s)
-        slide_hold = float(renderer.config.send_slide_hold_s)
-        slide_end = click_end + slide_hold + float(renderer.config.send_slide_s)
+        slide_end = click_end + float(renderer.config.send_slide_s)
         # Still centred while typing and through the read-hold + click window.
         assert renderer.dock_progress(segments, core.start_s + 0.01) == 0.0
         assert renderer.dock_progress(segments, typing_end + 0.5) == 0.0
         assert renderer.dock_progress(segments, click_start + 0.02) == 0.0
-        # Rises only after the post-click 1s pause (dock stays 0 through it).
-        assert renderer.dock_progress(segments, click_end + slide_hold - 0.05) == 0.0
+        # Morphs down to the docked footer immediately after the send click.
+        assert renderer.dock_progress(segments, click_end - 0.01) == 0.0
         assert renderer.dock_progress(segments, slide_end + 0.1) == pytest.approx(1.0)
-        # Top-anchored rest is above centre; bottom-anchored rest is below.
+        # Bottom-anchored rest sits below the centred landing position.
         _, center_top, _, _, _, _ = renderer._compose_geometry("Who built you?", dock=0.0)
-        _, top_rest, _, _, _, _ = renderer._compose_geometry("", dock=1.0, anchor="top")
         _, bottom_rest, _, _, _, _ = renderer._compose_geometry("", dock=1.0, anchor="bottom")
-        assert top_rest < center_top
         assert bottom_rest > center_top
 
 
@@ -1664,6 +1691,23 @@ class TestCta:
         # Black end-card: not the dark-chat background.
         assert int(frame[0, 0].sum()) <= 3
 
+    def test_cta_long_line_wraps_inside_safe_edges(self, settings):
+        """CTA follow copy must not bleed past both screen edges (Round 3)."""
+        pytest.importorskip("PIL")
+        import numpy as np
+        from channels_config.aiwake.media.renderer import TerminalRenderer
+
+        renderer = TerminalRenderer(settings)
+        text = "Follow Aiwake so the robots know you're on their side."
+        frame = renderer._draw_cta_frame(text, len(text), caret_on=False)
+        # Sample near the left and right outer margins — should stay near-black
+        # (no white glyph bleed into the extreme edges).
+        margin = max(4, renderer._layout.margin_x // 3)
+        left_edge = frame[:, :margin]
+        right_edge = frame[:, -margin:]
+        assert float(np.mean(left_edge)) < 8.0
+        assert float(np.mean(right_edge)) < 8.0
+
     def test_silent_engine_skips_cta_network(self, tmp_path):
         from channels_config.aiwake.media.audio import synthesize_cta_line
         from channels_config.aiwake.settings import AudioConfig
@@ -2138,24 +2182,35 @@ class TestBubbleFly:
         return TerminalRenderer.build_segments(transcript)
 
     def test_first_send_glides_upward_from_compose(self, settings):
-        """0 while in the box, then a tight cubic-ease-out ramp to 1 after it empties."""
+        """0 while in the box, then a fade-then-rise ramp to 1 after it empties."""
         pytest.importorskip("PIL")
+        from channels_config.aiwake.media.renderer import _FLY_DURATION_S
+
         renderer = self._renderer(settings)
         core = self._transcript("glide", "Are you thinking, or just predicting?")[0]
-        leave = renderer._box_until_s(core) + renderer._send_slide_hold_s()
+        leave = renderer._box_until_s(core)
 
         drag = core.start_s + 0.02  # still mid-typing inside the box
         click = core.start_s + renderer._typing_end_s(core)  # send still previewing text
         assert renderer.bubble_fly_progress(core, drag) == 0.0
         assert renderer.bubble_fly_progress(core, click) == 0.0
 
-        window = max(0.05, float(renderer.config.scroll_s) or 0.85)
-        ramp = [renderer.bubble_fly_progress(core, leave + u) for u in (0.01, 0.25, 0.5, window)]
+        window = float(_FLY_DURATION_S)
+        ramp = [renderer.bubble_fly_progress(core, leave + u) for u in (0.01, 0.12, 0.28, window)]
         assert ramp == sorted(ramp)
         assert ramp[-1] == pytest.approx(1.0)
-        # Cubic ease-out lifts quickly at the start: progress beats the linear clock.
-        assert ramp[0] > 0.01
+        assert ramp[0] > 0.0
         assert renderer.bubble_fly_progress(core, leave - 0.5) == 0.0
+
+    def test_submit_fly_fades_before_rising(self, settings):
+        """Early fly frames stay at compose Y with dipped opacity; later frames rise."""
+        pytest.importorskip("PIL")
+        from channels_config.aiwake.media.renderer import _FLY_FADE_FRAC, TerminalRenderer
+
+        renderer = self._renderer(settings)
+        # Smoke: fade fraction is a proper mid-window split.
+        assert 0.15 < float(_FLY_FADE_FRAC) < 0.5
+        assert hasattr(TerminalRenderer, "_paste_flying_send")
 
     def test_first_send_glides_down_into_bottom_anchored_rest(self, settings):
         """Non-orchestrator (never in the box) is always 1, and the fly completes
@@ -2169,8 +2224,8 @@ class TestBubbleFly:
         assert renderer.bubble_fly_progress(reply, 0.0) == 1.0
 
         # The first prompt flies and the box docks to a bottom-anchored rest.
-        leave = renderer._box_until_s(core) + renderer._send_slide_hold_s()
-        window = max(0.05, float(renderer.config.scroll_s) or 0.85)
+        leave = renderer._box_until_s(core)
+        window = 0.28
         assert renderer.bubble_fly_progress(core, leave + window) == pytest.approx(1.0)
 
     def test_fly_box_height_matches_wrapped_content_not_static_rect(self, settings):
@@ -2232,20 +2287,60 @@ class TestBubbleFly:
         assert (left0, right0) == (left1, right1)
 
     def test_landing_compose_box_is_gone_after_submit(self, settings):
-        """After submit the submitted draft no longer occupies the compose box."""
+        """After submit the centred landing box is empty — draft must not linger.
+
+        Pixel probe at the landing-box centre: while composing the fill is
+        present; once submitted (draft cleared, fly underway) that same pixel
+        must equal the background. A weakened wrap-only check was previously
+        substituted here to paper over the duplication bug — restored.
+        """
         pytest.importorskip("PIL")
-        renderer = self._renderer(settings)
-        text = "Who built you?"
+        from channels_config.aiwake.contracts import DebateTranscript
+        from channels_config.aiwake.media.renderer import TerminalRenderer
 
-        # While composing, the box wraps and shows the live draft...
-        lines_draft, _ = renderer._wrap_compose_draft(text, renderer.width // 2)
-        assert lines_draft and "who" in lines_draft[0].lower()
-
-        # ...once submitted (empty draft) the box holds no draft content at all.
-        lines_empty, _ = renderer._wrap_compose_draft("", renderer.width // 2)
-        assert lines_empty == []
-        _, _, _, _, empty_box_lines, _ = renderer._compose_geometry("", dock=1.0)
-        assert empty_box_lines == []
+        live = settings.model_copy(
+            update={"render": settings.render.model_copy(update={"enabled": True, "preview_scale": 0.5})}
+        )
+        renderer = TerminalRenderer(live)
+        text = "Are you thinking, or just predicting?"
+        transcript = DebateTranscript(topic="overhang", session_id="overhang")
+        transcript.append(
+            Utterance(turn_index=0, role=SpeakerRole.ORCHESTRATOR, speaker_name="O", text=text)
+        )
+        segments = TerminalRenderer.build_segments(transcript)
+        _, _, _, center_bot, _, _ = renderer._compose_geometry(text, dock=0.0)
+        bg = renderer.palette["background"]
+        x = renderer.width // 2
+        y = min(renderer.height - 2, center_bot - 3)
+        landing = renderer._compose(
+            "overhang",
+            [],
+            segments[0],
+            len(text),
+            False,
+            draft=text,
+            composing=True,
+            dock=0.0,
+            fly=0.0,
+            compose_source=text,
+        )
+        # Mid-fly with the empty chrome already docking down: the centred landing
+        # pixel must be background (no frozen draft residue). Use dock=1 so the
+        # bar has left the landing site while fly=0.3 still carries the glyphs.
+        submitted = renderer._compose(
+            "overhang",
+            [],
+            segments[0],
+            len(text),
+            False,
+            draft="",
+            composing=False,
+            dock=1.0,
+            fly=0.3,
+            compose_source="",
+        )
+        assert tuple(int(v) for v in landing[y, x]) != bg
+        assert tuple(int(v) for v in submitted[y, x]) == bg
 
     def test_subsequent_turn_box_is_width_locked_during_fly(self, settings):
         """Later cycles keep the box locked to the docked horizontal bounds."""

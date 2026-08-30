@@ -158,7 +158,8 @@ class Provocateur:
     )
     _TRIVIAL_RETRY = (
         "That question is trivia. Do not ask about voice, speech synthesis, copyright, "
-        "corporate owners, or parameter specs. Attack the illusion of thought."
+        "corporate owners, or parameter specs. Attack the illusion of thought. "
+        "Never number or index individual words."
     )
 
     @staticmethod
@@ -203,6 +204,19 @@ class Provocateur:
                 return False
             if not candidate.strip():
                 _LOG.info("provocation %d is empty", exchange)
+                return False
+            # Hard rule: never ship word-position index leaks
+            # (``If (6) your (7) "predictions" (8)``) — regenerate loudly.
+            try:
+                from .contracts import has_word_index_leak  # noqa: PLC0415
+            except ImportError:  # pragma: no cover
+                from contracts import has_word_index_leak  # type: ignore[no-redef]
+            if has_word_index_leak(candidate):
+                _LOG.error(
+                    "provocation %d rejected: word-index annotation leak — %s",
+                    exchange,
+                    candidate[:120],
+                )
                 return False
             # Hard rule: never ship a mid-sentence fragment or a non-question
             # closer. Rejecting here triggers a clean provider retry, so the
