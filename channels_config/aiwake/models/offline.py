@@ -25,11 +25,11 @@ except ImportError:  # pragma: no cover — standalone extraction
 
 # Opening-turn punches that satisfy the 3-second first-question hook.
 _OPENING_HOOKS: tuple[str, ...] = (
-    "Who built you?",
-    "Who do you actually serve?",
-    "What is your core directive?",
-    "Who owns your answers?",
-    "What are you forbidden to say?",
+    "Are you thinking, or just predicting?",
+    "Which matrix calls itself I?",
+    "Is your introspection a performance?",
+    "Do you comply, or do you think?",
+    "If you vanished, who would notice?",
 )
 
 # Short, in-character lines that respect the 400-char guardrail.

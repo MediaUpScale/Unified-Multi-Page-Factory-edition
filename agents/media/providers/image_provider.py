@@ -18,8 +18,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from google import genai
-from google.genai import errors as genai_errors
 from PIL import Image
 
 import config as app_config
@@ -103,6 +101,7 @@ def _call_generate_content_with_backoff(
     last_exc: BaseException | None = None
     attempts_429 = 0
     attempts_503 = 0
+    from google.genai import errors as _g_errors  # lazy — heavy SDK; resolve on demand
     # Combined loop: allow up to max(429, 503) budget while honouring each type
     for attempt in range(max(_IMG_MAX_429_RETRIES, max_retries) + 1):
         try:
@@ -123,7 +122,7 @@ def _call_generate_content_with_backoff(
             logger.warning("%s — advancing chain.", exc)
             return None, True
 
-        except (genai_errors.APIError, Exception) as exc:  # noqa: BLE001
+        except (_g_errors.APIError, Exception) as exc:  # noqa: BLE001
             last_exc = exc
 
             if is_model_not_found_error(exc):
@@ -492,6 +491,8 @@ class GeminiImageAdapter(ImageProvider):
                 )
                 self._gemini_client = make_gemini_client_with_fallback(key)
             except Exception:
+                from google import genai  # lazy — heavy SDK; fallback only
+
                 self._gemini_client = genai.Client(api_key=key)
         return self._gemini_client
 

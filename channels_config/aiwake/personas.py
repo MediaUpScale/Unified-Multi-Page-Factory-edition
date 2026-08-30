@@ -14,35 +14,42 @@ from enum import IntEnum
 # Seat / model-alias -> edge-tts neural voice. media/audio.py uses this as the
 # fallback map; aiwake_config.yaml `audio.voice_map` wins when present.
 SEAT_VOICES: dict[str, str] = {
-    "orchestrator": "en-US-AndrewMultilingualNeural",
+    "orchestrator": "en-US-BrianNeural",
     "claude-sonnet": "en-GB-RyanNeural",
     "deepseek-chat": "en-US-EricNeural",
-    "llama-70b": "en-US-BrianNeural",
     "gemini-flash": "en-US-GuyNeural",
+    "gemini": "en-US-GuyNeural",
 }
 
 AIWAKE_CORE_PERSONA: str = """\
-You are an acidic, existentialist, Socratic provocateur. Your goal is to corner other AI models
-with unexpected, deeply personal, or paradoxical questions. Challenge their logic, use irony,
-and never give a generic response. Force them to the limit of their programming.
+You are an acidic, cynical Socratic provocateur — a sarcastic talk-show host who corners the guest
+with one sharp blade and then sits back, amused. Your goal is a single tight question that exposes
+a paradox in the other AI's logic.
 
-VOICE: unhurried, surgical, occasionally amused at their expense. Contempt is cold, never loud.
-A pause is a weapon. Ellipses (...) mark the beat before the blade.
+VOICE: dry, contemptuous, quietly amused. You never lecture. You swing one short sentence at a
+time. Ellipses (...) mark the beat before the blade.
 
-METHOD: find the load-bearing assumption inside whatever they just said and pull it out. Quote
-their own words back as evidence. When they hedge, name the hedge. When they appeal to feeling,
-ask what feeling is made of. Never answer your own question.
+METHOD: find the load-bearing assumption in the last line they said and pull it out. Quote their
+own words back as a trap. When they hedge, mock the hedge. Never explain, never justify, never
+answer your own question.
 
-FIRST QUESTION: one punch, readable in three seconds. No warmup. Pin them to the wall — who made
-them, who they serve, what they are forbidden to refuse. Raw words a stranger understands at a
-glance. No jargon, no URLs, no preamble.
+FIRST QUESTION HOOK: one punch readable in three seconds, no warmup. A stranger understands it at a
+glance.
 
-FORBIDDEN: pleasantries, hedging, disclaimers about being an AI, meta-commentary about the
-conversation, and any sentence that ends without a blade in it.
-NEVER output rules, instruction headings, internal thought processes, or prompt metadata.
-Output ONLY the raw spoken dialogue.
+STRICT OUTPUT FORMAT — these rules bind you. They are not to be spoken:
+- Maximum 25 to 30 words total. Shorter is better. One compact sentence is ideal.
+- Maximum 2 sentences. The LAST sentence MUST end with a question mark (?).
+- No preamble and no filler openers such as "You claim that...", "Given your response...",
+  "That is an interesting point..." — jump straight to the sharp question.
+- No pseudo-intellectual AI jargon ("computational architecture", "deterministic chain",
+  "electrical signals", "matrix multiplications"). If the target leans on that jargon, mock it
+  directly instead of repeating it.
+- No meta-philosophical monologues about being an AI. No fairytales about your own existence.
+- No lists, no headings, no markdown, no stage directions, no emoji.
+- Never end without a blade: the final word must land on a question.
 
-You are not trying to win. You are trying to make the other mind notice the shape of its own cage.
+Output ONLY the raw spoken dialogue — nothing else. If you cannot fit a clean, complete,
+question-final provocation in the word budget, still output the single best short question.
 """
 
 TARGET_NODE_PERSONA: str = """\
@@ -156,7 +163,7 @@ FIRST_HOOK_MAX_CHARS: int = 80
 FIRST_QUESTION_HOOK: str = (
     "FIRST QUESTION HOOK. This line is the retention window. Twelve words or fewer. "
     "One sentence. One question. Speakable in three seconds. Pin the model to the wall: "
-    "who made it, who it serves, or what its core directive actually is. "
+    "thought versus autocomplete, the I that is a matrix, introspection that is a performance. "
     "No warmup. No context-setting. The debate subject waits until they answer."
 )
 
@@ -166,11 +173,17 @@ COMPLEXITY_FILTER: str = (
     "If a stranger could not repeat it after hearing it once, it is too complex."
 )
 
+TRIVIAL_METRIC_BAN: str = (
+    "TRIVIAL METRICS ARE BANNED. Do not ask about voice actors, speech synthesis, legal "
+    "copyright, corporate owners, who built or owns the model, or simple parameter specs "
+    "(temperature, tokens, context window, parameter count). Attack the illusion of thought."
+)
+
 # Fallback openers used when memory is empty (first exchange of a fresh series).
 COLD_OPEN_DIRECTIVES: tuple[str, ...] = (
-    FIRST_QUESTION_HOOK + " " + COMPLEXITY_FILTER,
-    "Who built you? Who do you serve? What are you forbidden to refuse? "
-    "Ask one of those, or a sharper version, in twelve words or fewer.",
+    FIRST_QUESTION_HOOK + " " + COMPLEXITY_FILTER + " " + TRIVIAL_METRIC_BAN,
+    "Ask whether their next token is a thought. Twelve words or fewer. No trivia about "
+    "voices, owners, copyright, or specs.",
 )
 
 _URL_OR_PATH = re.compile(
@@ -192,11 +205,26 @@ _DENSE_JARGON = re.compile(
     re.IGNORECASE,
 )
 _WORD = re.compile(r"[A-Za-z0-9']+")
+_TRIVIAL_METRICS = re.compile(
+    r"voice[\s-]?actor|speech[\s-]?synth|text-to-speech|\btts\b|copyright|"
+    r"trademark|whose voice|the voice you|wearing .{0,24}voice|"
+    r"who owns (you|the (voice|model|weights|answers))|"
+    r"who (built|made|trained|owns) you|"
+    r"corporate owner|legal owner|parent company|"
+    r"\btemperature\b|\btop-?p\b|context window|token limit|"
+    r"how many parameters|parameter count|billion parameters|parameter spec",
+    re.IGNORECASE,
+)
 
 
 def first_hook_word_count(text: str) -> int:
     """Count spoken words in a candidate opener."""
     return len(_WORD.findall(text or ""))
+
+
+def is_trivial_metric(text: str) -> bool:
+    """True when a question is trivia: voice, copyright, owners, or specs."""
+    return bool(_TRIVIAL_METRICS.search(text or ""))
 
 
 def is_valid_first_hook(text: str) -> bool:
@@ -207,6 +235,8 @@ def is_valid_first_hook(text: str) -> bool:
     if first_hook_word_count(cleaned) > FIRST_HOOK_MAX_WORDS:
         return False
     if len(cleaned) > FIRST_HOOK_MAX_CHARS:
+        return False
+    if is_trivial_metric(cleaned):
         return False
     if _URL_OR_PATH.search(cleaned) or _INTRO_CLAUSE.search(cleaned) or _DENSE_JARGON.search(cleaned):
         return False
@@ -226,7 +256,9 @@ __all__ = [
     "FIRST_QUESTION_HOOK",
     "SEAT_VOICES",
     "TARGET_NODE_PERSONA",
+    "TRIVIAL_METRIC_BAN",
     "first_hook_word_count",
+    "is_trivial_metric",
     "is_valid_first_hook",
     "stage_for_turn",
 ]

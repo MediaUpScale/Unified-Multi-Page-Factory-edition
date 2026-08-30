@@ -1,4 +1,47 @@
 {
+  "master_mei": {
+    "forbidden_tokens": [
+      "Gossip Goblin",
+      "fitness model",
+      "gym bro",
+      "tactical gear",
+      "gore",
+      "body horror",
+      "H.R. Giger",
+      "teens in bedrooms",
+      "smartphone desk",
+      "lifestyle soft-focus",
+      "pastel wellness",
+      "modern athletic wear",
+      "firearm",
+      "handgun",
+      "revolver",
+      "rifle",
+      "pistol",
+      "shotgun",
+      "gunfight",
+      "assault rifle"
+    ],
+    "mandatory_elements": [
+      "8–10 FRAME LORE (90–120s): F1 Master Mei base anchor + meditation (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate matrix pod facility breakout (RAG override); final Master Mei base anchor + temple eyes-on-camera",
+      "Master Mei DNA: snow-white topknot + two long white chest locks, extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white beard + flowing mustache, white inner robe + black vest gold lapels + mala beads",
+      "Mei environments: ~70% high-altitude nature (cliffs/ridges/sea of clouds), ~30% open-air mountain shrines; templates are references — match script philosophy",
+      "FLUX dystopia: 120–180 words, mandatory prefix 'Cyberpunk dystopian Earth, attention monopoly era:', no tag spam",
+      "Environment: neon billboards, hanging cable bundles, industrial haze, cybernetic conduits",
+      "role-separated: never fuse cybernetics onto Master Mei",
+      "NO firearms / handguns / rifles / modern action-movie tropes"
+    ],
+    "lighting_style": "moody cinematic lighting, dark atmospheric — cold moonlight / storm lightning / dawn rim light / warm torchfire, dystopian red neon reflections against deep dramatic shadows",
+    "target_audience_rules": "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. Scene 1 ≤8s meditation landscapes. Scenes 2+ ≈10–12s. Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens.",
+    "visual_concepts": {
+      "dopamine": "Scene 7 close-up: agonizing human cyborg face with brass cybernetic visors + temple wires",
+      "training": "Master Mei instructing martial monks carrying stone blocks in harsh cold rain — high physical intensity",
+      "system": "Scene 3 RAG: pale agonizing human slaves, cybernetic goggles, wires in skin",
+      "maya": "Biomechanical Maya goddess/entity holding glowing digital chains around human necks",
+      "focus": "Penultimate RAG: warrior smashing out of liquid-filled matrix pod",
+      "outro": "Master Mei base anchor on mountain ridge / open-air shrine, eyes locked on camera"
+    }
+  },
   "lofi_economic": {
     "forbidden_tokens": [
       "photorealistic",
@@ -104,49 +147,6 @@
         "EDM drop",
         "meditation bell loop"
       ]
-    }
-  },
-  "master_mei": {
-    "forbidden_tokens": [
-      "Gossip Goblin",
-      "fitness model",
-      "gym bro",
-      "tactical gear",
-      "gore",
-      "body horror",
-      "H.R. Giger",
-      "teens in bedrooms",
-      "smartphone desk",
-      "lifestyle soft-focus",
-      "pastel wellness",
-      "modern athletic wear",
-      "firearm",
-      "handgun",
-      "revolver",
-      "rifle",
-      "pistol",
-      "shotgun",
-      "gunfight",
-      "assault rifle"
-    ],
-    "mandatory_elements": [
-      "8–10 FRAME LORE (90–120s): F1 Master Mei base anchor + meditation (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate matrix pod facility breakout (RAG override); final Master Mei base anchor + temple eyes-on-camera",
-      "Master Mei DNA: snow-white topknot + two long white chest locks, extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white beard + flowing mustache, white inner robe + black vest gold lapels + mala beads",
-      "Mei environments: ~70% high-altitude nature (cliffs/ridges/sea of clouds), ~30% open-air mountain shrines; templates are references — match script philosophy",
-      "FLUX dystopia: 120–180 words, mandatory prefix 'Cyberpunk dystopian Earth, attention monopoly era:', no tag spam",
-      "Environment: neon billboards, hanging cable bundles, industrial haze, cybernetic conduits",
-      "role-separated: never fuse cybernetics onto Master Mei",
-      "NO firearms / handguns / rifles / modern action-movie tropes"
-    ],
-    "lighting_style": "moody cinematic lighting, dark atmospheric — cold moonlight / storm lightning / dawn rim light / warm torchfire, dystopian red neon reflections against deep dramatic shadows",
-    "target_audience_rules": "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. Scene 1 ≤8s meditation landscapes. Scenes 2+ ≈10–12s. Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens.",
-    "visual_concepts": {
-      "dopamine": "Scene 7 close-up: agonizing human cyborg face with brass cybernetic visors + temple wires",
-      "training": "Master Mei instructing martial monks carrying stone blocks in harsh cold rain — high physical intensity",
-      "system": "Scene 3 RAG: pale agonizing human slaves, cybernetic goggles, wires in skin",
-      "maya": "Biomechanical Maya goddess/entity holding glowing digital chains around human necks",
-      "focus": "Penultimate RAG: warrior smashing out of liquid-filled matrix pod",
-      "outro": "Master Mei base anchor on mountain ridge / open-air shrine, eyes locked on camera"
     }
   }
 }

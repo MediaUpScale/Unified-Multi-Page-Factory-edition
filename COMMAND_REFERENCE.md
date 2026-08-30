@@ -26,11 +26,11 @@ Run every command from the factory root unless noted.
 
 ## Valid choices (cheat sheet)
 
-### Pages (`--page` / `--channel`)
+### Channels (`--channel`, alias `--page`)
 
 `anna_protocol` · `master_mei` · `wonder_feed` · `down_dirty` · `ancient_knowledge` · `momma_circle` · `principles_of_wealth_finance_economics` · `endless_summer_paradise`
 
-Default `--page` for `main.py`: `anna_protocol`.
+Default `--channel` for `main.py`: `anna_protocol`.
 
 ### Post types (`--post-type`)
 
@@ -64,7 +64,7 @@ Forced: `wonder_feed` graphite types → `SKETCH`; `ancient_knowledge` / `master
 
 | Preset | Image | Audio | Video |
 |---|---|---|---|
-| `lowtier_together_elevenlabs` | Together `FLUX.1-schnell` | ElevenLabs | MoviePy |
+| `lowtier_deepinfra_elevenlabs` | DeepInfra `FLUX.1-schnell` | ElevenLabs | MoviePy |
 | `hightier_together_elevenlabs` | Together `FLUX.1-dev` | ElevenLabs | MoviePy |
 | `remote_gpu_pod` | Remote GPU Flux LoRA (ComfyUI) | F5-TTS | Wan2.2 img2vid |
 | `remote_gpu_serverless` | Remote GPU Flux LoRA (RunPod) | F5-TTS | Wan2.2 img2vid |
@@ -87,13 +87,13 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 
 ### STANDARD_QUOTE
 
-`python main.py --page anna_protocol --post-type STANDARD_QUOTE --quantity 5 --economic --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page anna_protocol --post-type STANDARD_QUOTE --quantity 5 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 5 long-form educational quote images for anna_protocol using Gemini for captions and Together FLUX Schnell for stills.*
 
 `python main.py --page master_mei --post-type STANDARD_QUOTE --quantity 5 --economic --avatar ON --draw-style NATURAL --model-api-flow hightier_together_elevenlabs`  
 *// Generates 5 photorealistic Master Mei quote portraits (avatar ON) with Together FLUX Dev + ElevenLabs unused for stills-only output.*
 
-`python main.py --page down_dirty --post-type STANDARD_QUOTE --quantity 3 --avatar OFF --format IMAGE_BACKGROUND --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page down_dirty --post-type STANDARD_QUOTE --quantity 3 --avatar OFF --format IMAGE_BACKGROUND --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 3 atmospheric (no-avatar) quote backgrounds for down_dirty using Together FLUX Schnell.*
 
 `python main.py --page anna_protocol --post-type STANDARD_QUOTE --quantity 1 --premium-relay --format TEXT_QUOTE`  
@@ -101,7 +101,7 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 
 ### SMART_BAIT
 
-`python main.py --page wonder_feed --post-type SMART_BAIT --quantity 10 --economic --avatar OFF --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page wonder_feed --post-type SMART_BAIT --quantity 10 --economic --avatar OFF --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 10 graphite-sketch viral-bait images for wonder_feed (draw-style is forced to SKETCH). Ultra-short hook overlay + sarcastic caption.*
 
 `python main.py --page anna_protocol --post-type SMART_BAIT --quantity 3 --avatar OFF --format IMAGE_BACKGROUND --model-api-flow hightier_together_elevenlabs`  
@@ -118,10 +118,10 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 `python main.py --page anna_protocol --post-type LONG_CAPTION_IMAGE --quantity 8 --avatar ON --image-primary models/gemini-2.5-flash-image`  
 *// Same likeness path with cheaper Gemini flash-image.*
 
-`python main.py --page ancient_knowledge --post-type LONG_CAPTION_IMAGE --quantity 40 --economic --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page ancient_knowledge --post-type LONG_CAPTION_IMAGE --quantity 40 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 40 long-format caption images for ancient_knowledge (logo only, no baked text). Photorealistic (NATURAL is forced). Together FLUX Schnell.*
 
-`python main.py --page wonder_feed --post-type LONG_CAPTION_IMAGE --quantity 20 --economic --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page wonder_feed --post-type LONG_CAPTION_IMAGE --quantity 20 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 20 long-caption graphite illustrations for wonder_feed (SKETCH lock). Clean image + deep storytelling caption.*
 
 ### CTA_CAPTION_IMAGE (anna_protocol only)
@@ -137,18 +137,26 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 
 ### CAROUSEL
 
-`python main.py --page anna_protocol --post-type CAROUSEL --quantity 4 --economic --model-api-flow lowtier_together_elevenlabs`  
-*// Generates 4 three-slide carousels (slide_01…03, distinct viewpoints) for anna_protocol using Together FLUX Schnell.*
+`--quantity` = number of carousels to produce. `--carousel_quantity` = images each carousel hosts (default `3`). All slides are generated from the same carousel topic/prompt, so every frame is fully related to the theme.
+
+`python main.py --page anna_protocol --post-type CAROUSEL --quantity 4 --carousel_quantity 3 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
+*// Produces 4 distinct carousels, each with 3 slides (slide_01…03, distinct viewpoints), using DeepInfra FLUX Schnell.*
+
+`python main.py --page anna_protocol --post-type CAROUSEL --quantity 3 --carousel_quantity 5`  
+*// Produces 3 distinct carousels, each with 5 fully theme-related slides.*
 
 `python main.py --page wonder_feed --post-type CAROUSEL --quantity 2 --economic --model-api-flow hightier_together_elevenlabs`  
-*// Generates 2 graphite 3-slide carousels for wonder_feed with Together FLUX Dev.*
+*// Generates 2 graphite carousels (3 slides each by default) for wonder_feed with Together FLUX Dev.*
+
+`python main.py --page anna_protocol --post-type CAROUSEL --quantity 3 --avatar ON`  
+*// CAROUSEL honours `--avatar ON` — every slide uses Gemini Pro image (Gemini 3) with the Anna avatar reference for likeness consistency.*
 
 ### Image-only / caption-only / dry-run
 
 `python main.py --page wonder_feed --post-type SMART_BAIT --quantity 5 --skip-image --economic`  
 *// Writes captions + planner rows only; skips Gemini/Together image synthesis.*
 
-`python main.py --page anna_protocol --post-type STANDARD_QUOTE --quantity 5 --skip-caption --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page anna_protocol --post-type STANDARD_QUOTE --quantity 5 --skip-caption --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Synthesizes images only; skips caption/research LLM calls.*
 
 `python main.py --page master_mei --post-type STANDARD_QUOTE --test`  
@@ -174,7 +182,7 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 
 ### ECONOMIC_REEL — Together + ElevenLabs + MoviePy (cloud stack)
 
-`python main.py --page wonder_feed --post-type ECONOMIC_REEL --quantity 3 --economic --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL --quantity 3 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 3 graphite Ken Burns reels for wonder_feed (format forced to DYNAMIC_REEL, style SKETCH). Flux Schnell stills + ElevenLabs TTS + MoviePy compile.*
 
 `python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 2 --economic --model-api-flow hightier_together_elevenlabs --video-length 80 --scene-duration progressive`  
@@ -183,7 +191,7 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 `python main.py --page master_mei --post-type ECONOMIC_REEL --quantity 1 --economic --avatar ON --model-api-flow hightier_together_elevenlabs --video-length 105`  
 *// Generates 1 cinematic Master Mei reel (~105 s) with avatar ON, FLUX Dev stills, ElevenLabs VO, MoviePy assembly.*
 
-`python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 1 --economic --cta OFF --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 1 --economic --cta OFF --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Same ECONOMIC_REEL path but suppresses comment-to-receive CTAs and DM links in captions.*
 
 ### ECONOMIC_REEL — Remote GPU (Flux LoRA + F5-TTS + Wan2.2)
@@ -249,12 +257,12 @@ Requires `--scene-duration fixed:N` (progressive is ECONOMIC_REEL-only). Default
 
 ### HYBRID_VIDEO (7 s Ken Burns loop from a still)
 
-`python main.py --page anna_protocol --post-type STANDARD_QUOTE --format HYBRID_VIDEO --quantity 2 --economic --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page anna_protocol --post-type STANDARD_QUOTE --format HYBRID_VIDEO --quantity 2 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 2 stills then compiles each into a 7-second Ken Burns zoom loop (video_converter), not a full ECONOMIC_REEL.*
 
 ### Generate + auto-schedule to YouTube
 
-`python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 4 --economic --publish-youtube --interval-hours 12 --random-delay-max-minutes 60 --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 4 --economic --publish-youtube --interval-hours 12 --random-delay-max-minutes 60 --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Generates 4 reels then uploads them as YouTube Scheduled (private + publishAt). Slot i = now + 12 h × (i+1) plus 0–60 min jitter. Uses credentials/tokens/youtube_token_ancient_knowledge.json. Alias: --upload-youtube.*
 
 `python main.py --page master_mei --post-type ECONOMIC_REEL --quantity 2 --economic --publish-youtube --interval-hours 6 --model-api-flow hightier_together_elevenlabs`  
@@ -264,7 +272,7 @@ Requires `--scene-duration fixed:N` (progressive is ECONOMIC_REEL-only). Default
 
 ### Render gate (inspect stills before compile)
 
-`python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 1 --economic --render-approval-required --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 1 --economic --render-approval-required --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// After scene_01.png… are written to outputs/ancient_knowledge/assets/<episode_id>/, pauses for [ENTER] before audio/video compile. Ctrl+C aborts.*
 
 ---
@@ -279,10 +287,10 @@ Avatar likeness is a generation flag on image/reel post types, not a separate po
 `python main.py --page master_mei --post-type ECONOMIC_REEL --quantity 1 --avatar ON --economic --model-api-flow remote_gpu_pod`  
 *// Generates 1 Master Mei reel with avatar ON (page default if omitted). Remote GPU Flux LoRA stills include the likeness reference when the channel LoRA/trigger is configured.*
 
-`python main.py --page anna_protocol --post-type SMART_BAIT --quantity 5 --avatar OFF --economic --model-api-flow lowtier_together_elevenlabs`  
-*// Bypasses the avatar pipeline — purely atmospheric SMART_BAIT backgrounds (SMART_BAIT / CAROUSEL still force avatar OFF; LONG_CAPTION_IMAGE and CTA_CAPTION_IMAGE honour `--avatar`).*
+`python main.py --page anna_protocol --post-type SMART_BAIT --quantity 5 --avatar OFF --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
+*// Bypasses the avatar pipeline — purely atmospheric SMART_BAIT backgrounds (SMART_BAIT still forces avatar OFF; LONG_CAPTION_IMAGE, CTA_CAPTION_IMAGE and CAROUSEL honour `--avatar`).*
 
-`python main.py --page down_dirty --post-type STANDARD_QUOTE --quantity 4 --avatar OFF --draw-style NATURAL --economic --model-api-flow lowtier_together_elevenlabs`  
+`python main.py --page down_dirty --post-type STANDARD_QUOTE --quantity 4 --avatar OFF --draw-style NATURAL --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Atmospheric cinematic stills for down_dirty (page default avatar OFF; no likeness file required).*
 
 ---

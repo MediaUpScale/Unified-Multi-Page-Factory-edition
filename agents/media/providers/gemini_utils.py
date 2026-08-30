@@ -24,9 +24,6 @@ import re
 import time
 from typing import Any, Literal
 
-from google import genai
-from google.genai import errors as genai_errors
-
 logger = logging.getLogger(__name__)
 
 Capability = Literal["text", "image"]
@@ -64,6 +61,8 @@ def make_gemini_client(api_key: str, *, api_version: str = "v1beta") -> genai.Cl
     Return a google-genai Client pinned to ``api_version``.
     The SDK sends ``x-goog-api-key`` automatically.
     """
+    from google import genai  # lazy — heavy SDK (~3 s); only loaded on demand
+
     return genai.Client(
         api_key=api_key,
         http_options={"api_version": api_version},
@@ -447,6 +446,8 @@ def generate_content_with_model_fallback(
         next_id = model_chain[i + 1] if i + 1 < total else None
 
         for attempt in range(MAX_503_RETRIES):
+            from google.genai import errors as _g_errors  # lazy — resolve exception class on demand
+
             try:
                 try:
                     import config as _app_cfg  # noqa: PLC0415
@@ -465,7 +466,7 @@ def generate_content_with_model_fallback(
                 logger.info("Gemini OK | model=%s | attempt=%d", model_id, attempt)
                 return response
 
-            except (genai_errors.APIError, Exception) as exc:  # noqa: BLE001
+            except (_g_errors.APIError, Exception) as exc:  # noqa: BLE001
                 last = exc
 
                 if _is_retryable_503(exc):

@@ -2,8 +2,8 @@
 """
 Channel context loader for the Unified Multi-Page Factory.
 
-Bootstrap for ``channels_config/{channel_id}/`` (CLI flag is still ``--page``).
-Resolves paths and pipeline flags from ``--page``, ``--avatar``, and ``--format``.
+Bootstrap for ``channels_config/{channel_id}/`` (CLI flag is ``--channel``, alias ``--page``).
+Resolves paths and pipeline flags from ``--channel`` (``--page``), ``--avatar``, and ``--format``.
 Each channel lives in an isolated directory and carries its own:
 
   - master_dna.json      — persona data, environments, voice, CTAs
@@ -378,13 +378,13 @@ class PageContext:
         Not used for CTA_CAPTION_IMAGE (original Anna CTA posts have no © footer).
 
         Sources (in priority order):
-          1. CAPTION_SIGNATURE in page_config.py  (explicit override)
+          1. CAPTION_SIGNATURE in page_config.py  (explicit override; an empty
+             string DISABLES the footer — the signature is intentionally omitted)
           2. ``© {display_name} | by MediaUpScale`` derived from display_name
           3. ``© MediaUpScale`` ultimate fallback
         """
-        explicit = self.page_cfg.get("CAPTION_SIGNATURE", "")
-        if explicit:
-            return str(explicit).strip()
+        if "CAPTION_SIGNATURE" in self.page_cfg:
+            return str(self.page_cfg.get("CAPTION_SIGNATURE") or "").strip()
         name = self.display_name
         if name:
             return f"© {name} | by MediaUpScale"

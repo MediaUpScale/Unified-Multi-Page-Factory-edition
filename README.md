@@ -339,13 +339,13 @@ PINTEREST_BOARD_ID=
 
 ```bash
 # 1 ECONOMIC_REEL for wonder_feed (economic mode, sketch style)
-python main.py --page wonder_feed --post-type ECONOMIC_REEL --economic --qty 1
+python main.py --channel wonder_feed --post-type ECONOMIC_REEL --economic --qty 1
 
 # 3 SMART_BAIT images for anna_protocol (premium, avatar OFF)
-python main.py --page anna_protocol --post-type SMART_BAIT --avatar OFF --qty 3
+python main.py --channel anna_protocol --post-type SMART_BAIT --avatar OFF --qty 3
 
 # 5 STANDARD_QUOTE images for master_mei (economic)
-python main.py --page master_mei --post-type STANDARD_QUOTE --economic --qty 5
+python main.py --channel master_mei --post-type STANDARD_QUOTE --economic --qty 5
 ```
 
 ### Retroactive B2 upload + PostPlanner

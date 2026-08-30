@@ -66,16 +66,43 @@ def _repair_drive_text_file(file_path: Path) -> bool:
 def _clean_all_python_sources(engine_root: Path) -> None:
     """
     Glob every .py and .json in the project and repair Drive-sync encoding issues.
-    Runs silently at bootstrap before any imports that touch persona/config files.
+
+    Runs at bootstrap. The full recursive scan is expensive on Google Drive
+    (thousands of JSON/metric store files), so it is executed on a background
+    daemon thread to keep ``python main.py`` responsive. Disposable / dependency
+    directories are skipped — those files must never be rewritten.
     """
-    for pattern in ("*.py", "*.json"):
-        for candidate in sorted(engine_root.rglob(pattern)):
-            if _repair_drive_text_file(candidate):
+    import threading as _threading
+
+    _EXCLUDE_DIR_NAMES = {
+        "__pycache__", ".git", ".svn", ".hg",
+        ".venv", "venv", "env", "node_modules",
+        "site-packages", "dist-packages", ".pytest_cache",
+    }
+
+    def _clean() -> None:
+        for pattern in ("*.py", "*.json"):
+            for candidate in sorted(engine_root.rglob(pattern)):
                 try:
-                    rel = candidate.relative_to(engine_root)
+                    if any(
+                        part in _EXCLUDE_DIR_NAMES
+                        for part in candidate.relative_to(engine_root).parts
+                    ):
+                        continue
                 except ValueError:
-                    rel = candidate
-                print(f"[bootstrap] Repaired {rel}", file=sys.stderr)
+                    pass
+                if _repair_drive_text_file(candidate):
+                    try:
+                        rel = candidate.relative_to(engine_root)
+                    except ValueError:
+                        rel = candidate
+                    print(f"[bootstrap] Repaired {rel}", file=sys.stderr)
+
+    # Non-blocking: let the engine start producing immediately.
+    _repair_thread = _threading.Thread(
+        target=_clean, name="bootstrap-drive-repair", daemon=True
+    )
+    _repair_thread.start()
 
 
 _ENGINE_ROOT_BOOT = Path(__file__).resolve().parent
@@ -89,7 +116,7 @@ _clean_all_python_sources(_ENGINE_ROOT_BOOT)
 
 def _preparse_active_page() -> str:
     """
-    Extract --page value from sys.argv without full argparse.
+    Extract --channel (alias --page) value from sys.argv without full argparse.
     Sets ACTIVE_PAGE in the environment so all subsequent module imports
     (config, persona_dna) resolve the correct page-specific paths.
     Returns the page slug for informational logging.
@@ -98,10 +125,10 @@ def _preparse_active_page() -> str:
     page = "anna_protocol"  # default
     argv = sys.argv[1:]
     for i, arg in enumerate(argv):
-        if arg == "--page" and i + 1 < len(argv):
+        if arg in ("--channel", "--page") and i + 1 < len(argv):
             page = argv[i + 1].lower().strip()
             break
-        if arg.startswith("--page="):
+        if arg.startswith(("--channel=", "--page=")):
             page = arg.split("=", 1)[1].lower().strip()
             break
     os.environ["ACTIVE_PAGE"] = page
@@ -135,8 +162,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-
-from google import genai
 
 import config as app_config
 from agents.writer.caption_engine import (
@@ -784,6 +809,8 @@ def _snapshot_verified_models(
             research_primary_id=research_pref,
             humanizer_summary=humanizer,
         )
+
+    from google import genai  # lazy — google.genai SDK is heavy (~3 s); only needed with a key
 
     client = genai.Client(api_key=gem_key)
     research_chain = build_model_chain(
@@ -1825,6 +1852,7 @@ def _produce_variant_worker(
     write_lock: threading.Lock,
     cta_enabled: bool = True,
     post_type: str = "STANDARD_QUOTE",
+    carousel_quantity: int = 3,
     image_style: str = "NATURAL",
     generated_hooks_cache: "list[str] | None" = None,
     hooks_cache_lock: "threading.Lock | None" = None,
@@ -2149,14 +2177,16 @@ def _produce_variant_worker(
     # SMART_BAIT forces avatar_mode="OFF" so the atmospheric context
     # derived from the text hook drives the image prompt unconditionally.
     # ====================================================================
-    # SMART_BAIT / CAROUSEL → atmospheric (avatar OFF).
-    # LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE: Gemini Pro + likeness only when --avatar ON is parsed.
+    # SMART_BAIT → atmospheric (avatar OFF).
+    # LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE / CAROUSEL: Gemini Pro + likeness
+    # only when --avatar ON is parsed. CAROUSEL honours --avatar ON so the
+    # slide frames reuse the page avatar reference (Gemini 3 via bootstrap).
     # Omitted flag keeps cheap Flux (page DEFAULT_AVATAR_MODE does not switch models).
     # ECONOMIC_REEL → OFF by default, EXCEPT master_mei which MUST likeness-lock
     # Act 1 to channels_config/master_mei/avatar_reference/avatar.png.
-    if post_type in ("SMART_BAIT", "CAROUSEL"):
+    if post_type == "SMART_BAIT":
         image_avatar_mode = "OFF"
-    elif post_type in ("LONG_CAPTION_IMAGE", "CTA_CAPTION_IMAGE"):
+    elif post_type in ("LONG_CAPTION_IMAGE", "CTA_CAPTION_IMAGE", "CAROUSEL"):
         _cli_av = (
             str((page_ctx.page_cfg.get("AVATAR_CLI") if page_ctx else None) or "")
             .upper()
@@ -2483,7 +2513,7 @@ def _produce_variant_worker(
                 _prov = getattr(_flow.image, "provider", "") or ""
                 if _prov == "gemini" and _flow.image.model:
                     _override = _flow.image.model
-                elif _cli_img_prod and _prov == "together":
+                elif _cli_img_prod and _prov in ("together", "deepinfra"):
                     _flow_model = _flow_img_model()
                     if _flow_model:
                         _override = _flow_model
@@ -2659,11 +2689,15 @@ def _produce_variant_worker(
         if cost_tracker is None:
             _images_generated_this_variant = 1
 
-    # ── CAROUSEL: generate slides 2 and 3 with distinct viewpoint directives ─
+    # ── CAROUSEL: generate slides 2..N with distinct viewpoint directives ─
     # Slide 1 is the image already generated above (same image_prompt).
-    # Slides 2 and 3 use the same base style but with a different cinematographic
-    # angle so the three frames form a coherent visual narrative for the post.
+    # Remaining slides use the same base style/image_prompt but a different
+    # cinematographic angle so the frames form a coherent visual narrative,
+    # and are all related to the carousel theme. --carousel_quantity controls
+    # how many images each carousel hosts (default 3); --quantity controls how
+    # many carousels are produced (handled upstream by the batch loop).
     if post_type == "CAROUSEL" and not skip_image and raw_bg_path is not None and adapter is not None:
+        _carousel_quantity = max(1, int(carousel_quantity or 3))
         _carousel_image_paths.append(str(raw_bg_path))  # slide 01
         _carousel_slide_directives = [
             (
@@ -2676,13 +2710,47 @@ def _produce_variant_worker(
                 "Dramatic low-angle or aerial perspective. Symbolic composition, mysterious "
                 "atmospheric haze, sense of scale and ancient grandeur revealed from a new angle.",
             ),
+            (
+                "SLIDE {n} — WIDE ENVIRONMENTAL ESTABLISHING SHOT",
+                "High-orbit wide aerial or sweeping panorama establishing the full setting, "
+                "scale, and relationship between subject and landscape. Depth of field recedes "
+                "into a distant horizon. Maintain the same colour grading and props as slide 01.",
+            ),
+            (
+                "SLIDE {n} — INTIMATE OVER-THE-SHOULDER DETAIL",
+                "Over-the-shoulder vantage point behind the main subject, drawing the viewer into "
+                "the frame with the subject's hands or the primary tool/item in crisp focus. "
+                "Foreground sharp, background softly blurred. Same palette as slide 01.",
+            ),
+            (
+                "SLIDE {n} — HERO LOW-ANGLE HONOUR SHOT",
+                "Dramatic low-angle upturned perspective that makes the central subject or monument "
+                "tower above the viewer. Bold sky or ceiling backdrop, strong vertical lines, "
+                "matching the visual language of slide 01.",
+            ),
+            (
+                "SLIDE {n} — SYMMETRIC TOP-DOWN / BIRD'S EYE",
+                "Straight-down bird's eye composition revealing the geometric or sacred layout of the "
+                "scene — the arrangement, circles, or patterns that are invisible at eye level. "
+                "Colour-correlated with slide 01.",
+            ),
+            (
+                "SLIDE {n} — GOLDEN-HOUR BACKLIT VIGNETTE",
+                "Single-source golden/warm backlight rim-lighting the subject, long shadows, "
+                "atmospheric haze glowing behind. Emotional, cinematic closure frame. Same props, "
+                "same palette as slide 01.",
+            ),
         ]
-        for _ci, (_slide_label, _slide_extra) in enumerate(_carousel_slide_directives):
-            _slide_num = _ci + 2  # 2, 3
+        for _ci in range(1, _carousel_quantity):
+            _slide_num = _ci + 1  # 2, 3, … carousel_quantity
+            _dir_idx = (_ci - 1) % len(_carousel_slide_directives)
+            _slide_label_raw, _slide_extra = _carousel_slide_directives[_dir_idx]
+            _slide_label = _slide_label_raw.format(n=_slide_num)
             _slide_prompt = (
                 f"{image_prompt} "
                 f"{_slide_label}: {_slide_extra} "
-                f"(Carousel frame {_slide_num} of 3 — maintain visual consistency with slide 01.)"
+                f"(Carousel frame {_slide_num} of {_carousel_quantity} — fully related to the theme; "
+                f"maintain visual consistency with slide 01.)"
             )
             try:
                 _slide_img = adapter.generate(
@@ -2694,7 +2762,10 @@ def _produce_variant_worker(
                 )
                 _carousel_image_paths.append(str(_slide_img))
                 _images_generated_this_variant += _track_adapter_image(cost_tracker, adapter)
-                _LOG.info("CAROUSEL slide %d generated → %s", _slide_num, Path(_slide_img).name)
+                _LOG.info(
+                    "CAROUSEL slide %d/%d generated → %s",
+                    _slide_num, _carousel_quantity, Path(_slide_img).name,
+                )
             except Exception as _ce:  # noqa: BLE001
                 _LOG.warning("CAROUSEL slide %d generation failed: %s — skipping.", _slide_num, _ce)
     elif post_type == "CAROUSEL" and not skip_image and raw_bg_path is not None:
@@ -5201,6 +5272,7 @@ def _produce_agentic(
     caption_engine: "CaptionEngine | None",
     per_variant_topics: "list[str] | None",
     envelope_base: dict[str, Any],
+    carousel_quantity: int = 3,
 ) -> dict[str, Any]:
     """Run PipelineOrchestrator and map results into a produce() envelope."""
     from agents.orchestrator import PipelineOrchestrator
@@ -5449,6 +5521,7 @@ def produce(
     page_ctx: PageContext | None = None,
     cta_enabled: bool = True,
     post_type: str = "STANDARD_QUOTE",
+    carousel_quantity: int = 3,
     image_style: str = "NATURAL",
     render_approval_required: bool = False,
     agentic_pipeline: bool | None = None,
@@ -5497,6 +5570,7 @@ def produce(
         "avatar_mode": avatar_mode,
         "post_format": post_format,
         "post_type": post_type,
+        "carousel_quantity": int(carousel_quantity or 3),
         "cta_enabled": cta_enabled,
         "items": [],
     }
@@ -5852,6 +5926,7 @@ def produce(
             caption_engine=caption_engine,
             per_variant_topics=per_variant_topics,
             envelope_base=envelope,
+            carousel_quantity=int(carousel_quantity or 3),
         )
 
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -5971,6 +6046,7 @@ def produce(
         write_lock=write_lock,
         cta_enabled=cta_enabled,
         post_type=post_type,
+        carousel_quantity=int(carousel_quantity or 3),
         image_style=image_style,
         generated_hooks_cache=generated_hooks_cache,
         hooks_cache_lock=hooks_cache_lock,
@@ -6391,12 +6467,24 @@ def cli() -> None:
         help="Number of unique post variants to produce concurrently. Alias: --count, -n. Default: 1.",
     )
     parser.add_argument(
-        "--page",
+        "--carousel_quantity",
+        dest="carousel_quantity",
+        type=int,
+        default=3,
+        metavar="N",
+        help=(
+            "CAROUSEL post type only: number of images each carousel hosts. "
+            "Default: 3. --quantity controls how many carousels are produced."
+        ),
+    )
+    parser.add_argument(
+        "--channel", "--page",
+        dest="page",
         default="anna_protocol",
         choices=list(VALID_PAGES),
-        metavar="PAGE",
+        metavar="CHANNEL",
         help=(
-            f"Target page persona. Options: {', '.join(VALID_PAGES)}. "
+            f"Target channel (page persona). Options: {', '.join(VALID_PAGES)}. "
             "Default: anna_protocol."
         ),
     )
@@ -6505,8 +6593,9 @@ def cli() -> None:
             "WAN_REEL: ancient_knowledge only. Reuses ECONOMIC_REEL script/TTS/"
             "still pipeline, then Wan2.2 img2vid per act (bucket holds) with "
             "Ken Burns fallback. Smoke test: core.wan_reel_engine.run_wan_reel_test. "
-            "CAROUSEL: generates 3 visually cohesive images (slide_01..03) with distinct "
-            "scene viewpoints for a 3-part visual narrative post. "
+            "CAROUSEL: generates visually cohesive images (slide_01..N) with distinct "
+            "scene viewpoints for a multi-part visual narrative post. "
+            "Images per carousel = --carousel_quantity (default 3); POSTS = --quantity."
             "REFERENCE_BASED_REELS: extract a raw-footage clip, overlay an LLM hook text, "
             "blend lullaby ambient audio — no image generation. Designed for momma_circle."
         ),
@@ -6932,7 +7021,7 @@ def cli() -> None:
         raise SystemExit(f"[model_api_flows] {_flow_exc}") from _flow_exc
 
     if args.resume_youtube_queue:
-        _explicit_page = any(a == "--page" or a.startswith("--page=") for a in sys.argv[1:])
+        _explicit_page = any(a in ("--channel", "--page") or a.startswith(("--channel=", "--page=")) for a in sys.argv[1:])
         _resume_page = args.page if _explicit_page else None
         print(
             "[YouTube] --resume-youtube-queue: resuming pending upload queue"
@@ -7348,6 +7437,7 @@ def cli() -> None:
             page_ctx=page_ctx,
             cta_enabled=(args.cta.upper() != "OFF"),
             post_type=args.post_type.upper(),
+            carousel_quantity=getattr(args, "carousel_quantity", 3) or 3,
             image_style=args.draw_style.upper(),
             render_approval_required=bool(
                 getattr(args, "render_approval_required", False)

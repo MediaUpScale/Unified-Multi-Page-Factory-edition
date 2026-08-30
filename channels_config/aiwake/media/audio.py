@@ -70,6 +70,8 @@ _SAFE_NAME_RE = re.compile(r"[^a-z0-9]+")
 _ELLIPSIS_RE = re.compile(r"\.{3,}|…+")
 _DRAMATIC_BREAK_S = 1.5
 _CORE_ROLE = "orchestrator"
+CTA_VOICE = "en-US-BrianNeural"
+_AIWAKE_WORD = re.compile(r"\bAiwake\b", re.IGNORECASE)
 
 # Tokens that do not distinguish one model family from another.
 _GENERIC_ALIAS_TOKENS = frozenset({"chat", "instruct", "preview", "latest"})
@@ -193,6 +195,14 @@ def resolve_voice(
     return config.target_voice
 
 
+def resolve_cta_voice(config: AudioConfig | None = None) -> str:
+    """CTA uses the orchestrator seat voice, never a third neural."""
+    if config is None:
+        return CTA_VOICE
+    mapping = {**SEAT_VOICES, **dict(config.voice_map)}
+    return mapping.get("orchestrator") or config.orchestrator_voice or CTA_VOICE
+
+
 # --------------------------------------------------------------------------- #
 # Orchestrator SSML pauses
 # --------------------------------------------------------------------------- #
@@ -285,6 +295,138 @@ def probe_duration(path: Path, *, fallback_text: str = "") -> tuple[float, bool]
             return duration, False
     _LOG.warning("no probe could read %s — estimating from text length", path.name)
     return estimate_duration(fallback_text), True
+
+
+# --------------------------------------------------------------------------- #
+# End-of-video CTA voice
+# --------------------------------------------------------------------------- #
+def pronounce_cta_text(text: str) -> str:
+    """Spoken CTA: 'Aiwake' becomes 'A.I. wake' so the voice says A-I, then wake."""
+    return _AIWAKE_WORD.sub("A.I. wake", text or "")
+
+
+_CTA_NO_PAUSE_RE = re.compile(r"[,!?;:]|…+")
+_CTA_PAUSE_RUN_RE = re.compile(r"\s{2,}")
+_CTA_AI_WAKE_SPOKEN = "A.I. wake"
+
+
+def flatten_cta_spoken(text: str) -> str:
+    """One seamless phrase: strip internal punctuation so TTS reads it fluidly.
+
+    The CTA is a single energetic line — dropping commas, periods, and ellipses
+    removes every artificial micro-pause while keeping the "A.I. wake"
+    pronunciation intact (the spelling dots are preserved so the voice still
+    reads A-I, wake).
+    """
+    spoken = pronounce_cta_text(text or "")
+    spoken = spoken.replace(_CTA_AI_WAKE_SPOKEN, "\x00")
+    spoken = _CTA_NO_PAUSE_RE.sub(" ", spoken)
+    spoken = spoken.replace("\x00", _CTA_AI_WAKE_SPOKEN)
+    return _CTA_PAUSE_RUN_RE.sub(" ", spoken).strip()
+
+
+def synthesize_cta_line(
+    text: str,
+    destination: Path,
+    *,
+    config: AudioConfig | None = None,
+) -> AudioAsset:
+    """Speak the end-card CTA with the orchestrator neural voice.
+
+    Silent engines and missing ``edge-tts`` fall back to an estimated duration
+    so tests never hit the network. Live debate renders synthesise a real MP3.
+    """
+    try:
+        from ..contracts import sanitize_tts_input  # noqa: PLC0415
+    except ImportError:  # pragma: no cover
+        from contracts import sanitize_tts_input  # type: ignore[no-redef]
+
+    spoken = sanitize_tts_input(text) or (text or "").strip()
+    duration_est = estimate_duration(spoken)
+    engine_name = (config.engine if config is not None else "edge").strip().lower()
+    voice = resolve_cta_voice(config)
+    if engine_name == "silent" or not spoken:
+        return AudioAsset(
+            path=destination,
+            duration_s=duration_est,
+            voice="silent",
+            estimated=True,
+            char_count=len(spoken),
+            role="cta",
+        )
+    try:
+        import edge_tts  # noqa: PLC0415
+    except ImportError:
+        return AudioAsset(
+            path=destination,
+            duration_s=duration_est,
+            voice="silent",
+            estimated=True,
+            char_count=len(spoken),
+            role="cta",
+        )
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    phrase = flatten_cta_spoken(spoken)
+
+    async def _run() -> None:
+        # Faster spoken CTA so the end-card VO keeps pace with the quicker typewriter.
+        communicate = edge_tts.Communicate(phrase, voice=voice, rate="+28%")
+        await communicate.save(str(destination))
+
+    def _synthesise() -> None:
+        asyncio.run(_run())
+
+    try:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            _synthesise()
+        else:  # pragma: no cover
+            import threading
+
+            error: list[BaseException] = []
+
+            def _worker() -> None:
+                try:
+                    _synthesise()
+                except BaseException as exc:  # noqa: BLE001
+                    error.append(exc)
+
+            thread = threading.Thread(target=_worker, daemon=True)
+            thread.start()
+            thread.join()
+            if error:
+                raise error[0]
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("CTA TTS failed (%s); using estimated duration", exc)
+        return AudioAsset(
+            path=destination,
+            duration_s=duration_est,
+            voice="silent",
+            estimated=True,
+            char_count=len(spoken),
+            role="cta",
+        )
+
+    if not destination.is_file() or destination.stat().st_size < 512:
+        return AudioAsset(
+            path=destination,
+            duration_s=duration_est,
+            voice="silent",
+            estimated=True,
+            char_count=len(spoken),
+            role="cta",
+        )
+    duration, estimated = probe_duration(destination, fallback_text=spoken)
+    return AudioAsset(
+        path=destination,
+        duration_s=duration,
+        voice=voice,
+        estimated=estimated,
+        char_count=len(spoken),
+        role="cta",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -714,14 +856,33 @@ def resolve_bgm_track(
     *,
     module_root: Path | None = None,
     announce: bool = True,
+    seed: int | None = None,
 ) -> Path | None:
-    """Return the locked inspection bed when BGM is enabled and the file exists.
+    """Return the ambient bed for a render; never the same track twice in a row.
 
-    Debate reels always mix this sci-fi suspense track. Themed library files
-    are generated separately and selected by downstream channels.
+    Reads ``library_manifest.json`` next to the WAVs and picks an approved,
+    on-disk production track at random via a non-repeating shuffle queue. When
+    the manifest is missing or the library is empty, falls back to the locked
+    inspection bed (``test_track_lyria.wav``).
     """
+    import random as _random  # noqa: PLC0415
+
     if config is None or not config.enabled:
         return None
+    rng = _random.Random(seed) if seed is not None else _random
+    dest_dir = bgm_library_dir(
+        module_root=module_root,
+        relative=getattr(config, "test_track", None) or TEST_BGM_RELATIVE,
+    )
+    candidates = _pick_library_tracks(_read_library_manifest(dest_dir), dest_dir, rng=rng)
+    picked = _next_bgm_filename(candidates, rng=rng)
+    if picked is not None:
+        path = dest_dir / picked
+        if path.is_file():
+            _LOG.info("[BGM Engine] Selected track: %s", path.name)
+            print(f"[BGM Engine] Selected track: {path.name}")
+            return path
+
     path = test_bgm_path(module_root=module_root, relative=config.test_track or TEST_BGM_RELATIVE)
     if not path.is_file() or path.stat().st_size < _MIN_AUDIO_BYTES:
         _LOG.info(
@@ -742,6 +903,65 @@ def _announce_test_bgm(*, approved: bool = False) -> None:
     notice = BGM_APPROVED_NOTICE if approved else BGM_APPROVAL_NOTICE
     print(notice)
     _LOG.info(notice)
+
+
+#: Process-global non-repeating shuffle queue so consecutive renders in one
+#: batch never pick the same ambient track twice in a row.
+_BGM_SHUFFLE_QUEUE: list[str] = []
+
+
+def _read_library_manifest(dest_dir: Path) -> dict:
+    """Return the parsed ``library_manifest.json`` payload, or ``{}`` if absent."""
+    dest = dest_dir / BGM_MANIFEST_FILENAME
+    if not dest.is_file():
+        _LOG.info("no BGM library manifest at %s; falling back to inspection bed", dest)
+        return {}
+    try:
+        return json.loads(dest.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        _LOG.warning("could not read BGM library manifest %s: %s", dest, exc)
+        return {}
+
+
+def _pick_library_tracks(manifest: dict, dest_dir: Path, *, rng) -> list[str]:
+    """Approved, on-disk library filenames from the manifest (stable order)."""
+    candidates: list[str] = []
+    for row in manifest.get("library", ()) or ():
+        if not isinstance(row, dict):
+            continue
+        filename = str(row.get("filename", "") or "")
+        if not filename or not row.get("approved"):
+            continue
+        path = dest_dir / filename
+        if path.is_file() and path.stat().st_size >= _MIN_AUDIO_BYTES:
+            candidates.append(filename)
+    if not candidates:
+        # Fall back to whatever approved-production WAVs exist even without rows.
+        for filename in sorted(LOCKED_BGM_FILENAMES):
+            path = dest_dir / filename
+            if (
+                path.is_file()
+                and path.stat().st_size >= _MIN_AUDIO_BYTES
+                and filename != TEST_BGM_FILENAME
+            ):
+                candidates.append(filename)
+    return candidates
+
+
+def _next_bgm_filename(candidates: list[str], *, rng) -> str | None:
+    """Pull the next track from a non-repeating shuffle queue."""
+    if not candidates:
+        return None
+    global _BGM_SHUFFLE_QUEUE
+    if not _BGM_SHUFFLE_QUEUE:
+        _BGM_SHUFFLE_QUEUE = list(candidates)
+        rng.shuffle(_BGM_SHUFFLE_QUEUE)
+    filename = _BGM_SHUFFLE_QUEUE.pop(0)
+    if filename not in candidates:
+        _BGM_SHUFFLE_QUEUE = list(candidates)
+        rng.shuffle(_BGM_SHUFFLE_QUEUE)
+        filename = _BGM_SHUFFLE_QUEUE.pop(0)
+    return filename
 
 
 def bgm_fade_envelope(
@@ -1396,16 +1616,26 @@ def concat_audio(
     gap_s: float = 0.0,
     preroll_s: float = 0.0,
     reply_gap_s: float = 0.0,
+    post_response_s: float = 0.0,
+    postroll_s: float = 0.0,
+    send_hold_s: float = 0.0,
+    cta_overlay_path: Path | None = None,
+    cta_overlay_start_s: float = 0.0,
     typewriter: TypewriterConfig | None = None,
     typing_hold_ratio: float = _DEFAULT_HOLD_RATIO,
     bgm: BgmConfig | None = None,
     send_sfx: SendSfxConfig | None = None,
+    master_gain_db: float = 6.0,
 ) -> Path | None:
     """Stitch voice tracks into one continuous timeline.
 
     A ``preroll_s`` bed of silence starts the mix. After each CORE (sent)
-    question, ``reply_gap_s`` of silence holds before the incoming response.
-    ``gap_s`` is extra silence between every pair of tracks.
+    question, ``reply_gap_s`` of silence holds before the incoming response;
+    after a target rebuttal, ``post_response_s`` holds before the next
+    provocation. ``gap_s`` is extra silence between every pair of tracks. A
+    ``postroll_s`` bed of silence is appended so the CTA end-card has room.
+    When ``cta_overlay_path`` is given it is layered onto the mix beginning at
+    ``cta_overlay_start_s`` (the moment the CTA card finishes fading in).
 
     Per-track tail padding still matches ``asset.duration_s`` so the renderer's
     segment boundaries line up. When ``typewriter`` is enabled, keyboard clicks
@@ -1446,6 +1676,7 @@ def concat_audio(
             _LOG.debug("message_sent.wav ensure skipped: %s", exc)
     clips = []
     opened = []
+    deferred_postroll_click_at: float | None = None
     try:
         lead = AudioFileClip(str(real[0].path))
         opened.append(lead)
@@ -1458,6 +1689,7 @@ def concat_audio(
                 )
             )
         for index, asset in enumerate(real):
+            pending_gap_click_at: float | None = None
             clip = lead if index == 0 else AudioFileClip(str(asset.path))
             if index != 0:
                 opened.append(clip)
@@ -1495,23 +1727,32 @@ def concat_audio(
                     _LOG.debug("typewriter mix skipped for %s: %s", asset.path.name, exc)
             if mix_send and send_sfx is not None and asset.role == _CORE_ROLE:
                 typing_s = min(float(voice_full.duration or 0.0), asset.duration_s * typing_window)
-                try:
-                    click = AudioArrayClip(
-                        send_click_on_timeline(
-                            asset.duration_s,
-                            typing_s,
-                            send_sfx,
+                # Fire the click at the same instant as the visual send flash:
+                # after the read-hold that follows typing completion. When that
+                # lands past the voice clip (into reply_gap / postroll), stash
+                # the offset so the following silence carries the click.
+                click_at = typing_s + max(0.0, float(send_hold_s))
+                if click_at + 0.04 <= float(asset.duration_s):
+                    try:
+                        click = AudioArrayClip(
+                            send_click_on_timeline(
+                                asset.duration_s,
+                                click_at,
+                                send_sfx,
+                                fps=fps,
+                            ),
                             fps=fps,
-                        ),
-                        fps=fps,
-                    )
-                    mixed = CompositeAudioClip([voice_full, click]).with_duration(asset.duration_s)
-                    opened.append(click)
-                    opened.append(mixed)
-                    clips.append(mixed)
-                except Exception as exc:  # noqa: BLE001
-                    _LOG.debug("send sfx mix skipped for %s: %s", asset.path.name, exc)
+                        )
+                        mixed = CompositeAudioClip([voice_full, click]).with_duration(asset.duration_s)
+                        opened.append(click)
+                        opened.append(mixed)
+                        clips.append(mixed)
+                    except Exception as exc:  # noqa: BLE001
+                        _LOG.debug("send sfx mix skipped for %s: %s", asset.path.name, exc)
+                        clips.append(voice_full)
+                else:
                     clips.append(voice_full)
+                    pending_gap_click_at = click_at - float(asset.duration_s)
             else:
                 clips.append(voice_full)
 
@@ -1520,21 +1761,94 @@ def concat_audio(
                 extra_gap = max(float(gap_s), 0.0)
                 if asset.role == _CORE_ROLE:
                     extra_gap = max(extra_gap, float(reply_gap_s))
+                else:
+                    extra_gap = max(extra_gap, float(post_response_s))
             if extra_gap > 0.01:
+                if pending_gap_click_at is not None and mix_send and send_sfx is not None:
+                    try:
+                        gap_buf = send_click_on_timeline(
+                            extra_gap,
+                            max(0.0, min(float(pending_gap_click_at), max(0.0, extra_gap - 0.05))),
+                            send_sfx,
+                            fps=fps,
+                        )
+                        clips.append(AudioArrayClip(gap_buf, fps=fps))
+                        pending_gap_click_at = None
+                    except Exception as exc:  # noqa: BLE001
+                        _LOG.debug("send sfx gap mix skipped for %s: %s", asset.path.name, exc)
+                        clips.append(
+                            AudioArrayClip(
+                                np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
+                                fps=fps,
+                            )
+                        )
+                else:
+                    clips.append(
+                        AudioArrayClip(
+                            np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
+                            fps=fps,
+                        )
+                    )
+            elif pending_gap_click_at is not None:
+                # Last CORE line: fold the click into the postroll bed so we do
+                # not invent audio-only gap time that desyncs A/V.
+                deferred_postroll_click_at = pending_gap_click_at
+                pending_gap_click_at = None
+
+        postroll_click_at = deferred_postroll_click_at
+        if float(postroll_s) > 0.01:
+            if postroll_click_at is not None and mix_send and send_sfx is not None:
+                try:
+                    post_buf = send_click_on_timeline(
+                        float(postroll_s),
+                        max(0.0, min(float(postroll_click_at), max(0.0, float(postroll_s) - 0.05))),
+                        send_sfx,
+                        fps=mix_fps,
+                    )
+                    clips.append(AudioArrayClip(post_buf, fps=mix_fps))
+                except Exception as exc:  # noqa: BLE001
+                    _LOG.debug("send sfx postroll mix skipped: %s", exc)
+                    clips.append(
+                        AudioArrayClip(
+                            np.zeros((max(1, int(mix_fps * postroll_s)), 2), dtype="float32"),
+                            fps=mix_fps,
+                        )
+                    )
+            else:
                 clips.append(
                     AudioArrayClip(
-                        np.zeros((max(1, int(fps * extra_gap)), 2), dtype="float32"),
-                        fps=fps,
+                        np.zeros((max(1, int(mix_fps * postroll_s)), 2), dtype="float32"),
+                        fps=mix_fps,
                     )
                 )
 
         stitched = concatenate_audioclips(clips)
         destination.parent.mkdir(parents=True, exist_ok=True)
         mix_target = stitched
+        # Overlay the CTA voice at its start offset so the invite lands on the
+        # end-card without dragging the rest of the timeline.
+        if cta_overlay_path is not None and cta_overlay_path.is_file():
+            try:
+                cta_start = max(0.0, float(cta_overlay_start_s))
+                cta_src = AudioFileClip(str(cta_overlay_path))
+                opened.append(cta_src)
+                cta_fps = int(getattr(cta_src, "fps", mix_fps) or mix_fps)
+                bed = np.zeros((max(1, int(cta_start * cta_fps)), 2), dtype="float32")
+                cta_padded = concatenate_audioclips(
+                    [AudioArrayClip(bed, fps=cta_fps), cta_src]
+                )
+                opened.append(cta_padded)
+                stitched_len = float(stitched.duration or 0.0)
+                cta_padded = cta_padded.with_duration(max(stitched_len, float(cta_padded.duration or 0.0)))
+                mix_target = CompositeAudioClip([stitched, cta_padded])
+                opened.append(mix_target)
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("CTA overlay skipped: %s", exc)
+                mix_target = stitched
         bgm_path = resolve_bgm_track(bgm)
         if bgm_path is not None and bgm is not None:
             try:
-                duration = float(stitched.duration or 0.0)
+                duration = float(mix_target.duration or stitched.duration or 0.0)
                 bgm_src = AudioFileClip(str(bgm_path))
                 opened.append(bgm_src)
                 src_fps = int(getattr(bgm_src, "fps", 44100) or 44100)
@@ -1549,11 +1863,23 @@ def concat_audio(
                 )
                 bgm_clip = AudioArrayClip(bed, fps=src_fps).with_duration(duration)
                 opened.append(bgm_clip)
-                mix_target = CompositeAudioClip([stitched, bgm_clip]).with_duration(duration)
+                mix_target = CompositeAudioClip([mix_target, bgm_clip]).with_duration(duration)
                 opened.append(mix_target)
             except Exception as exc:  # noqa: BLE001
                 _LOG.warning("BGM overlay skipped: %s", exc)
-                mix_target = stitched
+        # Master loudness boost — preserves relative TTS/SFX/BGM balance.
+        master_db = float(master_gain_db or 0.0)
+        if abs(master_db) > 1e-6:
+            factor = float(10.0 ** (master_db / 20.0))
+            try:
+                mix_target = mix_target.with_volume_scaled(factor)
+                opened.append(mix_target)
+            except Exception:  # noqa: BLE001
+                try:
+                    mix_target = mix_target.volumex(factor)  # type: ignore[attr-defined]
+                    opened.append(mix_target)
+                except Exception as exc:  # noqa: BLE001
+                    _LOG.debug("master gain skipped: %s", exc)
         mix_target.write_audiofile(str(destination), logger=None)
         if mix_target is not stitched:
             mix_target.close()
@@ -1576,6 +1902,7 @@ __all__ = [
     "BGM_APPROVAL_NOTICE",
     "BGM_APPROVED_NOTICE",
     "BgmError",
+    "CTA_VOICE",
     "EdgeTTSEngine",
     "LYRIA_MODEL",
     "LYRIA_TEST_PROMPT",
@@ -1595,6 +1922,7 @@ __all__ = [
     "ensure_send_sfx_asset",
     "estimate_duration",
     "extract_audio_bytes",
+    "flatten_cta_spoken",
     "generate_bgm_batch",
     "generate_lyria_clip",
     "generate_test_bgm",
@@ -1602,9 +1930,12 @@ __all__ = [
     "prepare_bgm_bed",
     "prepare_tts_text",
     "probe_duration",
+    "pronounce_cta_text",
     "resolve_bgm_track",
+    "resolve_cta_voice",
     "resolve_voice",
     "synthesize_typewriter_clicks",
+    "synthesize_cta_line",
     "synthesize_send_click",
     "test_bgm_path",
     "typewriter_samples",

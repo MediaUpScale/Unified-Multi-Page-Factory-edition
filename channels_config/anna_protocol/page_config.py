@@ -10,6 +10,11 @@ from __future__ import annotations
 # Display name surfaced in logs and production summaries.
 PAGE_DISPLAY_NAME = "The Holistic Legacy — Anna's Protocol"
 
+# Brand copyright footer for LONG_CAPTION_IMAGE captions.
+# Empty string DISABLES the signature line — Anna's Protocol posts carry no
+# "© ... | by MediaUpScale" footer at the bottom.
+CAPTION_SIGNATURE = ""
+
 # Niche descriptor — injected into atmospheric prompts when --avatar OFF.
 CONTENT_NICHE = "holistic longevity, natural remedies, ancestral wellness, biochemistry"
 

@@ -74,6 +74,9 @@ from core.remote_gpu_manager import (  # noqa: E402
 TOGETHER_FLUX_SCHNELL = "black-forest-labs/FLUX.1-schnell"
 TOGETHER_FLUX_DEV = "black-forest-labs/FLUX.1-dev"
 TOGETHER_FLUX_DEV_LORA = "black-forest-labs/FLUX.1-dev-lora"
+# Together.ai no longer serves serverless Flux Schnell — it is generated via
+# DeepInfra (api.deepinfra.com), which exposes the FLUX-1-schnell model id.
+DEEPINFRA_FLUX_SCHNELL = "black-forest-labs/FLUX-1-schnell"
 GEMINI_PRO_IMAGE = "models/gemini-3-pro-image-preview"
 GEMINI_FLASH_IMAGE = "models/gemini-2.5-flash-image"
 
@@ -82,12 +85,14 @@ GEMINI_FLASH_IMAGE = "models/gemini-2.5-flash-image"
 # ---------------------------------------------------------------------------
 
 FLOWS: dict[str, dict[str, Any]] = {
-    # Legacy cloud stack — must ignore remote GPU even if .env has it on.
-    "lowtier_together_elevenlabs": {
+    # Low-tier cloud stack — Flux Schnell now runs on DeepInfra
+    # (api.deepinfra.com), not Together (Together dropped serverless Schnell).
+    # Must ignore remote GPU even if .env has it on.
+    "lowtier_deepinfra_elevenlabs": {
         "image": {
-            "provider": "together",
-            "model": TOGETHER_FLUX_SCHNELL,
-            # No lora — Together Schnell has no LoRA support on our account/docs.
+            "provider": "deepinfra",
+            "model": DEEPINFRA_FLUX_SCHNELL,
+            # No lora — DeepInfra Schnell has no LoRA support on our account/docs.
         },
         "audio": {"provider": "elevenlabs"},
         "video": {"provider": "moviepy"},
@@ -496,7 +501,7 @@ def resolve_production_flow(
 def _warn_incompatible_lora(flow: ResolvedFlow) -> None:
     """lowtier / Schnell must not silently carry LoRA."""
     img = flow.image
-    if img.provider != "together":
+    if img.provider not in ("together", "deepinfra"):
         return
     model = (img.model or "").lower()
     lora = img.lora_dict()
@@ -626,9 +631,9 @@ def media_uses_remote_gpu(media: str) -> bool | None:
 
 
 def resolved_together_image_model() -> str | None:
-    """Together model id from the active flow, if image provider is together."""
+    """Image model id from the active flow when its provider is together/deepinfra."""
     flow = get_active_flow()
-    if flow is None or flow.image.provider != "together":
+    if flow is None or flow.image.provider not in ("together", "deepinfra"):
         return None
     return flow.image.model
 

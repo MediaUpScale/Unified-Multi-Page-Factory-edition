@@ -8,8 +8,9 @@ import logging
 from pathlib import Path
 from textwrap import dedent
 
-from anthropic import Anthropic
-from google import genai
+# NOTE: ``anthropic`` and ``google.genai`` are NOT imported at module top —
+# they are heavy SDKs (~3-5 s combined) that slow down startup. They are
+# imported lazily inside __init__ / generation methods where they are used.
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -1054,20 +1055,27 @@ def build_long_caption_prompt(
     Isolated channels (ancient_knowledge) get investigative 3-paragraph copy
     with Pinterest metadata — never relationship-psychology archetypes.
     """
-    _sig = signature or f"© {page_display_name} | by MediaUpScale"
+    _sig = (signature or "").strip()
     if _is_isolated_channel(channel):
-        cta_close = (
-            f"\nParagraph 3 (CTA) must end with a curiosity invitation, then the exact line: {_sig}"
-            if cta_enabled
-            else f"\nDo not add a follow CTA. End with: {_sig}"
-        )
+        if _sig:
+            cta_close = (  # type: ignore[assignment]
+                f"\nParagraph 3 (CTA) must end with a curiosity invitation, then the exact line: {_sig}"
+                if cta_enabled
+                else f"\nDo not add a follow CTA. End with: {_sig}"
+            )
+        else:
+            cta_close = (  # type: ignore[assignment]
+                f"\nParagraph 3 (CTA) must end with a curiosity invitation."
+                if cta_enabled
+                else f"\nDo not add a follow CTA."
+            )
         return dedent(
             f"""
             You are writing a LONG_CAPTION_IMAGE post for: {page_display_name}
             Niche: {page_niche or topic}
 
             {persona_block}
-
+  1070|
             TOPIC: {topic}
 
             Write a comprehensive 3-paragraph post:
@@ -1077,7 +1085,7 @@ def build_long_caption_prompt(
 
             Rules:
             - Minimum 180 words. Never a single-sentence title.
-            - No relationship psychology, no wellness, no microbiome language.
+  1080|            - No relationship psychology, no wellness, no microbiome language.
             - No markdown bold, no bullet lists in the caption body.
             {cta_close}
 
@@ -1087,13 +1095,13 @@ def build_long_caption_prompt(
               "caption_body": "paragraph 1\\n\\nparagraph 2\\n\\nparagraph 3 plus 5 hashtags",
               "pinterest_title": "keyword-rich pin title, max 100 characters",
               "pinterest_description": "two-sentence pin description, no social CTAs"
-            }}
+  1090|            }}
             """
         ).strip()
 
     cta_close = (
         f"\n\nEnd the caption with the exact line: {_sig}"
-        if cta_enabled
+        if (cta_enabled and _sig)
         else ""
     )
     return dedent(
@@ -1242,17 +1250,20 @@ class CaptionEngine:
 
         # Headers sent on every request: x-api-key (auto from api_key)
         # + anthropic-version (required; defaults to 2023-06-01 from config).
-        self._anthropic = (
-            Anthropic(
+        # Lazy import: the Anthropic SDK is heavy (~1.6 s); load it only when
+        # a client is actually required (an API key is present).
+        _anthropic = None
+        if a_key:
+            from anthropic import Anthropic  # lazy — heavy SDK
+
+            _anthropic = Anthropic(
                 api_key=a_key,
                 default_headers={
                     "anthropic-version": app_config.ANTHROPIC_API_VERSION,
                     "x-api-key": a_key,
                 },
             )
-            if a_key
-            else None
-        )
+        self._anthropic = _anthropic
 
         # Dynamic Claude model selection via Models API.
         if writer_model:
@@ -2219,17 +2230,19 @@ class CaptionEngine:
         about relationship dynamics, emotional character, and modern marriage.
 
         ``signature`` is the brand copyright line appended to the caption footer
-        (e.g. ``© Ancient Knowledge | by MediaUpScale``).  When omitted it is
-        derived from ``page_display_name`` so it is always page-specific.
+        (e.g. ``© Ancient Knowledge | by MediaUpScale``).  When empty (``""``) no
+        footer is appended — the caption is returned without a copyright line.
+        When ``None`` it is derived from ``page_display_name`` so it is always
+        page-specific.
 
         Returns ``(caption, mode_tag)`` where mode_tag is one of:
           "humanized"           -- primary LLM succeeded
           "gemini_fallback"     -- Claude failed, Gemini succeeded
           "researcher_fallback" -- all LLMs failed
         """
-        _sig = signature or (
-            f"© {page_display_name} | by MediaUpScale" if page_display_name else "© MediaUpScale"
-        )
+        if signature is None:
+            signature = (f"© {page_display_name} | by MediaUpScale" if page_display_name else "© MediaUpScale")
+        _sig = str(signature or "").strip()
         persona = _persona_block(self._channel)
         prompt = build_long_caption_prompt(
             topic,
@@ -2245,6 +2258,9 @@ class CaptionEngine:
         self.last_pinterest_description = ""
 
         if _is_isolated_channel(self._channel):
+            _end_footer = (
+                "End caption_body with: " + _sig if _sig else ""
+            )
             _long_caption_system = (
                 "You are an investigative documentary writer for LONG_CAPTION_IMAGE.\n\n"
                 "Write a comprehensive 3-paragraph post including a Hook, a narrative Body, "
@@ -2257,10 +2273,13 @@ class CaptionEngine:
                 '  "pinterest_description": "two-sentence pin description without social CTAs"\n'
                 "}\n\n"
                 "image_text_overlay MUST be empty. Never use relationship or wellness language. "
-                "End caption_body with: " + _sig
-                + ("\n\n" + opening_style_block.strip() if opening_style_block else "")
+                + _end_footer
+                + (("\n\n" + opening_style_block.strip()) if opening_style_block else "")
             )
         else:
+            _end_footer = (
+                "- End with the exact line: " + _sig if _sig else ""
+            )
             _long_caption_system = (
                 "You are an elite psychological author writing for the 'LONG_CAPTION_IMAGE' format.\n\n"
                 "OUTPUT FORMAT (respond with ONLY valid JSON, nothing else):\n"
@@ -2278,7 +2297,7 @@ class CaptionEngine:
                 "- Analyze destructive female and male relationship behaviors.\n"
                 "- Cover exactly 2 specific traitor/betrayal scenarios with concrete detail.\n"
                 "- Conclude with guidance on managing the domestic home space for inner peace.\n"
-                "- End with the exact line: " + _sig
+                + _end_footer
             )
 
         raw_response = ""
@@ -2341,7 +2360,7 @@ class CaptionEngine:
         if not caption:
             return "", "researcher_fallback"
 
-        if _copyright not in caption:
+        if _copyright and _copyright not in caption:
             caption = f"{caption}\n\n{_copyright}"
 
         if _is_isolated_channel(self._channel):
