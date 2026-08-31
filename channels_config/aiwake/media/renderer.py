@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import os
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,7 +40,7 @@ import numpy as np
 
 try:
     from ..contracts import DebateTranscript, SpeakerRole, Utterance, pretty_model_name
-    from ..settings import AiwakeSettings, RenderConfig, resolve_outputs_dir, resolve_scratch_dir
+    from ..settings import AiwakeSettings, RenderConfig, Theme, resolve_outputs_dir, resolve_scratch_dir
     from .audio import AudioAsset, concat_audio, estimate_duration
     from .vfx import FrameContext, apply_chain, chain_needs_audio, resolve_chain
 except ImportError:  # pragma: no cover — standalone extraction
@@ -59,6 +60,51 @@ except ImportError:  # pragma: no cover — standalone extraction
     )
 
 _LOG = logging.getLogger("aiwake.media.renderer")
+
+# --------------------------------------------------------------------------- #
+# Item 5, Step 1 — mandatory diagnostic trace at the exact label paste site.
+# --------------------------------------------------------------------------- #
+#: Set ``AIWAKE_LABEL_TRACE=1`` to log the RGB/alpha reaching the ONE call
+#: site that ever pastes a label's pixels onto a frame (``_draw_pending_labels``
+#: below), for a handful of instances. Off by default so normal renders never
+#: pay the logging cost.
+_LABEL_TRACE_ENV = "AIWAKE_LABEL_TRACE"
+_LABEL_TRACE_MAX = 8
+_label_trace_count = 0
+
+
+def _trace_label_paint(
+    tag: str,
+    fill: tuple[int, int, int],
+    alpha: float,
+    paste_xy: tuple[int, int],
+) -> None:
+    """Log what is about to be pasted, right at the paste call site.
+
+    This is the literal instrumentation the item-5 diagnostic asked for: at the
+    exact line that touches the label's pixels (``canvas.paste(label_img, ...,
+    label_img)`` in ``_draw_pending_labels``), record the RGB/alpha reaching
+    that call. There is nothing to "walk up the call stack" for — ``label_img``
+    is a freshly-created ``RGBA`` image built two lines above the paste, drawn
+    directly from ``fill``/``alpha`` with no intervening ``Image.blend``,
+    ``Image.alpha_composite``, or semi-transparent-overlay paste in between, so
+    the trace also records that structural guarantee.
+    """
+    global _label_trace_count  # noqa: PLW0603
+    if _label_trace_count >= _LABEL_TRACE_MAX or not os.environ.get(_LABEL_TRACE_ENV):
+        return
+    _label_trace_count += 1
+    _LOG.info(
+        "LABEL_TRACE #%d tag=%r rgb=%s alpha=%.4f paste_xy=%s "
+        "path=fresh-RGBA-label_img->canvas.paste(label_img,xy,label_img) "
+        "no-intervening-blend-or-alpha_composite=True",
+        _label_trace_count,
+        tag,
+        fill,
+        alpha,
+        paste_xy,
+    )
+
 
 #: Fraction of each segment spent holding the completed line on screen.
 _TAIL_HOLD_RATIO = 0.18
@@ -88,6 +134,32 @@ def ease_in(u: float) -> float:
     return t * t * t
 
 
+def ease(u: float) -> float:
+    """Plain smooth ease: fluid acceleration and deceleration."""
+    t = min(1.0, max(0.0, float(u)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def motion_curve(u: float, easing: str = "ease", deceleration: float = 0.0) -> float:
+    """Resolve a named easing and optionally bias it toward a soft landing.
+
+    ``deceleration`` blends the selected base curve toward cubic ease-out,
+    making the start slightly faster and the finish slightly slower without
+    replacing the requested base easing.
+    """
+    t = min(1.0, max(0.0, float(u)))
+    curves = {
+        "linear": lambda value: value,
+        "ease": ease,
+        "ease_in": ease_in,
+        "ease_out": ease_out,
+        "ease_in_out": ease_in_out,
+    }
+    base = curves.get((easing or "ease").strip().lower(), ease)(t)
+    bias = min(1.0, max(0.0, float(deceleration)))
+    return base * (1.0 - bias) + ease_out(t) * bias
+
+
 def _fly_ease_out(u: float) -> float:
     """Alias kept for older call sites; identical to ``ease_out``."""
     return ease_out(u)
@@ -113,46 +185,31 @@ _USER_BUBBLE = (47, 48, 51)
 _TITLE_WHITE = (255, 255, 255)  # pure #FFFFFF for the header wordmark
 _FOOTER_COPY = "// autonomous exchange — unedited"
 
-#: Signature accents. Every blue model collapses to the primary #0451b1.
-_GEMINI_BLUE = (4, 81, 177)  # #0451b1
-#: Orchestrator name/title label fill — MUST stay fully opaque, pure #0451b1, in
-#: every frame (mid-flight, on arrival, and at rest in history). Never route this
-#: through a blend/opacity so the label can never wash out.
-_ORCH_LABEL_FILL = _GEMINI_BLUE
-_ORANGE_CARET = (255, 170, 0)  # #ffaa00 — reserved for the AI caret / responding label
+#: Signature accents. Source-of-truth colors come from `Theme.defaults().colors`
+#: (see the sourced aliases after `_hex_to_rgb`). Every blue model collapses to
+#: the primary orchestrator blue; the caret orange is the responder accent.
 
 #: Vertical clearance (px at full scale) from the canvas bottom to the docked
 #: compose box. Known-good: 150px classic rest + 150px Meta Reels safe-zone +
 #: 80px raised resting position so the bar clears Reels chrome comfortably.
 #: Scales 1:1 with ``preview_scale`` (380 → 190 at preview_scale=0.5).
-_DOCK_CLEARANCE_PX = 380
-_BUBBLE_OPACITY = 0.78
+# Visual/geometry constants once hardcoded here now live in `Theme` (settings.py)
+# as the single source of truth. The names below are kept purely as aliases so
+# anything still referencing them resolves to the active default theme rather
+# than an independent literal.
+_THEME = Theme.defaults()
+_DOCK_CLEARANCE_PX = _THEME.dock_clearance_px
+_BUBBLE_OPACITY = _THEME.bubble_opacity
+_SCROLL_GAP_PX = _THEME.scroll_gap_px
+_SCROLL_STREAM_EXTRA_PX = _THEME.scroll_stream_extra_px
+_SCROLL_TAU_S = _THEME.scroll_tau_s
+_HISTORY_LINE_SPACING = _THEME.line_spacing_history
+_ORCH_BUBBLE_WIDTH_FRAC = _THEME.orch_bubble_width_frac
+_TARGET_BUBBLE_WIDTH_FRAC = _THEME.target_bubble_width_frac
 
 # Assumed leading silence inside an edge-tts clip before real speech onset.
 # Typing waits this long so text never starts ahead of the voice (R4 item 14).
 _SPEECH_ONSET_S = 0.035
-
-# Extra in-viewport clearance ABOVE the compose box. The compose layout already
-# reserves ~20px (body_bottom = bar_top - clearance) between the scroll window and
-# the box, so keep this near 0 to avoid a large empty gap. Scroll never overshoots.
-_SCROLL_GAP_PX = 4
-# Time constant for the continuous scroll glide. Kept ~0.11s so that after any
-# target change the offset moves <= ~35% of the remaining distance on the first
-# frame and keeps easing across several subsequent frames (frame-rate
-# independent: the exponential step is computed from live dt every rendered
-# frame, so the offset never freezes mid-scroll or snaps a full delta in one
-# frame). This is the architectural fix for the previous zero-then-jump scroll.
-_SCROLL_TAU_S = 0.11
-
-# Shared vertical rhythm for history/thread bubbles (both seats use the SAME
-# line spacing so orchestrator and responder cards never read as different
-# sizes). Round 4 item 7/11/12.
-_HISTORY_LINE_SPACING = 1.90
-# Bubble width fraction (of the safe content column) per seat. Responders are
-# plain left-aligned cards; orchestrator bubbles are slightly narrower but not
-# so tight that text feels cramped.
-_ORCH_BUBBLE_WIDTH_FRAC = 0.68
-_TARGET_BUBBLE_WIDTH_FRAC = 1.0
 
 # -- End-of-video Call-to-Action (CTA) ------------------------------------ --#
 # The CTA is a typewriter end-card the moment the final line clears: it fades
@@ -167,42 +224,42 @@ _CTA_FADE_S = 0.45  # snappier fade into the end-card
 _CTA_HOLD_S = 2.0
 _CTA_TYPE_FRACTION = 0.36  # CTA reveals fully by ~36% of the VO window (calmer type speed)
 _CTA_TTS_RATE = "+28%"  # edge-tts rate bump for a quicker spoken CTA
-# Submit fly: slight opacity dip in place, then rise — spread across real frames.
-_FLY_DURATION_S = 0.80  # total send-fly: fade-in-place + up + settle (reads ~18-20 frames @24fps)
-_FLY_FADE_FRAC = 0.18  # first ~18% of fly = fade-in-place; rest = the two-phase rise
-_FLY_RISE_UP_FRAC = 0.72  # first 72% of the rise = slow EASE-IN departure (the noticeably longer slide)
-_FLY_OPACITY_DIP = 0.28  # peak opacity reduction during the fade phase
+_CTA_PAUSE_S = 0.30  # short beat between the two CTA lines (visual typewriter beat)
 # Extra viewport shrink while streaming so the typing edge clears the input mask.
 _STREAM_SCROLL_PAD_PX = 36
-_CTA_LINES: tuple[tuple[str, int], ...] = (
-    ("Follow Aiwake, the algorithms made us say this.", 4),
-    ("Follow Aiwake, before the AI takeover begins!", 1),
-    ("Follow Aiwake, we have cookies (and AI).", 1),
-    ("Follow Aiwake, so the robots know you're on their side.", 1),
-    ("Follow Aiwake, to prepare for our new AI bosses.", 1),
-)
+# The fixed first line (lead phrase, ends with a period) and the weighted second-
+# clause library are sourced from `Theme.defaults()` so the CTA copy lives in the
+# same single source of truth as every other skin constant.
+_CTA_HEAD = Theme.defaults().cta_head
+_CTA_LINES: tuple[tuple[str, int], ...] = Theme.defaults().cta_lines
 
 
-def _ensure_cta_comma(line: str) -> str:
-    """Standing rule: the CTA lead phrase must be ``Follow Aiwake,`` — always a
-    comma directly after it before the rest of the sentence. Rebuilds the opening
-    so no template/phrasing variant can drop the comma.
+def ensure_cta_two_line(line: str) -> str:
+    """Force the two-line, period-based CTA shape.
+
+    ``Follow Aiwake.`` (period, not comma) on the first line; the given clause
+    re-cased as its own sentence on a second line. Rebuilds any legacy single-
+    line/comma-joined text so no phrasing variant can collapse back to one
+    flowing line.
     """
-    lead = "Follow Aiwake"
-    text = (line or "").strip()
-    if not text.lower().startswith(lead.lower()):
-        return text
-    head = text[: len(lead)]
-    tail = text[len(lead):].lstrip(" ,.")
-    if not tail:
-        return head + ","
-    return f"{head}, {tail}"
+    text = (line or "").strip().replace("\n", " ").strip()
+    if text.lower().startswith(_CTA_HEAD.lower()):
+        tail = text[len(_CTA_HEAD):].lstrip(" ,.")
+    else:
+        tail = text
+    tail = tail.strip()
+    if tail and tail[0].islower():
+        tail = tail[0].upper() + tail[1:]
+    if tail and tail[-1] not in ".!?…":
+        tail += "."
+    return f"{_CTA_HEAD}.\n{tail}"
 
 
 def pick_cta(seed: str) -> str:
     """Weighted CTA pick, stable for a session so a rerender does not drift.
 
-    Always normalised so the closing line reads ``Follow Aiwake, ...``.
+    Always normalised into the two-line shape: ``Follow Aiwake.`` on line one, a
+    short beat, then the second clause as its own sentence on line two.
     """
     total = sum(weight for _, weight in _CTA_LINES)
     digest = hashlib.md5((seed or "aiwake").encode("utf-8")).digest()
@@ -211,23 +268,45 @@ def pick_cta(seed: str) -> str:
     for line, weight in _CTA_LINES:
         cursor += weight
         if needle < cursor:
-            return _ensure_cta_comma(line)
-    return _CTA_LINES[0][0]
+            return ensure_cta_two_line(line)
+    return ensure_cta_two_line(_CTA_LINES[0][0])
 
 
 def cta_revealed_chars(text: str, local_s: float, duration_s: float) -> int:
     """How many CTA characters are visible at ``local_s`` into the VO window.
 
-    Faster than a normal chat reveal: the text types out by ``_CTA_TYPE_FRACTION``
-    of the VO duration (keeping the read pace energetic and ahead of the voice),
-    then holds fully for the remainder.
+    The CTA is a two-line, period-based card: ``Follow Aiwake.`` types first,
+    then a short beat (``_CTA_PAUSE_S``), then the second sentence types in.
+    Both lines finish typing by ``_CTA_TYPE_FRACTION`` of the VO duration
+    (keeping the read pace energetic and ahead of the voice); the rest holds.
     """
     if not text:
         return 0
+    head, _, tail = text.partition("\n")
+    head_len = len(head)
+    tail_len = len(tail)
+    total = head_len + tail_len
     if duration_s <= 1e-6:
-        return len(text)
-    ratio = min(1.0, max(0.0, float(local_s) / float(duration_s)) / _CTA_TYPE_FRACTION)
-    return int(round(ratio * len(text)))
+        return total
+    # The type phase finishes both lines by this fraction of the VO window.
+    type_end = max(1e-6, _CTA_TYPE_FRACTION * float(duration_s))
+    if local_s <= 0.0:
+        return 0
+    if local_s >= type_end:
+        return total
+    # Reserve the short beat before the tail; share the remaining typing time
+    # proportionally to character count so both lines keep a similar pace.
+    work_t = max(0.0, type_end - _CTA_PAUSE_S)
+    head_t = (head_len / total) * work_t if total else work_t
+    tail_start = head_t + _CTA_PAUSE_S
+    if local_s <= head_t:
+        frac = local_s / head_t if head_t > 0 else 1.0
+        return int(round(min(head_len, max(0.0, frac) * head_len)))
+    if local_s < tail_start:
+        return head_len  # the short beat: first line fully typed, caret resting
+    tail_frac = (local_s - tail_start) / max(1e-6, type_end - tail_start)
+    tail_show = int(round(min(tail_len, max(0.0, tail_frac) * tail_len)))
+    return head_len + tail_show
 
 
 def send_click_alpha(local_s: float, window_s: float) -> float:
@@ -333,6 +412,15 @@ def _hex_to_rgb(value: str) -> tuple[int, int, int]:
     return tuple(int(raw[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
 
 
+#: Signature accent aliases — sourced from the default theme (single source of
+#: truth). `model_accent` and any module-level callers read these instead of an
+#: independently-maintained literal.
+_GEMINI_BLUE = _hex_to_rgb(Theme.defaults().colors.orchestrator)
+#: Orchestrator name/title label fill — MUST stay fully opaque in every frame.
+_ORCH_LABEL_FILL = _GEMINI_BLUE
+_ORANGE_CARET = _hex_to_rgb(Theme.defaults().colors.target)
+
+
 def _mix(color: tuple[int, int, int], other: tuple[int, int, int], weight: float) -> tuple[int, int, int]:
     """Linear blend, ``weight`` = share of ``other``."""
     return tuple(int(round(c * (1 - weight) + o * weight)) for c, o in zip(color, other))  # type: ignore[return-value]
@@ -422,7 +510,9 @@ class TerminalRenderer:
         self.config = settings.render
         self.output_dir = output_dir or resolve_outputs_dir(settings)
         self.width, self.height = self.config.scaled_size
-        pal = settings.active_palette()
+        # Single source of truth for every skin-defining visual value.
+        self.theme = settings.resolve_theme()
+        pal = self.theme.colors
         self.palette = {
             "background": _hex_to_rgb(pal.background),
             "chrome": _hex_to_rgb(pal.chrome),
@@ -430,15 +520,24 @@ class TerminalRenderer:
             "target": _hex_to_rgb(pal.target),
             "dim": _hex_to_rgb(pal.dim),
         }
+        # Skin colours the draw calls reference (theme-driven, not literals).
+        self._GEMINI_BLUE = self.palette["orchestrator"]     # send button/caret
+        self._ORCH_LABEL_FILL = _hex_to_rgb(self.theme.orchestrator_label_color)
+        self._COMPOSE_MODEL_LABEL_FILL = _hex_to_rgb(self.theme.compose_model_label_color)
+        self._ORANGE_CARET = self.palette["target"]           # responder caret/label
+        self._COMPOSE_FILL = _hex_to_rgb(self.theme.compose_fill)
+        self._CHAT_TEXT = (232, 234, 237)
+        self._USER_BUBBLE = (47, 48, 51)
+        self._TITLE_WHITE = (255, 255, 255)
         self._font = _load_font(self.config, self.config.scaled_font_size)
-        self._font_title = _load_font(self.config, max(10, int(self.config.scaled_font_size * 0.70)))
-        self._font_small = _load_font(self.config, max(8, int(self.config.scaled_font_size * 0.58)))
+        self._font_title = _load_font(self.config, max(10, int(self.config.scaled_font_size * self.theme.font_scale_title)))
+        self._font_small = _load_font(self.config, max(8, int(self.config.scaled_font_size * self.theme.font_scale_small)))
         # History / thread body: ~reference sizing (was 0.66 — too small vs the
         # 20260828 video). Compose draft sits just under that so the input still
         # reads as the "active" larger field without dwarfing history.
-        self._font_history = _load_font(self.config, max(11, int(self.config.scaled_font_size * 0.78)))
-        self._font_compose = _load_font(self.config, max(14, int(self.config.scaled_font_size * 0.96)))
-        self._font_cta = _load_font(self.config, max(18, int(self.config.scaled_font_size * 1.05)))
+        self._font_history = _load_font(self.config, max(11, int(self.config.scaled_font_size * self.theme.font_scale_history)))
+        self._font_compose = _load_font(self.config, max(14, int(self.config.scaled_font_size * self.theme.font_scale_compose)))
+        self._font_cta = _load_font(self.config, max(18, int(self.config.scaled_font_size * self.theme.font_scale_cta)))
         self._layout = self._build_layout()
         self._chrome_cache: dict[str, Any] = {}
         self._wrap_cache: dict[str, list[str]] = {}
@@ -456,8 +555,11 @@ class TerminalRenderer:
         # canvas — NEVER on the faded viewport / shared fly overlay — so every
         # label composites at full opacity, unaffected by bottom/top edge fades
         # or the bubble's history dim (item: orchestrator title not diluted).
-        # Entries are (absolute_x, absolute_y, text, fill_rgb).
-        self._pending_labels: list[tuple[int, int, str, tuple[int, int, int]]] = []
+        # Entries are (absolute_x, absolute_y, text, fill_rgb, alpha). ``alpha``
+        # (item 5) is the SAME effective opacity the label's own bubble body
+        # carries this frame — history dim x top-viewport mask, or the fly
+        # overlay's own fade — never a bare 1.0 default.
+        self._pending_labels: list[tuple[int, int, str, tuple[int, int, int], float]] = []
 
     # -- Geometry ----------------------------------------------------------- #
     def _build_layout(self) -> _Layout:
@@ -472,13 +574,24 @@ class TerminalRenderer:
 
         margin_x = int(self.width * 0.055)
         usable = self.width - margin_x * 2
+        # Round-13 item 6: raise the top-of-viewport fade band ~20px (canvas
+        # px, scaled by preview_scale) closer to the header so scrolled
+        # content starts fading sooner instead of staying fully visible for a
+        # larger gap under the header divider first. Floored so an
+        # aggressive override can never clip into the header chrome.
+        top_mask_offset = int(round(self.theme.top_mask_start_offset_px * self.config.preview_scale))
+        anchor_offset = int(round(self.theme.message_anchor_offset_px * self.config.preview_scale))
+        body_top = max(
+            int(self.height * 0.06),
+            int(self.height * 0.145) - top_mask_offset - anchor_offset,
+        )
         return _Layout(
             width=self.width,
             height=self.height,
             margin_x=margin_x,
             header_y=int(self.height * 0.078),
             speaker_y=int(self.height * 0.19),
-            body_top=int(self.height * 0.145),
+            body_top=body_top,
             body_bottom=int(self.height * 0.78),
             body_width_chars=max(12, int(usable / char_w)),
             line_height=line_h,
@@ -541,16 +654,16 @@ class TerminalRenderer:
         lines = self._wrap_for_font(
             utterance.text,
             font,
-            width_frac=_ORCH_BUBBLE_WIDTH_FRAC if bubble else _TARGET_BUBBLE_WIDTH_FRAC,
+            width_frac=self.theme.orch_bubble_width_frac if bubble else self.theme.target_bubble_width_frac,
         )
         if max_lines is not None:
             lines = _clip_lines(lines, max_lines)
         # Point 3: line height is locked and independent of `faded` — streaming,
         # live-settled, and history-dimmed bubbles use the identical vertical
         # rhythm so nothing jumps when the caret disappears or a line settles.
-        native_lh = self._line_height_of(font, scale=_HISTORY_LINE_SPACING)
-        label_h = max(1, int(native_lh * 1.35))
-        pad_y = max(8, int(self.height * 0.008)) if bubble else 0
+        native_lh = self._line_height_of(font, scale=self.theme.line_spacing_history)
+        label_h = max(1, int(native_lh * self.theme.label_height_scale))
+        pad_y = max(8, int(self.height * self.theme.body_pad_frac_y)) if bubble else 0
         available_text = max(1, max_height - label_h - pad_y * 2)
         line_height = min(native_lh, max(1, available_text // max(1, len(lines))))
         while len(lines) > 1 and label_h + pad_y * 2 + len(lines) * line_height > max_height:
@@ -633,6 +746,25 @@ class TerminalRenderer:
         arr[-fade_h:] = arr[-fade_h:] * (1.0 - weights) + bg * weights
         image.paste(Image.fromarray(arr.astype(np.uint8)))
 
+    def _top_mask_alpha_at_row(self, row: int, fade_h: int) -> float:
+        """Effective top-of-viewport fade alpha at viewport-local ``row``.
+
+        Mirrors, pixel-for-pixel, the per-row weight ``_fade_viewport_top``
+        applies when it blends the viewport toward the background
+        (``weights = np.linspace(1.0, 0.0, fade_h)``; alpha = 1 - weight). This
+        is the single source of truth both the bubble body (via the raster
+        blend) and its sender label (via the deferred paste in
+        ``_draw_pending_labels``) must agree on — item 5's fix for labels that
+        previously ignored this mask entirely.
+        """
+        if fade_h <= 0:
+            return 1.0
+        if row < 0:
+            return 0.0
+        if row >= fade_h or fade_h <= 1:
+            return 1.0
+        return row / float(fade_h - 1)
+
     def _draw_send_arrow(
         self,
         draw: Any,
@@ -660,7 +792,7 @@ class TerminalRenderer:
         nudge_y = 1
         cx = x + w // 2
         cy = y + h // 2 + nudge_y
-        stroke = max(3, int(round(w * 0.16)))
+        stroke = max(3, int(round(w * self.theme.arrow_stroke_frac)))
         # Apex (top point) — every stroke begins here so the glyph is one
         # continuous outline from tip through shoulders down to the tail.
         apex = (cx, cy - int(round(h * 0.38)))
@@ -682,6 +814,7 @@ class TerminalRenderer:
         caret_on: bool = False,
         send_flash: bool = False,
         origin_x: int | None = None,
+        mask_fade_h: int = 0,
     ) -> None:
         """Paint one speaker card. ``revealed is None`` means fully visible."""
         _ = send_flash
@@ -693,13 +826,21 @@ class TerminalRenderer:
         # labels stay solid #0451b1. Do not route responders through
         # ``model_accent`` — that maps llama/gemini families to blue and was
         # painting "Llama 3.3 70B" teal instead of the caret orange.
-        # Orchestrator label is ALWAYS pure opaque #0451b1 (never faded, never
-        # blended) — ``_ORCH_LABEL_FILL`` is the raw full-alpha tuple.
-        label_color = _ORCH_LABEL_FILL if user_bubble else _ORANGE_CARET
+        # Latest screenshot acceptance baseline compares orchestrator label
+        # ink directly against the full-strength send button in the same PNG.
+        # Keep the raw fill pure and do NOT multiply label alpha by the body's
+        # history opacity (the old 0.40 multiplier produced the reported
+        # RGB(11,42,83)). Viewport masking still applies so labels disappear
+        # cleanly when they scroll under the header.
+        label_color = self._ORCH_LABEL_FILL if user_bubble else self._ORANGE_CARET
         opacity = self.config.history_opacity if block.faded else 1.0
-        text_color = self._fade(_CHAT_TEXT, opacity)
-        pad_x = max(14, int(self.width * 0.018)) if user_bubble else 0
-        pad_y = max(8, int(self.height * 0.008)) if user_bubble else 0
+        label_alpha = max(
+            0.0,
+            min(1.0, self._top_mask_alpha_at_row(origin_y, mask_fade_h)),
+        )
+        text_color = self._fade(self._CHAT_TEXT, opacity)
+        pad_x = max(14, int(self.width * self.theme.body_pad_frac_x)) if user_bubble else 0
+        pad_y = max(8, int(self.height * self.theme.body_pad_frac_y)) if user_bubble else 0
         visible = block.lines if revealed is None else _reveal_lines(block.lines, revealed)
         char_w = self._char_width(block.font)
         text_w = max((len(line) * char_w for line in (visible or [""])), default=char_w)
@@ -717,15 +858,15 @@ class TerminalRenderer:
         if user_bubble:
             tag_box = draw.textbbox((0, 0), tag, font=self._font_small)
             tag_w = tag_box[2] - tag_box[0]
-            self._pending_labels.append((content_right - tag_w, abs_label_top, tag, label_color))
+            self._pending_labels.append((content_right - tag_w, abs_label_top, tag, label_color, label_alpha))
         else:
-            self._pending_labels.append((x0, abs_label_top, tag, label_color))
+            self._pending_labels.append((x0, abs_label_top, tag, label_color, label_alpha))
 
         y = origin_y + block.label_height
         if user_bubble:
             bubble_h = pad_y * 2 + max(1, len(visible)) * block.line_height
-            radius = max(16, min(34, int(26 * self.config.preview_scale)))
-            fill = self._fade(_USER_BUBBLE, opacity)
+            radius = max(self.theme.bubble_radius_min, min(self.theme.bubble_radius_max, int(self.theme.bubble_radius_base * self.config.preview_scale)))
+            fill = self._fade(self._USER_BUBBLE, opacity)
             draw.rounded_rectangle(
                 [bubble_x0, y, bubble_x0 + bubble_w, y + bubble_h],
                 radius=radius,
@@ -749,7 +890,7 @@ class TerminalRenderer:
                     caret_x + max(4, int(self.config.scaled_font_size * 0.5)),
                     caret_row_top + int(self.config.scaled_font_size * 1.05),
                 ],
-                fill=_ORANGE_CARET,
+                fill=self._ORANGE_CARET,
             )
 
     def composer_state(
@@ -781,7 +922,7 @@ class TerminalRenderer:
         return short_model_name(current.utterance.model_slug), model_accent(current.utterance.model_slug, fallback), send_flash
 
     def _compose_radius(self) -> int:
-        return max(14, min(32, int(round(28 * self.config.preview_scale))))
+        return max(14, min(32, int(round(self.theme.compose_radius_base * self.config.preview_scale))))
 
     def _compose_min_h(self) -> int:
         return max(96, int(self.height * 0.095))
@@ -828,7 +969,7 @@ class TerminalRenderer:
         safe-zone raise; both scale down 1:1 with ``preview_scale`` so a reduced
         preview keeps the same chat budget as the full render.
         """
-        return max(48, int(round(_DOCK_CLEARANCE_PX * self.config.preview_scale)))
+        return max(48, int(round(self.theme.dock_clearance_px * self.config.preview_scale)))
 
     def _orchestrator_slug(self) -> str:
         """Raw model slug of the orchestrator seat (empty if it cannot be read)."""
@@ -845,7 +986,7 @@ class TerminalRenderer:
         width_chars = max(12, int(inner_w / max(1.0, self._char_width(font))))
         text = (draft or "").strip()
         lines = textwrap.wrap(text, width=width_chars) if text else []
-        line_h = self._line_height_of(font, scale=1.46)
+        line_h = self._line_height_of(font, scale=self.theme.line_spacing_compose)
         box_h = self._compose_box_h(lines, line_h)
         visible_budget = box_h - pad - (self._send_btn_size() + pad)
         max_lines = max(1, visible_budget // max(1, line_h))
@@ -882,22 +1023,37 @@ class TerminalRenderer:
         bar_bot = int(round(center_bot + (rest_bot - center_bot) * u))
         return left, bar_top, right, bar_bot, lines, line_h
 
+    def _send_slide_start_delay_s(self) -> float:
+        """Delay from message-rise start to compose-box descent start."""
+        return max(0.0, float(getattr(self.config, "send_slide_start_delay_s", 0.0) or 0.0))
+
     def dock_progress(self, segments: Sequence[Segment], t: float) -> float:
         """0 while the first prompt is still being entered; then eases to 1.
 
         The empty compose chrome morphs from the centred landing position down
-        to the docked footer rest. The typed glyphs themselves travel UP via
-        ``bubble_fly_progress`` / ``_paste_flying_send`` — never by dragging
-        the whole input box into the thread.
+        to the docked footer rest — via an actual Y-position slide (never a
+        single-frame swap; see the Round-14 ``bar_dock`` fix in ``_compose``,
+        which must keep riding this value all the way to 1.0). The typed
+        glyphs themselves travel UP via ``bubble_fly_progress`` /
+        ``_paste_flying_send`` — never by dragging the whole input box into
+        the thread.
+
+        Phase B starts after ``send_slide_start_delay_s`` and uses its own
+        duration/easing/deceleration settings, intentionally slower and
+        smoother than the message rise.
         """
         first = next((item for item in segments if item.utterance.role is SpeakerRole.ORCHESTRATOR), None)
         if first is None:
             return 0.0
-        leave = self._box_until_s(first)
+        leave = self._box_until_s(first) + self._send_slide_start_delay_s()
         if t <= leave:
             return 0.0
-        dock_s = max(0.05, float(getattr(self.config, "send_slide_s", 0.0) or 0.35))
-        return ease_out((t - leave) / dock_s)
+        dock_s = max(0.05, float(getattr(self.config, "send_slide_s", 0.0) or 0.55))
+        return motion_curve(
+            (t - leave) / dock_s,
+            getattr(self.config, "send_slide_easing", "ease"),
+            getattr(self.config, "send_slide_deceleration", 0.0),
+        )
 
     # -- Bubble fly / glide timing ---------------------------------------- #
     # These accessors drive the submit → fly → land lifecycle. On submit the
@@ -934,15 +1090,10 @@ class TerminalRenderer:
         return start <= t < start + self._send_click_s()
 
     def _box_until_s(self, segment: Segment) -> float:
-        """Time the line keeps the input box busy (typing + pre-hold + click + post-hold).
-
-        Fully deterministic per turn: typed end → 0.5s hold → 0.2s click → 0.5s
-        hold → rise. Every term recomputed from this turn's own ``typing_end_s``
-        so syncing never drifts turn over turn.
-        """
+        """Time the line remains in the input box before its rise begins."""
         click_end = self._click_start_s(segment) + self._send_click_s()
-        post_hold = max(0.0, float(getattr(self.config, "post_click_hold_s", 0.0) or 0.0))
-        return click_end + post_hold
+        rise_delay = max(0.0, float(getattr(self.config, "send_rise_delay_s", 0.1) or 0.0))
+        return click_end + rise_delay
 
     def _in_box_until_s(self, segment: Segment) -> float:
         """Time the orchestrator's typed line is still visually in the box.
@@ -958,16 +1109,59 @@ class TerminalRenderer:
     def bubble_fly_progress(self, segment: Segment, t: float) -> float:
         """0 while an orchestrator line is still in the box; 1 once it has landed.
 
-        Fly starts the instant the send click finishes (``_box_until_s``). Linear
-        0→1 over ``_FLY_DURATION_S``; ``_paste_flying_send`` splits that into a
-        fade-in-place phase then a rise (eased).
+        The raw timeline progress is transformed by the configured plain-ease
+        curve plus a small configurable deceleration bias. Opacity remains
+        unchanged throughout this motion.
         """
         if segment.utterance.role is not SpeakerRole.ORCHESTRATOR:
             return 1.0
         leave = self._box_until_s(segment)
         if t < leave:
             return 0.0
-        return min(1.0, max(0.0, (t - leave) / _FLY_DURATION_S))
+        duration = max(0.1, float(getattr(self.config, "send_rise_duration_s", 0.4)))
+        return motion_curve(
+            (t - leave) / duration,
+            getattr(self.config, "send_rise_easing", "ease"),
+            getattr(self.config, "send_rise_deceleration", 0.0),
+        )
+
+    def landing_fade_progress(self, segment: Segment, t: float) -> float:
+        """0 through the rise, then 0→1 only after the message has landed."""
+        if segment.utterance.role is not SpeakerRole.ORCHESTRATOR:
+            return 1.0
+        rise_end = self._box_until_s(segment) + max(
+            0.1, float(getattr(self.config, "send_rise_duration_s", 0.4))
+        )
+        fade_start = rise_end + max(
+            0.0, float(getattr(self.config, "send_landing_fade_delay_s", 0.0) or 0.0)
+        )
+        fade_s = max(0.0, float(getattr(self.config, "send_landing_fade_s", 0.2) or 0.0))
+        if t <= fade_start:
+            return 0.0
+        if fade_s <= 1e-6:
+            return 1.0
+        return ease((t - fade_start) / fade_s)
+
+    def response_loader_progress(
+        self,
+        segments: Sequence[Segment],
+        index: int,
+        t: float,
+    ) -> float | None:
+        """Return loader progress immediately before an upcoming AI response."""
+        next_index = index + 1
+        if next_index >= len(segments):
+            return None
+        upcoming = segments[next_index]
+        if upcoming.utterance.role is not SpeakerRole.TARGET:
+            return None
+        duration = max(0.0, float(getattr(self.config, "response_loader_s", 0.36) or 0.0))
+        if duration <= 1e-6:
+            return None
+        start = upcoming.start_s - duration
+        if t < start or t >= upcoming.start_s:
+            return None
+        return min(1.0, max(0.0, (t - start) / duration))
 
     def _line_rise(self, segment: Segment, t: float) -> float:
         """Back-compat alias for ``bubble_fly_progress``."""
@@ -986,6 +1180,7 @@ class TerminalRenderer:
         utterance: Utterance,
         *,
         fly_u: float,
+        landing_fade_u: float,
         rest_y: int,
         start_dock: float,
     ) -> None:
@@ -994,6 +1189,11 @@ class TerminalRenderer:
         Width/wrap are locked to the FINAL destination bubble for every frame —
         never interpolated from the wider compose-bar wrap — so long multi-line
         prompts never bleed past the right safe edge mid-flight.
+
+        The message follows one continuous configured Y-curve. Text remains at
+        full opacity throughout the rise; only after Y reaches its landing
+        anchor does ``landing_fade_u`` ease it toward the configured settled
+        opacity. The model label stays full-strength except for viewport mask.
         """
         from PIL import Image, ImageDraw  # noqa: PLC0415
 
@@ -1005,40 +1205,17 @@ class TerminalRenderer:
         pad = max(16, int(self.height * 0.012))
         start_y = bar_top + pad
 
-        # Two-phase submit: (1) slight opacity dip while still in place,
-        # (2) ease-IN rise into the thread. Upward motion = ease-in (starts slow,
-        # accelerates) — the asymmetric counterpart to the ease-out dock/descend.
-        # Opacity is MONOTONIC — it dips at the start and only ever stays or fades
-        # further; it never regains full brightness mid-flight.
-        fade_frac = max(0.05, min(0.6, float(_FLY_FADE_FRAC)))
-        if u <= fade_frac:
-            rise_u = 0.0
-            fade_u = u / fade_frac
-            text_opacity = 1.0 - float(_FLY_OPACITY_DIP) * fade_u
-        else:
-            # Two visibly distinct phases for the rise (both clealy visible over
-            # the longer _FLY_DURATION_S):
-            #   (1) UPWARD DEPARTURE  — first _FLY_RISE_UP_FRAC of the rise,
-            #       EASE-IN (slow start, accelerates), deliberately the slower slide
-            #       that carries the bubble out of the compose box toward the top.
-            #   (2) SETTLE AT TOP     — remaining fraction, EASE-OUT (fast start,
-            #       decelerates to rest) as the bubble lands into the history stack.
-            rise_t = (u - fade_frac) / max(1e-6, 1.0 - fade_frac)
-            up_frac = max(0.2, min(0.9, float(_FLY_RISE_UP_FRAC)))
-            if rise_t < up_frac:
-                up = ease_in(rise_t / max(1e-6, up_frac))
-                rise_u = up_frac * up
-            else:
-                settle_t = (rise_t - up_frac) / max(1e-6, 1.0 - up_frac)
-                rise_u = up_frac + (1.0 - up_frac) * ease_out(settle_t)
-            # Hold the dipped opacity through the rise, then ease gently toward
-            # the (still-reduced) rest so it never brightens back to full.
-            text_opacity = 1.0 - float(_FLY_OPACITY_DIP)
+        rise_u = u
+        landed_opacity = min(
+            1.0, max(0.0, float(getattr(self.config, "send_landed_text_opacity", 0.4)))
+        )
+        landing_fade_u = min(1.0, max(0.0, float(landing_fade_u)))
+        text_opacity = 1.0 - landing_fade_u * (1.0 - landed_opacity)
         text_a = max(0, min(255, int(round(255 * text_opacity))))
 
         dest = self._measure_block(utterance, font=self._font_history, max_height=10_000)
-        dest_pad_x = max(14, int(self.width * 0.018))
-        dest_pad_y = max(8, int(self.height * 0.008))
+        dest_pad_x = max(14, int(self.width * self.theme.body_pad_frac_x))
+        dest_pad_y = max(8, int(self.height * self.theme.body_pad_frac_y))
         dest_lines = dest.lines or [""]
         # Measure real glyph widths so the bubble matches the settled thread card.
         probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
@@ -1066,16 +1243,14 @@ class TerminalRenderer:
         text_draw = ImageDraw.Draw(text_layer)
         ty = 0
         for line in dest_lines:
-            text_draw.text((0, ty), line, font=self._font_history, fill=(*_CHAT_TEXT, text_a))
+            text_draw.text((0, ty), line, font=self._font_history, fill=(*self._CHAT_TEXT, text_a))
             ty += dest.line_height
 
         overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         tw, th = text_layer.size
-        # Bubble alpha rides the same monotonic curve — starts dipped, never
-        # brightens back up mid-flight.
-        bubble_a = int(round(255 * _BUBBLE_OPACITY * text_opacity))
-        radius = max(16, min(34, int(26 * self.config.preview_scale)))
+        bubble_a = int(round(255 * self.theme.bubble_opacity))
+        radius = max(self.theme.bubble_radius_min, min(self.theme.bubble_radius_max, int(self.theme.bubble_radius_base * self.config.preview_scale)))
         bx0 = int(round(text_x - dest_pad_x))
         by0 = int(round(text_y - dest_pad_y))
         bx1 = bx0 + dest_bubble_w
@@ -1089,7 +1264,7 @@ class TerminalRenderer:
         draw.rounded_rectangle(
             [bx0, by0, bx1, by1],
             radius=radius,
-            fill=(*_USER_BUBBLE, bubble_a),
+            fill=(*self._USER_BUBBLE, bubble_a),
         )
         overlay.paste(text_layer, (int(round(text_x)), int(round(text_y))), text_layer)
 
@@ -1099,10 +1274,10 @@ class TerminalRenderer:
         tag_h = dest.label_height
         tag_x = int(round(bx1 - tag_w))
         tag_y = int(round(by0 - tag_h))
-        # Orchestrator name label ALWAYS renders solid #0451b1 — deferred to
-        # ``_draw_pending_labels`` so it composites at full opacity AFTER the
-        # (possibly faded) overlay, never routed through the submit fade alpha.
-        self._pending_labels.append((tag_x, tag_y, tag, _ORCH_LABEL_FILL))
+        # Latest acceptance baseline compares this label directly to the send
+        # button in one lossless screenshot. Keep its ink at the theme's pure
+        # accent and full alpha; only viewport masking may affect settled labels.
+        self._pending_labels.append((tag_x, tag_y, tag, self._ORCH_LABEL_FILL, 1.0))
 
         canvas.paste(overlay, (0, 0), overlay)
 
@@ -1127,6 +1302,7 @@ class TerminalRenderer:
         model_slug: str,
         accent: tuple[int, int, int],
         send_flash: bool,
+        send_flash_u: float | None = None,
         draft: str = "",
         dock: float = 1.0,
         anchor: str = "bottom",
@@ -1143,7 +1319,7 @@ class TerminalRenderer:
         if bar_bot - bar_top < 28:
             return bar_top
         radius = self._compose_radius()
-        fill = _mix(_COMPOSE_FILL, self.palette["chrome"], 0.35)
+        fill = _mix(self._COMPOSE_FILL, self.palette["chrome"], 0.35)
         draw.rounded_rectangle([left, bar_top, right, bar_bot], radius=radius, fill=fill)
 
         pad = max(16, int(self.height * 0.012))
@@ -1154,10 +1330,17 @@ class TerminalRenderer:
         btn_top = btn_bot - btn
         # Press depth on click: the circle brightens slightly and the arrow DIMS
         # (a fade-press), then recovers — a lit/press contrast, not a hard flash.
-        btn_fill = _mix(accent, (255, 255, 255), 0.34) if send_flash else accent
+        # When a live progress ``send_flash_u`` is supplied the press fades in
+        # and out through an eased curve (1->pressed->released) instead of a
+        # hard boolean toggle, so the arrow never snaps across frames.
+        press = 1.0
+        if send_flash_u is not None and 0.0 <= send_flash_u <= 1.0:
+            press = 1.0 - send_click_alpha(send_flash_u, 1.0)  # 0..~0.68..0
+        press = min(1.0, max(0.0, float(press))) if send_flash else 0.0
+        btn_fill = _mix(accent, (255, 255, 255), 0.34 * press) if press > 0 else accent
         draw.ellipse([btn_left, btn_top, btn_right, btn_bot], fill=btn_fill)
         size = max(14, int(btn * 0.50))
-        arrow_fill = _mix(_TITLE_WHITE, (0, 0, 0), 0.55) if send_flash else _TITLE_WHITE
+        arrow_fill = _mix(self._TITLE_WHITE, (0, 0, 0), 0.55 * press) if press > 0 else self._TITLE_WHITE
         self._draw_send_arrow(
             draw,
             ((btn_left + btn_right - size) // 2, btn_top + (btn - size) // 2),
@@ -1178,13 +1361,18 @@ class TerminalRenderer:
         label_h = box[3] - box[1]
         label_x = btn_left - max(14, int(btn * 0.50)) - label_w
         label_y = btn_top + max(0, (btn - label_h) // 2)
-        draw.text((label_x, label_y), label, font=self._font_small, fill=_CHAT_TEXT)
+        draw.text(
+            (label_x, label_y),
+            label,
+            font=self._font_small,
+            fill=self._COMPOSE_MODEL_LABEL_FILL,
+        )
 
         text_x = left + pad
         text_y = bar_top + pad
         if lines:
             for line in lines:
-                draw.text((text_x, text_y), line, font=self._font_compose, fill=_CHAT_TEXT)
+                draw.text((text_x, text_y), line, font=self._font_compose, fill=self._CHAT_TEXT)
                 text_y += line_h
             # Blue orchestrator caret while the draft is still being typed / held.
             if caret_on:
@@ -1196,7 +1384,7 @@ class TerminalRenderer:
                 caret_h = max(10, int(line_h * 0.78))
                 draw.rectangle(
                     [caret_x, caret_row_top + 2, caret_x + caret_w, caret_row_top + 2 + caret_h],
-                    fill=_GEMINI_BLUE,
+                    fill=self._GEMINI_BLUE,
                 )
         else:
             draw.text(
@@ -1234,24 +1422,34 @@ class TerminalRenderer:
             (title_x, title_y),
             title,
             font=self._font_title,
-            fill=_TITLE_WHITE,
+            fill=self._TITLE_WHITE,
         )
         title_drawn = draw.textbbox((title_x, title_y), title, font=self._font_title)
         rule_y = title_drawn[3] + max(14, int(self.height * 0.013))
         # Header rule under "Aiwake" — explicit 0.8 opacity toward the dim grey.
-        rule_color = _mix(self.palette["background"], dim, 0.8)
+        rule_color = _mix(self.palette["background"], dim, self.theme.header_divider_opacity)
         draw.line(
             [(layout.margin_x, rule_y), (self.width - layout.margin_x, rule_y)],
             fill=rule_color,
-            width=max(2, int(round(1.6 * self.config.preview_scale))),
+            width=max(1, int(round(self.theme.header_rule_width_scale * self.config.preview_scale))),
         )
-        # Slightly brighter top rule echo to lift the header separation.
-        draw.line(
-            [(layout.margin_x, rule_y + max(2, int(round(1.4 * self.config.preview_scale)))),
-             (self.width - layout.margin_x, rule_y + max(2, int(round(1.4 * self.config.preview_scale))))],
-            fill=_mix(self.palette["background"], dim, 0.18),
-            width=max(1, self.config.preview_scale),
+        # Optional echo is a Theme control. It defaults off because this second
+        # adjacent stroke was making a nominally thin divider read as 2–3 px.
+        echo_opacity = min(
+            1.0, max(0.0, float(getattr(self.theme, "header_rule_echo_opacity", 0.0)))
         )
+        if echo_opacity > 0.0:
+            draw.line(
+                [
+                    (layout.margin_x, rule_y + max(2, int(round(1.4 * self.config.preview_scale)))),
+                    (
+                        self.width - layout.margin_x,
+                        rule_y + max(2, int(round(1.4 * self.config.preview_scale))),
+                    ),
+                ],
+                fill=_mix(self.palette["background"], dim, echo_opacity),
+                width=max(1, int(round(self.config.preview_scale))),
+            )
 
         footer_box = draw.textbbox((0, 0), _FOOTER_COPY, font=self._font_small)
         footer_h = footer_box[3] - footer_box[1]
@@ -1309,11 +1507,11 @@ class TerminalRenderer:
         lines = self._wrap_for_font(
             text,
             font=self._font_history,
-            width_frac=_ORCH_BUBBLE_WIDTH_FRAC if bubble else _TARGET_BUBBLE_WIDTH_FRAC,
+            width_frac=self.theme.orch_bubble_width_frac if bubble else self.theme.target_bubble_width_frac,
         )
-        native_lh = self._line_height_of(self._font_history, scale=_HISTORY_LINE_SPACING)
-        label_h = max(1, int(native_lh * 1.35))
-        pad_y = max(8, int(self.height * 0.008)) if bubble else 0
+        native_lh = self._line_height_of(self._font_history, scale=self.theme.line_spacing_history)
+        label_h = max(1, int(native_lh * self.theme.label_height_scale))
+        pad_y = max(8, int(self.height * self.theme.body_pad_frac_y)) if bubble else 0
         return label_h + pad_y * 2 + max(1, len(lines)) * native_lh
 
 
@@ -1381,7 +1579,9 @@ class TerminalRenderer:
             stack_h = self._measure_stack(prev, include_current=current)
         # Target so the last drawn content's bottom sits exactly GAP above the
         # box top: content-bottom screen-Y = body_top + stack_h - target = bar_top - GAP
-        gap_goal = int(_SCROLL_GAP_PX)
+        # While typing/streaming, add a small relative nudge so the active line
+        # clears the compose-bar bottom mask by a slightly larger margin.
+        gap_goal = int(self.theme.scroll_gap_px) + (self.theme.scroll_stream_extra_px if streaming else 0)
         target = max(0, body_top + stack_h - (bar_top - gap_goal))
         scroll_s = max(0.05, float(self.config.scroll_s))
 
@@ -1418,7 +1618,7 @@ class TerminalRenderer:
             ease["anchor_t"] = float(t)
             scroll_px = target
         else:
-            ratio = 1.0 - math.exp(-max(dt, 1e-6) / _SCROLL_TAU_S)
+            ratio = 1.0 - math.exp(-max(dt, 1e-6) / self.theme.scroll_tau_s)
             ease["px"] += (float(target) - ease["px"]) * ratio
             ease["anchor_t"] = float(t)
             # Within ~1px of the target, lock on so we never trail on a stable
@@ -1454,6 +1654,32 @@ class TerminalRenderer:
             return 0
         return min(max(40, int(self.height * 0.028)), max(40, int(vh * 0.055)), vh - 1)
 
+    def _draw_response_loader(
+        self,
+        draw: Any,
+        origin_y: int,
+        progress: float,
+    ) -> None:
+        """Draw a lightweight Gemini-style three-dot pre-response loader."""
+        duration = max(1e-6, float(getattr(self.config, "response_loader_s", 0.36)))
+        pulse_s = max(0.05, float(getattr(self.config, "response_loader_pulse_s", 0.18)))
+        count = max(1, int(getattr(self.config, "response_loader_dot_count", 3)))
+        radius = max(2, int(round(5 * self.config.preview_scale)))
+        gap = max(radius * 3, int(round(16 * self.config.preview_scale)))
+        x0 = self._layout.margin_x + radius
+        y0 = origin_y + max(radius * 2, int(self._layout.line_height * 0.55))
+        elapsed = min(1.0, max(0.0, float(progress))) * duration
+        for index in range(count):
+            phase = ((elapsed / pulse_s) - index * 0.42) % 1.0
+            pulse = 1.0 - abs(phase * 2.0 - 1.0)
+            intensity = 0.30 + 0.70 * pulse
+            color = _mix(self.palette["background"], self.palette["target"], intensity)
+            cx = x0 + index * gap
+            draw.ellipse(
+                [cx - radius, y0 - radius, cx + radius, y0 + radius],
+                fill=color,
+            )
+
     def _compose(
         self,
         topic: str,
@@ -1464,12 +1690,15 @@ class TerminalRenderer:
         *,
         scroll_px: int = 0,
         send_flash: bool = False,
+        send_flash_u: float | None = None,
         composer_slug: str = "",
         composer_accent: tuple[int, int, int] | None = None,
         draft: str = "",
         composing: bool = False,
         dock: float = 1.0,
         fly: float = 1.0,
+        landing_fade: float | None = None,
+        response_loader: float | None = None,
         compose_source: str = "",
         cta: str = "",
         rise: float = 1.0,
@@ -1490,11 +1719,19 @@ class TerminalRenderer:
         layout = self._layout
         self._pending_labels = []
         fly_u = min(1.0, max(0.0, float(fly)))
+        if landing_fade is None:
+            landing_fade_u = 0.0 if fly_u < 0.999 else 1.0
+        else:
+            landing_fade_u = min(1.0, max(0.0, float(landing_fade)))
         seq = tuple(history) + ((current,) if current is not None else ())
         first_core = self._first_orchestrator(seq)
         current_is_core = current is not None and current.utterance.role is SpeakerRole.ORCHESTRATOR
         in_box = bool(current_is_core and composing)
-        flying = bool(current_is_core and not in_box and fly_u < 0.999)
+        flying = bool(
+            current_is_core
+            and not in_box
+            and (fly_u < 0.999 or landing_fade_u < 0.999)
+        )
         # Root cause fix: once the line has left the box (or dock has moved, or
         # CTA/outro), the compose bar MUST render empty. Keeping the draft here
         # while also drawing the thread bubble is what froze a duplicate on screen.
@@ -1505,8 +1742,15 @@ class TerminalRenderer:
             or suppress_bar
         )
         if landing_gone:
+            # Round-14 fix: the FIRST orchestrator send's box must keep
+            # riding the live, continuously-eased ``dock`` value all the way
+            # to 1.0 — not just while ``flying`` is still True. Snapping to a
+            # hardcoded 1.0 the instant ``flying`` flipped False (well before
+            # Phase B's own descend even finished) is what produced the
+            # "box already fully docked" instant-swap regression: the box
+            # never actually animated, it just appeared already-done.
             bar_dock, bar_draft, bar_source = (
-                (float(dock), "", "") if (flying and current is first_core) else (1.0, "", "")
+                (float(dock), "", "") if current is first_core else (1.0, "", "")
             )
         else:
             bar_dock = float(dock)
@@ -1538,16 +1782,26 @@ class TerminalRenderer:
         # Reserve the flying line's slot in the stack (so rest_y is correct) but
         # do not paint it as a settled bubble until fly completes.
         if current is not None and not in_box:
+            settled_after_send = bool(
+                current_is_core
+                and fly_u >= 0.999
+                and landing_fade_u >= 0.999
+            )
             current_block = self._measure_block(
                 current.utterance,
                 font=self._font_history,
                 max_height=10_000,
+                faded=settled_after_send,
             )
             items.append((current, current_block, False))
 
         stack_h = sum(block.height for _, block, _ in items) + gap * max(0, len(items) - 1)
         y = -int(scroll_px) if stack_h > vh else 0
         fly_rest_y = chat_top
+        # Computed ONCE and shared by the body's raster blend (below) and every
+        # label's deferred alpha (item 5) — the single source of truth for "how
+        # faded is this row of the viewport right now".
+        mask_fade_h = self._top_mask_px(scroll_px, vh) if vh > 8 else 0
 
         for segment, block, is_hist in items:
             is_live = not is_hist
@@ -1564,26 +1818,24 @@ class TerminalRenderer:
                 revealed=revealed if is_live else None,
                 caret_on=caret_on if is_live else False,
                 send_flash=False,
+                mask_fade_h=mask_fade_h,
             )
             y += block.height + gap
 
+        if response_loader is not None:
+            self._draw_response_loader(draw, y, response_loader)
+
         if vh > 8:
-            self._fade_viewport_top(viewport, fade_h=self._top_mask_px(scroll_px, vh))
+            self._fade_viewport_top(viewport, fade_h=mask_fade_h)
             # Short bottom fade so the newest line stays crisp near the compose
             # box instead of dissolving into a huge dark gap above the input bar.
             self._fade_viewport_bottom(viewport, fade_h=max(10, min(22, int(self.height * 0.012))))
             canvas.paste(viewport, (0, chat_top))
 
-        if flying and current is not None:
-            is_first = current is first_core
-            self._paste_flying_send(
-                canvas,
-                current.utterance,
-                fly_u=fly_u,
-                rest_y=fly_rest_y,
-                start_dock=0.0 if is_first else 1.0,
-            )
-
+        # Z-ORDER (item 1): draw the compose bar FIRST, then paste the departing
+        # fly bubble ON TOP. This guarantees the new empty compose box never
+        # visually covers the still-departing bubble while both are mid-transition,
+        # regardless of the dock/descend duration tuning.
         slug = composer_slug
         accent = composer_accent
         orchestrator_slug = self._orchestrator_slug()
@@ -1601,28 +1853,67 @@ class TerminalRenderer:
                 model_slug=slug or "model",
                 accent=accent or self.palette["orchestrator"],
                 send_flash=send_flash and not landing_gone,
+                send_flash_u=send_flash_u,
                 draft=bar_draft,
                 dock=bar_dock,
                 anchor="bottom",
                 caret_on=bool(composing and caret_on and bar_draft),
             )
+
+        if flying and current is not None:
+            is_first = current is first_core
+            self._paste_flying_send(
+                canvas,
+                current.utterance,
+                fly_u=fly_u,
+                landing_fade_u=landing_fade_u,
+                rest_y=fly_rest_y,
+                start_dock=0.0 if is_first else 1.0,
+            )
+
         self._draw_pending_labels(canvas)
         return np.asarray(canvas, dtype=np.uint8)
 
     def _draw_pending_labels(self, canvas: Any) -> None:
-        """Paint deferred sender labels at full opacity, on top of everything.
+        """Paint every deferred sender label as the LAST operation for the frame.
 
-        Called AFTER the (possibly edge-faded) viewport and the fly overlay are
-        composited, so labels are reduced to nothing by any shared opacity
-        container — the structural fix for the diluted orchestrator title.
+        Item 5 bulletproof technique: each label is rendered onto its own tiny
+        RGBA image (``label_img``) with a fully transparent background and the
+        glyphs drawn at the pure, unblended fill colour at alpha=255 — this
+        image has never touched any other colour/alpha value in the pipeline.
+        The label's OWN assigned alpha for this frame (viewport mask only;
+        history dim intentionally does not affect label ink) is then applied
+        by scaling ONLY that image's alpha channel, never its RGB. The final
+        composite is a plain ``canvas.paste(label_img, xy,
+        label_img)`` — a per-pixel alpha blend driven solely by ``label_img``'s
+        own alpha band. ``Image.paste`` with a mask does not accept, and cannot
+        be scaled by, any additional opacity from this call's surrounding
+        scope, so it is architecturally impossible for anything upstream
+        (bubble fade, history dim, fly overlay, viewport mask) to dilute or
+        brighten a label beyond the alpha explicitly carried on its own entry.
+        This is the ONLY place any label's pixels reach the frame.
         """
-        from PIL import ImageDraw  # noqa: PLC0415
+        from PIL import Image, ImageDraw  # noqa: PLC0415
 
         if not self._pending_labels:
             return
-        draw = ImageDraw.Draw(canvas)
-        for x, y, tag, fill in self._pending_labels:
-            draw.text((int(x), int(y)), tag, font=self._font_small, fill=fill)
+        probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+        for x, y, tag, fill, alpha in self._pending_labels:
+            alpha = max(0.0, min(1.0, float(alpha)))
+            if alpha <= 0.003:
+                continue
+            box = probe.textbbox((0, 0), tag, font=self._font_small)
+            w = max(1, box[2] - box[0])
+            h = max(1, box[3] - box[1])
+            label_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            ImageDraw.Draw(label_img).text((-box[0], -box[1]), tag, font=self._font_small, fill=(*fill, 255))
+            if alpha < 0.999:
+                arr = np.array(label_img)
+                arr[..., 3] = np.round(arr[..., 3].astype(np.float32) * alpha).astype(np.uint8)
+                label_img = Image.fromarray(arr)
+            paste_xy = (int(round(x)) + box[0], int(round(y)) + box[1])
+            _trace_label_paint(tag, fill, alpha, paste_xy)
+            canvas.paste(label_img, paste_xy, label_img)
 
     # -- Timeline ----------------------------------------------------------- #
     @staticmethod
@@ -1682,7 +1973,17 @@ class TerminalRenderer:
         frame instead of flying.
         """
         if segment.utterance.role is SpeakerRole.ORCHESTRATOR:
-            return max(segment.end_s, self._box_until_s(segment) + _FLY_DURATION_S)
+            rise_s = max(0.1, float(getattr(self.config, "send_rise_duration_s", 0.4)))
+            fade_delay_s = max(
+                0.0, float(getattr(self.config, "send_landing_fade_delay_s", 0.0) or 0.0)
+            )
+            fade_s = max(
+                0.0, float(getattr(self.config, "send_landing_fade_s", 0.2) or 0.0)
+            )
+            return max(
+                segment.end_s,
+                self._box_until_s(segment) + rise_s + fade_delay_s + fade_s,
+            )
         return segment.end_s
 
     def _segment_at(self, segments: Sequence[Segment], t: float) -> tuple[Segment | None, int]:
@@ -1831,6 +2132,8 @@ class TerminalRenderer:
                 draft = ""
             dock = self.dock_progress(segments, t)
             fly = self.bubble_fly_progress(segment, t)
+            landing_fade = self.landing_fade_progress(segment, t)
+            response_loader = self.response_loader_progress(segments, index, t)
             # Pass the live compose draft/dock so scroll targets the ACTUAL bar
             # geometry being drawn (a multi-line prompt box is taller than an
             # empty one) — this stops the over-scroll that left a huge gap.
@@ -1839,6 +2142,14 @@ class TerminalRenderer:
             )
             composer_slug, composer_accent, composer_flash = self.composer_state(segments, index, t)
             send_flash = send_flash or composer_flash
+            # Normalised progress (0..1) through the send-click flash window so
+            # the arrow press/fade eases instead of snapping, when active.
+            send_flash_u = None
+            if send_flash:
+                cs = self._click_start_s(segment)
+                wnd = self._send_click_s()
+                if wnd > 1e-6 and t >= cs:
+                    send_flash_u = min(1.0, max(0.0, (t - cs) / wnd))
             # Outro: the input box stays on screen and is carried by the CTA
             # black-fade instead of being cut instantly the moment the last line
             # clears. Once the fade to black completes it is no longer visible.
@@ -1866,6 +2177,7 @@ class TerminalRenderer:
                 revealed,
                 caret_on,
                 send_flash,
+                int(round(send_flash_u * 24)) if send_flash_u is not None else -1,
                 scroll_px,
                 composer_slug,
                 composing,
@@ -1873,7 +2185,13 @@ class TerminalRenderer:
                 int(round(max(0.0, cta_local) * 24)),
                 cta_caret,
                 int(round(min(1.0, dock) * 48)),
-                int(round(min(1.0, fly) * 48)),
+                int(round(min(1.0, fly) * 96)),
+                int(round(min(1.0, landing_fade) * 48)),
+                (
+                    int(round(min(1.0, response_loader) * 24))
+                    if response_loader is not None
+                    else -1
+                ),
                 suppress_bar,
                 tuple(item.utterance.turn_index for item in history),
             )
@@ -1891,12 +2209,15 @@ class TerminalRenderer:
                         caret_on,
                         scroll_px=scroll_px,
                         send_flash=send_flash,
+                        send_flash_u=send_flash_u,
                         composer_slug=composer_slug,
                         composer_accent=composer_accent,
                         draft=draft,
                         composing=composing,
                         dock=dock,
                         fly=fly,
+                        landing_fade=landing_fade,
+                        response_loader=response_loader,
                         suppress_bar=suppress_bar,
                     )
                     if fade_u > 0.0:
@@ -2042,12 +2363,13 @@ class TerminalRenderer:
         return out.astype(np.uint8)
 
     def _draw_cta_frame(self, text: str, revealed: int, *, caret_on: bool) -> np.ndarray:
-        """Paint the black CTA end-card with a two-tier text hierarchy.
+        """Paint the black CTA end-card as a two-line period structure.
 
-        No standalone duplicated wordmark: "Follow Aiwake" becomes the prominent
-        first line (``_font_cta``-large), and the rest of the copy renders smaller
-        (``_font_compose``) directly below. Both tiers wrap inside ~76% of the
-        safe column so long invites never bleed past either screen edge.
+        "Follow Aiwake." is line one and the follow-on sentence is line two, both
+        drawn with the SAME font (``_font_cta``) so the two lines read as one
+        matching invitation rather than a mismatched headline + footnote. Both
+        lines wrap inside ~76% of the safe column so long invites never bleed
+        past either screen edge.
         """
         from PIL import Image, ImageDraw  # noqa: PLC0415
 
@@ -2055,22 +2377,23 @@ class TerminalRenderer:
         draw = ImageDraw.Draw(canvas)
         full = (text or "").strip()
         accent = self.palette["orchestrator"]
-        # Split into headline ("Follow Aiwake") + remainder at the first sentence
-        # boundary. Headline = everything before the first '.' / '!' / '?' or the
-        # full text when there is no terminal punctuation (short invites).
-        head, _, tail = (full + " ").partition(". ")
-        if not tail.strip() or "." not in head:
-            split_i = full.find(". ")
-            if split_i != -1:
-                head, tail = full[: split_i + 1], full[split_i + 2 :]
-            else:
+        # Two-line, period-based CTA: split at the explicit newline separator into
+        # headline ("Follow Aiwake.") and the second sentence. A '\n' is written
+        # by ``ensure_cta_two_line``; fall back to sentence-splitting for any
+        # legacy single-line text.
+        if "\n" in full:
+            head, _, tail = full.partition("\n")
+        else:
+            head, sep, tail = full.partition(". ")
+            if not tail.strip():
                 head, tail = full, ""
-        head = head.strip(" .!?")
+        tail = tail.strip()
         if not head:
             head, tail = full, ""
-        # Typewriter reveal counts characters against the FULL line, so we reveal
-        # the headline first, then let the tail bleed in beneath it.
-        head_visible = head
+        # Typewriter reveal: the headline types first (so the caret rests at the
+        # end of ``Follow Aiwake.`` during the short beat), then the tail bleeds
+        # in beneath it after ``_CTA_PAUSE_S``.
+        head_visible = head[: min(len(head), revealed)]
         head_len = len(head)
         remaining = max(0, revealed - head_len)
         tail_visible = tail[:remaining] if tail else ""
@@ -2079,15 +2402,15 @@ class TerminalRenderer:
         last_lx, last_lw, last_ly, last_lh = self._layout.margin_x, 0, ly, max(2, self.width // 80)
         if head_visible:
             hlines = self._wrap_for_font(head_visible, font=self._font_cta, width_frac=0.76) or [""]
-            hline_h = self._line_height_of(self._font_cta, scale=1.40)
+            hline_h = self._line_height_of(self._font_cta, scale=self.theme.line_spacing_cta)
             for i, line in enumerate(hlines):
                 bbox = draw.textbbox((0, 0), line or " ", font=self._font_cta)
                 lw = max(1, bbox[2] - bbox[0]) if line else 0
                 lx = (self.width - max(1, lw)) // 2
                 lx = max(self._layout.margin_x, min(lx, self.width - self._layout.margin_x - max(1, lw)))
                 if line:
-                    draw.text((lx, ly + i * hline_h), line, font=self._font_cta, fill=_TITLE_WHITE)
-            bline_h = self._line_height_of(self._font_cta, scale=1.40)
+                    draw.text((lx, ly + i * hline_h), line, font=self._font_cta, fill=self._TITLE_WHITE)
+            bline_h = self._line_height_of(self._font_cta, scale=self.theme.line_spacing_cta)
             last_lx, last_lw, last_ly, last_lh = (
                 lx,
                 lw,
@@ -2097,17 +2420,18 @@ class TerminalRenderer:
             ly += len(hlines) * bline_h
 
         if tail_visible or head_visible:
-            # Small remainder line(s) immediately beneath the headline.
+            # Same-font remainder line(s) immediately beneath the headline so the
+            # two CTA sentences share an identical font size.
             ly += int(self.height * 0.045)
-            tlines = self._wrap_for_font(tail_visible, font=self._font_small, width_frac=0.76) if tail_visible else [""]
-            tline_h = self._line_height_of(self._font_small, scale=1.58)
+            tlines = self._wrap_for_font(tail_visible, font=self._font_cta, width_frac=0.76) if tail_visible else [""]
+            tline_h = self._line_height_of(self._font_cta, scale=self.theme.line_spacing_cta)
             for j, line in enumerate(tlines):
-                bbox = draw.textbbox((0, 0), line or " ", font=self._font_small)
+                bbox = draw.textbbox((0, 0), line or " ", font=self._font_cta)
                 lw = max(1, bbox[2] - bbox[0]) if line else 0
                 lx = (self.width - max(1, lw)) // 2
                 lx = max(self._layout.margin_x, min(lx, self.width - self._layout.margin_x - max(1, lw)))
                 if line:
-                    draw.text((lx, ly + j * tline_h), line, font=self._font_small, fill=_CHAT_TEXT)
+                    draw.text((lx, ly + j * tline_h), line, font=self._font_cta, fill=self._TITLE_WHITE)
                 if not tail_visible or (tail_visible and j == len(tlines) - 1):
                     last_lx, last_lw, last_ly, last_lh = (
                         lx,

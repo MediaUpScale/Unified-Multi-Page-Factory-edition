@@ -50,8 +50,14 @@ def build_library_metadata(
     final_caption: str,
     imgbb_url: str,
     video_path: str = "",
+    carousel_images: "list[dict[str, str]] | None" = None,
 ) -> dict[str, Any]:
-    """Library row with topic, caption, image URL, and local video path."""
+    """Library row with topic, caption, image URL, and local video path.
+
+    ``carousel_images`` (optional) is a list of per-slide references for
+    CAROUSEL posts, so the library entry carries every image of the post and
+    not just the first one.
+    """
     entry: dict[str, Any] = {
         "topic": topic,
         "final_caption": final_caption,
@@ -60,6 +66,8 @@ def build_library_metadata(
     }
     if video_path:
         entry["video_path"] = video_path
+    if carousel_images:
+        entry["carousel_images"] = list(carousel_images)
     return entry
 
 

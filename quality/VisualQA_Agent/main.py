@@ -101,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             _console.print(f"      logs     → {paths['logs']}")
         return 0
 
-    if not config.GEMINI_API_KEY:
+    if not config.GEMINI_API_KEY and config.VISUAL_QA_ENABLED:
         _console.print("[red]ERROR[/red] GEMINI_API_KEY missing")
         return 2
     flux_model = args.model or config.FLUX_MODEL
@@ -114,6 +114,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config.ensure_channel_dirs(args.channel)
+
+    if not config.VISUAL_QA_ENABLED:
+        _console.print(
+            "[yellow]VISUAL_QA_DISABLED[/yellow] VISUAL_QA_ENABLED=false — "
+            "critic will return a mock PASS (no Gemini vision tokens). "
+            "Set VISUAL_QA_ENABLED=true in .env to re-enable real judgement."
+        )
 
     result = run_visual_qa_loop(
         base_script_beat=args.beat,

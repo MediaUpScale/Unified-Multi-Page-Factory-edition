@@ -181,11 +181,90 @@ def _mime_for(path: Path) -> str:
     return "image/jpeg"
 
 
-def _load_image_part(path: Path) -> types.Part:
-    data = path.read_bytes()
-    if not data:
+def _resize_to_jpeg(image_path: Path | str, max_dim: int | None = None) -> bytes:
+    """
+    Downscale an image (max dimension ~512px, aspect preserved) and re-encode as
+    JPEG q85. Input tokens scale with pixel area, so this cuts per-request vision
+    tokens ~70–80%. Returns JPEG bytes; never raises on a bad frame — callers
+    fall back to the original bytes via ``_decode_part_safe``.
+    """
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    max_dim = int(max_dim if max_dim is not None else config.VISION_MAX_DIM)
+    quality = int(config.VISION_JPEG_QUALITY)
+    with PILImage.open(image_path) as im:
+        im = im.convert("RGB")
+        w, h = im.size
+        longest = max(w, h)
+        if longest > max_dim:
+            scale = max_dim / longest
+            im = im.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))),
+                resample=PILImage.LANCZOS,
+            )
+        buf = BytesIO()
+        im.save(buf, format="JPEG", quality=quality, optimize=True)
+        return buf.getvalue()
+
+
+def _decode_part_safe(
+    path: Path,
+    *,
+    fallback_mime: str,
+    force_prefix: str = "",
+) -> tuple[str, types.Part]:
+    """
+    Build a compact JPEG part from ``path``. If resizing/encoding fails (corrupt
+    frame, unreadable), fall back to the raw bytes so MoviePy / the critic always
+    completes. ``force_prefix`` keeps friendly labels for cropped parts.
+    """
+    try:
+        jpeg = _resize_to_jpeg(path)
+        if jpeg:
+            return (
+                force_prefix or path.name,
+                types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"),
+            )
+    except Exception as exc:  # noqa: BLE001
+        _LOG.debug("CRITIC | resize skipped for %s (%s)", path, exc)
+    raw = path.read_bytes()
+    if not raw:
         raise ValueError(f"Empty image file: {path}")
-    return types.Part.from_bytes(data=data, mime_type=_mime_for(path))
+    return (force_prefix or path.name, types.Part.from_bytes(data=raw, mime_type=fallback_mime))
+
+
+def _load_image_part(path: Path) -> types.Part:
+    return _decode_part_safe(path, fallback_mime=_mime_for(path))[1]
+
+
+def _bytes_to_jpeg_part(data: bytes) -> types.Part:
+    """Downscale & JPEG-encode in-memory image bytes; fall back to raw PNG."""
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    try:
+        im = PILImage.open(BytesIO(data)).convert("RGB")
+        max_dim = int(config.VISION_MAX_DIM)
+        quality = int(config.VISION_JPEG_QUALITY)
+        w, h = im.size
+        longest = max(w, h)
+        if longest > max_dim:
+            scale = max_dim / longest
+            im = im.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))),
+                resample=PILImage.LANCZOS,
+            )
+        buf = BytesIO()
+        im.save(buf, format="JPEG", quality=quality, optimize=True)
+        jpeg = buf.getvalue()
+        if jpeg:
+            return types.Part.from_bytes(data=jpeg, mime_type="image/jpeg")
+    except Exception as exc:  # noqa: BLE001
+        _LOG.debug("CRITIC | in-memory bytes resize skipped (%s)", exc)
+    return types.Part.from_bytes(data=data, mime_type="image/png")
 
 
 def _lofi_edge_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
@@ -204,6 +283,14 @@ def _lofi_edge_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
     )
     out: list[tuple[str, types.Part]] = []
     for name, box in boxes:
+        try:
+            crop = im.crop(box)
+            scaled = _encode_then_downscale(crop, f"edge_{name}")
+            if scaled is not None:
+                out.append(scaled)
+                continue
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("CRITIC | edge crop %s resize skipped (%s)", name, exc)
         buf = BytesIO()
         im.crop(box).save(buf, format="PNG")
         out.append(
@@ -221,6 +308,12 @@ def _lofi_torso_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
     im = PILImage.open(image_path).convert("RGB")
     w, h = im.size
     box = (int(w * 0.12), int(h * 0.28), int(w * 0.88), int(h * 0.88))
+    try:
+        scaled = _encode_then_downscale(im.crop(box), "torso")
+        if scaled is not None:
+            return [scaled]
+    except Exception as exc:  # noqa: BLE001
+        _LOG.debug("CRITIC | torso crop resize skipped (%s)", exc)
     buf = BytesIO()
     im.crop(box).save(buf, format="PNG")
     return [
@@ -229,6 +322,34 @@ def _lofi_torso_crop_parts(image_path: Path) -> list[tuple[str, types.Part]]:
             types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png"),
         )
     ]
+
+
+def _encode_then_downscale(
+    crop: Any,
+    label: str,
+) -> tuple[str, types.Part] | None:
+    """Encode a cropped PIL region as a max-512px JPEG part (None on failure)."""
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    max_dim = int(config.VISION_MAX_DIM)
+    quality = int(config.VISION_JPEG_QUALITY)
+    copy = crop.convert("RGB")
+    cw, ch = copy.size
+    longest = max(cw, ch)
+    if longest > max_dim:
+        scale = max_dim / longest
+        copy = copy.resize(
+            (max(1, int(cw * scale)), max(1, int(ch * scale))),
+            resample=PILImage.LANCZOS,
+        )
+    buf = BytesIO()
+    copy.save(buf, format="JPEG", quality=quality, optimize=True)
+    jpeg = buf.getvalue()
+    if not jpeg:
+        return None
+    return (label, types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"))
 
 
 _INCOMPLETE_GARMENT_RE = re.compile(
@@ -789,7 +910,35 @@ def evaluate_image(
 ) -> CriticVerdict:
     """
     Judge a generated image with Gemini Vision against ALL style refs + rules.
+
+    If ``config.VISUAL_QA_ENABLED`` is falsy, the API call is bypassed entirely
+    and a mock PASS verdict is returned so every downstream pipeline (orchestrator,
+    reel_visual_qa, agent_loop) keeps running without burning vision tokens.
     """
+    if not config.VISUAL_QA_ENABLED:
+        threshold = (
+            float(quality_threshold)
+            if quality_threshold is not None
+            else float(config.QUALITY_THRESHOLD)
+        )
+        bypass = CriticVerdict(
+            score=10.0,
+            passed=True,
+            flaws=[],
+            fix_instructions="",
+            corner_scan="",
+            limb_fragment_present=False,
+            ungrounded_hand_present=False,
+            deformed_hand_present=False,
+            incomplete_garment_coverage=False,
+        )
+        _console.print(
+            f"[cyan]CRITIC[/cyan] VISUAL_QA_ENABLED=false -> bypassing vision API "
+            f"(mock PASS score=10) | threshold={threshold} | channel={channel_name}"
+        )
+        _LOG.info("CRITIC | bypassed (VISUAL_QA_ENABLED=false) channel=%s", channel_name)
+        return bypass
+
     if not config.GEMINI_API_KEY:
         raise RuntimeError(
             "GEMINI_API_KEY missing — set env or factory .env before critic runs."
@@ -803,9 +952,7 @@ def evaluate_image(
     hard_cap = float(config.CLEAN_MODEL_HARD_CAP)
 
     if isinstance(generated_image, (bytes, bytearray)):
-        candidate_part = types.Part.from_bytes(
-            data=bytes(generated_image), mime_type="image/png"
-        )
+        candidate_part = _bytes_to_jpeg_part(bytes(generated_image))
         candidate_label = "<bytes>"
     else:
         candidate_path = Path(generated_image)
@@ -1073,7 +1220,7 @@ def evaluate_image(
 
     if config.LOG_COSTS:
         _console.print(
-            f"[dim]COST[/dim] critic~${config.COST_GEMINI_FLASH_USD:.5f}"
+            f"[dim]COST[/dim] critic~${config.COST_GEMINI_FLASH_LITE_USD:.6f}"
         )
 
     _LOG.info(

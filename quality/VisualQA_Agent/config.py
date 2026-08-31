@@ -79,10 +79,10 @@ DEEPINFRA_FLUX_SCHNELL_MODEL: str = (
 ).strip()
 
 GEMINI_CRITIC_MODEL: str = os.getenv(
-    "VISUALQA_GEMINI_MODEL", "models/gemini-2.5-flash"
+    "VISUALQA_GEMINI_MODEL", "models/gemini-2.5-flash-lite"
 )
 GEMINI_REWRITE_MODEL: str = os.getenv(
-    "VISUALQA_REWRITE_MODEL", "models/gemini-2.5-flash"
+    "VISUALQA_REWRITE_MODEL", "models/gemini-2.5-flash-lite"
 )
 FLUX_MODEL: str = (
     os.getenv("TOGETHER_IMAGE_MODEL")
@@ -141,7 +141,31 @@ QUALITY_THRESHOLD: float = 6.0  # /10 — realistic FLUX Schnell pass-bar
 CLEAN_MODEL_HARD_CAP: float = 4.0
 LOG_COSTS: bool = True
 
+# ---------------------------------------------------------------------------
+# Cost-control & feature-flag guardrails
+# ---------------------------------------------------------------------------
+# Master kill-switch. When off, evaluate_image() short-circuits to a mock PASS
+# (no Gemini vision call) so downstream pipelines (orchestrator, reel_visual_qa,
+# agent_loop) keep running without burning vision tokens. Enable via .env:
+#     VISUAL_QA_ENABLED=true
+VISUAL_QA_ENABLED: bool = (
+    (os.getenv("VISUAL_QA_ENABLED") or "").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+
+# Vision payload downscale cap (max dimension, aspect preserved) + JPEG quality.
+# Input tokens scale ~with pixel area, so capping to 512px cuts per-request cost
+# dramatically (~70–80%). Send JPEG (q85) instead of uncompressed high-res PNG.
+VISION_MAX_DIM: int = int(os.getenv("VISUAL_QA_MAX_DIM", "512") or "512")
+VISION_JPEG_QUALITY: int = int(os.getenv("VISUAL_QA_JPEG_QUALITY", "85") or "85")
+
 COST_GEMINI_FLASH_USD: float = 0.00015
+# Cheapest viable Vision model cost (per 1k tokens) for cost-logging only —
+# gemini-2.5-flash-lite. Kept separate from the old flash rate so the ledger
+# reflects the new, cheaper provider tier.
+COST_GEMINI_FLASH_LITE_USD: float = float(
+    os.getenv("VISUAL_QA_FLASH_LITE_USD", "0.000032") or "0.000032"
+)
 # DEPRECATED: flat pre-migration Together.ai rate. Schnell now runs on DeepInfra
 # (formula-based billing: $0.0005 x (w/1024) x (h/1024) x steps — see
 # agents.media.providers.together_image.estimate_deepinfra_schnell_cost_usd,

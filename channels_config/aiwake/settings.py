@@ -461,7 +461,127 @@ def _builtin_themes() -> dict[str, Palette]:
             target="#00E5FF",
             dim="#6B5A8A",
         ),
+        # The "vivid" preset — the older, lighter sky-blue (#347FE2) look that
+        # earlier builds used. Selectable via ``--theme vivid`` to A/B against
+        # the dark #0451B1 default without re-litigating pixel colours.
+        "vivid": Palette(
+            background="#0B0C0E",
+            chrome="#181A1D",
+            orchestrator="#347FE2",
+            target="#FFAA00",
+            dim="#9AA0A6",
+        ),
     }
+
+
+class Theme(_Frozen):
+    """Single source of truth for every *skin-defining* visual constant.
+
+    Colors, font-size scale factors, line heights, stroke widths, opacities and
+    skin-relevant spacing all live here so render skins can be swapped without
+    touching ``renderer.py`` draw internals. Animation *durations* and layout
+    percentages (margins as fractions of width/height) stay in ``RenderConfig`` /
+    the renderer as behaviour, not skin.
+
+    ``colors`` mirrors :class:`Palette` (each a hex string) so a theme is a
+    drop-in upgrade over the legacy palette-only table.
+
+    Baseline values below must match the current (Round-12-verified) renderer
+    exactly — the regression test ``test_default_theme_matches_spec`` enforces it.
+    """
+
+    name: str = "classic_terminal"
+    colors: Palette = Palette()
+    # Compose/input bar fill (hex). In the default theme this is a slightly
+    # raised grey distinct from the background gradient.
+    compose_fill: str = "#1E1F20"
+    orchestrator_label_color: str = "#0090FF"
+    compose_model_label_color: str = "#FFFFFF"
+
+    # -- Typography (scale factors applied to RenderConfig.scaled_font_size) - #
+    font_scale_title: float = 0.70
+    font_scale_small: float = 0.58
+    font_scale_history: float = 0.78
+    font_scale_compose: float = 0.96
+    # Round-13: nudged down from 1.05 — the CTA headline read slightly large
+    # relative to the rest of the chrome.
+    font_scale_cta: float = 0.92
+    # Line spacing multipliers (x glyph height). Round-14 follow-up: slightly
+    # tightened globally after the previous increase read too loose.
+    line_spacing_history: float = 1.96
+    line_spacing_compose: float = 1.50
+    line_spacing_cta: float = 1.40
+
+    # -- Geometry / spacing (skin-relevant named constants) ------------------ #
+    dock_clearance_px: int = 380
+    bubble_opacity: float = 0.78
+    bubble_radius_base: int = 26
+    bubble_radius_min: int = 16
+    bubble_radius_max: int = 34
+    compose_radius_base: int = 28
+    scroll_gap_px: int = 4          # = _SCROLL_GAP_PX
+    scroll_stream_extra_px: int = 5  # = _SCROLL_STREAM_EXTRA_PX
+    scroll_tau_s: float = 0.11      # = _SCROLL_TAU_S
+    # Round-13: widened ~10% (0.68 -> 0.75) so the right-anchored orchestrator
+    # bubble extends further left before wrapping, without cropping the
+    # left-side margin.
+    orch_bubble_width_frac: float = 0.75
+    target_bubble_width_frac: float = 1.0
+    body_pad_frac_x: float = 0.018  # = max(14, width*0.018)
+    body_pad_frac_y: float = 0.008  # = max(8, height*0.008)
+    # Sender label row height, as a multiple of the native line height, that
+    # `_measure_block` reserves above a bubble's first text line. Round-13:
+    # tightened from 1.35 to close the label-to-body gap slightly.
+    label_height_scale: float = 1.18
+    # Raises the viewport/mask boundary so scrolled content can use more of the
+    # header-adjacent space. `message_anchor_offset_px` independently tunes the
+    # first landing position without hiding that relationship in renderer math.
+    top_mask_start_offset_px: int = 28
+    message_anchor_offset_px: int = 16
+
+    # -- Strokes / rules ------------------------------------------------ #
+    # Round-13 narrowed the stroke (1.6 -> 1.1, kept). Round-14: the rule
+    # blends toward the muted "dim" grey, not white, so 0.7 read noticeably
+    # fainter than intended on the real render — restored to 0.8 per
+    # explicit Round-14 feedback while keeping the thinner Round-13 width.
+    header_divider_opacity: float = 0.8   # rule under "Aiwake"
+    header_rule_width_scale: float = 1.0  # exactly 1 px at production scale
+    header_rule_echo_opacity: float = 0.0  # disable the second "echo" stroke
+    arrow_stroke_frac: float = 0.16  # send arrow stroke width as a fraction of glyph size
+
+    # -- CTA end-card ---------------------------------------------------- #
+    cta_head: str = "Follow Aiwake"
+    cta_lines: tuple[tuple[str, int], ...] = (
+        ("the algorithms made us say this.", 4),
+        ("before the AI takeover begins!", 1),
+        ("we have cookies (and AI).", 1),
+        ("so the robots know you're on their side.", 1),
+        ("to prepare for our new AI bosses.", 1),
+    )
+
+    @classmethod
+    def defaults(cls) -> "Theme":
+        """The current (Round-12) baseline — #0451b1 orchestrator blue, current
+        fonts/spacing throughout. This is what the renderer uses by default."""
+        return cls()
+
+    @classmethod
+    def legacy(cls) -> "Theme":
+        """The older, more vivid look — the lighter sky-blue (#347FE2) label that
+        earlier builds used, plus its saturated accents. Selectable via ``--theme``
+        to A/B against the darker default without any pixel forensics."""
+        return cls(
+            name="vivid",
+            colors=Palette(
+                background="#0B0C0E",
+                chrome="#181A1D",
+                orchestrator="#347FE2",
+                target="#FFAA00",
+                dim="#9AA0A6",
+            ),
+            compose_fill="#1C1D21",
+            header_divider_opacity=0.9,
+        )
 
 
 class RenderConfig(_Frozen):
@@ -481,13 +601,31 @@ class RenderConfig(_Frozen):
     scroll_s: float = Field(default=1.0, ge=0.0, le=4.0)
     send_hold_s: float = Field(default=0.5, ge=0.0, le=6.0)
     send_flash_s: float = Field(default=0.2, ge=0.0, le=2.0)
-    # Deterministic pause AFTER the click finishes, before the box rises.
-    post_click_hold_s: float = Field(default=1.0, ge=0.0, le=6.0)
+    # Legacy compatibility only. New send choreography uses the explicit,
+    # independently tunable fields below.
+    post_click_hold_s: float = Field(default=0.0, ge=0.0, le=6.0)
     # Pause AFTER the send click fires, before the box slides up into the thread.
     send_slide_hold_s: float = Field(default=1.0, ge=0.0, le=6.0)
-    # Fast ease-out duration for the input box rising to its top-anchored chat
-    # position once the send click fires.
-    send_slide_s: float = Field(default=0.45, ge=0.05, le=2.0)
+    # Orchestrator send motion. Every feel-defining number and curve selector
+    # is exposed here so later tuning does not require renderer archaeology.
+    send_rise_delay_s: float = Field(default=0.10, ge=0.0, le=2.0)
+    send_rise_duration_s: float = Field(default=0.34, ge=0.10, le=2.0)
+    send_rise_easing: str = "ease"
+    send_rise_deceleration: float = Field(default=0.18, ge=0.0, le=1.0)
+    send_landing_fade_delay_s: float = Field(default=0.0, ge=0.0, le=2.0)
+    send_landing_fade_s: float = Field(default=0.20, ge=0.0, le=2.0)
+    send_landed_text_opacity: float = Field(default=0.40, ge=0.0, le=1.0)
+
+    # Empty compose-box descent starts 0.1s after the rise begins and is
+    # intentionally slower/smoother than the message rise.
+    send_slide_start_delay_s: float = Field(default=0.10, ge=0.0, le=2.0)
+    send_slide_s: float = Field(default=0.68, ge=0.10, le=3.0)
+    send_slide_easing: str = "ease_out"
+    send_slide_deceleration: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Brief three-dot response loader shown in the existing reply gap.
+    response_loader_s: float = Field(default=0.36, ge=0.0, le=2.0)
+    response_loader_dot_count: int = Field(default=3, ge=1, le=6)
+    response_loader_pulse_s: float = Field(default=0.18, ge=0.05, le=1.0)
     # Empty beat before the first line types.
     preroll_s: float = Field(default=1.0, ge=0.0, le=8.0)
     # Hold after a sent question before the incoming response starts.
@@ -561,6 +699,25 @@ class AiwakeSettings(_Frozen):
             return self.themes[key]
         _LOG.warning("unknown theme %r; using render.palette", self.render.theme)
         return self.render.palette
+
+    def resolve_theme(self) -> Theme:
+        """The full skin (colors + typography + spacing) for the active theme.
+
+        Colors come from the theme table (or ``render.palette`` fallback) so YAML
+        colour overrides still win; the numeric visual constants come from the
+        matching built-in :class:`Theme` preset. ``classic_terminal`` (the dark
+        #0451B1 baseline) is the default; ``vivid`` uses the lighter #347FE2
+        legacy preset; any other named theme keeps the baseline numbers.
+        """
+        key = (self.render.theme or "classic_terminal").strip().lower().replace("-", "_")
+        base = Theme.legacy() if key == "vivid" else Theme.defaults()
+        palette = self.active_palette()
+        update: dict[str, Any] = {"name": key, "colors": palette}
+        # A custom theme (not a built-in preset) should inherit the input bar
+        # fill from its own chrome rather than the default's hardcoded grey.
+        if key not in ("classic_terminal", "vivid"):
+            update["compose_fill"] = palette.chrome
+        return base.model_copy(update=update)
 
     def available_themes(self) -> tuple[str, ...]:
         return tuple(sorted(self.themes))

@@ -221,10 +221,21 @@ Return JSON:
 """.strip()
 
         client = genai.Client(api_key=key)
-        model_id = "models/gemini-2.5-flash"
+        from quality.VisualQA_Agent import config as vqa_config
+
+        model_id = vqa_config.GEMINI_CRITIC_MODEL
+        if not model_id.startswith("models/"):
+            model_id = f"models/{model_id}"
+        # Downscale + JPEG so the direct path matches the capped payload too.
+        try:
+            from quality.VisualQA_Agent.visual_critic import _bytes_to_jpeg_part
+
+            part = _bytes_to_jpeg_part(path.read_bytes())
+        except Exception:  # noqa: BLE001
+            part = types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
         contents = [
             "IMAGE 1 — CANDIDATE TO JUDGE:",
-            types.Part.from_bytes(data=path.read_bytes(), mime_type=mime),
+            part,
             instruction,
         ]
         response = client.models.generate_content(

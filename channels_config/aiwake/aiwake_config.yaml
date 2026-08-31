@@ -307,13 +307,28 @@ render:
   send_hold_s: 0.5
   # Flash/fade on the send arrow after typing completes.
   send_flash_s: 0.2
-  # Full 1.0s pause after the click, before the message-box rise begins
-  # (identical every round, not just round 1).
-  post_click_hold_s: 1.0
+  # Legacy compatibility only; explicit send_rise_delay_s drives the motion.
+  post_click_hold_s: 0.0
   # Legacy post-click pause (fly/dock leave at the send click — keep at 0).
   send_slide_hold_s: 0.0
-  # Fast ease-out for the empty chrome morphing down to the docked footer.
-  send_slide_s: 0.45
+  # Message rises almost immediately, stays fully opaque while moving, then
+  # eases to its settled text opacity only after reaching the top anchor.
+  send_rise_delay_s: 0.10
+  send_rise_duration_s: 0.34
+  send_rise_easing: ease
+  send_rise_deceleration: 0.18
+  send_landing_fade_delay_s: 0.0
+  send_landing_fade_s: 0.20
+  send_landed_text_opacity: 0.40
+  # Empty compose box follows 0.1s later on its own slower/smoother curve.
+  send_slide_start_delay_s: 0.10
+  send_slide_s: 0.68
+  send_slide_easing: ease_out
+  send_slide_deceleration: 0.0
+  # Lightweight three-dot indicator immediately before each target response.
+  response_loader_s: 0.36
+  response_loader_dot_count: 3
+  response_loader_pulse_s: 0.18
   # Monospace lookup order; first hit wins, PIL default is the last resort.
   font_candidates:
     - C:/Windows/Fonts/consola.ttf

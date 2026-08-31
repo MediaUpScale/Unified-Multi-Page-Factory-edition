@@ -328,7 +328,7 @@ def run_visual_qa_loop(
         )
         prompt = clean_prompt  # persist what was actually sent
         total_cost += gen_cost
-        total_cost += config.COST_GEMINI_FLASH_USD
+        total_cost += config.COST_GEMINI_FLASH_LITE_USD
         last_image = image_path
 
         verdict = evaluate_image(
@@ -349,7 +349,7 @@ def run_visual_qa_loop(
             passed=verdict.passed,
             flaws=list(verdict.flaws),
             fix_instructions=verdict.fix_instructions,
-            cost_usd=gen_cost + config.COST_GEMINI_FLASH_USD,
+            cost_usd=gen_cost + config.COST_GEMINI_FLASH_LITE_USD,
         )
         attempt_history.append(record)
 
@@ -378,7 +378,7 @@ def run_visual_qa_loop(
             )
 
         if attempt < retries:
-            total_cost += config.COST_GEMINI_FLASH_USD
+            total_cost += config.COST_GEMINI_FLASH_LITE_USD
             prompt = rewrite_prompt(
                 base_script_beat=base_script_beat,
                 previous_prompt=prompt,

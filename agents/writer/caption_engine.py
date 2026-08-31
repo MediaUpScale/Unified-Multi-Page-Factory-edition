@@ -502,6 +502,8 @@ def build_smart_bait_prompt(
     *,
     cta_enabled: bool = True,
     channel=None,
+    long_format: bool = False,
+    forbid_signature: bool = False,
 ) -> str:
     """
     Build a single LLM prompt that returns both:
@@ -510,7 +512,14 @@ def build_smart_bait_prompt(
 
     The overlay is designed for immediate comment engagement (not educational).
     The caption complements it with personality, not exposition.
+
+    ``long_format`` (CAROUSEL): the CAPTION becomes a long multi-paragraph
+    narrative in the channel's own voice, so a carousel post carries a full
+    caption instead of a single line.
+
+    ``forbid_signature``: never let the model add a brand/copyright footer.
     """
+    _no_sig = _NO_SIGNATURE_RULE if forbid_signature else ""
     if _is_isolated_channel(channel):
         ch = _active_channel(channel)
         cta_note = (
@@ -518,6 +527,25 @@ def build_smart_bait_prompt(
             if cta_enabled
             else "CAPTION CLOSE: End cleanly. Do NOT include any comment links or call-to-actions."
         )
+        if long_format:
+            _part2 = (
+                "─ CAPTION ─\n"
+                "- Write a LONG caption: 4-6 short paragraphs that read like a "
+                "documentary narrative flowing from one slide to the next.\n"
+                "- Each paragraph should feel like a different stage of the story.\n"
+                "- Dark, investigative, unexplained-history tone. Never Anna/Mei voice.\n"
+                f"{cta_note}\n"
+                f"{_no_sig}Never add any brand, © copyright, trademark, or 'by MediaUpScale' footer."
+            )
+            _schema_extra = ',\n              "caption_body": "the long caption paragraphs."'
+        else:
+            _part2 = (
+                "─ CAPTION ─\n"
+                "- EXACTLY 1 SENTENCE.\n"
+                "- Dark, investigative, unexplained-history tone. Never Anna/Mei voice.\n"
+                f"{cta_note}"
+            )
+            _schema_extra = ""
         return dedent(
             f"""
             You are creating a curiosity-bait social post for: {page_display_name}
@@ -533,13 +561,11 @@ def build_smart_bait_prompt(
             - Topic context: {topic}
 
             ─── PART 2: CAPTION ───
-            - EXACTLY 1 SENTENCE.
-            - Dark, investigative, unexplained-history tone. Never Anna/Mei voice.
-            {cta_note}
+            {_part2}
 
             ─── OUTPUT FORMAT — respond with ONLY valid JSON ───
             {{
-              "quote_text": "A unique investigative overlay hook about the topic. Never repeat previous formats.",
+              "quote_text": "A unique investigative overlay hook about the topic. Never repeat previous formats."{_schema_extra},
               "visual_subject": "A photoreal documentary scene of the named monument, artifact, or landscape. No couples, no face-masks, no relationship psychology. Wide aerial or environmental camera. Central subject. Foreground dust or stone arch; background temple, starfield, or horizon."
             }}
 
@@ -552,6 +578,32 @@ def build_smart_bait_prompt(
         if cta_enabled
         else "CAPTION CLOSE: End cleanly. Do NOT include any comment links, DM invitations, or call-to-actions."
     )
+    if long_format:
+        caption_rules = (
+            "─── PART 2: CAPTION (post body text) ───\n"
+            "- Write a LONG caption: at least 3-4 paragraphs of rich detail.\n"
+            "- Open with a strong emotional/nostalgic/curiosity hook sentence.\n"
+            "- Develop the theme across 2-3 body paragraphs that each feel like a "
+            "different slide revealing another facet of the story.\n"
+            "- Close with a warm, natural, engaged call-to-action.\n"
+            "- Separate each paragraph with a blank line.\n"
+            f"{_no_sig if _no_sig else '- Never add any brand, copyright, trademark, or by MediaUpScale footer.'}\n"
+            "- Do NOT append any © / copyright / 'by MediaUpScale' signature line."
+        )
+        _schema_extra = ',\n          "caption_body": "the long multi-paragraph caption."'
+    else:
+        caption_rules = (
+            "─── PART 2: CAPTION (post body text) ───\n"
+            "Rules:\n"
+            "- EXACTLY 1 SENTENCE. Hard limit. No exceptions.\n"
+            "- No educational content, no fact sheets, no lists, no headers.\n"
+            "- Tone: safe-but-dark, dry wit, wry sarcasm, or self-aware humour — tightly tuned to persona.\n"
+            "- Do NOT restate, explain, or reference the overlay question.\n"
+            "- Must sound like a real human — slightly unfiltered, never corporate, never polished.\n"
+            f"{_no_sig.rstrip() if _no_sig else '- A single provocative sentence only.'}\n"
+            f"{cta_note}"
+        )
+        _schema_extra = ""
     return dedent(
         f"""
         You are creating a hyper-viral social media engagement post for: {page_display_name}
@@ -580,18 +632,11 @@ def build_smart_bait_prompt(
         Study what makes these work: they are SHORT, DIRECT, personal, slightly provocative,
         and demand a specific, personal answer. Replicate that energy — not those words.
 
-        ─── PART 2: CAPTION (post body text) ───
-        Rules:
-        - EXACTLY 1 SENTENCE. Hard limit. No exceptions.
-        - No educational content, no fact sheets, no lists, no headers.
-        - Tone: safe-but-dark, dry wit, wry sarcasm, or self-aware humour — tightly tuned to persona.
-        - Do NOT restate, explain, or reference the overlay question.
-        - Must sound like a real human — slightly unfiltered, never corporate, never polished.
-        {cta_note}
+        {caption_rules}
 
         ─── OUTPUT FORMAT — respond with ONLY valid JSON, nothing else ───
         {{
-          "quote_text": "A completely new, unique, provocative relationship psychological bait hook text. Never repeat previous formats.",
+          "quote_text": "A completely new, unique, provocative relationship psychological bait hook text. Never repeat previous formats."{_schema_extra},
           "visual_subject": "An intense interaction between exactly one man and one woman. VISUAL CONCEPT COMPOSITION RULES: Only ONE character may exhibit a surreal transformation or psychological deception element — never both simultaneously. One partner must always remain a completely normal, emotionally vulnerable human to ground the scene. THE TARGET: If the hook addresses toxic female behavior, keep the man fully human and depict the woman peeling away a smiling face-mask or casting a shadow with a subtle surreal alteration. If the hook addresses toxic male behavior, keep the woman fully human and apply the surreal mask or shadow alteration exclusively to the man. Background must be minimal and dark — no floating specters, no extra monsters, no screaming figures. The two characters must fill the entire canvas naturally with no heavy framing elements."
         }}
 
@@ -2008,6 +2053,8 @@ class CaptionEngine:
         narrative_mode: str = "",
         batch_angle_block: str = "",
         uniqueness_rejection: str = "",
+        long_format: bool = False,
+        forbid_signature: bool = False,
     ) -> tuple[str, str, str, str]:
         """
         Generate SMART_BAIT or ECONOMIC_REEL hook content.
@@ -2049,6 +2096,8 @@ class CaptionEngine:
                 persona,
                 cta_enabled=cta_enabled,
                 channel=self._channel,
+                long_format=long_format,
+                forbid_signature=forbid_signature,
             )
 
         if _is_reel:
@@ -2177,10 +2226,18 @@ class CaptionEngine:
                 if not caption:
                     caption = overlay_text  # final fallback
             else:
-                # SMART_BAIT schema: quote_text / visual_subject
+                # SMART_BAIT schema: quote_text / visual_subject.
+                # CAROUSEL (long_format): also accept caption_body as the long caption.
                 overlay_text   = str(data.get("quote_text",      "")).strip()
                 visual_subject = str(data.get("visual_subject",  "")).strip()
-                caption        = overlay_text  # quote_text doubles as the post caption
+                if long_format:
+                    caption = str(
+                        data.get("caption_body", "")
+                        or data.get("caption", "")
+                        or overlay_text
+                    ).strip()
+                else:
+                    caption = overlay_text  # quote_text doubles as the post caption
 
         except (_json.JSONDecodeError, Exception):  # noqa: BLE001
             # Fallback: salvage caption_body from invalid/fenced JSON, then labels
@@ -2210,6 +2267,10 @@ class CaptionEngine:
                         self.last_seo_title = ls[len("SEO_TITLE:"):].strip()
                 if not overlay_text and not caption:
                     caption = extract_clean_caption(raw_response)
+
+        if forbid_signature and caption:
+            caption = _strip_caption_signature(caption)
+            self.last_seo_title = _strip_caption_signature(self.last_seo_title)
 
         return overlay_text, caption, mode_tag, visual_subject
 

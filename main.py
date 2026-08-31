@@ -1976,6 +1976,10 @@ def _produce_variant_worker(
                     narrative_mode=page_ctx.narrative_mode if page_ctx else "",
                     batch_angle_block=_batch_angle_block,
                     uniqueness_rejection=_reject_note,
+                    # CAROUSEL: always a long-format caption, never a brand
+                    # signature footer (anna_protocol and every carousel post).
+                    long_format=(post_type == "CAROUSEL"),
+                    forbid_signature=(post_type == "CAROUSEL"),
                 )
                 _seo_title_local = (
                     getattr(caption_engine, "last_seo_title", "") or ""
@@ -2369,6 +2373,7 @@ def _produce_variant_worker(
     # Per-variant image tracking initialised here so _return_dict always has these keys
     # even when skip_image is True or when image generation raises an exception.
     _carousel_image_paths: list[str] = []
+    _carousel_imgbb: list[dict[str, str]] = []
     _images_generated_this_variant: int = 0
     # IMAGE_BACKGROUND / IMAGE_QUOTE / IMAGE_AVATAR: call Gemini as normal.
     # ------------------------------------------------------------------
@@ -2690,67 +2695,75 @@ def _produce_variant_worker(
             _images_generated_this_variant = 1
 
     # ── CAROUSEL: generate slides 2..N with distinct viewpoint directives ─
-    # Slide 1 is the image already generated above (same image_prompt).
-    # Remaining slides use the same base style/image_prompt but a different
-    # cinematographic angle so the frames form a coherent visual narrative,
-    # and are all related to the carousel theme. --carousel_quantity controls
-    # how many images each carousel hosts (default 3); --quantity controls how
-    # many carousels are produced (handled upstream by the batch loop).
+    # Slide 1 is the image already generated above (image_prompt).
+    # Remaining slides do NOT reuse the same scene: each slide illustrates the
+    # carousel topic from a DIFFERENT original angle/facet, so the frames read
+    # as a real multi-scene narrative and are never repetitive copies of slide 01.
+    # --carousel_quantity controls how many images each carousel hosts (default 3);
+    # --quantity controls how many carousels are produced (handled upstream).
     if post_type == "CAROUSEL" and not skip_image and raw_bg_path is not None and adapter is not None:
         _carousel_quantity = max(1, int(carousel_quantity or 3))
         _carousel_image_paths.append(str(raw_bg_path))  # slide 01
+        # Each entry: (label, scene-reframing clause). Slide 2+ builds a FRESH
+        # prompt from the topic's visual_subject + this facet, so every image
+        # depicts the subject in a genuinely different way, not a camera retake.
         _carousel_slide_directives = [
             (
-                "SLIDE 02 — DETAIL CLOSE-UP",
-                "Extreme close-up shot. Tangible surface textures, hyper-detailed craftsmanship, "
-                "micro-scale inscriptions or material patterns. Fill the frame edge-to-edge.",
+                "SLIDE 02 — THE HUMAN ELEMENT",
+                "Reframe the subject around human scale and interaction: a lone observer, "
+                "hands at work, or the figures surrounding the subject. Change WHAT is shown — "
+                "focus on people engaging with the topic, faces and gestures, not the object alone.",
             ),
             (
-                "SLIDE 03 — ATMOSPHERIC REVELATION",
-                "Dramatic low-angle or aerial perspective. Symbolic composition, mysterious "
-                "atmospheric haze, sense of scale and ancient grandeur revealed from a new angle.",
+                "SLIDE 03 — THE LANDSCAPE & SETTING",
+                "Pull back and reframe the topic inside its full natural or built environment. "
+                "Let the setting, terrain, and surroundings BE the story — the subject must appear "
+                "diminished within a vast landscape instead of isolated on a plain background.",
             ),
             (
-                "SLIDE {n} — WIDE ENVIRONMENTAL ESTABLISHING SHOT",
-                "High-orbit wide aerial or sweeping panorama establishing the full setting, "
-                "scale, and relationship between subject and landscape. Depth of field recedes "
-                "into a distant horizon. Maintain the same colour grading and props as slide 01.",
+                "SLIDE {n} — MACRO ARTIFACT & MATERIAL",
+                "Reframe the topic as a hyper-detailed macro study of its material, texture, or "
+                "craftsmanship — a DIFFERENT physical element of the subject fills the frame "
+                "(surface, structure, inscription), so it is clearly not the slide-01 view.",
             ),
             (
-                "SLIDE {n} — INTIMATE OVER-THE-SHOULDER DETAIL",
-                "Over-the-shoulder vantage point behind the main subject, drawing the viewer into "
-                "the frame with the subject's hands or the primary tool/item in crisp focus. "
-                "Foreground sharp, background softly blurred. Same palette as slide 01.",
+                "SLIDE {n} — THE PLAN / LAYOUT FROM ABOVE",
+                "Reframe the topic through its plan, geometry, or spatial arrangement seen from "
+                "directly above — a fresh informational view of the layout, circles, patterns, or "
+                "alignment that changes the composition entirely.",
             ),
             (
-                "SLIDE {n} — HERO LOW-ANGLE HONOUR SHOT",
-                "Dramatic low-angle upturned perspective that makes the central subject or monument "
-                "tower above the viewer. Bold sky or ceiling backdrop, strong vertical lines, "
-                "matching the visual language of slide 01.",
+                "SLIDE {n} — THE ORIGIN STORY IN MOTION",
+                "Reframe the topic as a dynamic, in-progress moment: construction, ritual, weather, "
+                "or erosion acting on the subject. A time-lapse-style scene with action and change "
+                "in the frame, distinct from every other slide.",
             ),
             (
-                "SLIDE {n} — SYMMETRIC TOP-DOWN / BIRD'S EYE",
-                "Straight-down bird's eye composition revealing the geometric or sacred layout of the "
-                "scene — the arrangement, circles, or patterns that are invisible at eye level. "
-                "Colour-correlated with slide 01.",
+                "SLIDE {n} — THE SHAPE OF MYSTERY",
+                "Reframe the topic around negative space and suggestion — silhouette, shadow, "
+                "atmosphere. Show the SUBJECT through its outline and mood rather than a clear "
+                "frontal view, giving the slide a unique dramatic identity.",
             ),
             (
-                "SLIDE {n} — GOLDEN-HOUR BACKLIT VIGNETTE",
-                "Single-source golden/warm backlight rim-lighting the subject, long shadows, "
-                "atmospheric haze glowing behind. Emotional, cinematic closure frame. Same props, "
-                "same palette as slide 01.",
+                "SLIDE {n} — THE WORLDLY CONNECTION",
+                "Reframe the topic in direct relationship to its culture and community — the "
+                "people, tools, trade, or daily life connected to it. A human story scene that "
+                "connects the subject to the world around it.",
             ),
         ]
         for _ci in range(1, _carousel_quantity):
             _slide_num = _ci + 1  # 2, 3, … carousel_quantity
             _dir_idx = (_ci - 1) % len(_carousel_slide_directives)
-            _slide_label_raw, _slide_extra = _carousel_slide_directives[_dir_idx]
+            _slide_label_raw, _slide_reframe = _carousel_slide_directives[_dir_idx]
             _slide_label = _slide_label_raw.format(n=_slide_num)
+            _visual_anchor = (visual_subject or resolved_subject or "").strip()
             _slide_prompt = (
-                f"{image_prompt} "
-                f"{_slide_label}: {_slide_extra} "
-                f"(Carousel frame {_slide_num} of {_carousel_quantity} — fully related to the theme; "
-                f"maintain visual consistency with slide 01.)"
+                f"{_visual_anchor} "
+                f"-- SLIDE TITLE: {_slide_label} -- "
+                f"REFRAME: {_slide_reframe} "
+                f"(Carousel frame {_slide_num} of {_carousel_quantity}. This is a DIFFERENT scene "
+                f"and composition than every other frame — same theme, different moment and angle. "
+                f"Do not simply zoom or pan the slide-01 view.)"
             )
             try:
                 _slide_img = adapter.generate(
@@ -4975,6 +4988,29 @@ def _produce_variant_worker(
         else:
             _LOG.warning("IMGBB_API_KEY missing; CONTENT: MEDIA stays blank.")
 
+    # ---- CAROUSEL: upload every slide so the library holds ALL images -------
+    # Slide 1 was uploaded above (imgbb_url); slides 2..N are uploaded here so
+    # the library entry registers each frame of the post, not just the first.
+    _carousel_imgbb.clear()
+    if post_type == "CAROUSEL" and _carousel_image_paths:
+        key_ib = app_config.IMGBB_API_KEY
+        for _c_idx, _c_path in enumerate(_carousel_image_paths, start=1):
+            _c_path_obj = Path(_c_path)
+            _c_url = ""
+            if imgbb_url and _c_idx == 1 and str(Path(img_path_display).resolve()) == str(_c_path_obj.resolve()):
+                _c_url = imgbb_url
+            elif key_ib and _c_path_obj.is_file():
+                try:
+                    _c_url = upload_image_file_to_imgbb(key_ib, _c_path_obj) or ""
+                except Exception as _cu:  # noqa: BLE001
+                    _LOG.warning("CAROUSEL imgbb slide %d failed: %s", _c_idx, _cu)
+            _carousel_imgbb.append({
+                "index": _c_idx,
+                "imgbb_url": _c_url,
+                "path_under_engine": path_under_engine(app_config.ENGINE_ROOT, _c_path_obj),
+                "absolute_path": str(_c_path_obj),
+            })
+
     # ====================================================================
     # PHASE E: Durable JSON + planner writes (all post types, unified)
     # ====================================================================
@@ -5130,6 +5166,7 @@ def _produce_variant_worker(
                 final_caption=caption_str,
                 imgbb_url=imgbb_url,
                 video_path=video_path_str or "",
+                carousel_images=_carousel_imgbb if post_type == "CAROUSEL" else None,
             ),
         )
 
@@ -5222,6 +5259,7 @@ def _produce_variant_worker(
         ),
         # Carousel and image-count metadata
         "carousel_image_paths": _carousel_image_paths,
+        "carousel_imgbb": _carousel_imgbb,
         "images_generated": _images_generated_this_variant,
         "wan_act_status": list(_wan_act_status or []),
         "wan_stage_times": dict(_wan_stage_times or {}),
