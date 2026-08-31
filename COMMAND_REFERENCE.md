@@ -137,7 +137,7 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 
 ### CAROUSEL
 
-`--quantity` = number of carousels to produce. `--carousel_quantity` = images each carousel hosts (default `3`). All slides are generated from the same carousel topic/prompt, so every frame is fully related to the theme.
+`--quantity` = number of **distinct carousel posts** (each pulled from a different topic in the channel topic pool / content queue; recent `content_library.json` subjects are skipped). `--carousel_quantity` = images each carousel hosts (default `3`). All slides of one carousel stay on that carousel's own topic, each from a different original photographic angle — never sub-angles of one shared subject unless you pass `--multi-variant`. Text / G-frame overlays stay **OFF** unless `--text-overlay ON` (alias `--gframe ON`).
 
 `python main.py --page anna_protocol --post-type CAROUSEL --quantity 4 --carousel_quantity 3 --economic --model-api-flow lowtier_deepinfra_elevenlabs`  
 *// Produces 4 distinct carousels, each with 3 slides (slide_01…03, distinct viewpoints), using DeepInfra FLUX Schnell.*
@@ -149,7 +149,13 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 *// Generates 2 graphite carousels (3 slides each by default) for wonder_feed with Together FLUX Dev.*
 
 `python main.py --page anna_protocol --post-type CAROUSEL --quantity 3 --avatar ON`  
-*// CAROUSEL honours `--avatar ON` — every slide uses Gemini Pro image (Gemini 3) with the Anna avatar reference for likeness consistency.*
+*// CAROUSEL honours `--avatar ON` — every slide uses Gemini Pro image (Gemini 3) with the Anna avatar reference for likeness consistency. Three different topics from the anna_protocol content queue.*
+
+`python main.py --page anna_protocol --post-type CAROUSEL --quantity 3 --multi-variant "Celtic sea salt"`  
+*// Opt-in: one core topic exploded into 3 sub-angle carousels (legacy BatchPlanner matrix).*
+
+`python main.py --page anna_protocol --post-type CAROUSEL --quantity 2 --text-overlay ON`  
+*// Explicit G-frame / headline burn-in. Default is OFF (clean photographs).*
 
 ### Image-only / caption-only / dry-run
 

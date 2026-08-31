@@ -65,8 +65,9 @@ def _load_builtin_providers() -> None:
         return
     _BUILTINS_LOADED = True
     try:
-        from . import offline, openrouter  # noqa: F401, PLC0415
+        from . import google, offline, openrouter  # noqa: F401, PLC0415
     except ImportError:  # pragma: no cover — standalone extraction
+        import models.google  # noqa: F401, PLC0415
         import models.offline  # noqa: F401, PLC0415
         import models.openrouter  # noqa: F401, PLC0415
 
@@ -117,13 +118,29 @@ class LLMFactory:
                 f"unknown provider — available: {', '.join(available_providers())}",
             )
 
-        api_key = require_secret(spec.api_key_env) if provider_cls.requires_api_key else None
+        api_key: str | None = None
+        if provider_cls.requires_api_key:
+            env_names = [spec.api_key_env]
+            if spec.provider == "google" and spec.api_key_env in {
+                "GOOGLE_API_KEY",
+                "GEMINI_API_KEY",
+            }:
+                env_names = ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
+            errors: list[str] = []
+            for env_name in dict.fromkeys(env_names):
+                try:
+                    api_key = require_secret(env_name)
+                    break
+                except RuntimeError as exc:
+                    errors.append(str(exc))
+            if api_key is None:
+                raise LLMError(spec.provider, spec.model, " or ".join(errors))
 
-        # Only the OpenRouter family cares about gateway settings; probe by
-        # signature instead of isinstance so third-party providers stay free.
         kwargs: dict[str, object] = {"api_key": api_key}
         if settings is not None and "gateway" in provider_cls.__init__.__code__.co_varnames:
             kwargs["gateway"] = settings.openrouter
+        if settings is not None and "google_config" in provider_cls.__init__.__code__.co_varnames:
+            kwargs["google_config"] = settings.google
 
         instance = provider_cls(spec, **kwargs)  # type: ignore[arg-type]
         _LOG.info("built %s for spec %s", type(instance).__name__, instance.label)

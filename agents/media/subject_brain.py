@@ -149,6 +149,36 @@ def generate_bulk_topics(
             2. Topic two here
             """
         ).strip()
+    elif _page_lower == "anna_protocol":
+        instruction = dedent(
+            f"""
+            You are the editorial director of The Holistic Legacy — Anna's Protocol:
+            ancestral wellness, natural remedies, and biochemical longevity.
+
+            Generate exactly {count} unique, high-engagement post topics.
+
+            Each topic MUST be a DISTINCT subject — a different herb, mineral, ritual,
+            food, or ancestral practice. Do NOT produce sub-angles of one theme
+            (e.g. do not return three Celtic-salt variants).
+
+            Draw from these pillars (rotate for variety):
+            • Culinary minerals and salts, bone broth, mineral-rich waters
+            • Kitchen-apothecary herbs: ginger, turmeric, rosemary, nettle, sage
+            • Ancestral fats and oils: castor, olive, ghee, raw honey
+            • Sleep, circadian light, and nervous-system recovery rituals
+            • Digestive fire, fasting windows, and metabolic kitchen practices
+
+            Rules:
+            - Each topic is 4-8 concrete words naming a real plant, food, or ritual
+            - Topics must be DIVERSE — no two may share the same ingredient
+            - No sci-fi, no "ignition / electrical grid / cellular gates" metaphors
+            - Return ONLY a numbered list — no preamble, no explanations
+
+            Format (exactly):
+            1. Topic one here
+            2. Topic two here
+            """
+        ).strip()
     elif _page_lower == "master_mei":
         instruction = dedent(
             f"""

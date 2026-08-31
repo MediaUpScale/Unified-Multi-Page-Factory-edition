@@ -58,7 +58,7 @@ class LLMResponse(BaseModel):
     @property
     def truncated_by_provider(self) -> bool:
         """True when the model hit its token ceiling rather than finishing."""
-        return self.finish_reason in {"length", "max_tokens"}
+        return self.finish_reason.strip().lower() in {"length", "max_tokens", "max_output_tokens"}
 
 
 class LLMProvider(ABC):

@@ -458,6 +458,51 @@ def theme_key(topic: str) -> str:
     return " ".join(tokens[:3]) if tokens else low.strip()[:40]
 
 
+def plan_distinct_batch_topics(
+    qty: int,
+    *,
+    pool: Sequence[str],
+    recent_topics: Sequence[str] | None = None,
+    cli_topic: str = "",
+    seed_topic: str = "",
+    rng: "object | None" = None,
+) -> list[str]:
+    """Pick ``qty`` completely distinct subjects for a bulk run.
+
+    Default ``--quantity N`` behaviour: each post covers a separate subject.
+    The optional CLI topic occupies slot 1; remaining slots come from ``pool``
+    after excluding recently-used library topics. Sub-angle deconstruction is
+    intentionally NOT applied here — call ``plan_angles_matrix`` only when the
+    caller passed ``--multi-variant``.
+    """
+    n = max(1, int(qty))
+    lead = (cli_topic or "").strip() or (seed_topic or "").strip()
+    reserved = [lead] if lead else []
+    need = max(0, n - len(reserved))
+    extra = (
+        select_distinct_pool_topics(
+            pool,
+            need,
+            recent_topics=recent_topics,
+            reserved=reserved,
+            rng=rng,
+        )
+        if need
+        else []
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for topic in reserved + extra:
+        key = theme_key(topic)
+        if not topic or key in seen:
+            continue
+        out.append(topic)
+        seen.add(key)
+        if len(out) >= n:
+            break
+    return out[:n]
+
+
 def select_distinct_pool_topics(
     pool: Sequence[str],
     qty: int,

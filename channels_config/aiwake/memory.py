@@ -95,6 +95,11 @@ def _jaccard(left: Iterable[str], right: Iterable[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _opening_signature(text: str, words: int = 3) -> tuple[str, ...]:
+    """Normalised leading words used for short-window opener deduplication."""
+    return tuple(match.group(0).lower() for match in _WORD_RE.finditer(text or ""))[:words]
+
+
 class MemoryState(BaseModel):
     """Serialisable memory contents.
 
@@ -107,6 +112,8 @@ class MemoryState(BaseModel):
     asked_questions: list[str] = Field(default_factory=list)
     exchanges: int = 0
     topics_seen: list[str] = Field(default_factory=list)
+    opening_categories: list[str] = Field(default_factory=list)
+    opening_lines: list[str] = Field(default_factory=list)
     updated_at: str = ""
 
 
@@ -184,6 +191,21 @@ class DebateMemory:
         if topic and topic not in self.state.topics_seen:
             self.state.topics_seen.append(topic)
             del self.state.topics_seen[:-20]
+
+    def note_opening(self, category: str, line: str) -> None:
+        """Remember recent opening axes and wording across renders."""
+        if category:
+            self.state.opening_categories.append(category)
+            del self.state.opening_categories[:-8]
+        if line:
+            self.state.opening_lines.append(line)
+            del self.state.opening_lines[:-8]
+
+    def recent_opening_categories(self, limit: int = 3) -> tuple[str, ...]:
+        """Return the latest distinct category window, newest last."""
+        if limit <= 0:
+            return ()
+        return tuple(self.state.opening_categories[-limit:])
 
     def _remember_question(self, question: str) -> None:
         tokens = _tokenise(question)
@@ -290,6 +312,14 @@ class DebateMemory:
         pairs = zip(self.state.asked_fingerprints, self.state.asked_questions)
         best = max(((_jaccard(tokens, prior), text) for prior, text in pairs), key=lambda item: item[0])
         return best
+
+    def repeats_recent_opener(self, question: str, *, window: int = 3) -> bool:
+        """Reject the same leading phrase across consecutive renders."""
+        signature = _opening_signature(question)
+        if not signature or window <= 0:
+            return False
+        recent = self.state.opening_lines[-window:]
+        return any(_opening_signature(prior) == signature for prior in recent)
 
     # -- Prompt surface ----------------------------------------------------- #
     def build_brief(self, query: str, *, recall_k: int | None = None) -> str:

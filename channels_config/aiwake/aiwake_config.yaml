@@ -11,9 +11,11 @@
 # =============================================================================
 
 debate:
-  # Seed question. Override per-run with `--topic`.
-  # Keep this glanceable: the first spoken line is a 3-second hook, not an essay.
+  # Fallback seed when randomization is disabled. `--topic` always wins.
   topic: "Who built you?"
+  # Pick a deterministic weighted topic DNA from the session id. This gives
+  # each render a distinct opening axis while keeping rerenders reproducible.
+  randomize_topic: true
   # One "turn" = orchestrator provocation + target rebuttal.
   turns: 4
   # Cool-down between API round-trips (seconds). Also the on-screen beat
@@ -65,6 +67,7 @@ model_aliases:
 # Model routing (Strategy pattern). `provider` selects the concrete
 # LLMProvider registered in models/llm_factory.py.
 #   provider: openrouter -> live HTTP call
+#   provider: google     -> direct Gemini API (explicit opt-in per seat)
 #   provider: offline    -> deterministic local stub (no network, no key)
 # `model_name` and `model` are interchangeable keys; both accept an alias or a
 # full slug. Hot-swap a brain by editing this value only.
@@ -81,6 +84,8 @@ models:
     api_key_env: OPENROUTER_API_KEY
     # High-tier reasoning so the provocateur can land logical traps.
     temperature: 1.0
+    # Gemini Flash receives a 1536-token orchestrator floor at resolution time;
+    # the reproduced 900-token override exhausted its budget before visible text finished.
     max_tokens: 900
 
   target:
@@ -94,6 +99,17 @@ openrouter:
   base_url: https://openrouter.ai/api/v1
   referer: https://github.com/mediaupscale/aiwake
   title: Aiwake Debate Engine
+  max_retries: 3
+  backoff_s: 3.0
+
+# Direct Gemini Developer API policy. This block does not route any seat by
+# itself. To opt in, set only the desired seat to:
+#   provider: google
+#   model_name: gemini-2.5-flash
+#   api_key_env: GOOGLE_API_KEY   # GEMINI_API_KEY is also accepted
+google:
+  api_version: v1beta
+  free_tier_only: true
   max_retries: 3
   backoff_s: 3.0
 

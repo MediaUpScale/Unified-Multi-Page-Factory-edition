@@ -547,6 +547,7 @@ class DebateRoom:
         clean_text = ""
         violations: list[str] = []
         response = None
+        accepted = False
         attempt_context: list[str] = list(extra_context)
 
         for attempt in range(1, max(1, max_attempts) + 1):
@@ -571,6 +572,20 @@ class DebateRoom:
                 self.broadcast(RoomEvent.PROVIDER_ERROR, turn_index=index, role=role.value, error=str(exc))
                 raise DebateAborted(f"{role.value} provider failed: {exc}") from exc
 
+            _LOG.info(
+                "%s raw provider response: attempt=%d/%d finish_reason=%s "
+                "prompt_tokens=%d completion_tokens=%d chars=%d",
+                role.value,
+                attempt,
+                max_attempts,
+                response.finish_reason,
+                response.prompt_tokens,
+                response.completion_tokens,
+                len(response.text),
+            )
+            _LOG.debug("%s raw provider text: %r", role.value, response.text)
+            _LOG.debug("%s raw provider payload: %r", role.value, response.raw)
+
             clean_text, violations = constraints.enforce(response.text)
             if response.truncated_by_provider:
                 violations.append("provider_token_limit")
@@ -584,6 +599,9 @@ class DebateRoom:
                     violations=violations,
                     original_chars=len(response.text),
                     clamped_chars=len(clean_text),
+                    finish_reason=response.finish_reason,
+                    prompt_tokens=response.prompt_tokens,
+                    completion_tokens=response.completion_tokens,
                 )
                 if self._violation_count > self.settings.guardrails.max_violations:
                     raise DebateAborted(
@@ -591,7 +609,10 @@ class DebateRoom:
                         "a seated model is ignoring the output contract"
                     )
 
-            if validator is None or validator(clean_text):
+            accepted = bool(clean_text) and not response.truncated_by_provider
+            if validator is not None:
+                accepted = accepted and validator(clean_text)
+            if accepted:
                 break
 
             _LOG.info("%s candidate rejected by validator (attempt %d/%d)", role.value, attempt, max_attempts)
@@ -602,6 +623,11 @@ class DebateRoom:
             attempt_context = [*extra_context, rejection]
 
         assert response is not None  # loop always runs at least once
+        if not accepted:
+            raise DebateAborted(
+                f"{role.value} exhausted {max_attempts} generation attempts without "
+                "a complete guardrail-valid response"
+            )
         utterance = Utterance(
             turn_index=index,
             role=role,

@@ -247,11 +247,16 @@ from agents.media.batch_planner import (
     BatchUniquenessGuard,
     MAX_UNIQUENESS_RETRIES,
     plan_angles_matrix,
+    plan_distinct_batch_topics,
     select_distinct_pool_topics,
     theme_key as _topic_theme_key,
 )
 from agents.media.text_utils import subject_slug
-from agents.media.avatar_engine.visual_architect import VisualArchitect
+from agents.media.avatar_engine.visual_architect import (
+    VisualArchitect,
+    build_carousel_slide_prompt,
+    ground_image_concept,
+)
 from channel_loader import (
     PageContext,
     load_page_context,
@@ -1854,6 +1859,7 @@ def _produce_variant_worker(
     post_type: str = "STANDARD_QUOTE",
     carousel_quantity: int = 3,
     image_style: str = "NATURAL",
+    text_overlay_enabled: bool | None = None,
     generated_hooks_cache: "list[str] | None" = None,
     hooks_cache_lock: "threading.Lock | None" = None,
     hooks_cache_path: "Path | None" = None,
@@ -2054,6 +2060,14 @@ def _produce_variant_worker(
                 "Smart bait generation yielded no usable content for variant %s of '%s'.",
                 variant + 1, resolved_subject,
             )
+
+        # Never feed raw caption metaphors into image prompts (anna_protocol
+        # "electrical grid" / "adrenal ignition" otherwise become sci-fi art).
+        if post_type == "CAROUSEL":
+            _pid = (page_ctx.page_id if page_ctx else "").lower()
+            visual_subject = ground_image_concept(
+                visual_subject or resolved_subject, page_id=_pid,
+            ) or visual_subject
 
     elif post_type == "LONG_CAPTION_IMAGE" and not skip_caption:
         assert caption_engine is not None
@@ -2704,66 +2718,36 @@ def _produce_variant_worker(
     if post_type == "CAROUSEL" and not skip_image and raw_bg_path is not None and adapter is not None:
         _carousel_quantity = max(1, int(carousel_quantity or 3))
         _carousel_image_paths.append(str(raw_bg_path))  # slide 01
-        # Each entry: (label, scene-reframing clause). Slide 2+ builds a FRESH
-        # prompt from the topic's visual_subject + this facet, so every image
-        # depicts the subject in a genuinely different way, not a camera retake.
-        _carousel_slide_directives = [
-            (
-                "SLIDE 02 — THE HUMAN ELEMENT",
-                "Reframe the subject around human scale and interaction: a lone observer, "
-                "hands at work, or the figures surrounding the subject. Change WHAT is shown — "
-                "focus on people engaging with the topic, faces and gestures, not the object alone.",
-            ),
-            (
-                "SLIDE 03 — THE LANDSCAPE & SETTING",
-                "Pull back and reframe the topic inside its full natural or built environment. "
-                "Let the setting, terrain, and surroundings BE the story — the subject must appear "
-                "diminished within a vast landscape instead of isolated on a plain background.",
-            ),
-            (
-                "SLIDE {n} — MACRO ARTIFACT & MATERIAL",
-                "Reframe the topic as a hyper-detailed macro study of its material, texture, or "
-                "craftsmanship — a DIFFERENT physical element of the subject fills the frame "
-                "(surface, structure, inscription), so it is clearly not the slide-01 view.",
-            ),
-            (
-                "SLIDE {n} — THE PLAN / LAYOUT FROM ABOVE",
-                "Reframe the topic through its plan, geometry, or spatial arrangement seen from "
-                "directly above — a fresh informational view of the layout, circles, patterns, or "
-                "alignment that changes the composition entirely.",
-            ),
-            (
-                "SLIDE {n} — THE ORIGIN STORY IN MOTION",
-                "Reframe the topic as a dynamic, in-progress moment: construction, ritual, weather, "
-                "or erosion acting on the subject. A time-lapse-style scene with action and change "
-                "in the frame, distinct from every other slide.",
-            ),
-            (
-                "SLIDE {n} — THE SHAPE OF MYSTERY",
-                "Reframe the topic around negative space and suggestion — silhouette, shadow, "
-                "atmosphere. Show the SUBJECT through its outline and mood rather than a clear "
-                "frontal view, giving the slide a unique dramatic identity.",
-            ),
-            (
-                "SLIDE {n} — THE WORLDLY CONNECTION",
-                "Reframe the topic in direct relationship to its culture and community — the "
-                "people, tools, trade, or daily life connected to it. A human story scene that "
-                "connects the subject to the world around it.",
-            ),
+        # Facets only — never send "SLIDE 02 — …" labels to the image model
+        # (those strings were being painted onto the canvas as typography).
+        _carousel_slide_facets = [
+            "Human scale: hands preparing the remedy, a figure at a wooden table, "
+            "or someone gathering the plant — a different moment than slide 01.",
+            "The living landscape that produces this subject: garden, shoreline, "
+            "forest floor, or kitchen garden at golden hour. Wide environmental frame.",
+            "Macro of the real material — salt crystals, dried leaves, oil sheen, "
+            "wood grain, steam — fill the frame with texture, not a diagram.",
+            "Overhead still-life layout of the ingredients and tools on linen or "
+            "cedar, arranged as a photograph not an infographic.",
+            "The ritual in motion: pouring, stirring, harvesting, or steeping. "
+            "Action and change in the frame.",
+            "Mood and atmosphere only: silhouette, steam, window light, and "
+            "negative space. No frontal product-shot repeat of slide 01.",
+            "The daily-life connection: the finished cup, jar, or meal in a real "
+            "kitchen or table setting, warm and lived-in.",
         ]
+        _pid = (page_ctx.page_id if page_ctx else "").lower()
         for _ci in range(1, _carousel_quantity):
             _slide_num = _ci + 1  # 2, 3, … carousel_quantity
-            _dir_idx = (_ci - 1) % len(_carousel_slide_directives)
-            _slide_label_raw, _slide_reframe = _carousel_slide_directives[_dir_idx]
-            _slide_label = _slide_label_raw.format(n=_slide_num)
-            _visual_anchor = (visual_subject or resolved_subject or "").strip()
-            _slide_prompt = (
-                f"{_visual_anchor} "
-                f"-- SLIDE TITLE: {_slide_label} -- "
-                f"REFRAME: {_slide_reframe} "
-                f"(Carousel frame {_slide_num} of {_carousel_quantity}. This is a DIFFERENT scene "
-                f"and composition than every other frame — same theme, different moment and angle. "
-                f"Do not simply zoom or pan the slide-01 view.)"
+            _facet = _carousel_slide_facets[(_ci - 1) % len(_carousel_slide_facets)]
+            _slide_prompt = build_carousel_slide_prompt(
+                topic=resolved_subject,
+                visual_subject=visual_subject or "",
+                facet=_facet,
+                slide_num=_slide_num,
+                total=_carousel_quantity,
+                page_id=_pid,
+                atmosphere_style=effective_atmosphere or atmosphere_style or "",
             )
             try:
                 _slide_img = adapter.generate(
@@ -3870,17 +3854,33 @@ def _produce_variant_worker(
         page_ctx.logo_png if (page_ctx and page_ctx.logo_exists) else None
     )
     # Determine compositing mode:
-    # - SMART_BAIT: full 4-layer stack (bg + mask + text + logo)
-    # - LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE: Layer 1 (bg) + Layer 4 (logo only) — clean standalone image
+    # - SMART_BAIT: full 4-layer stack (bg + mask + text + logo) unless --text-overlay OFF
+    # - LONG_CAPTION_IMAGE / CTA_CAPTION_IMAGE / CAROUSEL: clean still (logo only)
+    #   unless the operator explicitly passes --text-overlay ON / --gframe ON
     # - IMAGE_BACKGROUND / IMAGE_QUOTE / TEXT_QUOTE: text overlay if overlay_text present
     _is_long_caption_image = _is_logo_only_still(post_type)
     _is_economic_reel      = _is_sequence_video_post(post_type)
     _is_wan_reel           = (post_type == "WAN_REEL")
-    # ECONOMIC_REEL: background PNG must stay clean (logo only).
-    # Text is rendered directly into video frames by video_engine — baking it into
-    # the PNG here would cause double-text in the final reel.
+    _page_overlay_flag = None
+    if page_ctx is not None and "ENABLE_TEXT_OVERLAY" in (page_ctx.page_cfg or {}):
+        _page_overlay_flag = bool(page_ctx.page_cfg.get("ENABLE_TEXT_OVERLAY"))
+    # Precedence: CLI --text-overlay/--gframe > page ENABLE_TEXT_OVERLAY >
+    # post-type default (CAROUSEL / logo-only stills stay clean).
+    _clean_still = post_type in ("CAROUSEL", "LONG_CAPTION_IMAGE", "CTA_CAPTION_IMAGE")
+    if text_overlay_enabled is False:
+        _overlay_on = False
+    elif text_overlay_enabled is True:
+        _overlay_on = True
+    elif _clean_still and _page_overlay_flag is False:
+        _overlay_on = False
+    elif _clean_still and _page_overlay_flag is True:
+        _overlay_on = True
+    elif _clean_still or _is_long_caption_image or _is_economic_reel:
+        _overlay_on = False
+    else:
+        _overlay_on = True
     _needs_text_overlay = (
-        not _is_long_caption_image
+        _overlay_on
         and not _is_economic_reel
         and post_format in ("IMAGE_BACKGROUND", "IMAGE_QUOTE", "TEXT_QUOTE", "IMAGE_AVATAR")
     )
@@ -5563,6 +5563,8 @@ def produce(
     image_style: str = "NATURAL",
     render_approval_required: bool = False,
     agentic_pipeline: bool | None = None,
+    multi_variant: bool = False,
+    text_overlay: bool | None = None,
 ) -> dict[str, Any]:
     qty = max(1, quantity)
     economic = economic_brain_mode if economic_brain_mode is not None else app_config.ECONOMIC_BRAIN_MODE
@@ -5609,6 +5611,8 @@ def produce(
         "post_format": post_format,
         "post_type": post_type,
         "carousel_quantity": int(carousel_quantity or 3),
+        "multi_variant": bool(multi_variant),
+        "text_overlay": text_overlay,
         "cta_enabled": cta_enabled,
         "items": [],
     }
@@ -5714,7 +5718,24 @@ def produce(
                 len(_recent_ak),
             )
     elif not resolved_subject:
-        resolved_subject = imagine_subject(corpus)
+        # CAROUSEL (and any page with a topic queue): prefer a fresh pool
+        # subject over a Gemini imagine_subject call so --quantity batches
+        # stay on distinct, channel-owned topics even when credits are tight.
+        _pool_for_one = list(page_ctx.topic_pool if page_ctx else []) or list(
+            getattr(_channel, "get_niche_topics", lambda: [])() or []
+        )
+        if post_type == "CAROUSEL" and _pool_for_one:
+            _recent_one = _recent_library_topics(app_config.CONTENT_LIBRARY_PATH, 40)
+            _fresh_one = select_distinct_pool_topics(
+                _pool_for_one, 1, recent_topics=_recent_one, rng=_rnd,
+            )
+            resolved_subject = _fresh_one[0] if _fresh_one else _pool_for_one[0]
+            _LOG.info(
+                "CAROUSEL TOPIC | pool subject → %r (bank=%d)",
+                resolved_subject, len(_pool_for_one),
+            )
+        else:
+            resolved_subject = imagine_subject(corpus)
 
     # WONDER_FEED + MASTER_MEI reels: ALWAYS pick a fresh topic from the TOPIC_POOL.
     # ancient_knowledge is handled above and never reads the PDF/wellness corpus.
@@ -5764,18 +5785,20 @@ def produce(
     )
 
     # ── BATCH PLANNER ────────────────────────────────────────────────────────
+    # Default --quantity N: N completely distinct subjects (pool / library /
+    # content queue). Sub-angle deconstruction runs ONLY when --multi-variant
+    # is explicitly set. CAROUSEL never inherits "N variants of one topic".
     batch_angles: list[BatchAngle] | None = None
     uniqueness_guard: BatchUniquenessGuard | None = None
     global_topic_dna = (_cli_topic or resolved_subject or "").strip()
     per_variant_topics: list[str] | None = None
     _seed_for_angles: list[str] | None = None
-    _is_ak_page = _page_id_lower == "ancient_knowledge"
+    _use_sub_angles = bool(multi_variant) and qty > 1
 
     if qty > 1:
         uniqueness_guard = BatchUniquenessGuard()
 
-    if _is_ak_page and qty > 1:
-        # Distinct TOPIC_POOL subjects — never N angles of one monument.
+    if qty > 1 and not _use_sub_angles:
         _lookback = 40
         if page_ctx is not None:
             try:
@@ -5783,19 +5806,35 @@ def produce(
             except (TypeError, ValueError):
                 _lookback = 40
         _recent = _recent_library_topics(app_config.CONTENT_LIBRARY_PATH, _lookback)
-        _pool = list(page_ctx.topic_pool if page_ctx else []) or list(_channel.get_niche_topics())
-        if _cli_topic:
-            _picked = select_distinct_pool_topics(
-                _pool, qty - 1, recent_topics=_recent,
-                reserved=[_cli_topic], rng=_rnd,
+        _pool = list(page_ctx.topic_pool if page_ctx else []) or list(
+            getattr(_channel, "get_niche_topics", lambda: [])() or []
+        )
+        per_variant_topics = plan_distinct_batch_topics(
+            qty,
+            pool=_pool,
+            recent_topics=_recent,
+            cli_topic=_cli_topic,
+            seed_topic="" if _cli_topic else resolved_subject,
+            rng=_rnd,
+        )
+        if len(per_variant_topics or []) < qty:
+            _need = qty - len(per_variant_topics or [])
+            _llm_topics = generate_bulk_topics(
+                _need,
+                page_id=_page_id_lower,
+                page_niche=page_ctx.content_niche if page_ctx else "",
             )
-            per_variant_topics = [_cli_topic] + [
-                t for t in _picked if _topic_theme_key(t) != _topic_theme_key(_cli_topic)
-            ]
-        else:
-            per_variant_topics = select_distinct_pool_topics(
-                _pool, qty, recent_topics=_recent, rng=_rnd,
-            )
+            if per_variant_topics is None:
+                per_variant_topics = []
+            _have = {_topic_theme_key(t) for t in per_variant_topics}
+            for _t in _llm_topics:
+                _k = _topic_theme_key(_t)
+                if not _t or _k in _have:
+                    continue
+                per_variant_topics.append(_t)
+                _have.add(_k)
+                if len(per_variant_topics) >= qty:
+                    break
         if per_variant_topics:
             per_variant_topics = per_variant_topics[:qty]
             resolved_subject = per_variant_topics[0]
@@ -5804,14 +5843,15 @@ def produce(
         envelope["global_topic_dna"] = global_topic_dna
         envelope["batch_topics"] = list(per_variant_topics or [])
         _LOG.info(
-            "AK batch topics | %d distinct TOPIC_POOL subjects (lookback=%d): %s",
+            "BatchPlanner | DISTINCT TOPICS | page=%s | qty=%d | lookback=%d | %s",
+            _page_id_lower,
             len(per_variant_topics or []),
             _lookback,
             " | ".join(per_variant_topics or []),
         )
-    else:
-        # Other pages: pool sample / LLM topics, then optional angles matrix.
-        if not _cli_topic and qty > 1:
+    elif qty > 1 and _use_sub_angles:
+        # Explicit --multi-variant: deconstruct one core topic into N angles.
+        if not _cli_topic:
             _pool = page_ctx.topic_pool if page_ctx else []
             if _pool and len(_pool) >= qty:
                 _pool_copy = list(_pool)
@@ -5820,68 +5860,35 @@ def produce(
                     t for t in _pool_copy if t != resolved_subject
                 ][:qty - 1]
                 _seed_for_angles = list(per_variant_topics)
-                _LOG.info(
-                    "Bulk topics | pool-sampled %d unique topics for page=%s",
-                    len(per_variant_topics), _page_id_lower,
-                )
-            else:
-                _llm_topics = generate_bulk_topics(
-                    qty,
-                    page_id=_page_id_lower,
-                    page_niche=page_ctx.content_niche if page_ctx else "",
-                )
-                if _llm_topics:
-                    _combined = _llm_topics + list(_pool or [])
-                    _seen: set[str] = set()
-                    _deduped: list[str] = []
-                    for _t in _combined:
-                        if _t.lower() not in _seen:
-                            _seen.add(_t.lower())
-                            _deduped.append(_t)
-                    per_variant_topics = _deduped[:qty]
-                    if per_variant_topics:
-                        per_variant_topics[0] = resolved_subject
-                    _seed_for_angles = list(per_variant_topics)
-                    _LOG.info(
-                        "Bulk topics | LLM-generated %d unique topics for page=%s",
-                        len(per_variant_topics), _page_id_lower,
-                    )
-                else:
-                    _LOG.warning(
-                        "Bulk topics | LLM generation returned no topics — all variants "
-                        "will use the same resolved_subject: %r", resolved_subject,
-                    )
-
-        if qty > 1:
-            _core = (_cli_topic or "").strip() or global_topic_dna or (
-                page_ctx.content_niche if page_ctx else ""
-            ) or "Content series"
-            global_topic_dna = _core
-            batch_angles = plan_angles_matrix(
-                _core,
-                qty,
-                page_id=_page_id_lower,
-                page_niche=page_ctx.content_niche if page_ctx else "",
-                seed_topics=_seed_for_angles or per_variant_topics,
-            )
-            per_variant_topics = [a.combined_topic for a in batch_angles]
-            if batch_angles:
-                resolved_subject = batch_angles[0].combined_topic
-            envelope["batch_angles"] = [
-                {
-                    "index": a.index,
-                    "angle_title": a.angle_title,
-                    "hook_style": a.hook_style,
-                    "visual_focus": a.visual_focus,
-                    "seo_title_hint": a.seo_title_hint,
-                }
-                for a in batch_angles
-            ]
-            envelope["global_topic_dna"] = global_topic_dna
-            _LOG.info(
-                "BatchPlanner | uniqueness guard armed | angles=%d | core=%r",
-                len(batch_angles), global_topic_dna,
-            )
+        _core = (_cli_topic or "").strip() or global_topic_dna or (
+            page_ctx.content_niche if page_ctx else ""
+        ) or "Content series"
+        global_topic_dna = _core
+        batch_angles = plan_angles_matrix(
+            _core,
+            qty,
+            page_id=_page_id_lower,
+            page_niche=page_ctx.content_niche if page_ctx else "",
+            seed_topics=_seed_for_angles or per_variant_topics,
+        )
+        per_variant_topics = [a.combined_topic for a in batch_angles]
+        if batch_angles:
+            resolved_subject = batch_angles[0].combined_topic
+        envelope["batch_angles"] = [
+            {
+                "index": a.index,
+                "angle_title": a.angle_title,
+                "hook_style": a.hook_style,
+                "visual_focus": a.visual_focus,
+                "seo_title_hint": a.seo_title_hint,
+            }
+            for a in batch_angles
+        ]
+        envelope["global_topic_dna"] = global_topic_dna
+        _LOG.info(
+            "BatchPlanner | MULTI-VARIANT angles | angles=%d | core=%r",
+            len(batch_angles), global_topic_dna,
+        )
 
     logging.info(
         "Models banner | verified_image=%s | verified_research=%s | humanizer=%s",
@@ -6086,6 +6093,7 @@ def produce(
         post_type=post_type,
         carousel_quantity=int(carousel_quantity or 3),
         image_style=image_style,
+        text_overlay_enabled=text_overlay,
         generated_hooks_cache=generated_hooks_cache,
         hooks_cache_lock=hooks_cache_lock,
         hooks_cache_path=_hooks_cache_path,
@@ -6513,6 +6521,31 @@ def cli() -> None:
         help=(
             "CAROUSEL post type only: number of images each carousel hosts. "
             "Default: 3. --quantity controls how many carousels are produced."
+        ),
+    )
+    parser.add_argument(
+        "--multi-variant",
+        dest="multi_variant",
+        action="store_true",
+        default=False,
+        help=(
+            "Deconstruct ONE core topic into N sub-angles (legacy BatchPlanner "
+            "matrix). Default OFF: --quantity N pulls N completely distinct "
+            "subjects from the channel topic pool / content_library lookback."
+        ),
+    )
+    parser.add_argument(
+        "--text-overlay", "--gframe",
+        dest="text_overlay",
+        default=None,
+        choices=["ON", "OFF"],
+        metavar="ON|OFF",
+        help=(
+            "Burn headline / G-frame text onto the image canvas. "
+            "Default OFF for CAROUSEL, LONG_CAPTION_IMAGE, and CTA_CAPTION_IMAGE "
+            "(clean photographs, no slide labels or dark-gradient burn-ins). "
+            "SMART_BAIT / IMAGE_QUOTE still overlay text unless this is OFF. "
+            "Alias: --gframe."
         ),
     )
     parser.add_argument(
@@ -7477,6 +7510,12 @@ def cli() -> None:
             post_type=args.post_type.upper(),
             carousel_quantity=getattr(args, "carousel_quantity", 3) or 3,
             image_style=args.draw_style.upper(),
+            multi_variant=bool(getattr(args, "multi_variant", False)),
+            text_overlay=(
+                True if getattr(args, "text_overlay", None) == "ON"
+                else False if getattr(args, "text_overlay", None) == "OFF"
+                else None
+            ),
             render_approval_required=bool(
                 getattr(args, "render_approval_required", False)
             ),

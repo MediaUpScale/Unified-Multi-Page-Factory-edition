@@ -21,6 +21,7 @@ OFF           — bypasses all human-subject elements and generates a purely
 from __future__ import annotations
 
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -70,6 +71,119 @@ _CARTOON_QUALITY_SUFFIX = (
 )
 
 
+# ---------------------------------------------------------------------------
+# anna_protocol — metaphor → concrete photography + style lock
+# ---------------------------------------------------------------------------
+
+_ANNA_STYLE_LOCK = (
+    "Warm cinematic realistic botanical and nature photography. Earthy tones — "
+    "sage green, terracotta, warm amber, cedar wood. Organic storytelling. "
+    "Golden-hour window light or forest canopy. Shot on 35mm film. "
+    "Ultra-realistic still life or environmental photograph. "
+    "Kitchen apothecary, herbs, salt crystals, wooden boards, ceramic cups, "
+    "morning dew, stone mortar — never a diagram and never a lab render."
+)
+
+_ANNA_NEGATIVE_BAN = (
+    "STRICT BAN: no sci-fi elements, no glowing blue veins, no neon lighting, "
+    "no floating anatomical diagrams, no medical cutaways, no x-ray bodies, "
+    "no circuit boards, no electrical grids, no holograms, no futuristic UI, "
+    "no HUD, no graphic elements, no infographics, no arrows, no icons, "
+    "no text overlays, no letters, no words, no numbers, no slide labels, "
+    "no captions, no watermarks, no typography of any kind on the image."
+)
+
+_METAPHOR_TO_CONCRETE: tuple[tuple[str, str], ...] = (
+    (r"\belectrical grids?\b", "branching herb roots in dark soil"),
+    (r"\belectric grids?\b", "branching herb roots in dark soil"),
+    (r"\bcellular gates?\b", "dew-beaded leaf pores in morning light"),
+    (r"\bcell gates?\b", "dew-beaded leaf pores in morning light"),
+    (r"\badrenal ignitions?\b", "sunlit morning tea with warming herbs"),
+    (r"\bignition\b", "steam rising from a ceramic cup in warm window light"),
+    (r"\bglowing veins?\b", "leaf veins backlit by golden hour"),
+    (r"\bneural|synapse|voltage|circuit|wiring\b", "vine tendrils along a stone wall"),
+    (r"\bhologram|hud|neon\b", "amber glass bottles on a cedar shelf"),
+    (r"\banatomical diagrams?\b", "hands sorting dried roots on linen"),
+    (r"\bfuturistic ui\b", "a wooden apothecary table"),
+)
+
+_METAPHOR_TOKEN_RE = re.compile(
+    r"\b(sci-?fi|neon|hologram|hud|circuit|voltage|ignition|electrical|"
+    r"glowing veins?|floating diagram|anatomical|x-ray|cyber)\b",
+    re.IGNORECASE,
+)
+
+_SLIDE_LABEL_RE = re.compile(
+    r"\bSLIDE\s+\d+\s*[—\-–:].*?(?=\s{2,}|\(|$)",
+    re.IGNORECASE,
+)
+
+
+def ground_image_concept(text: str, *, page_id: str = "") -> str:
+    """Translate copy metaphors into a concrete photographic subject.
+
+    Raw caption / hook language is never a safe image prompt — especially on
+    anna_protocol, where 'electrical grid' and 'adrenal ignition' otherwise
+    render as sci-fi anatomy. Returns a short scene string with those
+    metaphors replaced and leftover sci-fi tokens stripped.
+    """
+    scene = _SLIDE_LABEL_RE.sub(" ", text or "")
+    scene = re.sub(r"\s+", " ", scene).strip()
+    if not scene:
+        return ""
+    if (page_id or "").strip().lower() == "anna_protocol":
+        for pattern, concrete in _METAPHOR_TO_CONCRETE:
+            scene = re.sub(pattern, concrete, scene, flags=re.IGNORECASE)
+        scene = _METAPHOR_TOKEN_RE.sub("", scene)
+        scene = re.sub(r"\s+", " ", scene).strip(" ,.;")
+        if not scene:
+            scene = "warm botanical still life: herbs, salt, and ceramic on wood"
+    return scene
+
+
+def anna_style_suffix() -> str:
+    return f"{_ANNA_STYLE_LOCK} {_ANNA_NEGATIVE_BAN}"
+
+
+def build_carousel_slide_prompt(
+    *,
+    topic: str,
+    visual_subject: str,
+    facet: str,
+    slide_num: int,
+    total: int,
+    page_id: str = "",
+    atmosphere_style: str = "",
+) -> str:
+    """Build a text-free, distinct carousel slide prompt.
+
+    Slide titles / G-frame labels are never included — image models otherwise
+    paint them onto the canvas.
+    """
+    pid = (page_id or "").strip().lower()
+    grounded = ground_image_concept(
+        visual_subject or topic, page_id=pid,
+    ) or ground_image_concept(topic, page_id=pid)
+    style = (atmosphere_style or "").strip()
+    if pid == "anna_protocol":
+        style = style or _ANNA_STYLE_LOCK
+        ban = _ANNA_NEGATIVE_BAN
+    else:
+        ban = (
+            "No text, no letters, no numbers, no slide labels, no captions, "
+            "no watermarks, no typography on the image."
+        )
+    return (
+        f"{style} "
+        f"CONCRETE PHOTOGRAPHIC SCENE: {grounded}. "
+        f"THIS FRAME'S ORIGINAL ANGLE: {facet} "
+        f"Same theme as the carousel, completely different composition from every "
+        f"other frame ({slide_num} of {total}). Do not zoom or crop another slide. "
+        f"{ban} "
+        f"Photoreal photograph only. Never render words or UI."
+    )
+
+
 class VisualArchitect:
     """Translate topic briefs into high-variance, photoreal image prompts."""
 
@@ -102,6 +216,9 @@ class VisualArchitect:
         if ChannelFactory.is_isolated(getattr(ch, "channel_id", "")):
             return ch.compose_image_prompt(topic_brief)
 
+        page_id = str(getattr(ch, "channel_id", "") or "").strip().lower()
+        topic_brief = ground_image_concept(topic_brief, page_id=page_id) or topic_brief
+
         rng = random.Random()  # fresh RNG each call — full randomness
 
         env = rng.choice(ENVIRONMENTS) if ENVIRONMENTS else {
@@ -131,6 +248,8 @@ class VisualArchitect:
                 "No human subjects."
             )
             quality_block = style_suffix if use_cartoon else _ATMOSPHERIC_QUALITY_SUFFIX
+            if page_id == "anna_protocol":
+                quality_block = f"{quality_block}\n{anna_style_suffix()}"
             return (
                 f"CINEMATIC ENVIRONMENTAL PHOTOGRAPHY — NO HUMAN SUBJECTS\n\n"
                 f"CONCEPT / THEME: {topic_brief.strip()}\n\n"
@@ -168,6 +287,8 @@ class VisualArchitect:
 
         visual = visual_style_block()
         quality_block = style_suffix if use_cartoon else _QUALITY_SUFFIX
+        if page_id == "anna_protocol":
+            quality_block = f"{quality_block}\n{anna_style_suffix()}"
 
         return (
             f"{visual}\n\n"

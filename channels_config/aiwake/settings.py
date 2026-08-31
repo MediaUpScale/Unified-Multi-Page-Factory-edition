@@ -110,6 +110,7 @@ class _Frozen(BaseModel):
 
 class DebateConfig(_Frozen):
     topic: str = "Who built you?"
+    randomize_topic: bool = True
     turns: int = Field(default=4, ge=1, le=64)
     turn_delay_s: float = Field(default=1.0, ge=0.0, le=30.0)
 
@@ -164,6 +165,12 @@ _DEFAULT_MODEL_ALIASES: dict[str, str] = {
     "gemini-pro": "google/gemini-2.5-pro",
 }
 
+# Flash models can spend most of a small completion allowance on reasoning
+# before exposing a short visible answer. The reproduced 20260831_201854_42b572
+# run stopped at 896/900 tokens twice, so the orchestrator seat needs headroom
+# even when a CLI model override inherits a lower explicit seat value.
+_GEMINI_FLASH_ORCHESTRATOR_MIN_TOKENS = 1536
+
 
 class ModelSpec(_Frozen):
     """Everything a provider needs to answer a prompt.
@@ -189,6 +196,21 @@ class ModelSpec(_Frozen):
     max_tokens: int = Field(default=320, ge=32, le=4096)
     timeout_s: float = Field(default=90.0, gt=0.0)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _provider_defaults(cls, value: Any) -> Any:
+        """Give direct Google routing safe defaults when fields are omitted."""
+        if not isinstance(value, dict):
+            return value
+        provider = str(value.get("provider") or "openrouter").strip().lower()
+        if provider != "google":
+            return value
+        prepared = dict(value)
+        if "model" not in prepared and "model_name" not in prepared:
+            prepared["model"] = "gemini-2.5-flash"
+        prepared.setdefault("api_key_env", "GOOGLE_API_KEY")
+        return prepared
+
     @field_validator("provider")
     @classmethod
     def _normalise(cls, value: str) -> str:
@@ -208,6 +230,15 @@ class OpenRouterConfig(_Frozen):
     backoff_s: float = Field(default=3.0, ge=0.0, le=60.0)
 
 
+class GoogleConfig(_Frozen):
+    """Direct Gemini Developer API policy; never used unless a seat opts in."""
+
+    api_version: str = "v1beta"
+    free_tier_only: bool = True
+    max_retries: int = Field(default=3, ge=1, le=10)
+    backoff_s: float = Field(default=3.0, ge=0.0, le=60.0)
+
+
 class GuardrailConfig(_Frozen):
     max_output_chars: int = Field(default=400, ge=80, le=4000)
     max_sentences: int = Field(default=3, ge=1, le=12)
@@ -220,7 +251,12 @@ class GuardrailConfig(_Frozen):
     max_orchestrator_words: int = Field(default=30, ge=5, le=200)
     require_single_question: bool = True
     max_violations: int = Field(default=4, ge=1, le=99)
-    banned_openers: tuple[str, ...] = ()
+    banned_openers: tuple[str, ...] = (
+        "As an AI language model",
+        "I cannot",
+        "Certainly!",
+        "Great question",
+    )
     pacing_directive: str = "Speak like a voice in a dark room, not an essay."
 
 
@@ -684,6 +720,7 @@ class AiwakeSettings(_Frozen):
     )
     models: ModelRouting = ModelRouting()
     openrouter: OpenRouterConfig = OpenRouterConfig()
+    google: GoogleConfig = GoogleConfig()
     guardrails: GuardrailConfig = GuardrailConfig()
     memory: MemoryConfig = MemoryConfig()
     audio: AudioConfig = AudioConfig()
@@ -766,7 +803,18 @@ class AiwakeSettings(_Frozen):
 
     def spec_for(self, role: DebateRole) -> ModelSpec:
         """Return the resolved :class:`ModelSpec` bound to a debate seat."""
-        return self.resolve_spec(getattr(self.models, role))
+        spec = self.resolve_spec(getattr(self.models, role))
+        model = spec.model.lower()
+        if (
+            role == "orchestrator"
+            and "gemini" in model
+            and "flash" in model
+            and spec.max_tokens < _GEMINI_FLASH_ORCHESTRATOR_MIN_TOKENS
+        ):
+            return spec.model_copy(
+                update={"max_tokens": _GEMINI_FLASH_ORCHESTRATOR_MIN_TOKENS}
+            )
+        return spec
 
     def configured_name_for(self, role: DebateRole) -> str:
         """The seat's model as *authored* — alias or slug, before resolution."""
@@ -912,6 +960,7 @@ __all__ = [
     "ENGINE_ROOT",
     "ModelAlias",
     "GuardrailConfig",
+    "GoogleConfig",
     "MODULE_ROOT",
     "MemoryConfig",
     "ModelRouting",

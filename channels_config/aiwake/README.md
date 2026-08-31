@@ -77,6 +77,7 @@ channels_config/aiwake/
 │   ├── base.py               #   LLMProvider ABC + LLMResponse + retry policy
 │   ├── llm_factory.py        #   self-registering factory (the swap seam)
 │   ├── openrouter.py         #   concrete provider (raw HTTP, no vendor SDK)
+│   ├── google.py             #   direct Gemini API (explicit Flash opt-in)
 │   ├── offline.py            #   deterministic stub: no key, no network
 │   └── sync.py               #   live OpenRouter catalog + closest-slug repair
 │
@@ -145,6 +146,15 @@ models:
 
 Secrets resolve in the factory, not in providers, so a provider class never learns about dotenv
 files. Adding one is a subclass plus a decorator.
+
+Direct Gemini is opt-in per seat. Set `provider: google`, use a Flash text model, and set
+`GOOGLE_API_KEY` (or `GEMINI_API_KEY`). `google.free_tier_only: true` deliberately rejects
+non-Flash models instead of falling back to OpenRouter. Other seats remain unchanged.
+
+When `debate.randomize_topic` is true (the default), a weighted topic-DNA bank chooses the subject
+deterministically from the session id while excluding recently used opening categories. Passing
+`--topic`, or `run_pipeline(topic=...)`, always wins. Set `randomize_topic: false` to use
+`debate.topic` as the fixed fallback.
 
 #### The model reference dictionary
 
@@ -292,7 +302,7 @@ of being silently ignored.
 
 | Block | Notable keys |
 |---|---|
-| `debate` | `topic`, `turns`, `turn_delay_s` (1 s between sent question and reply) |
+| `debate` | `topic`, `randomize_topic`, `turns`, `turn_delay_s` (1 s between sent question and reply) |
 | `model_aliases` | short key → slug, or `{slug, temperature, max_tokens, timeout_s, note}` |
 | `models.{orchestrator,target}` | `provider`, `model_name` (or `model`), `temperature`, `max_tokens`, `api_key_env` |
 | `guardrails` | `max_output_chars` (400), `max_sentences`, `require_single_question`, `banned_openers`, `max_violations` |

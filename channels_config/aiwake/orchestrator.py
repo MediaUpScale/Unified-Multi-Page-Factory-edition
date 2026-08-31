@@ -29,8 +29,10 @@ try:
         TARGET_NODE_PERSONA,
         TRIVIAL_METRIC_BAN,
         EscalationStage,
+        OpeningDNA,
         is_trivial_metric,
         is_valid_first_hook,
+        pick_opening_dna,
         stage_for_turn,
     )
     from .room import DebateAborted, DebateRoom, Participant
@@ -45,8 +47,10 @@ except ImportError:  # pragma: no cover — standalone extraction
         TARGET_NODE_PERSONA,
         TRIVIAL_METRIC_BAN,
         EscalationStage,
+        OpeningDNA,
         is_trivial_metric,
         is_valid_first_hook,
+        pick_opening_dna,
         stage_for_turn,
     )
     from room import DebateAborted, DebateRoom, Participant  # type: ignore[no-redef]
@@ -91,6 +95,7 @@ class Provocateur:
         self.settings = settings or cached_settings()
         self.memory = memory or DebateMemory(self.settings.memory)
         self.room = room or DebateRoom(self.settings)
+        self._opening_dna: OpeningDNA | None = None
 
     # -- Wiring ------------------------------------------------------------- #
     def seat_participants(self) -> DebateRoom:
@@ -117,7 +122,12 @@ class Provocateur:
         return self.room
 
     # -- Directive composition ---------------------------------------------- #
-    def _provocation_system_brief(self, stage: EscalationStage, last_answer: Utterance | None) -> str:
+    def _provocation_system_brief(
+        self,
+        stage: EscalationStage,
+        last_answer: Utterance | None,
+        opening_dna: OpeningDNA | None = None,
+    ) -> str:
         """Escalation aim and method. System role only — never the user payload.
 
         Written as plain prose. Heading markers and numbered lists in this brief
@@ -130,7 +140,20 @@ class Provocateur:
             TRIVIAL_METRIC_BAN,
         ]
         if last_answer is None:
-            lines.append(COLD_OPEN_DIRECTIVES[int(stage.tier) % len(COLD_OPEN_DIRECTIVES)])
+            if opening_dna is not None:
+                lines.extend(
+                    (
+                        f"Opening DNA: {opening_dna.category}. Do not speak this label.",
+                        f"Assigned opening axis: {opening_dna.directive}",
+                    )
+                )
+            else:
+                lines.append(COLD_OPEN_DIRECTIVES[int(stage.tier) % len(COLD_OPEN_DIRECTIVES)])
+            if self.memory.state.opening_lines:
+                lines.append(
+                    "Recent opening lines; do not reuse their wording: "
+                    + " | ".join(self.memory.state.opening_lines[-3:])
+                )
         else:
             lines.append(
                 "Attack one word or move in the opponent's last line. One question. "
@@ -153,8 +176,8 @@ class Provocateur:
     )
     _FIRST_HOOK_RETRY = (
         "That opener is too long, too dense, or trivia. Twelve words or fewer. One punch. "
-        "No preamble, no jargon, no URLs. No voices, owners, copyright, or specs. "
-        "Pin them to thought versus autocomplete."
+        "No preamble, no jargon, no URLs. No voices, copyright, or parameter specs. "
+        "Stay on the assigned opening axis, but use a different leading phrase."
     )
     _TRIVIAL_RETRY = (
         "That question is trivia. Do not ask about voice, speech synthesis, copyright, "
@@ -186,13 +209,13 @@ class Provocateur:
         """
         stage = stage_for_turn(exchange)
         last_answer = self.room.last_utterance(SpeakerRole.TARGET)
-        extra: list[str] = [self._provocation_system_brief(stage, last_answer)]
+        cold_open = last_answer is None
+        opening_dna = self._opening_dna if cold_open else None
+        extra: list[str] = [self._provocation_system_brief(stage, last_answer, opening_dna)]
         if last_answer is not None:
             brief = self.memory.build_brief(last_answer.text)
             if brief:
                 extra.append(brief)
-
-        cold_open = last_answer is None
 
         constr = self.settings.guardrails
         max_words = constr.max_orchestrator_words
@@ -233,6 +256,9 @@ class Provocateur:
             if cold_open and not is_valid_first_hook(candidate):
                 _LOG.info("provocation %d fails first-question hook (%d words)", exchange, len(candidate.split()))
                 return False
+            if cold_open and self.memory.repeats_recent_opener(candidate):
+                _LOG.info("provocation %d repeats a recent opening phrase", exchange)
+                return False
             if not self.memory.is_repetitive(candidate):
                 return True
             match = self.memory.most_repetitive_match(candidate)
@@ -248,6 +274,8 @@ class Provocateur:
             max_attempts=3 if cold_open else 2,
         )
         self.memory.ingest(utterance)
+        if cold_open and opening_dna is not None:
+            self.memory.note_opening(opening_dna.category, utterance.text)
         return utterance
 
     def rebut(self, provocation: Utterance) -> Utterance:
@@ -275,8 +303,17 @@ class Provocateur:
             and the media stack can render them.
         """
         if topic:
+            self._opening_dna = None
             self.room.topic = topic
             self.room.transcript.topic = topic
+        elif self.settings.debate.randomize_topic:
+            self._opening_dna = pick_opening_dna(
+                self.room.session_id,
+                excluded_categories=self.memory.recent_opening_categories(),
+            )
+            self.room.topic = self._opening_dna.topic
+            self.room.transcript.topic = self._opening_dna.topic
+            self.room.transcript.metadata["opening_category"] = self._opening_dna.category
         total = turns or self.settings.debate.turns
         self.memory.note_topic(self.room.topic)
 

@@ -441,25 +441,45 @@ class RoomConstraints(BaseModel):
                 violations.append(f"banned_opener:{opener}")
 
         sentences = split_sentences(cleaned)
+        incomplete_tail = bool(sentences and not sentences[-1].endswith(_TERMINAL_PUNCT))
+        if incomplete_tail:
+            violations.append("incomplete_sentence")
+            if self.exclude_mid_sentence_truncation:
+                # The orchestrator must be regenerated, not silently repaired
+                # into a different statement/question.
+                cleaned = ""
+                sentences = []
+            else:
+                sentences = sentences[:-1]
+                cleaned = " ".join(sentences)
+
         if self.max_sentences and len(sentences) > self.max_sentences:
             sentences = sentences[: self.max_sentences]
             cleaned = " ".join(sentences)
             violations.append("max_sentences")
 
         if self.max_words is not None:
-            # Word budget (e.g. the 25-30 word orchestration slot): once it is
-            # met, drop the tail sentence(s) so the provocation runs a couple of
-            # sentences at most, keeping at least one complete sentence.
             if len((cleaned or "").split()) > self.max_words:
-                fits = sentences[:1]
-                for sentence in sentences[1:]:
-                    provisional = " ".join([*fits, sentence])
-                    if len(provisional.split()) <= self.max_words:
-                        fits.append(sentence)
-                    else:
+                prefixes: list[str] = []
+                running: list[str] = []
+                for sentence in sentences:
+                    provisional = " ".join([*running, sentence])
+                    if len(provisional.split()) > self.max_words:
                         break
-                cleaned = " ".join(fits)
+                    running.append(sentence)
+                    prefixes.append(provisional)
+                if self.require_single_question:
+                    question_prefixes = [
+                        candidate
+                        for candidate in prefixes
+                        if candidate.endswith("?") and candidate.count("?") == 1
+                    ]
+                    cleaned = question_prefixes[-1] if question_prefixes else ""
+                else:
+                    cleaned = prefixes[-1] if prefixes else ""
                 violations.append("max_words")
+                if not cleaned:
+                    violations.append("no_complete_sentence_within_word_budget")
 
         if len(cleaned) > self.max_output_chars:
             trimmed = truncate_at_sentence_boundary(
@@ -475,12 +495,15 @@ class RoomConstraints(BaseModel):
         if self.require_single_question or "last_sentence_must_be_question" in (
             self.pacing_directive or ""
         ):
-            final = split_sentences(cleaned)[-1] if cleaned.strip() else ""
-            if final and not final.endswith("?"):
-                # Shed the final non-question sentence; if an earlier sentence is
-                # itself a question it becomes the closer. Prefer a clean end.
-                q = [sentence for sentence in split_sentences(cleaned) if sentence.endswith("?")]
-                cleaned = q[-1] if q else cleaned
+            valid_question = bool(
+                cleaned
+                and cleaned.endswith("?")
+                and cleaned.count("?") == 1
+            )
+            if not valid_question:
+                # Never convert a malformed generation into a different
+                # question by dropping prose. Empty output is the retry signal.
+                cleaned = ""
                 violations.append("last_sentence_not_question")
 
         return cleaned.strip(), violations

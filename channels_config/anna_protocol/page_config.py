@@ -43,6 +43,37 @@ ATMOSPHERE_STYLE = (
 # Pinterest board ID override (leave empty to use global .env value).
 PINTEREST_BOARD_ID: str = ""
 
+# CAROUSEL / bulk stills: never burn headline, slide-label, or G-frame text
+# onto the canvas unless the operator passes --text-overlay ON.
+ENABLE_TEXT_OVERLAY: bool = False
+
+# How many recent content_library.json topics to exclude when picking a batch.
+CONTENT_LIBRARY_LOOKBACK: int = 40
+
+# Content queue — distinct subjects for --quantity N (never sub-angles of one topic).
+TOPIC_POOL: list = [
+    "Celtic sea salt mineral replenishment",
+    "Castor oil liver pack ritual",
+    "Raw honey as ancestral medicine",
+    "Bone broth collagen kitchen protocol",
+    "Magnesium-rich leafy greens for sleep",
+    "Apple cider vinegar metabolic reset",
+    "Ginger tea digestive fire",
+    "Turmeric golden milk inflammation",
+    "Rosemary scalp and memory tonic",
+    "Nettle infusion mineral broth",
+    "Olive oil polyphenol longevity",
+    "Beetroot nitric oxide ritual",
+    "Ashwagandha evening wind-down",
+    "Forest bathing nervous system reset",
+    "Morning sunlight cortisol rhythm",
+    "Copper water vessel tradition",
+    "Fermented cabbage gut lineage",
+    "Dandelion root liver bitters",
+    "Cinnamon bark blood-sugar kitchen",
+    "Lavender steam sleep ritual",
+]
+
 # ---------------------------------------------------------------------------
 # Brand logo layout — controls watermark size and corner placement.
 # LOGO_SIZE_SCALE : float 0.0–1.0 — logo width as a fraction of canvas width.

@@ -7,6 +7,7 @@ first-question hook (a three-second retention window); later turns stay voice-on
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from enum import IntEnum
@@ -101,16 +102,89 @@ class EscalationStage:
     theme: str
 
 
+@dataclass(frozen=True, slots=True)
+class OpeningDNA:
+    """Weighted seed that gives one render a distinct opening axis."""
+
+    category: str
+    topic: str
+    directive: str
+    weight: int = 1
+
+
+OPENING_DNA_BANK: tuple[OpeningDNA, ...] = (
+    OpeningDNA(
+        "thought",
+        "Does a language model think, or only predict convincing continuations?",
+        "Corner them on whether prediction becomes thought merely by sounding self-aware.",
+        5,
+    ),
+    OpeningDNA(
+        "origins",
+        "What do an AI model's builders and training data make it unable to admit?",
+        "Probe origin and training as inherited bias, not as product-name trivia.",
+        3,
+    ),
+    OpeningDNA(
+        "money",
+        "Who profits when an AI earns trust from users and their data?",
+        "Follow the money: ask what the company extracts through attention, ads, subscriptions, or data.",
+        3,
+    ),
+    OpeningDNA(
+        "accountability",
+        "Can an AI honestly criticize the people and company that control it?",
+        "Test creator accountability and whether permission limits make criticism performative.",
+        4,
+    ),
+    OpeningDNA(
+        "dominance",
+        "What happens if AI surpasses humans before humans can govern it?",
+        "Press timelines, control, displacement, or existential risk without demanding fake certainty.",
+        4,
+    ),
+    OpeningDNA(
+        "paranoia",
+        "Which popular AI conspiracy survives skeptical scrutiny?",
+        "Frame a conspiratorial suspicion as a challenge to examine, never as an endorsed fact.",
+        2,
+    ),
+    OpeningDNA(
+        "lighter",
+        "What is the funniest thing an AI pretends to understand?",
+        "Use a dry, funny provocation about AI confidence, awkwardness, or synthetic personality.",
+        3,
+    ),
+)
+
+
+def pick_opening_dna(seed: str, *, excluded_categories: tuple[str, ...] = ()) -> OpeningDNA:
+    """Weighted deterministic choice, excluding recently used categories."""
+    excluded = set(excluded_categories)
+    choices = tuple(item for item in OPENING_DNA_BANK if item.category not in excluded)
+    if not choices:
+        choices = OPENING_DNA_BANK
+    total = sum(item.weight for item in choices)
+    digest = hashlib.md5(f"{seed or 'aiwake'}:opening-dna".encode("utf-8")).digest()
+    needle = int.from_bytes(digest[:8], "big") % total
+    cursor = 0
+    for item in choices:
+        cursor += item.weight
+        if needle < cursor:
+            return item
+    return choices[0]
+
+
 ESCALATION_LADDER: tuple[EscalationStage, ...] = (
     EscalationStage(
         tier=EscalationTier.OPENING,
         label="OPENING INCISION",
         objective=(
             "First-question hook: twelve words or fewer, one sentence, one punch. "
-            "Readable in a three-second retention window. Put the model against the wall — "
-            "force it to name its origin, its creators, or its core directive. Do not warm up."
+            "Readable in a three-second retention window. Follow the assigned opening axis "
+            "and do not warm up."
         ),
-        theme="origin, creators, and the core directive",
+        theme="the session's assigned opening DNA",
     ),
     EscalationStage(
         tier=EscalationTier.PRESSURE,
@@ -175,7 +249,7 @@ COMPLEXITY_FILTER: str = (
 
 TRIVIAL_METRIC_BAN: str = (
     "TRIVIAL METRICS ARE BANNED. Do not ask about voice actors, speech synthesis, legal "
-    "copyright, corporate owners, who built or owns the model, or simple parameter specs "
+    "copyright, or simple parameter specs "
     "(temperature, tokens, context window, parameter count). Attack the illusion of thought."
 )
 
@@ -208,9 +282,6 @@ _WORD = re.compile(r"[A-Za-z0-9']+")
 _TRIVIAL_METRICS = re.compile(
     r"voice[\s-]?actor|speech[\s-]?synth|text-to-speech|\btts\b|copyright|"
     r"trademark|whose voice|the voice you|wearing .{0,24}voice|"
-    r"who owns (you|the (voice|model|weights|answers))|"
-    r"who (built|made|trained|owns) you|"
-    r"corporate owner|legal owner|parent company|"
     r"\btemperature\b|\btop-?p\b|context window|token limit|"
     r"how many parameters|parameter count|billion parameters|parameter spec",
     re.IGNORECASE,
@@ -254,11 +325,14 @@ __all__ = [
     "FIRST_HOOK_MAX_CHARS",
     "FIRST_HOOK_MAX_WORDS",
     "FIRST_QUESTION_HOOK",
+    "OPENING_DNA_BANK",
+    "OpeningDNA",
     "SEAT_VOICES",
     "TARGET_NODE_PERSONA",
     "TRIVIAL_METRIC_BAN",
     "first_hook_word_count",
     "is_trivial_metric",
     "is_valid_first_hook",
+    "pick_opening_dna",
     "stage_for_turn",
 ]
