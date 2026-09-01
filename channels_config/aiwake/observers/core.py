@@ -213,6 +213,11 @@ class MetricsObserver(DebateObserver):
             "session_id": payload.room.session_id,
             "topic": payload.room.topic,
             "end_reason": payload.detail.get("reason"),
+            "debate_mode": payload.room.transcript.metadata.get("debate_mode"),
+            "dialogue_end_reason": payload.room.transcript.metadata.get("dialogue_end_reason"),
+            "estimated_spoken_duration_s": payload.room.transcript.metadata.get(
+                "estimated_spoken_duration_s"
+            ),
             "lines": payload.detail.get("turns"),
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,

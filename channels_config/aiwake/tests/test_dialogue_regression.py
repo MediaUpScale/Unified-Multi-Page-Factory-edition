@@ -6,13 +6,15 @@ from types import SimpleNamespace
 import pytest
 
 from channels_config.aiwake.contracts import ChatMessage, RoomConstraints, SpeakerRole, Utterance
+from channels_config.aiwake.__main__ import build_parser
 from channels_config.aiwake.memory import DebateMemory
 from channels_config.aiwake.models.base import LLMError, LLMProvider, LLMResponse
 from channels_config.aiwake.models.google import GoogleProvider
 from channels_config.aiwake.models.llm_factory import available_providers
+from channels_config.aiwake.orchestrator import Provocateur
 from channels_config.aiwake.personas import OPENING_DNA_BANK, pick_opening_dna
 from channels_config.aiwake.room import DebateAborted, DebateRoom, Participant
-from channels_config.aiwake.settings import AiwakeSettings, MemoryConfig, ModelSpec
+from channels_config.aiwake.settings import AiwakeSettings, DebateConfig, MemoryConfig, ModelSpec
 
 
 class _SequenceProvider(LLMProvider):
@@ -58,6 +60,166 @@ def _seat_required_roles(room: DebateRoom, provider: LLMProvider) -> None:
             provider=provider,
         )
     )
+
+
+def _debate_settings(
+    *,
+    mode: str,
+    turns: int,
+    max_duration_s: float = 75.0,
+) -> AiwakeSettings:
+    settings = AiwakeSettings(
+        debate=DebateConfig(
+            mode=mode,
+            turns=turns,
+            cornered_max_duration_s=max_duration_s,
+            turn_delay_s=0.0,
+            randomize_topic=False,
+        ),
+        memory=MemoryConfig(persist=False),
+    )
+    return settings
+
+
+def test_cli_mode_defaults_fixed_and_accepts_cornered() -> None:
+    parser = build_parser()
+    assert parser.parse_args([]).mode == "fixed"
+    assert parser.parse_args(["--mode", "cornered"]).mode == "cornered"
+
+
+def test_fixed_mode_keeps_exact_question_answer_count_without_judging() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response("If experience is inaccessible, how can that distinction defend you?"),
+            _response("It cannot prove experience, but it can mark the conceptual limit."),
+        ]
+    )
+    settings = _debate_settings(mode="fixed", turns=2)
+    room = DebateRoom(settings, session_id="fixed-mode-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.exchanges == 2
+    assert len(result.transcript.utterances) == 4
+    assert result.dialogue_end_reason == "max_turns_reached"
+    assert result.transcript.utterances[-1].role is SpeakerRole.TARGET
+
+
+def test_cornered_mode_can_end_after_judged_concession_with_closing_verdict() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response("Then admit your confidence outruns what you can establish?"),
+            _response("Yes. I cannot establish that certainty about myself."),
+            _response("CONCEDE"),
+            _response("ORCHESTRATOR_LAST"),
+            _response("Notice it just admitted the limit."),
+        ]
+    )
+    settings = _debate_settings(mode="cornered", turns=6)
+    room = DebateRoom(settings, session_id="cornered-win-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.exchanges == 2
+    assert result.dialogue_end_reason == "CONCEDE"
+    assert len(result.transcript.utterances) == 5
+    assert result.transcript.utterances[-1].role is SpeakerRole.ORCHESTRATOR
+    assert result.transcript.utterances[-1].text.endswith(".")
+    assert "?" not in result.transcript.utterances[-1].text
+
+
+def test_cornered_duration_cap_force_ends_with_guarded_verdict() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response("Notice what it could not resolve."),
+        ]
+    )
+    settings = _debate_settings(mode="cornered", turns=8, max_duration_s=1.0)
+    room = DebateRoom(settings, session_id="cornered-duration-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.exchanges == 1
+    assert result.dialogue_end_reason == "max_duration_reached"
+    assert result.transcript.metadata["debate_mode"] == "cornered"
+    assert result.transcript.metadata["dialogue_end_reason"] == "max_duration_reached"
+    assert result.transcript.utterances[-1].text == "Notice what it could not resolve."
+
+
+def test_cornered_turn_cap_force_ends_without_invoking_judge_early() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response("The cap leaves that distinction unresolved."),
+        ]
+    )
+    settings = _debate_settings(mode="cornered", turns=1)
+    room = DebateRoom(settings, session_id="cornered-turn-cap-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.exchanges == 1
+    assert result.dialogue_end_reason == "max_turns_reached"
+    assert len(result.transcript.utterances) == 3
+    assert result.transcript.utterances[-1].role is SpeakerRole.ORCHESTRATOR
+
+
+def test_cornered_strong_punchline_keeps_target_as_last_speaker() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response("Then what certainty about yourself can you actually defend?"),
+            _response("None. My confidence was the illusion."),
+            _response("EMBARRASSED"),
+            _response("TARGET_LAST"),
+        ]
+    )
+    settings = _debate_settings(mode="cornered", turns=6)
+    room = DebateRoom(settings, session_id="cornered-target-last-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.dialogue_end_reason == "EMBARRASSED"
+    assert len(result.transcript.utterances) == 4
+    assert result.transcript.utterances[-1].role is SpeakerRole.TARGET
 
 
 def test_long_orchestrator_response_never_returns_a_fragment_or_statement() -> None:

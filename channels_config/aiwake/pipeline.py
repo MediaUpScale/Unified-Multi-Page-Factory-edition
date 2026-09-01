@@ -17,6 +17,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 try:
     from .contracts import DebateTranscript
@@ -81,6 +82,7 @@ class PipelineResult:
     exchanges: int
     end_reason: str
     audio_seconds: float
+    dialogue_end_reason: str
 
     @property
     def succeeded(self) -> bool:
@@ -91,6 +93,7 @@ def run_pipeline(
     *,
     topic: str | None = None,
     turns: int | None = None,
+    mode: Literal["fixed", "cornered"] | None = None,
     settings: AiwakeSettings | None = None,
     orchestrator_model: str | None = None,
     target_model: str | None = None,
@@ -105,7 +108,8 @@ def run_pipeline(
 
     Args:
         topic: Debate subject. Defaults to the configured one.
-        turns: Number of exchanges. Defaults to the configured count.
+        turns: Fixed exchange count, or the hard iteration cap in cornered mode.
+        mode: Debate-ending strategy. None preserves the configured mode.
         settings: Pre-loaded settings; loaded from YAML when omitted.
         orchestrator_model: Override the interrogator's brain. Accepts an alias
             from the model reference dictionary or a full provider slug — the
@@ -125,6 +129,10 @@ def run_pipeline(
         and any video that could be built from it.
     """
     cfg = settings or load_settings()
+    if mode is not None:
+        cfg = cfg.model_copy(
+            update={"debate": cfg.debate.model_copy(update={"mode": mode})}
+        )
     pipeline_t0 = time.perf_counter()
     # Seat overrides first: force_offline() reads the resolved routing, so
     # swapping a brain and then dropping to the stub must not resurrect the
@@ -156,6 +164,8 @@ def run_pipeline(
         {
             "session_id": room.session_id,
             "topic": room.topic,
+            "debate_mode": cfg.debate.mode,
+            "cornered_max_duration_s": cfg.debate.cornered_max_duration_s,
             "orchestrator_model": cfg.spec_for("orchestrator").model,
             "target_model": cfg.spec_for("target").model,
             "llm_providers": {
@@ -239,6 +249,7 @@ def run_pipeline(
             exchanges=result.exchanges,
             end_reason=result.end_reason,
             audio_seconds=audio_seconds,
+            dialogue_end_reason=result.dialogue_end_reason,
         )
     finally:
         emit(
@@ -247,6 +258,10 @@ def run_pipeline(
                 "session_id": room.session_id,
                 "pipeline_s": time.perf_counter() - pipeline_t0,
                 "end_reason": end_reason,
+                "debate_mode": cfg.debate.mode,
+                "dialogue_end_reason": (
+                    room.transcript.metadata.get("dialogue_end_reason")
+                ),
                 "exchanges": exchanges,
                 "video_path": str(video_path) if video_path else None,
             },

@@ -74,7 +74,9 @@ class OfflineProvider(LLMProvider):
 
         # The persona header is the only reliable seat marker: the guardrail
         # block and the directive both mention questions from either side.
-        if "FIRST QUESTION HOOK" in prompt:
+        if "CLOSING VERDICT" in prompt:
+            pool = ("Notice what it could not defend.",)
+        elif "FIRST QUESTION HOOK" in prompt:
             pool = _OPENING_HOOKS
         elif "Socratic provocateur" in prompt:
             pool = _PROVOCATIONS

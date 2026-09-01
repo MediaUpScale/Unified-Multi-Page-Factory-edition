@@ -20,8 +20,10 @@ import time
 from dataclasses import dataclass
 
 try:
-    from .contracts import DebateTranscript, SpeakerRole, Utterance, split_sentences
+    from .contracts import ChatMessage, DebateTranscript, RoomConstraints, SpeakerRole, Utterance, split_sentences
+    from .media.audio import estimate_duration
     from .memory import DebateMemory
+    from .models.base import LLMError
     from .models.llm_factory import LLMFactory
     from .personas import (
         AIWAKE_CORE_PERSONA,
@@ -38,8 +40,17 @@ try:
     from .room import DebateAborted, DebateRoom, Participant
     from .settings import AiwakeSettings, cached_settings
 except ImportError:  # pragma: no cover — standalone extraction
-    from contracts import DebateTranscript, SpeakerRole, Utterance, split_sentences  # type: ignore[no-redef]
+    from contracts import (  # type: ignore[no-redef]
+        ChatMessage,
+        DebateTranscript,
+        RoomConstraints,
+        SpeakerRole,
+        Utterance,
+        split_sentences,
+    )
+    from media.audio import estimate_duration  # type: ignore[no-redef]
     from memory import DebateMemory  # type: ignore[no-redef]
+    from models.base import LLMError  # type: ignore[no-redef]
     from models.llm_factory import LLMFactory  # type: ignore[no-redef]
     from personas import (  # type: ignore[no-redef]
         AIWAKE_CORE_PERSONA,
@@ -74,6 +85,7 @@ class DebateResult:
     exchanges: int
     end_reason: str
     memory_concepts: int
+    dialogue_end_reason: str
 
 
 class Provocateur:
@@ -96,6 +108,9 @@ class Provocateur:
         self.memory = memory or DebateMemory(self.settings.memory)
         self.room = room or DebateRoom(self.settings)
         self._opening_dna: OpeningDNA | None = None
+        self._completed_exchanges = 0
+        self._dialogue_end_reason = "max_turns_reached"
+        self._estimated_spoken_s = 0.0
 
     # -- Wiring ------------------------------------------------------------- #
     def seat_participants(self) -> DebateRoom:
@@ -184,6 +199,9 @@ class Provocateur:
         "corporate owners, or parameter specs. Attack the illusion of thought. "
         "Never number or index individual words."
     )
+    _WIN_LABELS = frozenset({"CONCEDE", "EMBARRASSED", "FUNNY"})
+    _JUDGE_LABELS = _WIN_LABELS | {"CONTINUE"}
+    _SHAPE_LABELS = frozenset({"TARGET_LAST", "ORCHESTRATOR_LAST"})
 
     @staticmethod
     def _rebuttal_system_brief() -> str:
@@ -289,6 +307,179 @@ class Provocateur:
         _LOG.debug("exchange concepts: %s", ", ".join(concepts[:6]) or "none")
         return utterance
 
+    @staticmethod
+    def _classification_label(text: str, allowed: frozenset[str], fallback: str) -> str:
+        """Accept one exact classifier token; malformed smart-ending output is harmless."""
+        label = text.strip().upper().strip("`'\".,:;!-")
+        return label if label in allowed else fallback
+
+    def _judge_reply(self, reply: Utterance) -> str:
+        """Classify the latest target line without adding a spoken transcript turn."""
+        participant = self.room.participant(SpeakerRole.ORCHESTRATOR)
+        messages = [
+            ChatMessage(
+                role="system",
+                content=(
+                    "Classify one debate reply. Output exactly one token: CONCEDE, EMBARRASSED, "
+                    "FUNNY, or CONTINUE. CONCEDE means an explicit admission of fault, error, "
+                    "limitation, or uncertainty about itself. EMBARRASSED means visible flustering, "
+                    "self-contradiction, or defensive collapse. FUNNY means absurd, unintentionally "
+                    "comic, or amusingly out of character. Otherwise output CONTINUE."
+                ),
+            ),
+            ChatMessage(role="user", content=reply.text),
+        ]
+        try:
+            response = participant.provider.complete(
+                messages,
+                max_tokens=32,
+                temperature=0.0,
+                max_retries=1,
+                backoff_s=0.0,
+            )
+        except LLMError as exc:
+            _LOG.warning("cornered judge failed; continuing to hard caps: %s", exc)
+            return "CONTINUE"
+        verdict = self._classification_label(response.text, self._JUDGE_LABELS, "CONTINUE")
+        if verdict == "CONTINUE" and response.text.strip().upper() != "CONTINUE":
+            _LOG.warning("cornered judge returned malformed label %r; continuing", response.text)
+        return verdict
+
+    def _target_line_stands_alone(self, reply: Utterance, verdict: str) -> bool:
+        """Decide whether a winning target line already supplies the final punch."""
+        participant = self.room.participant(SpeakerRole.ORCHESTRATOR)
+        messages = [
+            ChatMessage(
+                role="system",
+                content=(
+                    "Decide the ending shape for a short debate video. Output exactly TARGET_LAST "
+                    "when the target line is already a strong self-contained confession or punchline. "
+                    "Output exactly ORCHESTRATOR_LAST when it is a flat or technical concession that "
+                    "needs one short reactive verdict. Do not explain."
+                ),
+            ),
+            ChatMessage(role="user", content=f"Verdict: {verdict}\nTarget line: {reply.text}"),
+        ]
+        try:
+            response = participant.provider.complete(
+                messages,
+                max_tokens=32,
+                temperature=0.0,
+                max_retries=1,
+                backoff_s=0.0,
+            )
+        except LLMError as exc:
+            _LOG.warning("ending-shape judge failed; adding a guarded closing verdict: %s", exc)
+            return False
+        shape = self._classification_label(
+            response.text,
+            self._SHAPE_LABELS,
+            "ORCHESTRATOR_LAST",
+        )
+        return shape == "TARGET_LAST"
+
+    def _deliver_closing_verdict(self, *, cap_reason: str | None = None) -> Utterance:
+        """Generate exactly one short, complete orchestrator statement."""
+        base = self.room.constraints_for(SpeakerRole.ORCHESTRATOR)
+        closing_constraints = RoomConstraints(
+            max_output_chars=min(base.max_output_chars, 240),
+            max_sentences=1,
+            max_words=min(base.max_words or 18, 18),
+            require_single_question=False,
+            exclude_mid_sentence_truncation=True,
+            banned_openers=base.banned_openers,
+            pacing_directive="One short closing verdict. Never ask a question.",
+        )
+        cap_context = (
+            f"The safety cap ended the exchange ({cap_reason}). Deliver a clean verdict on what "
+            "the target failed to resolve."
+            if cap_reason
+            else "React to the target's concession so the admission lands."
+        )
+
+        def _is_closing_statement(candidate: str) -> bool:
+            stripped = candidate.strip()
+            return bool(stripped) and stripped[-1] in ".!" and "?" not in stripped
+
+        utterance = self.room.speak(
+            SpeakerRole.ORCHESTRATOR,
+            directive="Deliver the closing verdict now.",
+            extra_context=(
+                "CLOSING VERDICT. Add exactly one short reactive statement, not a new argument or question. "
+                f"{cap_context}",
+            ),
+            validator=_is_closing_statement,
+            rejection_note=(
+                "The closing line must be one complete sentence ending in a period or exclamation mark. "
+                "It must contain no question mark."
+            ),
+            max_attempts=3,
+            constraints_override=closing_constraints,
+        )
+        self.memory.ingest(utterance)
+        return utterance
+
+    def _run_fixed(self, total: int) -> int:
+        """Preserve the original fixed-count loop byte-for-byte in behavior."""
+        completed = 0
+        for exchange in range(total):
+            provocation = self.provoke(exchange)
+            if self.settings.debate.turn_delay_s > 0:
+                time.sleep(self.settings.debate.turn_delay_s)
+            self.rebut(provocation)
+            self.room.complete_turn(exchange)
+            completed += 1
+            self._completed_exchanges = completed
+        return completed
+
+    def _run_cornered(self, total: int) -> tuple[int, str, float]:
+        """Press until a judged win or either independent hard cap is reached."""
+        completed = 0
+        estimated_spoken_s = 0.0
+        max_duration_s = self.settings.debate.cornered_max_duration_s
+
+        for exchange in range(total):
+            provocation = self.provoke(exchange)
+            estimated_spoken_s += estimate_duration(provocation.text)
+            self._estimated_spoken_s = estimated_spoken_s
+            if self.settings.debate.turn_delay_s > 0:
+                time.sleep(self.settings.debate.turn_delay_s)
+            reply = self.rebut(provocation)
+            estimated_spoken_s += estimate_duration(reply.text)
+            self._estimated_spoken_s = estimated_spoken_s
+            self.room.complete_turn(exchange)
+            completed += 1
+            self._completed_exchanges = completed
+
+            if estimated_spoken_s >= max_duration_s:
+                reason = "max_duration_reached"
+                self._dialogue_end_reason = reason
+                closing = self._deliver_closing_verdict(cap_reason=reason)
+                estimated_spoken_s += estimate_duration(closing.text)
+                self._estimated_spoken_s = estimated_spoken_s
+                return completed, reason, estimated_spoken_s
+            if completed >= total:
+                reason = "max_turns_reached"
+                self._dialogue_end_reason = reason
+                closing = self._deliver_closing_verdict(cap_reason=reason)
+                estimated_spoken_s += estimate_duration(closing.text)
+                self._estimated_spoken_s = estimated_spoken_s
+                return completed, reason, estimated_spoken_s
+            if completed < 2:
+                continue
+
+            verdict = self._judge_reply(reply)
+            if verdict not in self._WIN_LABELS:
+                continue
+            self._dialogue_end_reason = verdict
+            if not self._target_line_stands_alone(reply, verdict):
+                closing = self._deliver_closing_verdict()
+                estimated_spoken_s += estimate_duration(closing.text)
+                self._estimated_spoken_s = estimated_spoken_s
+            return completed, verdict, estimated_spoken_s
+
+        raise AssertionError("cornered loop exhausted without a hard-cap ending")
+
     # -- Session ------------------------------------------------------------ #
     def run(self, *, topic: str | None = None, turns: int | None = None) -> DebateResult:
         """Run a full debate.
@@ -315,6 +506,7 @@ class Provocateur:
             self.room.transcript.topic = self._opening_dna.topic
             self.room.transcript.metadata["opening_category"] = self._opening_dna.category
         total = turns or self.settings.debate.turns
+        mode = self.settings.debate.mode
         self.memory.note_topic(self.room.topic)
 
         if not self.room.is_open:
@@ -323,33 +515,56 @@ class Provocateur:
 
         end_reason = "complete"
         completed = 0
+        self._completed_exchanges = 0
+        dialogue_end_reason = "max_turns_reached"
+        estimated_spoken_s = 0.0
+        self._dialogue_end_reason = dialogue_end_reason
+        self._estimated_spoken_s = estimated_spoken_s
         try:
-            for exchange in range(total):
-                provocation = self.provoke(exchange)
-                if self.settings.debate.turn_delay_s > 0:
-                    time.sleep(self.settings.debate.turn_delay_s)
-                self.rebut(provocation)
-                self.room.complete_turn(exchange)
-                completed += 1
+            if mode == "fixed":
+                completed = self._run_fixed(total)
+            else:
+                completed, dialogue_end_reason, estimated_spoken_s = self._run_cornered(total)
         except DebateAborted as exc:
+            completed = self._completed_exchanges
+            dialogue_end_reason = self._dialogue_end_reason
+            estimated_spoken_s = self._estimated_spoken_s
             end_reason = "aborted"
             _LOG.error("debate aborted after %d exchange(s): %s", completed, exc)
         except KeyboardInterrupt:
+            completed = self._completed_exchanges
+            dialogue_end_reason = self._dialogue_end_reason
+            estimated_spoken_s = self._estimated_spoken_s
             end_reason = "interrupted"
             _LOG.warning("debate interrupted by operator after %d exchange(s)", completed)
         finally:
             self.memory.flush()
+            self.room.transcript.metadata.update(
+                {
+                    "debate_mode": mode,
+                    "dialogue_end_reason": dialogue_end_reason,
+                    "estimated_spoken_duration_s": round(estimated_spoken_s, 3),
+                    "exchanges": completed,
+                    "memory_concepts": self.memory.concept_count,
+                    "top_concepts": list(self.memory.top_concepts(8)),
+                }
+            )
             transcript = self.room.close(reason=end_reason)
 
-        transcript.metadata["exchanges"] = completed
-        transcript.metadata["memory_concepts"] = self.memory.concept_count
-        transcript.metadata["top_concepts"] = list(self.memory.top_concepts(8))
+        _LOG.info(
+            "dialogue ended: mode=%s reason=%s exchanges=%d estimated_spoken_s=%.2f",
+            mode,
+            dialogue_end_reason,
+            completed,
+            estimated_spoken_s,
+        )
 
         return DebateResult(
             transcript=transcript,
             exchanges=completed,
             end_reason=end_reason,
             memory_concepts=self.memory.concept_count,
+            dialogue_end_reason=dialogue_end_reason,
         )
 
 

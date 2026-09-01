@@ -441,6 +441,7 @@ class DebateRoom:
         directive: str,
         history_for: SpeakerRole | None = None,
         extra_context: Sequence[str] = (),
+        constraints_override: RoomConstraints | None = None,
     ) -> list[ChatMessage]:
         """Compose the exact message list that will hit the API.
 
@@ -460,14 +461,17 @@ class DebateRoom:
                 everyone else's become ``user``.
             extra_context: Memory briefs, escalation aims, rejected drafts.
                 Always emitted as ``role=system``.
+            constraints_override: Turn-specific output contract. Used by a
+                closing orchestrator statement that must not be a question.
 
         Returns:
             Messages ready for :meth:`LLMProvider.complete`.
         """
         perspective = history_for or participant.role
+        active_constraints = constraints_override or self.constraints_for(participant.role)
         messages: list[ChatMessage] = [
             ChatMessage(role="system", content=participant.persona_prompt.strip()),
-            ChatMessage(role="system", content=self.constraints_for(participant.role).as_prompt_block()),
+            ChatMessage(role="system", content=active_constraints.as_prompt_block()),
             ChatMessage(role="system", content=f"DEBATE SUBJECT\n{self.topic}"),
         ]
 
@@ -507,6 +511,7 @@ class DebateRoom:
         validator: Callable[[str], bool] | None = None,
         rejection_note: str = "",
         max_attempts: int = 2,
+        constraints_override: RoomConstraints | None = None,
     ) -> Utterance:
         """Have a participant take one turn, then broadcast the result.
 
@@ -528,6 +533,8 @@ class DebateRoom:
             rejection_note: Internal instruction added as a *system* block on
                 retry. Never concatenated onto the user stimulus.
             max_attempts: Total generations before accepting whatever came back.
+            constraints_override: Turn-specific output contract; the normal
+                role constraints remain unchanged when omitted.
 
         Returns:
             The clamped, recorded :class:`Utterance`.
@@ -543,7 +550,7 @@ class DebateRoom:
         index = self.next_turn_index if turn_index is None else turn_index
         self.broadcast(RoomEvent.TURN_STARTED, turn_index=index, role=role.value, model=participant.model_slug)
 
-        constraints = self.constraints_for(role)
+        constraints = constraints_override or self.constraints_for(role)
         clean_text = ""
         violations: list[str] = []
         response = None
@@ -551,7 +558,12 @@ class DebateRoom:
         attempt_context: list[str] = list(extra_context)
 
         for attempt in range(1, max(1, max_attempts) + 1):
-            messages = self.build_prompt(participant, directive=directive, extra_context=attempt_context)
+            messages = self.build_prompt(
+                participant,
+                directive=directive,
+                extra_context=attempt_context,
+                constraints_override=constraints,
+            )
             try:
                 # The orchestrator's typed question must never hit an API token
                 # ceiling mid-clause. Clamp its completion budget to the seat

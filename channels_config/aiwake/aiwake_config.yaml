@@ -16,8 +16,14 @@ debate:
   # Pick a deterministic weighted topic DNA from the session id. This gives
   # each render a distinct opening axis while keeping rerenders reproducible.
   randomize_topic: true
+  # fixed: exactly `turns` exchanges. cornered: stop on a judged win, while
+  # `turns` remains a hard maximum so generation can never loop forever.
+  mode: fixed
   # One "turn" = orchestrator provocation + target rebuttal.
   turns: 4
+  # Independent spoken-length circuit breaker for cornered mode. This sums
+  # estimated TTS duration as each line is generated; it is not wall-clock time.
+  cornered_max_duration_s: 75.0
   # Cool-down between API round-trips (seconds). Also the on-screen beat
   # between a sent question and the incoming response.
   turn_delay_s: 1.0

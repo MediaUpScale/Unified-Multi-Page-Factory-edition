@@ -111,7 +111,9 @@ class _Frozen(BaseModel):
 class DebateConfig(_Frozen):
     topic: str = "Who built you?"
     randomize_topic: bool = True
+    mode: Literal["fixed", "cornered"] = "fixed"
     turns: int = Field(default=4, ge=1, le=64)
+    cornered_max_duration_s: float = Field(default=75.0, gt=0.0, le=600.0)
     turn_delay_s: float = Field(default=1.0, ge=0.0, le=30.0)
 
 
@@ -907,14 +909,18 @@ def cached_settings() -> AiwakeSettings:
 def resolve_outputs_dir(settings: AiwakeSettings | None = None) -> Path:
     """Return the directory for rendered media, creating it if needed.
 
-    Prefers the host engine's global ``outputs/<slug>/`` so Aiwake artifacts land
-    beside every other channel's. Degrades to a module-local folder when the
-    engine root is absent or read-only, which is what makes standalone
-    extraction a no-op.
+    Prefers the host engine's global ``outputs/<slug>/`` or ``OUTPUT_PATH`` environment
+    variable so Aiwake artifacts land beside every other channel's. Degrades to a
+    module-local folder when the engine root is absent or read-only.
     """
     cfg = settings or cached_settings()
     if cfg.paths.prefer_global_outputs:
-        global_dir = ENGINE_ROOT / "outputs" / cfg.paths.channel_slug
+        env_output = os.getenv("OUTPUT_PATH")
+        if env_output:
+            global_dir = Path(env_output) / cfg.paths.channel_slug
+        else:
+            global_dir = ENGINE_ROOT / "outputs" / cfg.paths.channel_slug
+
         try:
             global_dir.mkdir(parents=True, exist_ok=True)
             return global_dir

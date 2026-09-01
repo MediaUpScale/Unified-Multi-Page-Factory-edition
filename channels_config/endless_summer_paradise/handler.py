@@ -15,6 +15,7 @@ publisher / ``esp_main.py schedule`` path.
 """
 from __future__ import annotations
 
+import os
 import json
 import logging
 import re
@@ -29,7 +30,8 @@ _LOG = logging.getLogger(__name__)
 _CHANNEL_DIR = Path(__file__).resolve().parent
 _ENGINE_ROOT = _CHANNEL_DIR.parents[1]
 _CHANNEL_ID = "endless_summer_paradise"
-_OUTPUTS = _ENGINE_ROOT / "outputs" / _CHANNEL_ID
+_ENV_OUTPUT = os.getenv("OUTPUT_PATH")
+_OUTPUTS = Path(_ENV_OUTPUT) / _CHANNEL_ID if _ENV_OUTPUT else _ENGINE_ROOT / "outputs" / _CHANNEL_ID
 _NEEDS_METADATA_DIR = _OUTPUTS / "needs_metadata"
 _SCAN_PATH = _OUTPUTS / "esp_asset_map.json"
 _QUEUE_PATH = _OUTPUTS / "esp_schedule_queue.json"

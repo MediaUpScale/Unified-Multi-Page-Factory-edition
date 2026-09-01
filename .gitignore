@@ -81,3 +81,69 @@ desktop.ini
 
 # Generated per-run telemetry (showcase is optional / detachable)
 portfolio_showcase/data/projects/aiwake/architecture.json
+
+
+
+
+
+
+
+# ==========================================
+# Python & Environment Caches
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+
+# ==========================================
+# Editors & IDEs (Cursor / VSCode / OS)
+# ==========================================
+.cursor_local/
+.vscode/
+.idea/
+*.swp
+*.swo
+desktop
+desktop.ini
+.DS_Store
+
+# ==========================================
+# Credentials & Environment Variables
+# ==========================================
+.env
+.env.*
+client_secret*.json
+*.pem
+*.key
+
+# ==========================================
+# Engine & Agent Execution Logs
+# ==========================================
+_agent_log/*
+!_agent_log/.gitkeep
+logs/*.log
+*.log
+
+# ==========================================
+# Dynamic Runtime Data / Channel History
+# ==========================================
+channels_config/*/store/
+channels_config/*/*/transcripts/
+channels_config/*/*/metrics/
+
+# ==========================================
+# Heavy Assets & Render Outputs
+# ==========================================
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mov
+*.zip
+*.tar.gz

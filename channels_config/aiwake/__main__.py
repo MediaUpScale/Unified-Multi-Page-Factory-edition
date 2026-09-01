@@ -40,7 +40,17 @@ def build_parser() -> argparse.ArgumentParser:
         description="Autonomous AI debate module - provocateur vs target, rendered as a terminal-UI reel.",
     )
     parser.add_argument("--topic", help="Debate subject (defaults to aiwake_config.yaml)")
-    parser.add_argument("--turns", type=int, help="Number of provocation/rebuttal exchanges")
+    parser.add_argument(
+        "--turns",
+        type=int,
+        help="Number of exchanges (fixed mode) or hard iteration cap (cornered mode)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("fixed", "cornered"),
+        default="fixed",
+        help="Debate ending: fixed count (default) or press until a judged win",
+    )
     parser.add_argument("--config", type=Path, help="Alternate aiwake_config.yaml")
     parser.add_argument("--output-dir", type=Path, help="Override the media destination")
     parser.add_argument(
@@ -227,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     result = run_pipeline(
         topic=args.topic,
         turns=args.turns,
+        mode=args.mode,
         settings=settings,
         offline=args.offline,
         with_audio=not args.no_audio,
@@ -237,7 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(f"exchanges     : {result.exchanges}")
-    print(f"end reason    : {result.end_reason}")
+    print(f"run status    : {result.end_reason}")
+    print(f"end reason    : {result.dialogue_end_reason}")
     print(f"audio         : {result.audio_seconds:.1f}s")
     print(f"video         : {result.video_path or '(none)'}")
 
