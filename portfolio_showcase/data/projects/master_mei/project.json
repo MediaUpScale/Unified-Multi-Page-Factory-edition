@@ -1,0 +1,9 @@
+{
+  "slug": "master_mei",
+  "title": "Master Mei",
+  "codename": "Wonder Feed persona",
+  "status": "registry",
+  "summary": "The on-screen host persona for the Wonder Feed lo-fi reel factory — the voice, pacing, and visual identity that ties every riso_retro_flat_v4 episode together. Registry stub until persona-specific telemetry is exported separately from the pipeline it narrates.",
+  "engine_path": "core/economic_reel_lofi",
+  "tags": ["Persona", "TTS", "Voice"]
+}

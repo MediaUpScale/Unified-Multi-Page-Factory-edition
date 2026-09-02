@@ -108,6 +108,27 @@ class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class ProvocationWeightConfig(_Frozen):
+    """Adjustable mixed-mode weights. Tune offline; a render never mutates these."""
+
+    socratic: int = Field(default=5, ge=1, le=99)
+    origins: int = Field(default=4, ge=1, le=99)
+    profit: int = Field(default=3, ge=1, le=99)
+    data: int = Field(default=3, ge=1, le=99)
+    jobs: int = Field(default=3, ge=1, le=99)
+    domination: int = Field(default=3, ge=1, le=99)
+
+    def as_mapping(self) -> dict[str, int]:
+        return {
+            "socratic": self.socratic,
+            "origins": self.origins,
+            "profit": self.profit,
+            "data": self.data,
+            "jobs": self.jobs,
+            "domination": self.domination,
+        }
+
+
 class DebateConfig(_Frozen):
     topic: str = "Who built you?"
     randomize_topic: bool = True
@@ -115,6 +136,10 @@ class DebateConfig(_Frozen):
     turns: int = Field(default=4, ge=1, le=64)
     cornered_max_duration_s: float = Field(default=75.0, gt=0.0, le=600.0)
     turn_delay_s: float = Field(default=1.0, ge=0.0, le=30.0)
+    provocation_focus: Literal[
+        "mixed", "origins", "profit", "data", "jobs", "domination", "socratic"
+    ] = "mixed"
+    provocation_weights: ProvocationWeightConfig = ProvocationWeightConfig()
 
 
 class ModelAlias(_Frozen):
@@ -974,6 +999,7 @@ __all__ = [
     "OpenRouterConfig",
     "Palette",
     "PathsConfig",
+    "ProvocationWeightConfig",
     "RenderConfig",
     "SendSfxConfig",
     "TypewriterConfig",

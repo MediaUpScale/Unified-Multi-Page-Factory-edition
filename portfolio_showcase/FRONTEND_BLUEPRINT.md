@@ -16,7 +16,8 @@ The factory is not one model demo. It is an **ecosystem of swappable content eng
 | Slug | Product name | Engine (today) | v1 content |
 |---|---|---|---|
 | `aiwake` | Aiwake | `channels_config/aiwake` | `architecture.json` telemetry (EventBus) |
-| `wonder_feed` | Wonder Feed (Master Mei / Riso Retro Flat) | `core/economic_reel_lofi` | narrative `.md` + pipeline PNGs |
+| `wonder_feed` | Wonder Feed (Riso Retro Flat) | `core/economic_reel_lofi` | narrative `.md` + pipeline PNGs |
+| `master_mei` | Master Mei | `core/economic_reel_lofi` | `project.json` registry stub — Wonder Feed's on-screen persona, split into its own page |
 | `endless_summer_paradise` | Endless Summer Paradise | `channels_config/endless_summer_paradise` | `project.json` registry stub |
 | `ancient_knowledge` | Ancient Knowledge | `channels_config/ancient_knowledge` | registry stub |
 | `anna_protocol` | Anna's Garden (Anna Protocol) | `channels_config/anna_protocol` | registry stub |

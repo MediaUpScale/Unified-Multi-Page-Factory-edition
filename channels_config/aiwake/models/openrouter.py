@@ -15,11 +15,16 @@ from typing import Any, Sequence
 try:
     from ..contracts import ChatMessage
     from ..settings import ModelSpec, OpenRouterConfig
-    from .base import LLMError, LLMProvider, LLMResponse
+    from .base import LLMError, LLMProvider, LLMResponse, ReasoningEffort
     from .llm_factory import register_provider
 except ImportError:  # pragma: no cover — standalone extraction
     from contracts import ChatMessage  # type: ignore[no-redef]
-    from models.base import LLMError, LLMProvider, LLMResponse  # type: ignore[no-redef]
+    from models.base import (  # type: ignore[no-redef]
+        LLMError,
+        LLMProvider,
+        LLMResponse,
+        ReasoningEffort,
+    )
     from models.llm_factory import register_provider  # type: ignore[no-redef]
     from settings import ModelSpec, OpenRouterConfig  # type: ignore[no-redef]
 
@@ -81,6 +86,7 @@ class OpenRouterProvider(LLMProvider):
         *,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: ReasoningEffort | None,
     ) -> LLMResponse:
         """POST one chat completion and normalise the result.
 
@@ -98,6 +104,14 @@ class OpenRouterProvider(LLMProvider):
             "frequency_penalty": 0.25,
             "presence_penalty": 0.15,
         }
+        if reasoning_effort is not None:
+            # Gemini 3.x reasoning is mandatory on OpenRouter, but its thinking
+            # level is controllable per request. Short classifiers and verdicts
+            # use ``minimal`` so hidden thinking cannot consume their output.
+            payload["reasoning"] = {
+                "effort": reasoning_effort,
+                "exclude": True,
+            }
 
         started = time.perf_counter()
         response = self._post(session, payload)

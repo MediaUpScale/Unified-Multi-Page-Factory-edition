@@ -114,6 +114,7 @@ class MemoryState(BaseModel):
     topics_seen: list[str] = Field(default_factory=list)
     opening_categories: list[str] = Field(default_factory=list)
     opening_lines: list[str] = Field(default_factory=list)
+    focus_categories: list[str] = Field(default_factory=list)
     updated_at: str = ""
 
 
@@ -206,6 +207,19 @@ class DebateMemory:
         if limit <= 0:
             return ()
         return tuple(self.state.opening_categories[-limit:])
+
+    def note_focus(self, category: str) -> None:
+        """Remember recent provocation-focus picks across renders."""
+        if not category:
+            return
+        self.state.focus_categories.append(category)
+        del self.state.focus_categories[:-8]
+
+    def recent_focus_categories(self, limit: int = 3) -> tuple[str, ...]:
+        """Return the latest focus window, newest last."""
+        if limit <= 0:
+            return ()
+        return tuple(self.state.focus_categories[-limit:])
 
     def _remember_question(self, question: str) -> None:
         tokens = _tokenise(question)

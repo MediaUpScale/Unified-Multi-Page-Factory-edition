@@ -1,11 +1,12 @@
 {
   "slug": "wonder_feed",
   "title": "Wonder Feed",
-  "codename": "Master Mei / Riso Retro Flat",
+  "codename": "Riso Retro Flat",
   "status": "active",
   "summary": "Economic lo-fi reel factory: script → concept → prompt → image+VO under riso_retro_flat_v4, with human review gates and ship checks.",
   "engine_path": "core/economic_reel_lofi",
   "tags": ["RAG", "FLUX", "TTS", "MoviePy", "ship_gates"],
+  "cover_image": "lofi_four_stage_pipeline_20260825.png",
   "narrative": [
     "lofi_four_stage_pipeline_20260825.md",
     "riso_retro_flat_v4_pipeline_20260825.md",

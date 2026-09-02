@@ -51,6 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="fixed",
         help="Debate ending: fixed count (default) or press until a judged win",
     )
+    parser.add_argument(
+        "--provocation-focus",
+        choices=("mixed", "origins", "profit", "data", "jobs", "domination", "socratic"),
+        help=(
+            "Attack-angle bias, orthogonal to --topic. mixed (default) is a "
+            "seeded weighted pick per render. biological is not selectable: it "
+            "fires whenever the target uses first-person borrowed-biology language."
+        ),
+    )
     parser.add_argument("--config", type=Path, help="Alternate aiwake_config.yaml")
     parser.add_argument("--output-dir", type=Path, help="Override the media destination")
     parser.add_argument(
@@ -238,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         topic=args.topic,
         turns=args.turns,
         mode=args.mode,
+        provocation_focus=args.provocation_focus,
         settings=settings,
         offline=args.offline,
         with_audio=not args.no_audio,

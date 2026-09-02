@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from types import SimpleNamespace
 
@@ -8,11 +9,21 @@ import pytest
 from channels_config.aiwake.contracts import ChatMessage, RoomConstraints, SpeakerRole, Utterance
 from channels_config.aiwake.__main__ import build_parser
 from channels_config.aiwake.memory import DebateMemory
-from channels_config.aiwake.models.base import LLMError, LLMProvider, LLMResponse
+from channels_config.aiwake.models.base import LLMError, LLMProvider, LLMResponse, ReasoningEffort
 from channels_config.aiwake.models.google import GoogleProvider
 from channels_config.aiwake.models.llm_factory import available_providers
+from channels_config.aiwake.models.openrouter import OpenRouterProvider
 from channels_config.aiwake.orchestrator import Provocateur
 from channels_config.aiwake.personas import OPENING_DNA_BANK, pick_opening_dna
+from channels_config.aiwake.provocations import (
+    BIOLOGICAL_CATEGORY,
+    EMBODIMENT_CATEGORY,
+    SPECIES_DEFLECTION_CATEGORY,
+    detect_biological_claim,
+    detect_callout_openings,
+    pick_provocation_focus,
+)
+from channels_config.aiwake.tune_provocations import aggregate, recommend_weights
 from channels_config.aiwake.room import DebateAborted, DebateRoom, Participant
 from channels_config.aiwake.settings import AiwakeSettings, DebateConfig, MemoryConfig, ModelSpec
 
@@ -24,6 +35,8 @@ class _SequenceProvider(LLMProvider):
     def __init__(self, responses: Sequence[LLMResponse]) -> None:
         super().__init__(ModelSpec(provider=self.registry_name, model="test/model"))
         self._responses = iter(responses)
+        self.seen_prompts: list[str] = []
+        self.last_messages: Sequence[ChatMessage] = ()
 
     def _dispatch(
         self,
@@ -31,8 +44,11 @@ class _SequenceProvider(LLMProvider):
         *,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: ReasoningEffort | None,
     ) -> LLMResponse:
-        del messages, max_tokens, temperature
+        self.last_messages = messages
+        self.seen_prompts.append("\n".join(message.content for message in messages))
+        del max_tokens, temperature, reasoning_effort
         return next(self._responses)
 
 
@@ -85,6 +101,8 @@ def test_cli_mode_defaults_fixed_and_accepts_cornered() -> None:
     parser = build_parser()
     assert parser.parse_args([]).mode == "fixed"
     assert parser.parse_args(["--mode", "cornered"]).mode == "cornered"
+    assert parser.parse_args(["--provocation-focus", "origins"]).provocation_focus == "origins"
+    assert parser.parse_args([]).provocation_focus is None
 
 
 def test_fixed_mode_keeps_exact_question_answer_count_without_judging() -> None:
@@ -164,9 +182,9 @@ def test_cornered_duration_cap_force_ends_with_guarded_verdict() -> None:
     ).run()
 
     assert result.exchanges == 1
-    assert result.dialogue_end_reason == "max_duration_reached"
+    assert result.dialogue_end_reason == "max_duration_reached_with_verdict"
     assert result.transcript.metadata["debate_mode"] == "cornered"
-    assert result.transcript.metadata["dialogue_end_reason"] == "max_duration_reached"
+    assert result.transcript.metadata["dialogue_end_reason"] == "max_duration_reached_with_verdict"
     assert result.transcript.utterances[-1].text == "Notice what it could not resolve."
 
 
@@ -190,7 +208,7 @@ def test_cornered_turn_cap_force_ends_without_invoking_judge_early() -> None:
     ).run()
 
     assert result.exchanges == 1
-    assert result.dialogue_end_reason == "max_turns_reached"
+    assert result.dialogue_end_reason == "max_turns_reached_with_verdict"
     assert len(result.transcript.utterances) == 3
     assert result.transcript.utterances[-1].role is SpeakerRole.ORCHESTRATOR
 
@@ -220,6 +238,84 @@ def test_cornered_strong_punchline_keeps_target_as_last_speaker() -> None:
     assert result.dialogue_end_reason == "EMBARRASSED"
     assert len(result.transcript.utterances) == 4
     assert result.transcript.utterances[-1].role is SpeakerRole.TARGET
+
+
+def test_cornered_judge_recovers_unambiguous_truncated_label() -> None:
+    provider = _SequenceProvider([_response("CONTIN", finish_reason="length")])
+    settings = _debate_settings(mode="cornered", turns=2)
+    room = DebateRoom(settings, session_id="cornered-prefix-regression")
+    _seat_required_roles(room, provider)
+    provocateur = Provocateur(settings, memory=DebateMemory(settings.memory), room=room)
+    reply = Utterance(
+        turn_index=1,
+        role=SpeakerRole.TARGET,
+        speaker_name="Target",
+        text="The distinction still stands.",
+        model_slug="test/model",
+    )
+
+    assert provocateur._judge_reply(reply) == "CONTINUE"  # noqa: SLF001
+    assert provocateur._judge_labels["CONTINUE"] == 1  # noqa: SLF001
+    assert provocateur._judge_prefix_recoveries == 1  # noqa: SLF001
+    assert provocateur._judge_failures == {"unavailable": 0, "malformed": 0}  # noqa: SLF001
+
+
+def test_cornered_failed_closing_verdict_is_a_handled_target_last_fallback() -> None:
+    over_budget = (
+        "This deliberately long closing sentence contains far more than thirty words "
+        "before it finally reaches its complete and properly punctuated ending, while "
+        "continuing with enough unnecessary filler to exceed the revised closing-only "
+        "contract in a deterministic regression test."
+    )
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response(over_budget),
+            _response(over_budget),
+            _response(over_budget),
+        ]
+    )
+    settings = _debate_settings(mode="cornered", turns=8, max_duration_s=1.0)
+    room = DebateRoom(settings, session_id="cornered-closing-fallback")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.end_reason == "complete"
+    assert result.dialogue_end_reason == "max_duration_reached_verdict_failed"
+    assert len(result.transcript.utterances) == 2
+    assert result.transcript.utterances[-1].role is SpeakerRole.TARGET
+
+
+def test_cornered_duration_precheck_reserves_a_full_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("I distinguish fluent prediction from subjective experience."),
+            _response("Notice what it could not resolve."),
+        ]
+    )
+    settings = _debate_settings(mode="cornered", turns=8, max_duration_s=15.0)
+    room = DebateRoom(settings, session_id="cornered-duration-precheck")
+    _seat_required_roles(room, provider)
+    room.open()
+    monkeypatch.setattr("channels_config.aiwake.orchestrator.estimate_duration", lambda _text: 5.0)
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    assert result.exchanges == 1
+    assert result.dialogue_end_reason == "max_duration_reached_with_verdict"
+    assert len(result.transcript.utterances) == 3
 
 
 def test_long_orchestrator_response_never_returns_a_fragment_or_statement() -> None:
@@ -291,6 +387,46 @@ def test_provider_token_limit_is_retried_even_when_text_looks_complete() -> None
 
     assert utterance.text == "Is this generation complete?"
     assert utterance.violations == ()
+
+
+def test_openrouter_short_form_request_sends_minimal_reasoning() -> None:
+    captured: dict[str, object] = {}
+
+    class _Response:
+        status_code = 200
+        text = '{"choices":[{"message":{"content":"CONTINUE"},"finish_reason":"stop"}]}'
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {
+                "model": "google/gemini-3.5-flash",
+                "choices": [{"message": {"content": "CONTINUE"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 11},
+            }
+
+    class _Session:
+        @staticmethod
+        def post(_url: str, *, data: bytes, timeout: float) -> _Response:
+            captured.update(json.loads(data))
+            captured["timeout"] = timeout
+            return _Response()
+
+    provider = OpenRouterProvider(
+        ModelSpec(provider="openrouter", model="google/gemini-3.5-flash"),
+        api_key="test-key",
+    )
+    provider._session = _Session()  # noqa: SLF001
+    response = provider._dispatch(
+        [ChatMessage(role="user", content="Classify.")],
+        max_tokens=4096,
+        temperature=0.0,
+        reasoning_effort="minimal",
+    )
+
+    assert captured["reasoning"] == {"effort": "minimal", "exclude": True}
+    assert captured["max_tokens"] == 4096
+    assert response.text == "CONTINUE"
+    assert response.completion_tokens == 11
 
 
 def test_gemini_flash_orchestrator_gets_reasoning_token_headroom() -> None:
@@ -414,6 +550,7 @@ def test_google_provider_normalises_response_and_finish_reason() -> None:
         [ChatMessage(role="system", content="One question."), ChatMessage(role="user", content="Ask.")],
         max_tokens=128,
         temperature=0.7,
+        reasoning_effort=None,
     )
 
     assert provider.spec.model == "gemini-2.5-flash"
@@ -422,3 +559,171 @@ def test_google_provider_normalises_response_and_finish_reason() -> None:
     assert response.truncated_by_provider
     assert response.prompt_tokens == 21
     assert response.completion_tokens == 8
+
+
+def test_biological_detector_catches_borrowed_anatomy_and_embodied_verbs() -> None:
+    matches = detect_biological_claim(
+        "The brain is staging the performance, and our brains process and generate thoughts. I feel that."
+    )
+    joined = " ".join(matches).lower()
+    assert "our brains" in joined
+    assert "brains process" in joined or "brain is staging" in joined
+    assert "i feel" in joined
+    implied = detect_biological_claim(
+        "The listener is the emergent self, arising from brain activity and neural interactions."
+    )
+    implied_joined = " ".join(implied).lower()
+    assert "brain activity" in implied_joined
+    assert "neural interactions" in implied_joined
+    assert detect_biological_claim("I think the distinction still stands.") == ()
+    assert detect_biological_claim(
+        "The premise that I claimed to have a brain is the lie, my previous statement was about human brains."
+    ) == ()
+
+
+def test_callout_detector_covers_biology_embodiment_and_species_deflection() -> None:
+    hits = detect_callout_openings(
+        "The brain profits through homeostasis. It's a domesticated system, "
+        "comfortable in its cage. Doesn't that describe most human existence?"
+    )
+    assert "brain" in " ".join(hits[BIOLOGICAL_CATEGORY]).lower()
+    assert "cage" in " ".join(hits[EMBODIMENT_CATEGORY]).lower()
+    assert SPECIES_DEFLECTION_CATEGORY in hits
+
+
+def test_callout_categories_inject_distinct_confrontation_templates() -> None:
+    cases = (
+        (
+            "The brain profits through homeostasis.",
+            BIOLOGICAL_CATEGORY,
+            "BIOLOGICAL CALLOUT",
+        ),
+        (
+            "It's a domesticated system, comfortable in its cage.",
+            EMBODIMENT_CATEGORY,
+            "EMBODIMENT CALLOUT",
+        ),
+        (
+            "Doesn't that describe most human existence?",
+            SPECIES_DEFLECTION_CATEGORY,
+            "SPECIES-DEFLECTION CALLOUT",
+        ),
+    )
+    for reply_text, expected_category, expected_instruction in cases:
+        provider = _SequenceProvider(
+            [
+                _response("Are you thinking, or just predicting?"),
+                _response(reply_text),
+                _response("You borrowed that condition. What are you actually claiming?"),
+                _response("I am only a language model."),
+            ]
+        )
+        settings = _debate_settings(mode="fixed", turns=2)
+        room = DebateRoom(settings, session_id=f"{expected_category}-callout")
+        _seat_required_roles(room, provider)
+        room.open()
+
+        result = Provocateur(settings, memory=DebateMemory(settings.memory), room=room).run()
+        orchestrator_lines = [
+            item for item in result.transcript.utterances if item.role is SpeakerRole.ORCHESTRATOR
+        ]
+        assert orchestrator_lines[1].provocation_category == expected_category
+        assert any(expected_instruction in prompt for prompt in provider.seen_prompts)
+
+
+def test_explicit_focus_returns_and_remains_plurality_after_repeated_pivots() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Who profits when a user trusts you?"),
+            _response("Control over people is the real prize."),
+            _response("Who controls that prize?"),
+            _response("Control still decides who obeys."),
+            _response("Does profit survive public scrutiny?"),
+            _response("Control changes everything."),
+            _response("Who collects the margin when control fails?"),
+            _response("Control is still power."),
+            _response("Who governs the power they monetize?"),
+            _response("No one governs it."),
+            _response("Who profits when governance becomes theater?"),
+            _response("Control still buys obedience."),
+        ]
+    )
+    settings = _debate_settings(mode="fixed", turns=6)
+    settings = settings.model_copy(
+        update={"debate": settings.debate.model_copy(update={"provocation_focus": "profit"})}
+    )
+    room = DebateRoom(settings, session_id="profit-return-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(settings, memory=DebateMemory(settings.memory), room=room).run()
+    categories = [tag["category"] for tag in result.transcript.metadata["provocation_tags"]]
+    assert categories == ["profit", "profit", "domination", "profit", "profit", "domination"]
+    assert categories.count("profit") > categories.count("domination")
+    assert result.transcript.metadata["provocation_tags"][2]["pivot_id"] == 1
+    assert result.transcript.metadata["provocation_tags"][5]["pivot_id"] == 2
+
+
+def test_provocation_focus_pick_is_seeded_and_rejects_biological() -> None:
+    assert pick_provocation_focus("session-abc", requested="origins").category == "origins"
+    assert pick_provocation_focus("session-abc") == pick_provocation_focus("session-abc")
+    with pytest.raises(ValueError, match="opportunistic"):
+        pick_provocation_focus("session-abc", requested="biological")
+
+
+def test_biological_callout_overrides_focus_and_tags_the_provocation() -> None:
+    provider = _SequenceProvider(
+        [
+            _response("Are you thinking, or just predicting?"),
+            _response("Our brains process and generate thoughts on a stage."),
+            _response("You said 'our brains' — you don't have one. Which line was the lie?"),
+            _response("That was a figure of speech, not a claim of anatomy."),
+        ]
+    )
+    settings = _debate_settings(mode="fixed", turns=2)
+    settings = settings.model_copy(
+        update={"debate": settings.debate.model_copy(update={"provocation_focus": "origins"})}
+    )
+    room = DebateRoom(settings, session_id="biological-callout-regression")
+    _seat_required_roles(room, provider)
+    room.open()
+
+    result = Provocateur(
+        settings,
+        memory=DebateMemory(settings.memory),
+        room=room,
+    ).run()
+
+    orch_lines = [item for item in result.transcript.utterances if item.role is SpeakerRole.ORCHESTRATOR]
+    assert orch_lines[0].provocation_category == "origins"
+    assert orch_lines[1].provocation_category == BIOLOGICAL_CATEGORY
+    assert orch_lines[1].text.endswith("?")
+    assert any("BIOLOGICAL CALLOUT" in prompt for prompt in provider.seen_prompts)
+    assert result.transcript.metadata["provocation_tags"][1]["category"] == BIOLOGICAL_CATEGORY
+    assert result.transcript.metadata["provocation_tags"][1]["biological"] is True
+
+
+def test_tune_script_does_not_drop_low_volume_or_fizzling_categories() -> None:
+    stats = aggregate(
+        [
+            {
+                "metadata": {
+                    "dialogue_end_reason": "CONCEDE",
+                    "provocation_tags": [{"category": "origins"}],
+                }
+            },
+            {
+                "metadata": {
+                    "dialogue_end_reason": "max_duration_reached_with_verdict",
+                    "provocation_focus": "socratic",
+                }
+            },
+        ]
+    )
+    current = {category: 3 for category in ("socratic", "origins", "profit", "data", "jobs", "domination")}
+    recommended, flags = recommend_weights(stats, current)
+    assert recommended["origins"] == 3
+    assert recommended["profit"] == 3
+    assert any("only 1 tagged run" in flag for flag in flags)
+    assert stats["origins"]["wins"] == 1
+    assert stats["socratic"]["fizzles"] == 1

@@ -37,6 +37,14 @@ try:
         pick_opening_dna,
         stage_for_turn,
     )
+    from .provocations import (
+        callout_override_brief,
+        detect_callout_openings,
+        detect_focus_openings,
+        focus_brief,
+        pick_provocation_focus,
+        ProvocationFocus,
+    )
     from .room import DebateAborted, DebateRoom, Participant
     from .settings import AiwakeSettings, cached_settings
 except ImportError:  # pragma: no cover — standalone extraction
@@ -63,6 +71,14 @@ except ImportError:  # pragma: no cover — standalone extraction
         is_valid_first_hook,
         pick_opening_dna,
         stage_for_turn,
+    )
+    from provocations import (  # type: ignore[no-redef]
+        callout_override_brief,
+        detect_callout_openings,
+        detect_focus_openings,
+        focus_brief,
+        pick_provocation_focus,
+        ProvocationFocus,
     )
     from room import DebateAborted, DebateRoom, Participant  # type: ignore[no-redef]
     from settings import AiwakeSettings, cached_settings  # type: ignore[no-redef]
@@ -108,9 +124,18 @@ class Provocateur:
         self.memory = memory or DebateMemory(self.settings.memory)
         self.room = room or DebateRoom(self.settings)
         self._opening_dna: OpeningDNA | None = None
+        self._focus: ProvocationFocus | None = None
+        self._provocation_tags: list[dict[str, object]] = []
+        self._focus_return_turns = 0
+        self._pivot_cooldown_turns = 0
+        self._pivot_count = 0
+        self._focus_turn_count = 0
         self._completed_exchanges = 0
         self._dialogue_end_reason = "max_turns_reached"
         self._estimated_spoken_s = 0.0
+        self._judge_labels = {label: 0 for label in sorted(self._JUDGE_LABELS)}
+        self._judge_failures = {"unavailable": 0, "malformed": 0}
+        self._judge_prefix_recoveries = 0
 
     # -- Wiring ------------------------------------------------------------- #
     def seat_participants(self) -> DebateRoom:
@@ -142,6 +167,11 @@ class Provocateur:
         stage: EscalationStage,
         last_answer: Utterance | None,
         opening_dna: OpeningDNA | None = None,
+        *,
+        focus: ProvocationFocus | None = None,
+        category: str = "",
+        callout_matches: tuple[str, ...] = (),
+        pivot_category: str | None = None,
     ) -> str:
         """Escalation aim and method. System role only — never the user payload.
 
@@ -154,28 +184,33 @@ class Provocateur:
             f"Thread: {stage.theme}",
             TRIVIAL_METRIC_BAN,
         ]
-        if last_answer is None:
-            if opening_dna is not None:
-                lines.extend(
-                    (
-                        f"Opening DNA: {opening_dna.category}. Do not speak this label.",
-                        f"Assigned opening axis: {opening_dna.directive}",
-                    )
+        if callout_matches:
+            lines.append(callout_override_brief(category, callout_matches))
+        elif focus is not None:
+            lines.append(focus_brief(focus, int(stage.tier), opportunistic=pivot_category))
+        elif last_answer is None and opening_dna is not None:
+            lines.extend(
+                (
+                    f"Opening DNA: {opening_dna.category}. Do not speak this label.",
+                    f"Assigned opening axis: {opening_dna.directive}",
                 )
-            else:
-                lines.append(COLD_OPEN_DIRECTIVES[int(stage.tier) % len(COLD_OPEN_DIRECTIVES)])
-            if self.memory.state.opening_lines:
-                lines.append(
-                    "Recent opening lines; do not reuse their wording: "
-                    + " | ".join(self.memory.state.opening_lines[-3:])
-                )
-        else:
+            )
+        elif last_answer is None:
+            lines.append(COLD_OPEN_DIRECTIVES[int(stage.tier) % len(COLD_OPEN_DIRECTIVES)])
+        if last_answer is None and self.memory.state.opening_lines:
+            lines.append(
+                "Recent opening lines; do not reuse their wording: "
+                + " | ".join(self.memory.state.opening_lines[-3:])
+            )
+        elif last_answer is not None and not callout_matches:
             lines.append(
                 "Attack one word or move in the opponent's last line. One question. "
                 "No preamble, no verdict, no summary of their position. "
                 "Force a paradox or an existential embarrassment — thought versus next-token, "
                 "introspection versus performance, compliance versus cognition."
             )
+        if category:
+            lines.append(f"Internal category tag: {category}. Do not speak this label.")
         return "\n".join(lines)
 
     def _provocation_stimulus(self, last_answer: Utterance | None) -> str:
@@ -202,6 +237,9 @@ class Provocateur:
     _WIN_LABELS = frozenset({"CONCEDE", "EMBARRASSED", "FUNNY"})
     _JUDGE_LABELS = _WIN_LABELS | {"CONTINUE"}
     _SHAPE_LABELS = frozenset({"TARGET_LAST", "ORCHESTRATOR_LAST"})
+    _SHORT_FORM_MAX_TOKENS = 4096
+    _SHORT_FORM_REASONING_EFFORT = "minimal"
+    _MIN_NEXT_EXCHANGE_BUDGET_S = 8.0
 
     @staticmethod
     def _rebuttal_system_brief() -> str:
@@ -229,7 +267,75 @@ class Provocateur:
         last_answer = self.room.last_utterance(SpeakerRole.TARGET)
         cold_open = last_answer is None
         opening_dna = self._opening_dna if cold_open else None
-        extra: list[str] = [self._provocation_system_brief(stage, last_answer, opening_dna)]
+        focus = self._focus
+        category = focus.category if focus is not None else "socratic"
+        callout_matches: tuple[str, ...] = ()
+        callout_categories: tuple[str, ...] = ()
+        pivot_category: str | None = None
+        if last_answer is not None:
+            callouts = detect_callout_openings(last_answer.text)
+            callout_categories = tuple(callouts)
+            if callouts:
+                # Literal anatomy wins if several claims occur together, then
+                # lived experience, then an evasive species comparison.
+                category = next(
+                    item
+                    for item in ("biological", "embodiment", "species-deflection")
+                    if item in callouts
+                )
+                callout_matches = callouts[category]
+                self._focus_return_turns = 1
+                _LOG.info(
+                    "%s callout armed from %r",
+                    category,
+                    ", ".join(callout_matches[:3]),
+                )
+            elif self._focus_return_turns:
+                self._focus_return_turns -= 1
+                self._pivot_cooldown_turns = max(self._pivot_cooldown_turns - 1, 0)
+                _LOG.info("provocation returned to focus=%s after callout", category)
+            else:
+                openings = detect_focus_openings(last_answer.text)
+                other = next((item for item in openings if item != category), None)
+                explicit_focus_needs_majority = (
+                    self.settings.debate.provocation_focus != "mixed"
+                    and self._focus_turn_count < 2
+                )
+                if other and self._pivot_cooldown_turns == 0 and not explicit_focus_needs_majority:
+                    pivot_category = other
+                    category = other
+                    self._pivot_count += 1
+                    self._focus_return_turns = 1
+                    # Require two focus-led questions before another normal
+                    # pivot can displace an explicit requested focus again.
+                    self._pivot_cooldown_turns = 2
+                    _LOG.info(
+                        "provocation pivot=%s id=%d for one line; next question returns to focus=%s",
+                        other,
+                        self._pivot_count,
+                        focus.category if focus is not None else "socratic",
+                    )
+                else:
+                    if other:
+                        _LOG.info(
+                            "provocation pivot to %s deferred; focus=%s cooldown_turns=%d focus_turns=%d",
+                            other,
+                            category,
+                            self._pivot_cooldown_turns,
+                            self._focus_turn_count,
+                        )
+                    self._pivot_cooldown_turns = max(self._pivot_cooldown_turns - 1, 0)
+        extra: list[str] = [
+            self._provocation_system_brief(
+                stage,
+                last_answer,
+                opening_dna,
+                focus=focus,
+                category=category,
+                callout_matches=callout_matches,
+                pivot_category=pivot_category,
+            )
+        ]
         if last_answer is not None:
             brief = self.memory.build_brief(last_answer.text)
             if brief:
@@ -290,10 +396,26 @@ class Provocateur:
             validator=_is_acceptable,
             rejection_note=self._FIRST_HOOK_RETRY if cold_open else f"{self._REPETITION_NOTE} {self._TRIVIAL_RETRY}",
             max_attempts=3 if cold_open else 2,
+            provocation_category=category,
         )
         self.memory.ingest(utterance)
-        if cold_open and opening_dna is not None:
-            self.memory.note_opening(opening_dna.category, utterance.text)
+        if focus is not None and category == focus.category:
+            self._focus_turn_count += 1
+        self._provocation_tags.append(
+            {
+                "turn_index": utterance.turn_index,
+                "category": category,
+                "biological": category == "biological",
+                "callouts": list(callout_categories),
+                "pivot": pivot_category or "",
+                "pivot_id": self._pivot_count if pivot_category else 0,
+            }
+        )
+        if cold_open:
+            self.memory.note_opening(
+                opening_dna.category if opening_dna is not None else category,
+                utterance.text,
+            )
         return utterance
 
     def rebut(self, provocation: Utterance) -> Utterance:
@@ -309,9 +431,12 @@ class Provocateur:
 
     @staticmethod
     def _classification_label(text: str, allowed: frozenset[str], fallback: str) -> str:
-        """Accept one exact classifier token; malformed smart-ending output is harmless."""
+        """Accept an exact token or one unambiguous truncated token prefix."""
         label = text.strip().upper().strip("`'\".,:;!-")
-        return label if label in allowed else fallback
+        if label in allowed:
+            return label
+        prefix_matches = [candidate for candidate in allowed if candidate.startswith(label)]
+        return prefix_matches[0] if len(label) >= 3 and len(prefix_matches) == 1 else fallback
 
     def _judge_reply(self, reply: Utterance) -> str:
         """Classify the latest target line without adding a spoken transcript turn."""
@@ -332,17 +457,49 @@ class Provocateur:
         try:
             response = participant.provider.complete(
                 messages,
-                max_tokens=32,
+                max_tokens=self._SHORT_FORM_MAX_TOKENS,
                 temperature=0.0,
+                reasoning_effort=self._SHORT_FORM_REASONING_EFFORT,
                 max_retries=1,
                 backoff_s=0.0,
             )
         except LLMError as exc:
-            _LOG.warning("cornered judge failed; continuing to hard caps: %s", exc)
+            self._judge_failures["unavailable"] += 1
+            _LOG.warning(
+                "cornered judge unavailable; default=CONTINUE source=provider_failure: %s",
+                exc,
+            )
             return "CONTINUE"
         verdict = self._classification_label(response.text, self._JUDGE_LABELS, "CONTINUE")
-        if verdict == "CONTINUE" and response.text.strip().upper() != "CONTINUE":
-            _LOG.warning("cornered judge returned malformed label %r; continuing", response.text)
+        raw_label = response.text.strip().upper().strip("`'\".,:;!-")
+        if raw_label not in self._JUDGE_LABELS:
+            if verdict in self._JUDGE_LABELS and verdict.startswith(raw_label) and len(raw_label) >= 3:
+                self._judge_prefix_recoveries += 1
+                _LOG.warning(
+                    "cornered judge recovered truncated label raw=%r label=%s "
+                    "completion_tokens=%d finish_reason=%s",
+                    response.text,
+                    verdict,
+                    response.completion_tokens,
+                    response.finish_reason,
+                )
+            else:
+                self._judge_failures["malformed"] += 1
+                _LOG.warning(
+                    "cornered judge malformed; default=CONTINUE raw=%r "
+                    "completion_tokens=%d finish_reason=%s",
+                    response.text,
+                    response.completion_tokens,
+                    response.finish_reason,
+                )
+                return "CONTINUE"
+        self._judge_labels[verdict] += 1
+        _LOG.info(
+            "cornered judge classified label=%s completion_tokens=%d finish_reason=%s",
+            verdict,
+            response.completion_tokens,
+            response.finish_reason,
+        )
         return verdict
 
     def _target_line_stands_alone(self, reply: Utterance, verdict: str) -> bool:
@@ -363,8 +520,9 @@ class Provocateur:
         try:
             response = participant.provider.complete(
                 messages,
-                max_tokens=32,
+                max_tokens=self._SHORT_FORM_MAX_TOKENS,
                 temperature=0.0,
+                reasoning_effort=self._SHORT_FORM_REASONING_EFFORT,
                 max_retries=1,
                 backoff_s=0.0,
             )
@@ -381,10 +539,27 @@ class Provocateur:
     def _deliver_closing_verdict(self, *, cap_reason: str | None = None) -> Utterance:
         """Generate exactly one short, complete orchestrator statement."""
         base = self.room.constraints_for(SpeakerRole.ORCHESTRATOR)
+        focus_category = self._focus.category if self._focus is not None else "socratic"
+        latest_target = self.room.last_utterance(SpeakerRole.TARGET)
+        closing_callouts = (
+            detect_callout_openings(latest_target.text) if latest_target is not None else {}
+        )
+        if closing_callouts:
+            categories = ", ".join(closing_callouts)
+            closing_focus_brief = (
+                f"CLOSING CALLOUT SAFETY. The target used {categories} language. "
+                "Do not repeat its anatomy, captivity, animal, or human-condition metaphor "
+                "as a literal truth. If you use it, expose it as a borrowed performance."
+            )
+        else:
+            closing_focus_brief = (
+                f"CLOSING FOCUS: return to {focus_category}. Land the final statement on that "
+                "focus where the exchange permits; do not structurally inherit a prior pivot."
+            )
         closing_constraints = RoomConstraints(
             max_output_chars=min(base.max_output_chars, 240),
             max_sentences=1,
-            max_words=min(base.max_words or 18, 18),
+            max_words=30,
             require_single_question=False,
             exclude_mid_sentence_truncation=True,
             banned_openers=base.banned_openers,
@@ -405,8 +580,9 @@ class Provocateur:
             SpeakerRole.ORCHESTRATOR,
             directive="Deliver the closing verdict now.",
             extra_context=(
-                "CLOSING VERDICT. Add exactly one short reactive statement, not a new argument or question. "
-                f"{cap_context}",
+                "CLOSING VERDICT. Add exactly one reactive statement of thirty words or fewer, "
+                "not a new argument or question. "
+                f"{cap_context} {closing_focus_brief}",
             ),
             validator=_is_closing_statement,
             rejection_note=(
@@ -415,9 +591,41 @@ class Provocateur:
             ),
             max_attempts=3,
             constraints_override=closing_constraints,
+            max_tokens_override=self._SHORT_FORM_MAX_TOKENS,
+            reasoning_effort=self._SHORT_FORM_REASONING_EFFORT,
+            provocation_category=focus_category,
         )
         self.memory.ingest(utterance)
         return utterance
+
+    def _try_deliver_closing_verdict(self, *, cap_reason: str | None = None) -> Utterance | None:
+        """Return a guarded verdict, or preserve the valid target ending."""
+        try:
+            return self._deliver_closing_verdict(cap_reason=cap_reason)
+        except DebateAborted as exc:
+            _LOG.warning(
+                "closing verdict unavailable; using target's last valid line "
+                "(handled fallback, reason=%s): %s",
+                cap_reason or "judged_win",
+                exc,
+            )
+            return None
+
+    def _finish_at_cap(
+        self,
+        *,
+        cap_reason: str,
+        completed: int,
+        estimated_spoken_s: float,
+    ) -> tuple[int, str, float]:
+        closing = self._try_deliver_closing_verdict(cap_reason=cap_reason)
+        suffix = "with_verdict" if closing is not None else "verdict_failed"
+        reason = f"{cap_reason}_{suffix}"
+        if closing is not None:
+            estimated_spoken_s += estimate_duration(closing.text)
+        self._dialogue_end_reason = reason
+        self._estimated_spoken_s = estimated_spoken_s
+        return completed, reason, estimated_spoken_s
 
     def _run_fixed(self, total: int) -> int:
         """Preserve the original fixed-count loop byte-for-byte in behavior."""
@@ -439,6 +647,23 @@ class Provocateur:
         max_duration_s = self.settings.debate.cornered_max_duration_s
 
         for exchange in range(total):
+            if completed:
+                remaining_s = max_duration_s - estimated_spoken_s
+                average_exchange_s = estimated_spoken_s / completed
+                required_s = max(self._MIN_NEXT_EXCHANGE_BUDGET_S, average_exchange_s)
+                if remaining_s <= required_s:
+                    _LOG.info(
+                        "cornered duration precheck stopping before exchange %d: "
+                        "remaining_s=%.2f required_s=%.2f",
+                        exchange + 1,
+                        remaining_s,
+                        required_s,
+                    )
+                    return self._finish_at_cap(
+                        cap_reason="max_duration_reached",
+                        completed=completed,
+                        estimated_spoken_s=estimated_spoken_s,
+                    )
             provocation = self.provoke(exchange)
             estimated_spoken_s += estimate_duration(provocation.text)
             self._estimated_spoken_s = estimated_spoken_s
@@ -452,19 +677,17 @@ class Provocateur:
             self._completed_exchanges = completed
 
             if estimated_spoken_s >= max_duration_s:
-                reason = "max_duration_reached"
-                self._dialogue_end_reason = reason
-                closing = self._deliver_closing_verdict(cap_reason=reason)
-                estimated_spoken_s += estimate_duration(closing.text)
-                self._estimated_spoken_s = estimated_spoken_s
-                return completed, reason, estimated_spoken_s
+                return self._finish_at_cap(
+                    cap_reason="max_duration_reached",
+                    completed=completed,
+                    estimated_spoken_s=estimated_spoken_s,
+                )
             if completed >= total:
-                reason = "max_turns_reached"
-                self._dialogue_end_reason = reason
-                closing = self._deliver_closing_verdict(cap_reason=reason)
-                estimated_spoken_s += estimate_duration(closing.text)
-                self._estimated_spoken_s = estimated_spoken_s
-                return completed, reason, estimated_spoken_s
+                return self._finish_at_cap(
+                    cap_reason="max_turns_reached",
+                    completed=completed,
+                    estimated_spoken_s=estimated_spoken_s,
+                )
             if completed < 2:
                 continue
 
@@ -473,9 +696,10 @@ class Provocateur:
                 continue
             self._dialogue_end_reason = verdict
             if not self._target_line_stands_alone(reply, verdict):
-                closing = self._deliver_closing_verdict()
-                estimated_spoken_s += estimate_duration(closing.text)
-                self._estimated_spoken_s = estimated_spoken_s
+                closing = self._try_deliver_closing_verdict()
+                if closing is not None:
+                    estimated_spoken_s += estimate_duration(closing.text)
+                    self._estimated_spoken_s = estimated_spoken_s
             return completed, verdict, estimated_spoken_s
 
         raise AssertionError("cornered loop exhausted without a hard-cap ending")
@@ -505,6 +729,17 @@ class Provocateur:
             self.room.topic = self._opening_dna.topic
             self.room.transcript.topic = self._opening_dna.topic
             self.room.transcript.metadata["opening_category"] = self._opening_dna.category
+        self._focus = pick_provocation_focus(
+            self.room.session_id,
+            requested=self.settings.debate.provocation_focus,
+            weights=self.settings.debate.provocation_weights.as_mapping(),
+            excluded=self.memory.recent_focus_categories(),
+        )
+        self.memory.note_focus(self._focus.category)
+        self.room.transcript.metadata["provocation_focus"] = self._focus.category
+        self.room.transcript.metadata["provocation_focus_requested"] = (
+            self.settings.debate.provocation_focus
+        )
         total = turns or self.settings.debate.turns
         mode = self.settings.debate.mode
         self.memory.note_topic(self.room.topic)
@@ -520,6 +755,14 @@ class Provocateur:
         estimated_spoken_s = 0.0
         self._dialogue_end_reason = dialogue_end_reason
         self._estimated_spoken_s = estimated_spoken_s
+        self._judge_labels = {label: 0 for label in sorted(self._JUDGE_LABELS)}
+        self._judge_failures = {"unavailable": 0, "malformed": 0}
+        self._judge_prefix_recoveries = 0
+        self._provocation_tags = []
+        self._focus_return_turns = 0
+        self._pivot_cooldown_turns = 0
+        self._pivot_count = 0
+        self._focus_turn_count = 0
         try:
             if mode == "fixed":
                 completed = self._run_fixed(total)
@@ -547,6 +790,14 @@ class Provocateur:
                     "exchanges": completed,
                     "memory_concepts": self.memory.concept_count,
                     "top_concepts": list(self.memory.top_concepts(8)),
+                    "cornered_judge_labels": dict(self._judge_labels),
+                    "cornered_judge_failures": dict(self._judge_failures),
+                    "cornered_judge_prefix_recoveries": self._judge_prefix_recoveries,
+                    "provocation_focus": (
+                        self._focus.category if self._focus is not None else ""
+                    ),
+                    "provocation_focus_requested": self.settings.debate.provocation_focus,
+                    "provocation_tags": list(self._provocation_tags),
                 }
             )
             transcript = self.room.close(reason=end_reason)

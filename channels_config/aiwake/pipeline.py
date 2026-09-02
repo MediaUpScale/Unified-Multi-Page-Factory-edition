@@ -94,6 +94,7 @@ def run_pipeline(
     topic: str | None = None,
     turns: int | None = None,
     mode: Literal["fixed", "cornered"] | None = None,
+    provocation_focus: str | None = None,
     settings: AiwakeSettings | None = None,
     orchestrator_model: str | None = None,
     target_model: str | None = None,
@@ -110,6 +111,7 @@ def run_pipeline(
         topic: Debate subject. Defaults to the configured one.
         turns: Fixed exchange count, or the hard iteration cap in cornered mode.
         mode: Debate-ending strategy. None preserves the configured mode.
+        provocation_focus: Attack-angle bias, orthogonal to topic. None keeps YAML.
         settings: Pre-loaded settings; loaded from YAML when omitted.
         orchestrator_model: Override the interrogator's brain. Accepts an alias
             from the model reference dictionary or a full provider slug — the
@@ -129,9 +131,14 @@ def run_pipeline(
         and any video that could be built from it.
     """
     cfg = settings or load_settings()
+    debate_update: dict[str, object] = {}
     if mode is not None:
+        debate_update["mode"] = mode
+    if provocation_focus is not None:
+        debate_update["provocation_focus"] = provocation_focus
+    if debate_update:
         cfg = cfg.model_copy(
-            update={"debate": cfg.debate.model_copy(update={"mode": mode})}
+            update={"debate": cfg.debate.model_copy(update=debate_update)}
         )
     pipeline_t0 = time.perf_counter()
     # Seat overrides first: force_offline() reads the resolved routing, so
@@ -165,6 +172,7 @@ def run_pipeline(
             "session_id": room.session_id,
             "topic": room.topic,
             "debate_mode": cfg.debate.mode,
+            "provocation_focus": cfg.debate.provocation_focus,
             "cornered_max_duration_s": cfg.debate.cornered_max_duration_s,
             "orchestrator_model": cfg.spec_for("orchestrator").model,
             "target_model": cfg.spec_for("target").model,

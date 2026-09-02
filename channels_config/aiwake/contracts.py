@@ -524,6 +524,8 @@ class Utterance(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     violations: tuple[str, ...] = ()
+    # Telemetry only — never spoken or drawn on the render.
+    provocation_category: str = ""
     # Populated by downstream observers, not by the room.
     audio_path: Path | None = None
     audio_duration_s: float | None = None

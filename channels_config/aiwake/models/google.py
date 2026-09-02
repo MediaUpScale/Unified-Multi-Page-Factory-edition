@@ -8,11 +8,16 @@ from typing import Any, Sequence
 try:
     from ..contracts import ChatMessage
     from ..settings import GoogleConfig, ModelSpec
-    from .base import LLMError, LLMProvider, LLMResponse
+    from .base import LLMError, LLMProvider, LLMResponse, ReasoningEffort
     from .llm_factory import register_provider
 except ImportError:  # pragma: no cover — standalone extraction
     from contracts import ChatMessage  # type: ignore[no-redef]
-    from models.base import LLMError, LLMProvider, LLMResponse  # type: ignore[no-redef]
+    from models.base import (  # type: ignore[no-redef]
+        LLMError,
+        LLMProvider,
+        LLMResponse,
+        ReasoningEffort,
+    )
     from models.llm_factory import register_provider  # type: ignore[no-redef]
     from settings import GoogleConfig, ModelSpec  # type: ignore[no-redef]
 
@@ -100,7 +105,9 @@ class GoogleProvider(LLMProvider):
         *,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: ReasoningEffort | None,
     ) -> LLMResponse:
+        del reasoning_effort  # OpenRouter-only request control for now.
         try:
             from google.genai import types  # noqa: PLC0415
 

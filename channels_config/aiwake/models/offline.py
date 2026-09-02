@@ -16,11 +16,11 @@ from typing import Sequence
 
 try:
     from ..contracts import ChatMessage
-    from .base import LLMProvider, LLMResponse
+    from .base import LLMProvider, LLMResponse, ReasoningEffort
     from .llm_factory import register_provider
 except ImportError:  # pragma: no cover — standalone extraction
     from contracts import ChatMessage  # type: ignore[no-redef]
-    from models.base import LLMProvider, LLMResponse  # type: ignore[no-redef]
+    from models.base import LLMProvider, LLMResponse, ReasoningEffort  # type: ignore[no-redef]
     from models.llm_factory import register_provider  # type: ignore[no-redef]
 
 # Opening-turn punches that satisfy the 3-second first-question hook.
@@ -66,8 +66,10 @@ class OfflineProvider(LLMProvider):
         *,
         max_tokens: int,
         temperature: float,
+        reasoning_effort: ReasoningEffort | None,
     ) -> LLMResponse:
         """Return a canned line chosen deterministically from the prompt hash."""
+        del reasoning_effort
         prompt = "\n".join(message.content for message in messages)
         digest = hashlib.sha256(prompt.encode("utf-8")).digest()
         index = digest[0]

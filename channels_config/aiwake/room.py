@@ -43,7 +43,7 @@ try:
         pretty_model_name,
         utcnow,
     )
-    from .models.base import LLMError, LLMProvider
+    from .models.base import LLMError, LLMProvider, ReasoningEffort
     from .settings import AiwakeSettings, GuardrailConfig
 except ImportError:  # pragma: no cover — standalone extraction
     from contracts import (  # type: ignore[no-redef]
@@ -55,7 +55,7 @@ except ImportError:  # pragma: no cover — standalone extraction
         pretty_model_name,
         utcnow,
     )
-    from models.base import LLMError, LLMProvider  # type: ignore[no-redef]
+    from models.base import LLMError, LLMProvider, ReasoningEffort  # type: ignore[no-redef]
     from settings import AiwakeSettings, GuardrailConfig  # type: ignore[no-redef]
 
 _LOG = logging.getLogger("aiwake.room")
@@ -186,6 +186,7 @@ def _bus_payload(payload: "RoomEventPayload") -> dict[str, Any]:
             "char_count": utterance.char_count,
             "prompt_tokens": utterance.prompt_tokens,
             "completion_tokens": utterance.completion_tokens,
+            "provocation_category": utterance.provocation_category,
         }
     return body
 
@@ -512,6 +513,9 @@ class DebateRoom:
         rejection_note: str = "",
         max_attempts: int = 2,
         constraints_override: RoomConstraints | None = None,
+        max_tokens_override: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
+        provocation_category: str = "",
     ) -> Utterance:
         """Have a participant take one turn, then broadcast the result.
 
@@ -535,6 +539,9 @@ class DebateRoom:
             max_attempts: Total generations before accepting whatever came back.
             constraints_override: Turn-specific output contract; the normal
                 role constraints remain unchanged when omitted.
+            max_tokens_override: Dedicated completion allowance for this turn.
+            reasoning_effort: Optional provider thinking level for this turn.
+            provocation_category: Telemetry tag for orchestrator lines; never spoken.
 
         Returns:
             The clamped, recorded :class:`Utterance`.
@@ -571,14 +578,21 @@ class DebateRoom:
                 if role is SpeakerRole.ORCHESTRATOR:
                     tokens = max(
                         _MIN_ORCHESTRATOR_MAX_TOKENS,
+                        max_tokens_override or 0,
                         (self.settings.spec_for("orchestrator").max_tokens or _MIN_ORCHESTRATOR_MAX_TOKENS),
                     )
                     response = participant.provider.complete(
-                        messages, max_tokens=tokens, temperature=participant.temperature
+                        messages,
+                        max_tokens=tokens,
+                        temperature=participant.temperature,
+                        reasoning_effort=reasoning_effort,
                     )
                 else:
                     response = participant.provider.complete(
-                        messages, temperature=participant.temperature
+                        messages,
+                        max_tokens=max_tokens_override,
+                        temperature=participant.temperature,
+                        reasoning_effort=reasoning_effort,
                     )
             except LLMError as exc:
                 self.broadcast(RoomEvent.PROVIDER_ERROR, turn_index=index, role=role.value, error=str(exc))
@@ -650,6 +664,7 @@ class DebateRoom:
             prompt_tokens=response.prompt_tokens,
             completion_tokens=response.completion_tokens,
             violations=tuple(violations),
+            provocation_category=provocation_category,
         )
         self.transcript.append(utterance)
         self.broadcast(RoomEvent.UTTERANCE, turn_index=index, utterance=utterance)

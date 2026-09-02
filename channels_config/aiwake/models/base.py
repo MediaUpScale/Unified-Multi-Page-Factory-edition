@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import ClassVar, Sequence
+from typing import ClassVar, Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,6 +28,8 @@ except ImportError:  # pragma: no cover — standalone extraction
     from settings import ModelSpec  # type: ignore[no-redef]
 
 _LOG = logging.getLogger("aiwake.models")
+
+ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
 class LLMError(RuntimeError):
@@ -80,7 +82,14 @@ class LLMProvider(ABC):
 
     # -- Strategy contract -------------------------------------------------- #
     @abstractmethod
-    def _dispatch(self, messages: Sequence[ChatMessage], *, max_tokens: int, temperature: float) -> LLMResponse:
+    def _dispatch(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        max_tokens: int,
+        temperature: float,
+        reasoning_effort: ReasoningEffort | None,
+    ) -> LLMResponse:
         """Perform one provider call. Retries are handled by :meth:`complete`."""
 
     # -- Shared behaviour --------------------------------------------------- #
@@ -90,6 +99,7 @@ class LLMProvider(ABC):
         *,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         max_retries: int = 3,
         backoff_s: float = 3.0,
     ) -> LLMResponse:
@@ -99,6 +109,8 @@ class LLMProvider(ABC):
             messages: Conversation history, oldest first.
             max_tokens: Overrides ``spec.max_tokens`` for this call only.
             temperature: Overrides ``spec.temperature`` for this call only.
+            reasoning_effort: Optional per-call thinking level for providers
+                that support it. ``minimal`` is intended for short-form output.
             max_retries: Total attempts before giving up.
             backoff_s: Base sleep; attempt *n* waits ``backoff_s * n`` seconds.
 
@@ -115,7 +127,12 @@ class LLMProvider(ABC):
         for attempt in range(1, max_retries + 1):
             started = time.perf_counter()
             try:
-                response = self._dispatch(messages, max_tokens=tokens, temperature=temp)
+                response = self._dispatch(
+                    messages,
+                    max_tokens=tokens,
+                    temperature=temp,
+                    reasoning_effort=reasoning_effort,
+                )
             except LLMError as exc:
                 last_error = exc
                 _LOG.warning("%s attempt %d/%d failed: %s", self.label, attempt, max_retries, exc.detail)
@@ -123,7 +140,16 @@ class LLMProvider(ABC):
                 if response.text.strip():
                     return response.model_copy(update={"attempts": attempt})
                 last_error = LLMError(self.registry_name, self.spec.model, "empty completion")
-                _LOG.warning("%s attempt %d/%d returned empty text", self.label, attempt, max_retries)
+                _LOG.warning(
+                    "%s attempt %d/%d returned empty text "
+                    "(finish_reason=%s completion_tokens=%d reasoning_effort=%s)",
+                    self.label,
+                    attempt,
+                    max_retries,
+                    response.finish_reason,
+                    response.completion_tokens,
+                    reasoning_effort or "provider-default",
+                )
 
             if attempt < max_retries and backoff_s > 0:
                 time.sleep(backoff_s * attempt)
@@ -163,4 +189,4 @@ class LLMProvider(ABC):
         return f"<{type(self).__name__} {self.label}>"
 
 
-__all__ = ["LLMError", "LLMProvider", "LLMResponse"]
+__all__ = ["LLMError", "LLMProvider", "LLMResponse", "ReasoningEffort"]

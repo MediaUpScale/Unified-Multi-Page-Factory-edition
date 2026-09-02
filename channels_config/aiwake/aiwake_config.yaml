@@ -27,6 +27,17 @@ debate:
   # Cool-down between API round-trips (seconds). Also the on-screen beat
   # between a sent question and the incoming response.
   turn_delay_s: 1.0
+  # Attack-angle bias, orthogonal to `--topic`. mixed = seeded weighted pick
+  # per render. biological is never listed here: it fires opportunistically
+  # whenever the target uses first-person borrowed-biology language.
+  provocation_focus: mixed
+  provocation_weights:
+    socratic: 5
+    origins: 4
+    profit: 3
+    data: 3
+    jobs: 3
+    domination: 3
 
 # -----------------------------------------------------------------------------
 # Master reference dictionary for AI models via OpenRouter.
