@@ -2,7 +2,8 @@
 """
 Queryable catalog of generated stills for reuse across post types.
 
-Persists to ``{OUTPUT_PATH}/{channel}/asset_library.json``. Future reel/video
+Persists to ``channels_config/{channel}/store/asset_library.json`` and
+mirrors a copy to ``{OUTPUT_PATH}/{channel}/``. Future reel/video
 generators can call ``find_reusable_asset`` before billing a new FLUX call.
 """
 from __future__ import annotations
@@ -75,9 +76,11 @@ def _split_camel(token: str) -> list[str]:
 
 
 def library_path(channel: str) -> Path:
-    """``{OUTPUT_PATH}/{channel}/asset_library.json``."""
+    """Primary: ``channels_config/<channel>/store/asset_library.json``."""
+    from utils.pipeline_paths import channel_store_dir
+
     slug = (channel or "unknown").strip().lower() or "unknown"
-    return _outputs_root() / slug / "asset_library.json"
+    return channel_store_dir(slug) / "asset_library.json"
 
 
 def extract_hashtags(text: str | None) -> list[str]:
@@ -181,6 +184,9 @@ def _coerce_library(raw: Any, channel: str) -> dict[str, Any]:
 
 
 def _read_library(path: Path, channel: str) -> dict[str, Any]:
+    from modules.durable_store import hydrate_state_file
+
+    path = hydrate_state_file(path)
     if not path.is_file():
         return {"channel": channel, "assets": []}
     try:
@@ -192,6 +198,8 @@ def _read_library(path: Path, channel: str) -> dict[str, Any]:
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
+    from modules.durable_store import sync_state_file
+
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -199,6 +207,7 @@ def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
         encoding="utf-8",
     )
     tmp.replace(path)
+    sync_state_file(path)
 
 
 def load_library(channel: str) -> list[dict[str, Any]]:
@@ -221,9 +230,13 @@ def register_generated_asset(
     video_path: str = "",
     audio_duration_s: float | None = None,
     asset_kind: str = "",
+    increment_usage: bool = True,
 ) -> dict[str, Any] | None:
     """
     Append (or refresh) one approved still/video in ``asset_library.json``.
+
+    When *increment_usage* is False (backfills / catalog refresh) an existing
+    row is updated in place and ``usage_count`` is left unchanged.
 
     Returns the stored record, or ``None`` when there is no local path.
     """
@@ -272,10 +285,11 @@ def register_generated_asset(
             None,
         )
         if existing is not None:
-            existing["usage_count"] = int(existing.get("usage_count") or 0) + 1
-            history = list(existing.get("usage_history") or [])
-            history.append(usage_event)
-            existing["usage_history"] = history
+            if increment_usage:
+                existing["usage_count"] = int(existing.get("usage_count") or 0) + 1
+                history = list(existing.get("usage_history") or [])
+                history.append(usage_event)
+                existing["usage_history"] = history
             if remote_url and not existing.get("remote_url"):
                 existing["remote_url"] = str(remote_url)
             if prompt and not existing.get("prompt"):

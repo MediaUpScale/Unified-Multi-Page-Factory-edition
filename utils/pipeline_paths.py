@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Factory output / asset / scratch paths.
+"""Factory output / asset / scratch / channel-store paths.
 
 Honors ``OUTPUT_PATH`` and ``ASSETS_PATH`` from the process environment
-(or the project ``.env``). Pipeline artifacts (renders, libraries, logs,
-MoviePy temps) belong under that outputs root — never the process CWD and
+(or the project ``.env``). Pipeline artifacts (renders, logs, MoviePy
+temps) belong under that outputs root — never the process CWD and
 never a hardcoded ``<repo>/outputs`` path when the env root is set.
+
+Permanent channel state (libraries, transcripts, publish logs) lives on
+C: at ``channels_config/<channel>/store/`` and is mirrored to G:.
+``safe_rmtree`` refuses to delete that store.
 
 This module is the single source of truth for output location logic.
 Callers must not construct ``<repo>/outputs/...`` themselves.
@@ -185,3 +189,142 @@ def pipeline_tmp_dir(*parts: str) -> Path:
 def moviepy_temp_audio_dir() -> str:
     """Directory MoviePy uses for ``*TEMP_MPY_wvf_snd*`` temp audio."""
     return str(pipeline_tmp_dir("moviepy"))
+
+
+# ---------------------------------------------------------------------------
+# Channel state (C: primary) and cleanup protection
+# ---------------------------------------------------------------------------
+STORE_DIRNAME = "store"
+EPHEMERAL_DIR_NAMES = frozenset({
+    "tmp",
+    "temp",
+    "scratch",
+    "raw_frames",
+    "renders",
+    "__pycache__",
+})
+EPHEMERAL_DIR_PREFIXES = ("seq_run_", "lofi_run_")
+_CHANNEL_DIR_SKIP = frozenset({
+    "__pycache__",
+    "tests",
+    "shared",
+    ".git",
+})
+
+
+class ProtectedStateError(RuntimeError):
+    """Raised when a cleanup path would delete permanent channel state."""
+
+
+def channels_config_root() -> Path:
+    """``channels_config/`` (or ``CHANNEL_STORE_ROOT`` in tests)."""
+    override = (os.getenv("CHANNEL_STORE_ROOT") or os.getenv("CHANNELS_CONFIG_ROOT") or "").strip()
+    if override:
+        return Path(override).expanduser()
+    return _FACTORY_ROOT / "channels_config"
+
+
+def channel_slug(channel: str | None) -> str:
+    return (channel or "unknown").strip().lower() or "unknown"
+
+
+def channel_config_dir(channel: str) -> Path:
+    return channels_config_root() / channel_slug(channel)
+
+
+def channel_store_dir(channel: str, *, create: bool = False) -> Path:
+    """Primary permanent state: ``channels_config/<channel>/store/``."""
+    path = channel_config_dir(channel) / STORE_DIRNAME
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def channel_mirror_dir(channel: str, *, create: bool = False) -> Path:
+    """G: / factory outputs root for a channel: ``{OUTPUT_PATH}/<channel>/``."""
+    return page_outputs_dir(channel, create=create)
+
+
+def channel_mirror_store_dir(channel: str, *, create: bool = False) -> Path:
+    """Cloud mirror of the local store: ``{OUTPUT_PATH}/<channel>/store/``."""
+    path = channel_mirror_dir(channel) / STORE_DIRNAME
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def discover_channel_ids() -> list[str]:
+    """Channel slugs that have a ``channels_config/<slug>/`` directory."""
+    root = channels_config_root()
+    if not root.is_dir():
+        return []
+    found: list[str] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        name = child.name
+        if name in _CHANNEL_DIR_SKIP or name.startswith("."):
+            continue
+        found.append(name)
+    return found
+
+
+def is_ephemeral_artifact_dir(path: Path | str) -> bool:
+    """True for build-only folders (tmp, raw_frames, seq_run_*, …)."""
+    name = Path(path).name.lower()
+    if name in EPHEMERAL_DIR_NAMES:
+        return True
+    return any(name.startswith(prefix) for prefix in EPHEMERAL_DIR_PREFIXES)
+
+
+def _resolved(path: Path | str) -> Path:
+    raw = Path(path)
+    try:
+        return raw.resolve()
+    except OSError:
+        return raw
+
+
+def is_protected_state_path(path: Path | str) -> bool:
+    """True when *path* is (or lives under) ``channels_config/<channel>/store/``."""
+    resolved = _resolved(path)
+    parts = [part.lower() for part in resolved.parts]
+    for index, part in enumerate(parts):
+        if part != "channels_config":
+            continue
+        if index + 2 < len(parts) and parts[index + 2] == STORE_DIRNAME:
+            return True
+    try:
+        rel = resolved.relative_to(channels_config_root().resolve())
+    except (ValueError, OSError):
+        return False
+    return len(rel.parts) >= 2 and rel.parts[1].lower() == STORE_DIRNAME
+
+
+def contains_protected_store(path: Path | str) -> bool:
+    """True if deleting *path* would remove a channel ``store/`` tree."""
+    resolved = _resolved(path)
+    if is_protected_state_path(resolved):
+        return True
+    try:
+        root = channels_config_root().resolve()
+        rel = resolved.relative_to(root)
+    except (ValueError, OSError):
+        return False
+    return rel == Path(".") or len(rel.parts) == 1
+
+
+def safe_rmtree(path: Path | str, *, missing_ok: bool = True) -> None:
+    """``shutil.rmtree`` that refuses to touch ``channels_config/*/store/``."""
+    import shutil
+
+    target = Path(path)
+    if contains_protected_store(target):
+        raise ProtectedStateError(
+            f"Refusing to delete protected channel state: {target}"
+        )
+    if not target.exists():
+        if missing_ok:
+            return
+        raise FileNotFoundError(str(target))
+    shutil.rmtree(target)

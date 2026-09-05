@@ -470,6 +470,15 @@ class MasterInventory:
         )
         self.inventory_path: Path = self.outputs_dir / MASTER_INVENTORY_FILENAME
         self.content_library_path: Path = self.outputs_dir / "content_library.json"
+        try:
+            from modules.durable_store import hydrate_state_file, restore_channel_state
+
+            channel = self.outputs_dir.name
+            restore_channel_state(channel)
+            self.inventory_path = hydrate_state_file(self.inventory_path)
+            self.content_library_path = hydrate_state_file(self.content_library_path)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Load / Save
@@ -489,6 +498,12 @@ class MasterInventory:
         tmp = self.inventory_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(self.inventory_path)
+        try:
+            from modules.durable_store import sync_state_file
+
+            sync_state_file(self.inventory_path)
+        except Exception:
+            pass
         log.debug("Master inventory saved (%d entries).", len(data.get("entries", [])))
 
     # ------------------------------------------------------------------

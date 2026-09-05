@@ -959,9 +959,20 @@ def resolve_outputs_dir(settings: AiwakeSettings | None = None) -> Path:
 
 
 def resolve_store_dir() -> Path:
-    """Module-local state dir (memory JSON, transcripts). Never global."""
-    store = MODULE_ROOT / "store"
-    store.mkdir(parents=True, exist_ok=True)
+    """Permanent local state: ``channels_config/aiwake/store/``.
+
+    Restores missing JSONs from the G: outputs tree on first access, then
+    returns the C: store. Media still renders to ``{OUTPUT_PATH}/aiwake/``.
+    """
+    from utils.pipeline_paths import channel_store_dir
+
+    store = channel_store_dir("aiwake", create=True)
+    try:
+        from modules.durable_store import restore_channel_state
+
+        restore_channel_state("aiwake")
+    except Exception as exc:  # noqa: BLE001 — G: offline must not abort a debate
+        _LOG.warning("Could not restore aiwake store from G: (%s)", exc)
     return store
 
 

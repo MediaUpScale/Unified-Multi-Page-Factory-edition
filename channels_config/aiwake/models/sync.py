@@ -329,6 +329,12 @@ def load_cached_catalog(path: Path | None = None) -> OpenRouterCatalog | None:
     authored slug rather than blocking on the network.
     """
     target = path or catalog_path()
+    try:
+        from modules.durable_store import hydrate_state_file
+
+        target = hydrate_state_file(target)
+    except Exception:
+        pass
     if not target.is_file():
         return None
     try:
@@ -350,6 +356,12 @@ def _write_cache(payload: dict[str, Any], path: Path) -> Path:
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp.replace(path)
+    try:
+        from modules.durable_store import sync_state_file
+
+        sync_state_file(path)
+    except Exception:
+        pass
     return path
 
 

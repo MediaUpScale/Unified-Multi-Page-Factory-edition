@@ -134,6 +134,14 @@ class TranscriptObserver(DebateObserver):
                 payload.room.transcript.model_dump_json(indent=2),
                 encoding="utf-8",
             )
+            try:
+                from modules.durable_store import sync_state_file
+
+                sync_state_file(self.json_path)
+                if self.jsonl_path.is_file():
+                    sync_state_file(self.jsonl_path)
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("transcript mirror failed (%s)", exc)
             _LOG.info("transcript written -> %s", self.json_path)
 
     def close(self) -> None:
@@ -229,6 +237,12 @@ class MetricsObserver(DebateObserver):
         }
         path = self.dir / f"{payload.room.session_id}_metrics.json"
         path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        try:
+            from modules.durable_store import sync_state_file
+
+            sync_state_file(path)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("metrics mirror failed (%s)", exc)
         _LOG.info("metrics written -> %s", path)
 
 

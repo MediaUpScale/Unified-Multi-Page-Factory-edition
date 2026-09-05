@@ -200,6 +200,8 @@ class PageContext:
         Absolute path to channels_config/{page_id}/product_reference/ (may not exist).
     outputs_dir:
         Absolute path to {OUTPUT_PATH}/{page_id}/ for all page-namespaced artifacts.
+    store_dir:
+        Permanent local state: ``channels_config/{page_id}/store/``.
     page_cfg:
         Dict of values exported from page_config.py (atmosphere_style, aspect_ratio, etc.).
     """
@@ -216,6 +218,7 @@ class PageContext:
     product_reference_dir: Path
     outputs_dir: Path
     page_cfg: dict[str, Any] = field(default_factory=dict)
+    store_dir: Path | None = None
     _dynamic_style_anchor_cache: "str | None" = field(default=None, repr=False, compare=False)
 
     # ------------------------------------------------------------------
@@ -1715,7 +1718,12 @@ def load_page_context(
         legacy = _LEGACY_PAGES_CONFIG_ROOT / page_id
         if legacy.is_dir():
             page_dir = legacy
-    from utils.pipeline_paths import page_assets_dir, page_library_dir, page_outputs_dir
+    from utils.pipeline_paths import (
+        channel_store_dir,
+        page_assets_dir,
+        page_library_dir,
+        page_outputs_dir,
+    )
 
     outputs_dir = page_outputs_dir(page_id, create=True)
 
@@ -1723,6 +1731,17 @@ def load_page_context(
     page_assets_dir(page_id, create=True)
     page_library_dir(page_id, create=True)
     (outputs_dir / "postplanner").mkdir(parents=True, exist_ok=True)
+    store_dir = channel_store_dir(page_id, create=True)
+    try:
+        from modules.durable_store import restore_channel_state
+
+        restore_channel_state(page_id)
+    except Exception as exc:  # noqa: BLE001 — G: offline must not abort a run
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Could not restore %s store from G: (%s)", page_id, exc
+        )
 
     # Ensure brand asset subfolders exist inside the page config directory.
     (page_dir / "avatar_reference").mkdir(parents=True, exist_ok=True)
@@ -1744,6 +1763,7 @@ def load_page_context(
         product_reference_dir=page_dir / "product_reference",
         outputs_dir=outputs_dir,
         page_cfg=page_cfg,
+        store_dir=store_dir,
     )
 
 

@@ -156,7 +156,15 @@ class DebateMemory:
     # -- Persistence -------------------------------------------------------- #
     def _load(self) -> MemoryState:
         """Read persisted state, degrading to empty memory on any corruption."""
-        if not self.config.persist or not self.store_path.is_file():
+        if not self.config.persist:
+            return MemoryState()
+        try:
+            from modules.durable_store import hydrate_state_file
+
+            hydrate_state_file(self.store_path)
+        except Exception:
+            pass
+        if not self.store_path.is_file():
             return MemoryState()
         try:
             raw = json.loads(self.store_path.read_text(encoding="utf-8"))
@@ -176,6 +184,12 @@ class DebateMemory:
         tmp = self.store_path.with_suffix(".json.tmp")
         tmp.write_text(self.state.model_dump_json(indent=2), encoding="utf-8")
         tmp.replace(self.store_path)
+        try:
+            from modules.durable_store import sync_state_file
+
+            sync_state_file(self.store_path)
+        except Exception:
+            pass
         return self.store_path
 
     def reset(self) -> None:

@@ -10,6 +10,7 @@ import pytest
 
 from utils.pipeline_paths import (
     assets_root,
+    channel_store_dir,
     coerce_outputs_path,
     outputs_root,
     page_assets_dir,
@@ -40,6 +41,12 @@ def test_assets_root_honors_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     target = tmp_path / "factory-assets"
     monkeypatch.setenv("ASSETS_PATH", str(target))
     assert assets_root() == target
+
+
+def test_channel_store_dir_honors_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path / "channels_config"
+    monkeypatch.setenv("CHANNEL_STORE_ROOT", str(root))
+    assert channel_store_dir("anna_protocol") == root / "anna_protocol" / "store"
 
 
 def test_coerce_pack_relative_outputs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

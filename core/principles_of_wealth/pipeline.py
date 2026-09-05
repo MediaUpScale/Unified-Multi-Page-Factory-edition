@@ -69,6 +69,15 @@ def _utc_now() -> str:
 
 
 def _load_state() -> dict[str, Any]:
+    try:
+        from modules.durable_store import hydrate_state_file, restore_channel_state
+
+        restore_channel_state(CHANNEL_ID)
+        hydrate_state_file(_STATE_PATH)
+        hydrate_state_file(_SCAN_PATH)
+        hydrate_state_file(_LIBRARY_PATH)
+    except Exception:
+        pass
     if not _STATE_PATH.is_file():
         return {"channel_id": CHANNEL_ID, "updated_at": "", "episodes": {}}
     try:
@@ -90,6 +99,12 @@ def _save_state(state: dict[str, Any]) -> None:
         json.dumps(state, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    try:
+        from modules.durable_store import sync_state_file
+
+        sync_state_file(_STATE_PATH)
+    except Exception:
+        pass
 
 
 def _ep_state(state: dict[str, Any], episode: int) -> dict[str, Any]:
@@ -184,6 +199,12 @@ def run_scan(
         )
     if persist:
         write_scan_snapshot(scan, _SCAN_PATH)
+        try:
+            from modules.durable_store import sync_state_file
+
+            sync_state_file(_SCAN_PATH)
+        except Exception:
+            pass
         print(f"[Wealth] Asset map -> {_SCAN_PATH}")
     return scan
 

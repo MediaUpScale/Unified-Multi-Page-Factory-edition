@@ -128,9 +128,11 @@ def _extract_hashtags(text: str) -> list[str]:
 
 
 def _library_path(page: str) -> Path:
-    from utils.pipeline_paths import page_outputs_dir
+    from modules.distribution_contract import content_library_path
+    from modules.durable_store import restore_channel_state
 
-    return page_outputs_dir(page) / "content_library.json"
+    restore_channel_state(page)
+    return content_library_path(page)
 
 
 def lookup_metadata_from_library(

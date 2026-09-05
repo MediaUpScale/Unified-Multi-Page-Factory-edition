@@ -246,6 +246,16 @@ class LocalMediaQueue:
 
         self.media_dir.mkdir(parents=True, exist_ok=True)
         self.posted_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            from modules.durable_store import hydrate_state_file, restore_channel_state
+            from utils.pipeline_paths import channel_store_dir
+
+            restore_channel_state(channel_name)
+            store = channel_store_dir(channel_name, create=True)
+            self.history_path = hydrate_state_file(store / HISTORY_FILENAME)
+            self.content_library_path = hydrate_state_file(store / "content_library.json")
+        except Exception:
+            pass
 
         self._history: dict[str, Any] = self._load_history()
         self._metadata_by_filename: dict[str, dict[str, Any]] | None = None
@@ -280,6 +290,12 @@ class LocalMediaQueue:
             encoding="utf-8",
         )
         tmp.replace(self.history_path)
+        try:
+            from modules.durable_store import sync_state_file
+
+            sync_state_file(self.history_path)
+        except Exception:
+            pass
 
     def posted_filenames(self) -> set[str]:
         names: set[str] = set()

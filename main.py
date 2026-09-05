@@ -2068,6 +2068,12 @@ def _produce_variant_worker(
                                 _jw.dumps(_to_save, ensure_ascii=False, indent=2),
                                 encoding="utf-8",
                             )
+                            try:
+                                from modules.durable_store import sync_state_file
+
+                                sync_state_file(hooks_cache_path)
+                            except Exception:
+                                pass
                         except Exception as _hwe:  # noqa: BLE001
                             _LOG.warning("Could not persist hooks cache (%s).", _hwe)
 
@@ -6079,12 +6085,17 @@ def produce(
     # has a growing list of already-used angles to avoid.  A simple JSON file
     # acts as the lightweight persistent store across sequential CLI calls.
     # Thread-safe: workers read a snapshot at call time; appends are locked.
-    _hooks_cache_path = (
-        app_config.PAGE_OUTPUTS_DIR / "session_hooks_cache.json"
+    _hooks_cache_path = getattr(
+        app_config,
+        "SESSION_HOOKS_CACHE_PATH",
+        app_config.CHANNEL_STORE_DIR / "session_hooks_cache.json",
     )
     generated_hooks_cache: list[str] = []
     try:
         import json as _jc
+        from modules.durable_store import hydrate_state_file
+
+        _hooks_cache_path = hydrate_state_file(_hooks_cache_path)
         if _hooks_cache_path.exists():
             _raw = _hooks_cache_path.read_text(encoding="utf-8")
             _loaded = _jc.loads(_raw)

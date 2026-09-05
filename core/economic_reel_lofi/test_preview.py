@@ -8,7 +8,6 @@ history, validator, video assembly, or publish queues.
 from __future__ import annotations
 
 import logging
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -53,7 +52,9 @@ def _purge_legacy_preview_dirs(page_id: str) -> None:
     legacy_root = page_outputs_dir(page_id) / "economic_reel_lofi"
     if legacy_root.exists():
         try:
-            shutil.rmtree(legacy_root)
+            from utils.pipeline_paths import safe_rmtree
+
+            safe_rmtree(legacy_root)
             _LOG.info("Removed legacy LOFI preview folder: %s", legacy_root)
             print(f"[LOFI test-preview] removed legacy folder: {legacy_root}")
         except Exception as exc:  # noqa: BLE001

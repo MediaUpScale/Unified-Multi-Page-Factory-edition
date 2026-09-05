@@ -25,6 +25,9 @@ def recent_topics(path: Path, last_n: int = 40) -> list[str]:
 
 
 def load_library(path: Path) -> list[dict[str, Any]]:
+    from modules.durable_store import hydrate_state_file
+
+    path = hydrate_state_file(Path(path))
     if not path.is_file():
         return []
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -32,8 +35,12 @@ def load_library(path: Path) -> list[dict[str, Any]]:
 
 
 def save_library(path: Path, rows: list[dict[str, Any]]) -> None:
+    from modules.durable_store import sync_state_file
+
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rows, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    sync_state_file(path)
 
 
 def append_entry(path: Path, entry: dict[str, Any]) -> dict[str, Any]:

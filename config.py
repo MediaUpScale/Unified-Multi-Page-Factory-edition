@@ -35,7 +35,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from utils.pipeline_paths import assets_root, outputs_root, page_assets_dir, page_outputs_dir
+from utils.pipeline_paths import (
+    assets_root,
+    channel_store_dir,
+    outputs_root,
+    page_assets_dir,
+    page_outputs_dir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -560,7 +566,9 @@ ASSETS_PATH: Path = FACTORY_ASSETS_DIR
 PAGE_OUTPUTS_DIR: Path = page_outputs_dir(ACTIVE_PAGE)
 ASSETS_DIR: Path = page_assets_dir(ACTIVE_PAGE)
 LIBRARY_DIR: Path = PAGE_OUTPUTS_DIR / "library"
-CONTENT_LIBRARY_PATH: Path = PAGE_OUTPUTS_DIR / "content_library.json"
+CHANNEL_STORE_DIR: Path = channel_store_dir(ACTIVE_PAGE)
+CONTENT_LIBRARY_PATH: Path = CHANNEL_STORE_DIR / "content_library.json"
+SESSION_HOOKS_CACHE_PATH: Path = CHANNEL_STORE_DIR / "session_hooks_cache.json"
 
 _SAMPLE_BULK_V3: Path = ENGINE_ROOT / "sample_bulk_posts_import_3.xlsx"
 _SAMPLE_BULK_LEGACY: Path = ENGINE_ROOT / "sample_bulk_posts_import.xlsx"

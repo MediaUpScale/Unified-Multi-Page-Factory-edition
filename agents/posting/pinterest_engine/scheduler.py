@@ -76,6 +76,12 @@ class FilenameHistory:
 
     def __init__(self, outputs_dir: Path) -> None:
         self.path = outputs_dir / _HISTORY_FILENAME
+        try:
+            from modules.durable_store import hydrate_state_file
+
+            self.path = hydrate_state_file(self.path)
+        except Exception:
+            pass
         self._seen: set[str] = self._load()
 
     # ------------------------------------------------------------------
@@ -115,6 +121,12 @@ class FilenameHistory:
         with open(self.path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
         self._seen.add(filename)
+        try:
+            from modules.durable_store import sync_state_file
+
+            sync_state_file(self.path)
+        except Exception:
+            pass
         log.debug("History: recorded '%s'", filename)
 
     # ------------------------------------------------------------------
