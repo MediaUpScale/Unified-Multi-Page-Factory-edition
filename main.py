@@ -170,6 +170,7 @@ from agents.writer.caption_engine import (
     build_gemini_researcher_instruction,
     economic_humanizer_instruction_preview,
     humanizer_preview_with_placeholder,
+    long_caption_prompt_preview,
     build_batch_researcher_instruction,
     build_smart_bait_image_prompt,
     maybe_inject_horror_mutation,
@@ -2092,6 +2093,7 @@ def _produce_variant_worker(
                 page_display_name=page_ctx.display_name if page_ctx else "",
                 page_niche=page_ctx.content_niche if page_ctx else "",
                 cta_enabled=cta_enabled,
+                cta_keyword=cta_kw if cta_enabled else None,
                 economic=economic,
                 model_id=econ_model if economic else None,
                 signature=page_ctx.caption_signature if page_ctx else "",
@@ -5665,7 +5667,9 @@ def produce(
             aspect_ratio=page_aspect_ratio or None,
         )
         researcher_instruction = build_gemini_researcher_instruction(topic_seed)
-        sys_prompt, usr_prompt = humanizer_preview_with_placeholder(topic_seed)
+        sys_prompt, usr_prompt = humanizer_preview_with_placeholder(
+            topic_seed, cta_enabled=cta_enabled,
+        )
 
         envelope["digital_products_pdf_files"] = pdf_inventory
         envelope["imagine_subject_instruction"] = imagine_prompt
@@ -5682,7 +5686,25 @@ def produce(
         print("\n--- Claude humanizer (user scaffold; FACT SHEET dynamic in live runs) ---\n")
         print(usr_prompt)
         print("\n--- Economic Gemini-only humanizer scaffold ---\n")
-        print(economic_humanizer_instruction_preview(topic_seed))
+        print(economic_humanizer_instruction_preview(topic_seed, cta_enabled=cta_enabled))
+
+        if post_type == "LONG_CAPTION_IMAGE":
+            _cta_kw = contextual_cta_keyword(topic_seed) if cta_enabled else None
+            _sig = (page_ctx.caption_signature if page_ctx else "") or ""
+            _long_prompt = long_caption_prompt_preview(
+                topic_seed,
+                page_display_name=page_ctx.display_name if page_ctx else "",
+                page_niche=page_ctx.content_niche if page_ctx else "",
+                cta_enabled=cta_enabled,
+                cta_keyword=_cta_kw,
+                signature=_sig,
+            )
+            print(
+                f"\n--- LONG_CAPTION_IMAGE prompt scaffold | "
+                f"cta={'ON' if cta_enabled else 'OFF'} | "
+                f"keyword={_cta_kw or '(suppressed)'} ---\n"
+            )
+            print(_long_prompt)
 
         if skip_image or skip_caption:
             print(

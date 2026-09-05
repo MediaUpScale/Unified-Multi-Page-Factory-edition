@@ -73,6 +73,43 @@ def _cta_for(topic: str, channel=None) -> str:
         return random.choice(options) if options else ""
     return contextual_cta_keyword(topic)
 
+
+def _keyword_cta_instruction_block(
+    topic: str,
+    channel=None,
+    *,
+    cta_enabled: bool = True,
+    cta_keyword: str | None = None,
+) -> str:
+    """Mandatory comment-keyword CTA rule for Anna-style caption prompts.
+
+    Isolated channels (ancient_knowledge) use their own curiosity close and
+    never receive this block. Wellness / Holistic Legacy pages pick a
+    brand keyword from Call_To_Action_Inventory (PROTOCOL, RESTORE, …).
+    """
+    if not cta_enabled:
+        return (
+            "\n\nCTA SUPPRESSED: Omit all comment-keyword invitations, DM links, "
+            "and 'comment to receive' calls. End with a strong conclusive statement."
+        )
+    kw = (cta_keyword or _cta_for(topic, channel) or "PROTOCOL").strip().upper()
+    voice = (
+        CTA_VOICE_INSTRUCTION
+        or (
+            f"Weave the keyword naturally into a personal invitation. "
+            f"Example: 'Comment {kw} below and I will send you the full guide.'"
+        )
+    )
+    return (
+        f"\n\nMANDATORY CTA RULE:\n"
+        f"End the caption with a clear, high-converting Call To Action asking the audience "
+        f"to comment a specific keyword (e.g., 'Comment {kw} below') to automatically receive "
+        f"the full guide/protocol in their DMs.\n"
+        f"CTA keyword for this caption: {kw}\n"
+        f"CTA instruction: {voice}\n"
+        f"NEVER use 'Search' instructions — always 'Comment {kw}'."
+    )
+
 # ---------------------------------------------------------------------------
 # Caption format: 60 % short (300-500 ch), 40 % long (500-800 ch)
 # ---------------------------------------------------------------------------
@@ -479,15 +516,46 @@ def build_gemini_humanizer_instruction(
     ).strip()
 
 
-def humanizer_preview_with_placeholder(topic: str) -> tuple[str, str]:
+def humanizer_preview_with_placeholder(
+    topic: str, *, cta_enabled: bool = True,
+) -> tuple[str, str]:
     placeholder = "[DYNAMIC: RAW FACT SHEET FROM GEMINI RESEARCHER WOULD FOLLOW]"
     system = build_claude_humanizer_system_prompt("Anna")
-    user = build_claude_humanizer_user_prompt(topic, placeholder)
+    user = build_claude_humanizer_user_prompt(
+        topic, placeholder, cta_enabled=cta_enabled,
+    )
     return system, user
 
 
-def economic_humanizer_instruction_preview(topic: str) -> str:
-    return build_gemini_humanizer_instruction(topic, "[FACT SHEET PLACEHOLDER]")
+def economic_humanizer_instruction_preview(
+    topic: str, *, cta_enabled: bool = True,
+) -> str:
+    return build_gemini_humanizer_instruction(
+        topic, "[FACT SHEET PLACEHOLDER]", cta_enabled=cta_enabled,
+    )
+
+
+def long_caption_prompt_preview(
+    topic: str,
+    *,
+    page_display_name: str = "",
+    page_niche: str = "",
+    cta_enabled: bool = True,
+    cta_keyword: str | None = None,
+    signature: str = "",
+    channel=None,
+) -> str:
+    """Dry-run scaffold for LONG_CAPTION_IMAGE (no LLM call)."""
+    return build_long_caption_prompt(
+        topic,
+        page_display_name or topic,
+        page_niche,
+        _persona_block(channel),
+        cta_enabled=cta_enabled,
+        cta_keyword=cta_keyword,
+        signature=signature,
+        channel=channel,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1091,6 +1159,7 @@ def build_long_caption_prompt(
     persona_block: str,
     *,
     cta_enabled: bool = True,
+    cta_keyword: str | None = None,
     signature: str = "",
     channel=None,
 ) -> str:
@@ -1144,11 +1213,14 @@ def build_long_caption_prompt(
             """
         ).strip()
 
-    cta_close = (
-        f"\n\nEnd the caption with the exact line: {_sig}"
-        if (cta_enabled and _sig)
-        else ""
+    cta_close = _keyword_cta_instruction_block(
+        topic,
+        channel,
+        cta_enabled=cta_enabled,
+        cta_keyword=cta_keyword,
     )
+    if _sig:
+        cta_close += f"\n\nEnd the caption with the exact line: {_sig}"
     return dedent(
         f"""
         You are crafting a long-form, deeply engaging Facebook caption for the page: {page_display_name}
@@ -2281,6 +2353,7 @@ class CaptionEngine:
         page_display_name: str = "",
         page_niche: str = "",
         cta_enabled: bool = True,
+        cta_keyword: str | None = None,
         economic: bool = False,
         model_id: str | None = None,
         signature: str = "",
@@ -2304,6 +2377,9 @@ class CaptionEngine:
         if signature is None:
             signature = (f"© {page_display_name} | by MediaUpScale" if page_display_name else "© MediaUpScale")
         _sig = str(signature or "").strip()
+        _cta_kw = None
+        if cta_enabled and not _is_isolated_channel(self._channel):
+            _cta_kw = (cta_keyword or _cta_for(topic, self._channel) or "PROTOCOL").strip().upper()
         persona = _persona_block(self._channel)
         prompt = build_long_caption_prompt(
             topic,
@@ -2311,6 +2387,7 @@ class CaptionEngine:
             page_niche,
             persona,
             cta_enabled=cta_enabled,
+            cta_keyword=_cta_kw,
             signature=_sig,
             channel=self._channel,
         )
@@ -2341,6 +2418,22 @@ class CaptionEngine:
             _end_footer = (
                 "- End with the exact line: " + _sig if _sig else ""
             )
+            if cta_enabled and _cta_kw:
+                _cta_sys = (
+                    f"MANDATORY CTA: End caption_body with a high-converting Call To Action "
+                    f"asking the audience to comment '{_cta_kw}' (e.g. 'Comment {_cta_kw} below') "
+                    f"to automatically receive the full guide/protocol in their DMs. "
+                    f"{CTA_VOICE_INSTRUCTION}\n"
+                )
+            elif cta_enabled:
+                _cta_sys = (
+                    "MANDATORY CTA: End caption_body with a clear comment-keyword Call To Action "
+                    "so the audience can receive the full guide in their DMs.\n"
+                )
+            else:
+                _cta_sys = (
+                    "CTA SUPPRESSED: Do not add comment-keyword invitations or DM links.\n"
+                )
             _long_caption_system = (
                 "You are an elite psychological author writing for the 'LONG_CAPTION_IMAGE' format.\n\n"
                 "OUTPUT FORMAT (respond with ONLY valid JSON, nothing else):\n"
@@ -2358,6 +2451,7 @@ class CaptionEngine:
                 "- Analyze destructive female and male relationship behaviors.\n"
                 "- Cover exactly 2 specific traitor/betrayal scenarios with concrete detail.\n"
                 "- Conclude with guidance on managing the domestic home space for inner peace.\n"
+                + _cta_sys
                 + _end_footer
             )
 
