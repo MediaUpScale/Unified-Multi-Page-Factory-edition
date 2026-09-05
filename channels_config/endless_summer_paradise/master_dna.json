@@ -1,6 +1,8 @@
 {
   "Identity_File": "ENDLESS_SUMMER_PARADISE_v1.1_MASTER_DNA",
   "page_id": "endless_summer_paradise",
+  "factory_settings_file": "factory_settings.json",
+  "settings_file": "settings.json",
   "display_name": "Endless Summer Paradise",
   "niche": "1950s Surreal / Vintage Retro Architecture — Mid-Century Aesthetic Visual Art",
   "Status": "Library ingest / US high-RPM cinematic surreal architecture",

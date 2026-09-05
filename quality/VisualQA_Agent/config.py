@@ -3,7 +3,7 @@
 VisualQA_Agent configuration — API keys, global outputs paths, guardrails.
 
 Judge outputs live under:
-``PROJECT_ROOT/outputs/{channel}/VisualQA_Agent_Judge/{attempts,approved,logs}/``
+``{OUTPUT_PATH}/{channel}/VisualQA_Agent_Judge/{attempts,approved,logs}/``
 
 Style references remain under ``channels_config/{channel}/style_reference/``.
 """
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from utils.pipeline_paths import outputs_root, page_outputs_dir, pipeline_logs_dir
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -26,7 +28,7 @@ PAGES_CONFIG_ROOT: Path = (
     if CHANNELS_CONFIG_ROOT.is_dir()
     else _LEGACY_PAGES_CONFIG_ROOT
 )
-OUTPUTS_ROOT: Path = PROJECT_ROOT / "outputs"
+OUTPUTS_ROOT: Path = outputs_root()
 JUDGE_FOLDER_NAME: str = "VisualQA_Agent_Judge"
 
 # Load parent factory .env if present (does not override already-set env vars).
@@ -194,12 +196,12 @@ def channel_config_root(channel_name: str) -> Path:
 
 
 def channel_output_root(channel_name: str) -> Path:
-    """``PROJECT_ROOT/outputs/{channel}/`` (channel media root)."""
-    return (OUTPUTS_ROOT / channel_name).resolve()
+    """``{OUTPUT_PATH}/{channel}/`` (channel media root)."""
+    return page_outputs_dir(channel_name)
 
 
 def judge_root(channel_name: str) -> Path:
-    """``PROJECT_ROOT/outputs/{channel}/VisualQA_Agent_Judge/``."""
+    """``{OUTPUT_PATH}/{channel}/VisualQA_Agent_Judge/``."""
     return (channel_output_root(channel_name) / JUDGE_FOLDER_NAME).resolve()
 
 
@@ -269,5 +271,6 @@ def estimate_flux_cost(model_id: str) -> float:
 # Legacy aliases
 channel_root = channel_config_root
 OUTPUTS_DIR: Path = OUTPUTS_ROOT
-LOGS_DIR: Path = OUTPUTS_ROOT / "VisualQA_Agent" / "logs"
+LOGS_DIR: Path = pipeline_logs_dir() / "VisualQA_Agent"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 FAILED_SHOTS_PATH: Path = LOGS_DIR / "failed_shots.json"

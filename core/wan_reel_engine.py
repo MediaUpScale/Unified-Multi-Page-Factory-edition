@@ -253,7 +253,9 @@ def run_wan_reel_test(
         video_length_s = scene_dur * n
 
     stamp = started.strftime("%Y%m%d_%H%M%S")
-    root = Path(out_dir or Path("outputs") / page_id / "wan_reel_tests" / f"run_{stamp}")
+    from utils.pipeline_paths import page_outputs_dir
+
+    root = Path(out_dir or page_outputs_dir(page_id) / "wan_reel_tests" / f"run_{stamp}")
     root.mkdir(parents=True, exist_ok=True)
     stills_dir = root / "stills"
     clips_dir = root / "clips"

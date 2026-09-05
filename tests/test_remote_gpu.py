@@ -46,7 +46,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("test_remote_gpu")
 
-DEFAULT_OUT = ROOT / "outputs" / "remote_gpu_tests"
+from utils.pipeline_paths import outputs_root  # noqa: E402
+
+DEFAULT_OUT = outputs_root() / "remote_gpu_tests"
 
 
 def _parse_args() -> argparse.Namespace:

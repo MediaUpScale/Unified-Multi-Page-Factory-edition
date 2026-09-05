@@ -2,13 +2,15 @@
 """Orchestrate scan -> uniqueness pass -> independent scheduled publish.
 
 Longs and Shorts are separate CLI runs:
-  * longs  — one per week, private + publishAt
-  * shorts — one per day, private + publishAt, linked to the parent long_video_id
+  * longs  — Tuesday and Thursday (2 per week), private + publishAt
+  * shorts — one per day at 18:00 America/New_York; relatedVideoId is set when a
+    parent long_video_id exists, otherwise the Short still uploads.
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -28,7 +30,12 @@ from core.principles_of_wealth.catalog import (
     playlist_for_episode,
     resolve_processed_directory,
 )
-from core.principles_of_wealth.fingerprint import process_pair, process_shorts
+from core.principles_of_wealth.fingerprint import (
+    already_processed,
+    default_processed_path,
+    process_pair,
+)
+from core.utils.fingerprint_engine import apply_video_uniqueness
 from core.principles_of_wealth.scanner import (
     ScanResult,
     clip_index_from_path,
@@ -38,13 +45,18 @@ from core.principles_of_wealth.scanner import (
 )
 from core.principles_of_wealth.schedule import (
     advance_slot,
+    cadence_label,
     format_slot_pair,
+    latest_future_scheduled_at,
+    max_anchor,
     resolve_first_slot,
 )
 
 _LOG = logging.getLogger(__name__)
+from utils.pipeline_paths import page_outputs_dir
+
 _ENGINE_ROOT = Path(__file__).resolve().parents[2]
-_OUTPUTS = _ENGINE_ROOT / "outputs" / CHANNEL_ID
+_OUTPUTS = page_outputs_dir(CHANNEL_ID)
 _STATE_PATH = _OUTPUTS / "wealth_publish_state.json"
 _SCAN_PATH = _OUTPUTS / "wealth_asset_map.json"
 _LIBRARY_PATH = _OUTPUTS / "content_library.json"
@@ -98,6 +110,45 @@ def _selected(scan: ScanResult, episodes: Optional[list[int]]) -> list[int]:
     return [n for n in episodes if n in scan.matches]
 
 
+_PROTECTED_EPISODE = 1
+_SHORT_DURATION_CEILING_S = 60
+
+
+def _sign_video(
+    src: str,
+    dest_dir: Path,
+    *,
+    skip_existing: bool,
+    options: dict[str, Any],
+) -> str:
+    """Write a signed MP4 via the generic uniqueness engine."""
+    dest = default_processed_path(Path(src), dest_dir, kind="long")
+    if skip_existing and already_processed(dest):
+        print(f"[Wealth] Skip existing: {dest.name}")
+        return str(dest)
+    print(f"[Wealth] Processing (fast uniqueness): {Path(src).name}")
+    return apply_video_uniqueness(str(src), str(dest), options)
+
+
+def _short_ids_from_row(row: dict[str, Any]) -> list[str]:
+    ids = _as_str_list(row.get("short_video_ids")) or _as_str_list(
+        row.get("short_video_id")
+    )
+    for item in row.get("short_uploads") or []:
+        if isinstance(item, dict):
+            vid = str(item.get("video_id") or "").strip()
+            if vid:
+                ids.append(vid)
+    # Preserve order, drop blanks/dupes
+    seen: set[str] = set()
+    out: list[str] = []
+    for vid in ids:
+        if vid and vid not in seen:
+            seen.add(vid)
+            out.append(vid)
+    return out
+
+
 def run_scan(
     *,
     source_dir: Optional[str | Path] = None,
@@ -137,6 +188,48 @@ def run_scan(
     return scan
 
 
+_RAW_VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".m4v", ".webm"}
+_RAW_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _collect_process_jobs(
+    scan: ScanResult,
+    wanted: list[int],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Every raw long, Short, and thumbnail for *wanted*, plus leftover media."""
+    jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(episode: int, kind: str, path: str) -> None:
+        if not path or path in seen:
+            return
+        seen.add(path)
+        jobs.append({"episode": episode, "kind": kind, "path": path})
+
+    for n in wanted:
+        m = scan.matches[n]
+        if m.has_long:
+            _add(n, "long", m.long_path)
+        for short_path in m.shorts:
+            _add(n, "short", short_path)
+        if m.has_thumbnail:
+            _add(n, "thumb", m.thumbnail_path)
+
+    extras: list[dict[str, Any]] = []
+    for raw in scan.unmatched:
+        path = Path(str(raw))
+        if not path.is_file() or path.stat().st_size <= 0:
+            continue
+        if path.stem.lower().endswith("_signed"):
+            continue
+        suffix = path.suffix.lower()
+        if suffix in _RAW_VIDEO_EXTS:
+            extras.append({"episode": 0, "kind": "extra_video", "path": str(path)})
+        elif suffix in _RAW_IMAGE_EXTS:
+            extras.append({"episode": 0, "kind": "extra_thumb", "path": str(path)})
+    return jobs, extras
+
+
 def run_process(
     *,
     source_dir: Optional[str | Path] = None,
@@ -152,8 +245,18 @@ def run_process(
     dest_dir = resolve_processed_directory(src, processed_dir)
     wanted = _selected(scan, parse_episode_list(episodes))
     state = _load_state()
+    jobs, extras = _collect_process_jobs(scan, wanted)
 
+    n_long = sum(1 for j in jobs if j["kind"] == "long")
+    n_short = sum(1 for j in jobs if j["kind"] == "short")
+    n_thumb = sum(1 for j in jobs if j["kind"] == "thumb")
     print(f"[Wealth] Processed folder: {dest_dir}")
+    print(
+        f"[Wealth] Raw inventory: {n_long} long(s), {n_short} Short(s), "
+        f"{n_thumb} thumbnail(s) across {len(wanted)} episode(s)"
+        + (f" + {len(extras)} unmatched media" if extras else "")
+    )
+
     if dry_run:
         for n in wanted:
             m = scan.matches[n]
@@ -164,45 +267,97 @@ def run_process(
             for i, short_path in enumerate(m.shorts, start=1):
                 clip = clip_index_from_path(short_path) or i
                 print(f"            [{clip:02d}] {Path(short_path).name}")
-        return {"processed_dir": str(dest_dir), "episodes": wanted, "dry_run": True}
+        for extra in extras:
+            print(f"  [dry-run] extra {extra['kind']}: {Path(extra['path']).name}")
+        return {
+            "processed_dir": str(dest_dir),
+            "episodes": wanted,
+            "jobs": len(jobs) + len(extras),
+            "dry_run": True,
+        }
 
     dest_dir.mkdir(parents=True, exist_ok=True)
-    for n in wanted:
-        m = scan.matches[n]
+    options = {"hwaccel": hwaccel, "hw_encode": hw_encode}
+    signed_shorts: dict[int, list[str]] = {}
+
+    for job in jobs:
+        n = int(job["episode"])
+        kind = str(job["kind"])
+        path = str(job["path"])
         row = _ep_state(state, n)
         spec = episode_by_number(n)
-        print(f"[Wealth] Uniqueness pass — Ep {n:02d} {spec.short_title}")
-        if m.has_long:
-            row["source_long"] = m.long_path
-            row["processed_long"] = process_pair(
-                m.long_path,
-                dest_dir,
-                kind="long",
-                skip_existing=skip_existing,
-                hwaccel=hwaccel,
-                hw_encode=hw_encode,
-            )
-        if m.has_short:
-            row["source_shorts"] = list(m.shorts)
-            row["processed_shorts"] = process_shorts(
-                list(m.shorts),
-                dest_dir,
-                skip_existing=skip_existing,
-                hwaccel=hwaccel,
-                hw_encode=hw_encode,
-            )
-        if m.has_thumbnail:
-            row["source_thumbnail"] = m.thumbnail_path
-            row["processed_thumbnail"] = process_pair(
-                m.thumbnail_path,
-                dest_dir,
-                kind="thumb",
-                skip_existing=skip_existing,
-            )
+        if kind == "long":
+            print(f"[Wealth] Uniqueness pass - Ep {n:02d} LONG {spec.short_title}")
+            row["source_long"] = path
+            try:
+                row["processed_long"] = _sign_video(
+                    path, dest_dir, skip_existing=skip_existing, options=options
+                )
+            except (OSError, RuntimeError) as exc:
+                _LOG.warning("Long skip Ep %02d %s: %s", n, Path(path).name, exc)
+                print(f"[Wealth] Long skip Ep {n:02d} {Path(path).name}: {exc}")
+        elif kind == "short":
+            clip = clip_index_from_path(path) or (len(signed_shorts.get(n) or []) + 1)
+            print(f"[Wealth] Uniqueness pass - Ep {n:02d} SHORT {clip:02d} {Path(path).name}")
+            row["source_shorts"] = list(scan.matches[n].shorts)
+            try:
+                signed = _sign_video(
+                    path, dest_dir, skip_existing=skip_existing, options=options
+                )
+            except (OSError, RuntimeError) as exc:
+                _LOG.warning("Short skip Ep %02d %s: %s", n, Path(path).name, exc)
+                print(f"[Wealth] Short skip Ep {n:02d} {Path(path).name}: {exc}")
+                signed = ""
+            if signed:
+                signed_shorts.setdefault(n, []).append(signed)
+                row["processed_shorts"] = list(signed_shorts[n])
+        elif kind == "thumb":
+            print(f"[Wealth] Uniqueness pass - Ep {n:02d} THUMB {Path(path).name}")
+            row["source_thumbnail"] = path
+            try:
+                row["processed_thumbnail"] = process_pair(
+                    path,
+                    dest_dir,
+                    kind="thumb",
+                    skip_existing=skip_existing,
+                )
+            except OSError as exc:
+                _LOG.warning("Thumbnail skip Ep %02d %s: %s", n, Path(path).name, exc)
+                print(f"[Wealth] Thumbnail skip Ep {n:02d} {Path(path).name}: {exc}")
         _save_state(state)
 
+    for extra in extras:
+        path = str(extra["path"])
+        kind = str(extra["kind"])
+        print(f"[Wealth] Uniqueness pass - extra {kind}: {Path(path).name}")
+        try:
+            if kind == "extra_video":
+                _sign_video(path, dest_dir, skip_existing=skip_existing, options=options)
+            else:
+                process_pair(
+                    path,
+                    dest_dir,
+                    kind="thumb",
+                    skip_existing=skip_existing,
+                )
+        except (OSError, RuntimeError) as exc:
+            _LOG.warning("Extra skip %s: %s", Path(path).name, exc)
+            print(f"[Wealth] Extra skip {Path(path).name}: {exc}")
+
     _save_state(state)
-    return {"processed_dir": str(dest_dir), "episodes": wanted, "state": str(_STATE_PATH)}
+    print(
+        f"[Wealth] Uniqueness complete: {n_long} long(s), {n_short} Short(s), "
+        f"{n_thumb} thumbnail(s) signed into {dest_dir}"
+    )
+    return {
+        "processed_dir": str(dest_dir),
+        "episodes": wanted,
+        "signed_longs": n_long,
+        "signed_shorts": n_short,
+        "signed_thumbs": n_thumb,
+        "extras": len(extras),
+        "state": str(_STATE_PATH),
+    }
 
 
 def _as_str_list(value: Any) -> list[str]:
@@ -211,6 +366,382 @@ def _as_str_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value]
     return []
+
+
+_TITLE_NOISE_RE = re.compile(
+    r"\b(ray\s*dalio|principles\s+of\s+wealth|principlesofwealth)\b",
+    re.IGNORECASE,
+)
+_EP_NUM_RE = re.compile(r"\bep(?:isode)?\s*0*(\d{1,2})\b", re.IGNORECASE)
+_NEEDLE_MIN = 12
+
+
+def _normalize_title(text: str) -> str:
+    raw = (text or "").replace("\u2014", " ").replace("\u2013", " ").replace("-", " ")
+    raw = _TITLE_NOISE_RE.sub(" ", raw)
+    raw = re.sub(r"[|#:.,;!?()\[\]'\"/]+", " ", raw)
+    return re.sub(r"\s+", " ", raw).strip().lower()
+
+
+def _long_title_needles(spec: Any) -> list[str]:
+    from core.principles_of_wealth.seo_catalog import long_pack
+
+    pack_title = str(long_pack(spec.episode).get("title") or "")
+    raws = [spec.title_core, pack_title, *list(spec.match_keywords or ())]
+    needles: list[str] = []
+    for raw in raws:
+        needle = _normalize_title(str(raw))
+        if len(needle) >= _NEEDLE_MIN and needle not in needles:
+            needles.append(needle)
+    return needles
+
+
+def match_long_episode_from_title(title: str) -> Optional[int]:
+    """Map a YouTube title onto catalog episode 1-30, or None if unmatched/Short-like."""
+    raw = title or ""
+    low = raw.lower()
+    if "#shorts" in low:
+        return None
+    numbered = _EP_NUM_RE.search(raw)
+    if numbered:
+        n = int(numbered.group(1))
+        if 1 <= n <= 30:
+            return n
+    norm = _normalize_title(raw)
+    if not norm:
+        return None
+    best_n: Optional[int] = None
+    best_score = 0
+    for spec in EPISODES:
+        for needle in _long_title_needles(spec):
+            if needle in norm and len(needle) > best_score:
+                best_score = len(needle)
+                best_n = spec.episode
+    if best_score < _NEEDLE_MIN:
+        return None
+    return best_n
+
+
+def _is_scheduled_long_meta(meta: dict[str, Any]) -> bool:
+    """True for a pending scheduled long (publishAt and/or still private)."""
+    if meta.get("publish_at"):
+        return True
+    return str(meta.get("privacy") or "").lower() == "private"
+
+
+def _looks_like_short(meta: dict[str, Any]) -> bool:
+    title = str(meta.get("title") or "")
+    desc = str(meta.get("description") or "")
+    duration_s = int(meta.get("duration_s") or 0)
+    if duration_s and duration_s < _SHORT_DURATION_CEILING_S:
+        return True
+    blob = f"{title}\n{desc}".lower()
+    return "#shorts" in blob or bool(re.search(r"(?m)^#shorts\b", blob))
+
+
+def _collect_all_short_ids(state: dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    for row in (state.get("episodes") or {}).values():
+        if isinstance(row, dict):
+            ids.extend(_short_ids_from_row(row))
+    seen: set[str] = set()
+    unique: list[str] = []
+    for vid in ids:
+        if vid not in seen:
+            seen.add(vid)
+            unique.append(vid)
+    return unique
+
+
+def run_cleanup(
+    *,
+    from_episode: int = 2,
+    longs_only: bool = True,
+    dry_run: bool = False,
+    episodes: Optional[str] = None,
+    source_dir: Optional[str | Path] = None,  # noqa: ARG001 — CLI common flag
+) -> dict[str, Any]:
+    """Delete scheduled Ep 2+ long-form YouTube videos. Never touch Ep 1 or Shorts."""
+    _ = source_dir
+    if not longs_only:
+        print("[Wealth] Cleanup is longs-only - Shorts will not be deleted.")
+        longs_only = True
+
+    floor = max(int(from_episode or _PROTECTED_EPISODE + 1), _PROTECTED_EPISODE + 1)
+    if int(from_episode or 0) < floor:
+        print(
+            f"[Wealth] Episode {_PROTECTED_EPISODE} is protected - "
+            f"clamping --from-episode to {floor}."
+        )
+
+    wanted = parse_episode_list(episodes)
+    state = _load_state()
+    episodes_map = state.get("episodes") or {}
+    if not isinstance(episodes_map, dict):
+        episodes_map = {}
+
+    ep1_row = episodes_map.get(str(_PROTECTED_EPISODE)) or {}
+    if not isinstance(ep1_row, dict):
+        ep1_row = {}
+    protected_long_id = str(ep1_row.get("long_video_id") or "")
+    all_short_ids = _collect_all_short_ids(state)
+    short_id_set = set(all_short_ids)
+    if protected_long_id:
+        short_id_set.add(protected_long_id)
+
+    print(
+        f"[Wealth] Cleanup scope: scheduled longs from Ep {floor}+ "
+        f"({'dry-run' if dry_run else 'live'})"
+    )
+    print(
+        f"[Wealth] Guardrails: Episode {_PROTECTED_EPISODE} long + "
+        f"{len(all_short_ids)} Short ID(s) across all episodes are untouchable."
+    )
+
+    from agents.posting.youtube_publisher import (
+        build_youtube_client_for_page,
+        fetch_videos_metadata,
+        list_channel_upload_videos,
+    )
+
+    youtube = build_youtube_client_for_page(_PAGE, enforce_channel=True)
+    uploads = list_channel_upload_videos(youtube, max_pages=20)
+    print(f"[Wealth] YouTube uploads scanned: {len(uploads)}")
+
+    targets: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    def _consider(
+        episode: int,
+        video_id: str,
+        meta: dict[str, Any],
+        *,
+        source: str,
+    ) -> None:
+        nonlocal protected_long_id
+        if not video_id or video_id in seen_ids:
+            return
+        if video_id in short_id_set:
+            skipped.append(
+                {
+                    "episode": episode,
+                    "reason": "ID is Episode 1 long or a Short - refused",
+                    "video_id": video_id,
+                }
+            )
+            seen_ids.add(video_id)
+            return
+        if _looks_like_short(meta):
+            skipped.append(
+                {
+                    "episode": episode or 0,
+                    "reason": "YouTube duration/title looks like a Short - refused",
+                    "video_id": video_id,
+                }
+            )
+            seen_ids.add(video_id)
+            return
+        if episode == _PROTECTED_EPISODE or episode < floor:
+            if episode == _PROTECTED_EPISODE:
+                if not protected_long_id:
+                    protected_long_id = video_id
+                short_id_set.add(video_id)
+            skipped.append(
+                {
+                    "episode": episode or _PROTECTED_EPISODE,
+                    "reason": "protected episode",
+                    "video_id": video_id,
+                }
+            )
+            seen_ids.add(video_id)
+            return
+        if wanted is not None and episode not in wanted:
+            skipped.append(
+                {
+                    "episode": episode,
+                    "reason": "outside --episodes filter",
+                    "video_id": video_id,
+                }
+            )
+            seen_ids.add(video_id)
+            return
+        if not _is_scheduled_long_meta(meta) and source == "youtube":
+            skipped.append(
+                {
+                    "episode": episode,
+                    "reason": "public / not scheduled - left on channel",
+                    "video_id": video_id,
+                }
+            )
+            seen_ids.add(video_id)
+            return
+        seen_ids.add(video_id)
+        targets.append(
+            {
+                "episode": episode,
+                "video_id": video_id,
+                "meta": meta,
+                "source": source,
+            }
+        )
+
+    for item in uploads:
+        video_id = str(item.get("video_id") or "").strip()
+        title = str(item.get("title") or "")
+        episode = match_long_episode_from_title(title)
+        if episode is None:
+            if _looks_like_short(item) or not _is_scheduled_long_meta(item):
+                continue
+            skipped.append(
+                {
+                    "episode": 0,
+                    "reason": f"unmatched scheduled title: {title[:80]}",
+                    "video_id": video_id,
+                }
+            )
+            continue
+        _consider(episode, video_id, item, source="youtube")
+
+    # State IDs are a fallback when YouTube title matching missed a recorded long.
+    state_ids: list[tuple[int, str]] = []
+    for key, row in episodes_map.items():
+        if not str(key).isdigit() or not isinstance(row, dict):
+            continue
+        n = int(key)
+        video_id = str(row.get("long_video_id") or "").strip()
+        if video_id:
+            state_ids.append((n, video_id))
+    missing_state = [vid for _, vid in state_ids if vid not in seen_ids]
+    extra_meta = fetch_videos_metadata(youtube, missing_state) if missing_state else {}
+    for n, video_id in state_ids:
+        if video_id in seen_ids:
+            continue
+        meta = extra_meta.get(video_id) or {"title": "", "duration_s": 0, "privacy": "private"}
+        if n < floor:
+            _consider(n, video_id, meta, source="state")
+            continue
+        _consider(n, video_id, meta, source="state")
+
+    to_delete = list(targets)
+    print(f"[Wealth] Matched scheduled longs to delete: {len(to_delete)}")
+
+    deleted: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    if dry_run:
+        for item in to_delete:
+            title = (item.get("meta") or {}).get("title") or ""
+            print(
+                f"  [dry-run] DELETE LONG Ep {item['episode']:02d}  "
+                f"{item['video_id']}  {title}"
+            )
+    else:
+        from agents.posting.youtube_publisher import delete_youtube_video
+
+        for item in to_delete:
+            title = (item.get("meta") or {}).get("title") or ""
+            try:
+                row = _ep_state(state, int(item["episode"]))
+                row["long_video_id"] = item["video_id"]
+                delete_youtube_video(youtube, item["video_id"])
+                row["long_video_id"] = ""
+                deleted.append(
+                    {
+                        "episode": item["episode"],
+                        "video_id": item["video_id"],
+                        "title": title,
+                    }
+                )
+                print(
+                    f"  [deleted] LONG Ep {item['episode']:02d}  "
+                    f"{item['video_id']}  {title}"
+                )
+                _save_state(state)
+            except Exception as exc:  # noqa: BLE001
+                failed.append(
+                    {
+                        "episode": item["episode"],
+                        "video_id": item["video_id"],
+                        "error": str(exc),
+                    }
+                )
+                print(
+                    f"  [FAILED]  LONG Ep {item['episode']:02d}  "
+                    f"{item['video_id']}: {exc}"
+                )
+
+    if not dry_run:
+        _save_state(state)
+
+    # Re-read so the verification block reflects disk.
+    verify = _load_state() if not dry_run else state
+    verify_map = verify.get("episodes") or {}
+    verify_ep1 = verify_map.get(str(_PROTECTED_EPISODE)) or {}
+    verify_ep1_long = str((verify_ep1 or {}).get("long_video_id") or "")
+    verify_shorts = _collect_all_short_ids(verify)
+
+    print("")
+    print("[Wealth] Deleted long video IDs:")
+    if dry_run:
+        if to_delete:
+            for item in to_delete:
+                print(f"  (would delete) Ep {item['episode']:02d}  {item['video_id']}")
+        else:
+            print("  (none)")
+    elif deleted:
+        for item in deleted:
+            print(f"  Ep {item['episode']:02d}  {item['video_id']}")
+    else:
+        print("  (none)")
+
+    print("")
+    print("[Wealth] Verification - untouched:")
+    print(
+        f"  Episode {_PROTECTED_EPISODE} long_video_id = "
+        f"{verify_ep1_long or protected_long_id or '(empty)'}"
+    )
+    print(f"  Short records preserved: {len(verify_shorts)}")
+    for vid in verify_shorts:
+        print(f"    SHORT  {vid}")
+    if skipped:
+        print("[Wealth] Skipped (guardrail):")
+        for item in skipped:
+            print(
+                f"  Ep {int(item['episode']):02d}  {item.get('video_id') or '-'}  "
+                f"{item.get('reason')}"
+            )
+
+    reported_ids = {
+        str(item["video_id"])
+        for item in (to_delete if dry_run else deleted)
+        if item.get("video_id")
+    }
+    ep1_ok = (not protected_long_id) or (protected_long_id not in reported_ids)
+    shorts_ok = set(verify_shorts) == set(all_short_ids)
+    if ep1_ok and shorts_ok:
+        print(
+            "[Wealth] Confirmed: Episode 1 long and all Shorts records are untouched."
+        )
+    else:
+        print(
+            "[Wealth] WARNING: post-cleanup state mismatch for Episode 1 or Shorts."
+        )
+
+    return {
+        "from_episode": floor,
+        "longs_only": True,
+        "dry_run": dry_run,
+        "deleted": deleted if not dry_run else [],
+        "would_delete": [item["video_id"] for item in to_delete] if dry_run else [],
+        "failed": failed,
+        "skipped": skipped,
+        "protected_ep1_long": protected_long_id,
+        "protected_short_ids": all_short_ids,
+        "ep1_untouched": ep1_ok,
+        "shorts_untouched": shorts_ok,
+        "state": str(_STATE_PATH),
+    }
 
 
 def _resolve_upload_path(row: dict[str, Any], *, kind: str, use_processed: bool) -> str:
@@ -338,6 +869,8 @@ def run_publish(
         YouTubeQuotaExceededError,
         build_youtube_client_for_page,
         link_short_to_related_long,
+        list_channel_upload_videos,
+        list_future_scheduled_videos,
         queue_pending_upload,
         set_video_thumbnail,
         upload_short,
@@ -363,21 +896,46 @@ def run_publish(
     _hydrate_state_from_scan(state, scan, wanted)
 
     last_key = "last_long_scheduled_at" if mode_n == "longs" else "last_short_scheduled_at"
+    youtube = None
+    yt_last = None
+    try:
+        youtube = build_youtube_client_for_page(_PAGE, enforce_channel=True)
+        scheduled_rows = list_future_scheduled_videos(youtube, max_pages=12)
+        if not any(int(row.get("duration_s") or 0) for row in scheduled_rows):
+            scheduled_rows = list_channel_upload_videos(youtube, max_pages=8)
+        yt_last = latest_future_scheduled_at(scheduled_rows, kind=mode_n)
+        if yt_last:
+            print(
+                f"[Wealth] Latest scheduled {mode_n} on YouTube: {format_slot_pair(yt_last)}"
+            )
+        else:
+            print(
+                f"[Wealth] No future scheduled {mode_n} on YouTube - "
+                f"first slot is tomorrow or next Tue/Thu."
+            )
+    except Exception as exc:  # noqa: BLE001
+        if not dry_run:
+            raise
+        print(f"[Wealth] YouTube schedule lookup skipped ({exc})")
+        youtube = None
+    if dry_run:
+        youtube = None
     cursor = None
     if schedule:
         cursor = resolve_first_slot(
             kind=mode_n,
             start_date=start_date,
-            last_scheduled_at=state.get(last_key),
+            last_scheduled_at=max_anchor(state.get(last_key), yt_last),
             time_utc=time_utc,
         )
         print(
             f"[Wealth] Schedule {mode_n} from {format_slot_pair(cursor)} "
-            f"({'weekly' if mode_n == 'longs' else 'daily'})"
+            f"({cadence_label(mode_n)})"
         )
+        if dry_run:
+            print("[Wealth] Dry-run: previewing publishAt dates only (no YouTube upload).")
 
     table_rows: list[dict[str, Any]] = []
-    youtube = None if dry_run else build_youtube_client_for_page(_PAGE, enforce_channel=True)
     uploaded_longs: list[int] = []
     uploaded_shorts: list[int] = []
     print(f"[Wealth] Global upload safety cap this run: {gate.limit}")
@@ -492,13 +1050,17 @@ def run_publish(
             if not short_paths:
                 print(f"[Wealth] Ep {n:02d} - no Short files, skip.")
                 continue
-            long_id = str(row.get("long_video_id") or "")
-            if not long_id:
+            long_id = str(row.get("long_video_id") or "").strip()
+            if long_id:
                 print(
-                    f"[Wealth] Ep {n:02d} Shorts waiting - upload the long first "
-                    f"so relatedVideoId can be set (private/scheduled longs are OK)."
+                    f"[Wealth] Ep {n:02d} parent long {long_id} "
+                    f"(published or scheduled) -> relatedVideoId"
                 )
-                continue
+            else:
+                print(
+                    f"[Wealth] No parent long ID found for Ep {n} — "
+                    f"publishing Short without relatedVideoId"
+                )
             uploaded_meta: list[dict[str, Any]] = [
                 item for item in (row.get("short_uploads") or []) if isinstance(item, dict)
             ]
@@ -552,7 +1114,7 @@ def run_publish(
                 privacy = "private" if schedule else privacy_short
                 print(
                     f"[Wealth] Upload SHORT Ep {n:02d} [{clip}/{len(short_paths)}] "
-                    f"{Path(path).name} -> related={long_id}"
+                    f"{Path(path).name} -> related={long_id or 'none'}"
                 )
                 try:
                     video_id, url, used_slot = upload_short(
@@ -566,7 +1128,7 @@ def run_publish(
                         youtube=youtube,
                         skip_playlist=True,
                         preserve_title=True,
-                        related_video_id=long_id,
+                        related_video_id=long_id or None,
                     )
                 except YouTubeQuotaExceededError as exc:
                     queue_pending_upload(
@@ -601,16 +1163,18 @@ def run_publish(
                 row["short_video_ids"] = [
                     item.get("video_id") for item in uploaded_meta if item.get("video_id")
                 ]
-                row["related_video_id"] = long_id
+                if long_id:
+                    row["related_video_id"] = long_id
                 if used_slot is not None:
                     state["last_short_scheduled_at"] = used_slot.isoformat()
                     cursor = advance_slot(used_slot, "shorts")
-                try:
-                    link_short_to_related_long(youtube, video_id, long_id)
-                except Exception as exc:  # noqa: BLE001
-                    _LOG.warning(
-                        "relatedVideoId patch failed for short %s: %s", video_id, exc
-                    )
+                if long_id:
+                    try:
+                        link_short_to_related_long(youtube, video_id, long_id)
+                    except Exception as exc:  # noqa: BLE001
+                        _LOG.warning(
+                            "relatedVideoId patch failed for short %s: %s", video_id, exc
+                        )
                 _append_library(
                     spec=spec,
                     kind="short",

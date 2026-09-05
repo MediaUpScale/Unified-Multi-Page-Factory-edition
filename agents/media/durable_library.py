@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Per-post JSON snapshots under ``outputs/library/`` (pre–humanizer checkpoint + finalize)."""
+"""Per-post JSON snapshots under ``{OUTPUT_PATH}/{page}/library/``."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ PENDING_CAPTION = "PENDING_CAPTION"
 
 
 def path_under_engine(engine_root: Path, target: Path | str) -> str:
-    """Path relative to project root (POSIX strings), e.g. ``outputs/library/post_*.json``."""
+    """Path relative to project root when possible; otherwise the absolute POSIX path."""
     if target is None or str(target).strip() == "":
         return ""
     p = Path(target).expanduser().resolve()

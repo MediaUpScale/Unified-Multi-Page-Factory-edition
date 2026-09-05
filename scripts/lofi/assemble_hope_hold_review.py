@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from utils.pipeline_paths import page_outputs_dir
+
 from agents.media.audio_engine import generate_voiceover_with_timestamps  # noqa: E402
 from core.economic_reel_lofi import config as lofi_cfg  # noqa: E402
 from core.economic_reel_lofi.assembler import (  # noqa: E402
@@ -33,8 +35,8 @@ from core.economic_reel_lofi.pipeline import (  # noqa: E402
     _tts_text_with_breaks,
 )
 
-HOLD = ROOT / "outputs" / "wonder_feed" / "clips" / "lofi_hold_hope_20260824_194933_v01.json"
-OUT = ROOT / "outputs" / "wonder_feed" / "clips" / "lofi_reel_hope_20260824_194933_v01_review.mp4"
+HOLD = page_outputs_dir("wonder_feed") / "clips" / "lofi_hold_hope_20260824_194933_v01.json"
+OUT = page_outputs_dir("wonder_feed") / "clips" / "lofi_reel_hope_20260824_194933_v01_review.mp4"
 LINE1_MIN_S = 2.80  # isolated 0.80 probe file is 2.93s; reject the old 2.62s slot
 
 

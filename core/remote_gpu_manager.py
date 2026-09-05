@@ -421,10 +421,14 @@ def workflows_dir() -> Path:
 
 
 def default_output_dir(kind: str = "misc") -> Path:
-    """Return ``outputs/<page>/remote_gpu/<kind>/`` (or project fallback)."""
-    base = _cfg("PAGE_OUTPUTS_DIR", None) or _cfg("OUTPUTS_DIR", None)
-    if base is None:
-        base = Path(__file__).resolve().parent.parent / "outputs" / "remote_gpu_tests"
+    """Return ``{OUTPUT_PATH}/<page>/remote_gpu/<kind>/``."""
+    from utils.pipeline_paths import default_page_dir, outputs_root
+
+    page = _cfg("ACTIVE_PAGE", None) or _cfg("PAGE_OUTPUTS_DIR", None)
+    if page and not isinstance(page, Path) and "/" not in str(page) and "\\" not in str(page):
+        base = default_page_dir(str(page))
+    else:
+        base = _cfg("PAGE_OUTPUTS_DIR", None) or _cfg("OUTPUTS_DIR", None) or outputs_root()
     out = Path(base) / "remote_gpu" / kind
     out.mkdir(parents=True, exist_ok=True)
     return out

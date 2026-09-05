@@ -272,24 +272,26 @@ def resolve_image_path(record: dict) -> str:
     the local workspace root (ENGINE_ROOT). Returns empty string if missing.
     """
     from agents.posting.pinterest_engine import config as cfg  # noqa: PLC0415
+    from utils.pipeline_paths import coerce_outputs_path, factory_root
 
     # 1. Already resolved
     existing = record.get("local_image_path", "")
     if existing and Path(existing).is_file():
         return str(Path(existing).resolve())
 
-    # 2. image_relative / image_path relative to local workspace root
+    # 2. image_relative / image_path against OUTPUT_PATH, then the repo root
     for rel_field in ("image_relative", "image_path"):
         rel = record.get(rel_field, "")
         if not rel:
             continue
-        candidate = (cfg.ENGINE_ROOT / rel).resolve()
-        if candidate.is_file():
-            return str(candidate)
-        # Also try relative to outputs/ (common inventory layout)
-        out_cand = (cfg.OUTPUTS_DIR / rel).resolve()
-        if out_cand.is_file():
-            return str(out_cand)
+        for candidate in (
+            coerce_outputs_path(rel),
+            (cfg.OUTPUTS_DIR / rel),
+            (factory_root() / rel),
+        ):
+            resolved = Path(candidate).expanduser()
+            if resolved.is_file():
+                return str(resolved.resolve())
 
     return ""
 
@@ -312,10 +314,16 @@ def resolve_video_path(record: dict) -> str:
             continue
         candidate = Path(raw)
         if not candidate.is_absolute():
-            for base in (cfg.ENGINE_ROOT, cfg.OUTPUTS_DIR):
-                trial = (base / raw).resolve()
-                if trial.is_file():
-                    return str(trial)
+            from utils.pipeline_paths import coerce_outputs_path, factory_root
+
+            for trial in (
+                coerce_outputs_path(raw),
+                cfg.OUTPUTS_DIR / raw,
+                factory_root() / raw,
+            ):
+                resolved = Path(trial).expanduser()
+                if resolved.is_file():
+                    return str(resolved.resolve())
         elif candidate.is_file():
             return str(candidate.resolve())
 

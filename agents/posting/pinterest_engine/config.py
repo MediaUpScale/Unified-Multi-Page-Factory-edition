@@ -176,18 +176,18 @@ def resolve_channel_outputs_dir(channel_id: str) -> Path:
        their own library tree (preserves anna_protocol root ledger)
     5. Fresh isolated ``outputs/<channel_id>/``
     """
+    from utils.pipeline_paths import coerce_outputs_path, outputs_root, page_outputs_dir
+
     cid = _safe_channel_id(channel_id)
     pack, _ = load_channel_content_pack(cid)
     pack_dir = _pack_get(pack, "outputs_dir", "inventory_dir")
     if pack_dir:
-        resolved = Path(pack_dir)
-        if not resolved.is_absolute():
-            resolved = ENGINE_ROOT / resolved
+        resolved = coerce_outputs_path(pack_dir)
         logger.info("Channel '%s': outputs from content pack: %s", cid, resolved)
         return resolved
 
-    outputs_chan = ENGINE_ROOT / "outputs" / cid
-    root_outputs = ENGINE_ROOT / "outputs"
+    outputs_chan = page_outputs_dir(cid)
+    root_outputs = outputs_root()
     # Preserve the original anna_protocol ledger at outputs/ until that
     # channel gets its own isolated inventory/history files.
     if cid == "anna_protocol":
@@ -205,7 +205,7 @@ def resolve_channel_outputs_dir(channel_id: str) -> Path:
             )
             return root_outputs
     data_chan = ENGINE_ROOT / "data" / cid
-    root_outputs = ENGINE_ROOT / "outputs"
+    root_outputs = outputs_root()
     library_dir = outputs_chan / "library"
 
     chan_has_library = library_dir.is_dir() and any(library_dir.glob("post_*.json"))
@@ -378,12 +378,15 @@ def _apply_paths(outputs_dir: Path | None = None) -> None:
     global CHANNEL_CONFIG_DIR, CHANNEL_HOME_DIR
 
     if outputs_dir is not None:
-        OUTPUTS_DIR = Path(outputs_dir)
+        from utils.pipeline_paths import coerce_outputs_path
+
+        OUTPUTS_DIR = coerce_outputs_path(outputs_dir)
     elif CHANNEL_ID:
         OUTPUTS_DIR = resolve_channel_outputs_dir(CHANNEL_ID)
     else:
-        default_outputs = ENGINE_ROOT / "outputs"
-        OUTPUTS_DIR = _resolve_path(os.getenv("OUTPUTS_DIR"), default_outputs)
+        from utils.pipeline_paths import outputs_root
+
+        OUTPUTS_DIR = outputs_root()
 
     ASSETS_DIR = OUTPUTS_DIR / "assets"
     LIBRARY_DIR = OUTPUTS_DIR / "library"
@@ -415,7 +418,7 @@ def configure(
         explicit ``--env`` > channel-resolved env > workspace ``.env``
     inventory/outputs:
         explicit ``--inventory-dir`` > channel outputs resolution >
-        workspace ``outputs/`` (or OUTPUTS_DIR env)
+        workspace ``OUTPUT_PATH`` / ``OUTPUTS_DIR`` env root
     content (CTAs/URLs/prompts):
         channel ``.env`` keys > channel ``config.json`` > empty
     """

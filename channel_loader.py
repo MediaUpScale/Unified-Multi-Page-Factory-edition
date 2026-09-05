@@ -25,8 +25,8 @@ Supported channels
                   Educational / Financial Curation — library ingest of the
                   Principles of Wealth production drive (wealth_main.py)
   endless_summer_paradise
-                  Tropical aesthetic library ingest — Endless Summers Paradise
-                  production drive (esp_main.py; duration > 40s)
+                  1950s surreal architecture library ingest — local source/
+                  + factory_settings.json (esp_main.py; duration > 40s)
 
 Usage
 -----
@@ -199,7 +199,7 @@ class PageContext:
     product_reference_dir:
         Absolute path to channels_config/{page_id}/product_reference/ (may not exist).
     outputs_dir:
-        Absolute path to outputs/{page_id}/ for all page-namespaced artifacts.
+        Absolute path to {OUTPUT_PATH}/{page_id}/ for all page-namespaced artifacts.
     page_cfg:
         Dict of values exported from page_config.py (atmosphere_style, aspect_ratio, etc.).
     """
@@ -1715,11 +1715,13 @@ def load_page_context(
         legacy = _LEGACY_PAGES_CONFIG_ROOT / page_id
         if legacy.is_dir():
             page_dir = legacy
-    outputs_dir = _ENGINE_ROOT / "outputs" / page_id
+    from utils.pipeline_paths import page_assets_dir, page_library_dir, page_outputs_dir
 
-    # Ensure outputs directory exists at load time.
-    (outputs_dir / "assets").mkdir(parents=True, exist_ok=True)
-    (outputs_dir / "library").mkdir(parents=True, exist_ok=True)
+    outputs_dir = page_outputs_dir(page_id, create=True)
+
+    # Ensure outputs directory exists at load time (OUTPUT_PATH / page_id).
+    page_assets_dir(page_id, create=True)
+    page_library_dir(page_id, create=True)
     (outputs_dir / "postplanner").mkdir(parents=True, exist_ok=True)
 
     # Ensure brand asset subfolders exist inside the page config directory.

@@ -1,0 +1,8 @@
+{
+  "source_directory": "source",
+  "global_video_library": "global_video_library.json",
+  "factory_settings": "factory_settings.json",
+  "processed_subfolder": "Processed",
+  "min_duration_seconds": 40.0,
+  "master_filename_suffix": "_ULTIMATE_MASTER.mp4"
+}

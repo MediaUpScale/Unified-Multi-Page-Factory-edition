@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from utils.pipeline_paths import page_outputs_dir
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -37,8 +39,9 @@ SERVICE_ACCOUNT_JSON: Path = Path(
 WORKSHEET_NAME: str = "Ready_to_post"
 
 # Screenshot + log directories (created at runtime if missing)
-SCREENSHOTS_DIR: Path = PROJECT_ROOT / "outputs" / "facebook_scheduler" / "screenshots"
-LOGS_DIR: Path        = PROJECT_ROOT / "outputs" / "facebook_scheduler" / "logs"
+_FB_SCHED_OUT = page_outputs_dir("facebook_scheduler")
+SCREENSHOTS_DIR: Path = _FB_SCHED_OUT / "screenshots"
+LOGS_DIR: Path        = _FB_SCHED_OUT / "logs"
 
 # ---------------------------------------------------------------------------
 # Scheduling

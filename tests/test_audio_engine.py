@@ -112,15 +112,17 @@ def run_page_audio_test(page_id: str = "master_mei"):
     # 1. Modular Paths Setup
     page_config_dir = os.path.join(base_factory_dir, "channels_config", page_id)
     
-    # Dedicated Subdirectory for Audio Tests
-    test_output_dir = os.path.join(base_factory_dir, "outputs", page_id, "audio_tests")
+    from utils.pipeline_paths import page_outputs_dir
+
+    page_out = page_outputs_dir(page_id)
+    test_output_dir = str(page_out / "audio_tests")
     os.makedirs(test_output_dir, exist_ok=True)
 
     bgm_folder = os.path.join(page_config_dir, "audio", "bgm")
     sfx_path = os.path.join(page_config_dir, "audio", "sfx", "dark_atmosphere_loop.wav")
     
     # Resolve Voiceover source (prioritizes production VO if available)
-    prod_vo_path = os.path.join(base_factory_dir, "outputs", page_id, "temp_vo.mp3")
+    prod_vo_path = str(page_out / "temp_vo.mp3")
     test_vo_path = os.path.join(test_output_dir, "temp_test_vo.mp3")
 
     if os.path.exists(prod_vo_path):

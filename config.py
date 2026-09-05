@@ -12,7 +12,8 @@ Supported keys
     GEMINI_ECONOMIC_BRAIN_MODEL, ECONOMIC_BRAIN_MODE (true/false),
     DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL (optional secondary fallback),
     TEXT_LLM_PRIMARY (default: gemini),
-    REFERENCE_IMAGE_PATH, DIGITAL_PRODUCTS_PATH, OUTPUTS_DIR, PDF_CHUNK_CHAR_LIMIT,
+    REFERENCE_IMAGE_PATH, DIGITAL_PRODUCTS_PATH, OUTPUT_PATH, OUTPUTS_DIR,
+    ASSETS_PATH, PDF_CHUNK_CHAR_LIMIT,
     IMGBB_API_KEY, ANTHROPIC_API_VERSION,
     PUBLISHING_SCHEDULE (e.g. "3h" or "90m" spacing between variant posts)
 
@@ -33,6 +34,8 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from utils.pipeline_paths import assets_root, outputs_root, page_assets_dir, page_outputs_dir
 
 logger = logging.getLogger(__name__)
 
@@ -544,15 +547,18 @@ DIGITAL_PRODUCTS_PATH: Path = _resolve_path(
 PDF_CHUNK_CHAR_LIMIT: int = int(os.getenv("PDF_CHUNK_CHAR_LIMIT", "48000"))
 
 # ---------------------------------------------------------------------------
-# Output paths — page-namespaced under outputs/{page}/
+# Output paths — page-namespaced under {OUTPUT_PATH}/{page}/
+# Prefers OUTPUT_PATH / ASSETS_PATH from .env (OUTPUTS_DIR is a legacy alias).
 # ---------------------------------------------------------------------------
-_DEFAULT_OUTPUTS = ENGINE_ROOT / "outputs"
-OUTPUTS_DIR: Path = _resolve_path(os.getenv("OUTPUTS_DIR"), _DEFAULT_OUTPUTS)
+OUTPUTS_DIR: Path = outputs_root()
+OUTPUT_PATH: Path = OUTPUTS_DIR
+FACTORY_ASSETS_DIR: Path = assets_root()
+ASSETS_PATH: Path = FACTORY_ASSETS_DIR
 
 # Page-namespaced output root.  All per-page artifacts (images, library JSON,
 # Excel planners) land here so pages never share or collide on outputs.
-PAGE_OUTPUTS_DIR: Path = OUTPUTS_DIR / ACTIVE_PAGE
-ASSETS_DIR: Path = PAGE_OUTPUTS_DIR / "assets"
+PAGE_OUTPUTS_DIR: Path = page_outputs_dir(ACTIVE_PAGE)
+ASSETS_DIR: Path = page_assets_dir(ACTIVE_PAGE)
 LIBRARY_DIR: Path = PAGE_OUTPUTS_DIR / "library"
 CONTENT_LIBRARY_PATH: Path = PAGE_OUTPUTS_DIR / "content_library.json"
 

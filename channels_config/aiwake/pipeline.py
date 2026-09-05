@@ -15,14 +15,15 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 try:
     from .contracts import DebateTranscript
     from .media.audio import build_engine
-    from .memory import DebateMemory
+    from .memory import DebateMemory, script_fingerprint, scripts_overlap
     from .models.llm_factory import force_offline
     from .observers.core import (
         ConsoleObserver,
@@ -43,7 +44,7 @@ try:
 except ImportError:  # pragma: no cover — standalone extraction
     from contracts import DebateTranscript  # type: ignore[no-redef]
     from media.audio import build_engine  # type: ignore[no-redef]
-    from memory import DebateMemory  # type: ignore[no-redef]
+    from memory import DebateMemory, script_fingerprint, scripts_overlap  # type: ignore[no-redef]
     from models.llm_factory import force_offline  # type: ignore[no-redef]
     from observers.core import (  # type: ignore[no-redef]
         ConsoleObserver,
@@ -89,6 +90,41 @@ class PipelineResult:
         return self.end_reason == "complete" and self.exchanges > 0
 
 
+@dataclass(slots=True)
+class BulkPipelineResult:
+    """What a ``--quantity N`` run produced."""
+
+    items: list[PipelineResult] = field(default_factory=list)
+    requested: int = 0
+    succeeded: int = 0
+    skipped_duplicates: int = 0
+
+    @property
+    def complete(self) -> bool:
+        return self.succeeded == self.requested and self.requested > 0
+
+
+_BULK_SCRIPT_RETRIES = 3
+
+
+def _transcript_script(result: PipelineResult) -> str:
+    return result.transcript.to_script()
+
+
+def _record_produced_script(memory: DebateMemory, script: str) -> None:
+    if not script:
+        return
+    memory.note_script(script)
+    memory.flush()
+
+
+def _script_conflicts(script: str, seen_scripts: Sequence[str], seen_fps: set[str]) -> bool:
+    fingerprint = script_fingerprint(script)
+    if fingerprint and fingerprint in seen_fps:
+        return True
+    return any(scripts_overlap(script, prior) for prior in seen_scripts)
+
+
 def run_pipeline(
     *,
     topic: str | None = None,
@@ -104,6 +140,9 @@ def run_pipeline(
     fresh_memory: bool = False,
     output_dir: Path | None = None,
     quiet: bool = False,
+    excluded_topics: Sequence[str] = (),
+    excluded_foci: Sequence[str] = (),
+    record_script: bool = True,
 ) -> PipelineResult:
     """Run a debate and (optionally) produce the video.
 
@@ -125,6 +164,10 @@ def run_pipeline(
         fresh_memory: Wipe persisted memory before starting.
         output_dir: Override the media destination.
         quiet: Suppress the live console stream.
+        excluded_topics: Subjects already used in a bulk batch.
+        excluded_foci: Attack angles already used in a bulk batch.
+        record_script: Persist the finished script fingerprint so later runs
+            cannot reprint the same video.
 
     Returns:
         A :class:`PipelineResult`. Partial runs still return their transcript
@@ -205,7 +248,12 @@ def run_pipeline(
     end_reason = "interrupted"
     exchanges = 0
     try:
-        result = provocateur.run(topic=topic, turns=turns)
+        result = provocateur.run(
+            topic=topic,
+            turns=turns,
+            excluded_topics=excluded_topics,
+            excluded_foci=excluded_foci,
+        )
         exchanges = result.exchanges
         end_reason = result.end_reason
 
@@ -251,7 +299,7 @@ def run_pipeline(
                 send_flash_s=cfg.render.send_flash_s,
             )
 
-        return PipelineResult(
+        pipeline_result = PipelineResult(
             transcript=result.transcript,
             video_path=video_path,
             exchanges=result.exchanges,
@@ -259,6 +307,9 @@ def run_pipeline(
             audio_seconds=audio_seconds,
             dialogue_end_reason=result.dialogue_end_reason,
         )
+        if record_script:
+            _record_produced_script(memory, _transcript_script(pipeline_result))
+        return pipeline_result
     finally:
         emit(
             ON_PIPELINE_FINISH,
@@ -276,4 +327,144 @@ def run_pipeline(
         )
 
 
-__all__ = ["PipelineResult", "run_pipeline"]
+def run_bulk_pipeline(
+    *,
+    quantity: int,
+    topic: str | None = None,
+    turns: int | None = None,
+    mode: Literal["fixed", "cornered"] | None = None,
+    provocation_focus: str | None = None,
+    settings: AiwakeSettings | None = None,
+    orchestrator_model: str | None = None,
+    target_model: str | None = None,
+    offline: bool = False,
+    with_audio: bool = True,
+    with_video: bool = True,
+    fresh_memory: bool = False,
+    output_dir: Path | None = None,
+    quiet: bool = False,
+) -> BulkPipelineResult:
+    """Produce ``quantity`` original videos. Never reprints a prior script.
+
+    Each item draws a fresh topic (unless ``topic`` is pinned) and a distinct
+    provocation focus, then fingerprints the finished transcript. A collision
+    with this batch or with persisted memory is retried on a new opening axis.
+    ``--fresh-memory`` wipes history once, before the first item.
+    """
+    qty = max(1, int(quantity))
+    cfg = settings or load_settings()
+    if fresh_memory:
+        DebateMemory(cfg.memory).reset()
+        _LOG.info("memory reset for bulk run of %d", qty)
+
+    history = DebateMemory(cfg.memory)
+    seen_scripts = [" ".join(tokens) for tokens in history.state.script_token_prints]
+    seen_fps = {item for item in history.state.script_fingerprints if item}
+    used_topics: list[str] = list(history.recent_topics())
+    used_foci: list[str] = list(history.recent_focus_categories())
+
+    items: list[PipelineResult] = []
+    skipped = 0
+    shared = {
+        "turns": turns,
+        "mode": mode,
+        "provocation_focus": provocation_focus,
+        "settings": cfg,
+        "orchestrator_model": orchestrator_model,
+        "target_model": target_model,
+        "offline": offline,
+        "with_audio": with_audio,
+        "with_video": with_video,
+        "output_dir": output_dir,
+        "quiet": quiet,
+    }
+
+    for index in range(qty):
+        accepted: PipelineResult | None = None
+        item_topic = topic
+        for attempt in range(1, _BULK_SCRIPT_RETRIES + 1):
+            _LOG.info(
+                "bulk item %d/%d attempt %d topic=%s",
+                index + 1,
+                qty,
+                attempt,
+                item_topic or "(randomised)",
+            )
+            result = run_pipeline(
+                topic=item_topic,
+                fresh_memory=False,
+                excluded_topics=() if item_topic else tuple(used_topics),
+                excluded_foci=tuple(used_foci),
+                record_script=False,
+                **shared,
+            )
+            if result.end_reason == "interrupted":
+                _LOG.warning("bulk run interrupted at item %d/%d", index + 1, qty)
+                if result.exchanges > 0:
+                    items.append(result)
+                return BulkPipelineResult(
+                    items=items,
+                    requested=qty,
+                    succeeded=sum(1 for item in items if item.succeeded),
+                    skipped_duplicates=skipped,
+                )
+
+            script = _transcript_script(result)
+            if script and _script_conflicts(script, seen_scripts, seen_fps):
+                _LOG.warning(
+                    "bulk item %d/%d produced a repeated script (attempt %d); regenerating",
+                    index + 1,
+                    qty,
+                    attempt,
+                )
+                # A pinned topic that collided must not be reused on retry.
+                item_topic = None
+                continue
+            if not result.succeeded:
+                _LOG.error(
+                    "bulk item %d/%d failed (%s / %s)",
+                    index + 1,
+                    qty,
+                    result.end_reason,
+                    result.dialogue_end_reason,
+                )
+                break
+
+            _record_produced_script(DebateMemory(cfg.memory), script)
+            seen_scripts.append(script)
+            fingerprint = script_fingerprint(script)
+            if fingerprint:
+                seen_fps.add(fingerprint)
+            used_topics.append(result.transcript.topic)
+            focus = str(result.transcript.metadata.get("provocation_focus") or "")
+            if focus:
+                used_foci.append(focus)
+            accepted = result
+            break
+
+        if accepted is None:
+            skipped += 1
+            _LOG.error(
+                "bulk item %d/%d skipped: could not produce an original script",
+                index + 1,
+                qty,
+            )
+            continue
+        items.append(accepted)
+
+    succeeded = sum(1 for item in items if item.succeeded)
+    _LOG.info(
+        "bulk finished: requested=%d succeeded=%d skipped_duplicates=%d",
+        qty,
+        succeeded,
+        skipped,
+    )
+    return BulkPipelineResult(
+        items=items,
+        requested=qty,
+        succeeded=succeeded,
+        skipped_duplicates=skipped,
+    )
+
+
+__all__ = ["BulkPipelineResult", "PipelineResult", "run_bulk_pipeline", "run_pipeline"]

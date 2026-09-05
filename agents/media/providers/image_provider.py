@@ -513,7 +513,17 @@ class GeminiImageAdapter(ImageProvider):
         """Native Gemini image path (original Anna Protocol engine)."""
         client = self._gemini_client_lazy()
         ratio = aspect_ratio or app_config.GEMINI_IMAGE_ASPECT_RATIO or "3:4"
-        out_dir = Path(output_directory or app_config.OUTPUTS_DIR)
+        from utils.pipeline_paths import page_assets_dir
+
+        configured = (
+            output_directory
+            or getattr(app_config, "ASSETS_DIR", None)
+            or getattr(app_config, "PAGE_OUTPUTS_DIR", None)
+        )
+        if configured:
+            out_dir = Path(configured)
+        else:
+            out_dir = page_assets_dir(getattr(app_config, "ACTIVE_PAGE", "unknown"), create=True)
         out_dir.mkdir(parents=True, exist_ok=True)
         slug = safe_output_stem(output_stem)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")

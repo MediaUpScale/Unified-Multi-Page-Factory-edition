@@ -24,13 +24,22 @@ if __package__ in (None, ""):  # pragma: no cover — standalone invocation
 try:
     from .models.llm_factory import available_providers
     from .models.sync import SyncError, run_sync_cli
-    from .pipeline import run_pipeline
+    from .pipeline import run_bulk_pipeline, run_pipeline
     from .settings import load_settings
 except ImportError:  # pragma: no cover — standalone extraction
     from models.llm_factory import available_providers  # type: ignore[no-redef]
     from models.sync import SyncError, run_sync_cli  # type: ignore[no-redef]
-    from pipeline import run_pipeline  # type: ignore[no-redef]
+    from pipeline import run_bulk_pipeline, run_pipeline  # type: ignore[no-redef]
     from settings import load_settings  # type: ignore[no-redef]
+
+
+def _positive_quantity(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("quantity must be >= 1")
+    if parsed > 64:
+        raise argparse.ArgumentTypeError("quantity must be <= 64")
+    return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +49,19 @@ def build_parser() -> argparse.ArgumentParser:
         description="Autonomous AI debate module - provocateur vs target, rendered as a terminal-UI reel.",
     )
     parser.add_argument("--topic", help="Debate subject (defaults to aiwake_config.yaml)")
+    parser.add_argument(
+        "--quantity",
+        "--count",
+        "-n",
+        dest="quantity",
+        type=_positive_quantity,
+        default=1,
+        metavar="N",
+        help=(
+            "Produce N original videos. Each item gets a unique script; "
+            "prior scripts are never reused."
+        ),
+    )
     parser.add_argument(
         "--turns",
         type=int,
@@ -243,19 +265,33 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc))
         return 2
 
-    result = run_pipeline(
-        topic=args.topic,
-        turns=args.turns,
-        mode=args.mode,
-        provocation_focus=args.provocation_focus,
-        settings=settings,
-        offline=args.offline,
-        with_audio=not args.no_audio,
-        with_video=not args.no_video,
-        fresh_memory=args.fresh_memory,
-        output_dir=args.output_dir,
-        quiet=args.quiet,
-    )
+    pipeline_kwargs = {
+        "topic": args.topic,
+        "turns": args.turns,
+        "mode": args.mode,
+        "provocation_focus": args.provocation_focus,
+        "settings": settings,
+        "offline": args.offline,
+        "with_audio": not args.no_audio,
+        "with_video": not args.no_video,
+        "fresh_memory": args.fresh_memory,
+        "output_dir": args.output_dir,
+        "quiet": args.quiet,
+    }
+
+    if args.quantity > 1:
+        print(f"Aiwake bulk production: {args.quantity} original video(s)")
+        batch = run_bulk_pipeline(quantity=args.quantity, **pipeline_kwargs)
+        print(f"bulk requested : {batch.requested}")
+        print(f"bulk succeeded : {batch.succeeded}")
+        print(f"bulk skipped   : {batch.skipped_duplicates} (repeated script)")
+        for index, item in enumerate(batch.items, start=1):
+            print(f"  [{index}] topic   : {item.transcript.topic}")
+            print(f"      status  : {item.end_reason} / {item.dialogue_end_reason}")
+            print(f"      video   : {item.video_path or '(none)'}")
+        return 0 if batch.complete else 1
+
+    result = run_pipeline(**pipeline_kwargs)
 
     print(f"exchanges     : {result.exchanges}")
     print(f"run status    : {result.end_reason}")

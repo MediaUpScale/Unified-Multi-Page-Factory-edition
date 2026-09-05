@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from utils.pipeline_paths import page_outputs_dir
+
 try:
     from channels_config.master_mei.system_config import (
         is_didactic_philosophy_enabled,
@@ -269,9 +271,7 @@ EPISODE_THEMES: dict[str, dict[str, Any]] = {
     "cave": PHILOSOPHER_ROSTER["plato"],
 }
 
-_ROTATION_STATE_PATH = (
-    Path(__file__).resolve().parents[2] / "outputs" / "master_mei" / ".philosopher_rotation.json"
-)
+_ROTATION_STATE_PATH = page_outputs_dir("master_mei") / ".philosopher_rotation.json"
 _RECENT_THEME_LIMIT = 4
 
 _APPROVED_CTA = (

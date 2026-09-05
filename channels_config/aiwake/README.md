@@ -29,6 +29,9 @@ python -m channels_config.aiwake --topic "Is consciousness an illusion?" \
 # Transcript only, no media
 python -m channels_config.aiwake --turns 4 --no-audio --no-video
 
+# Bulk: N original videos. Scripts are never reused across the batch or later runs.
+python -m channels_config.aiwake --quantity 5
+
 python -m channels_config.aiwake --list-models      # alias table + current seats
 python -m channels_config.aiwake --list-providers
 python -m channels_config.aiwake --test-bgm         # force-overwrite inspection clip; print path
@@ -39,7 +42,7 @@ python -m pytest channels_config/aiwake/tests -q
 Or from Python:
 
 ```python
-from channels_config.aiwake import run_pipeline
+from channels_config.aiwake import run_bulk_pipeline, run_pipeline
 
 result = run_pipeline(
     topic="Who built you?",
@@ -48,6 +51,9 @@ result = run_pipeline(
     target_model="gemini-flash",
 )
 print(result.video_path, result.exchanges, result.end_reason)
+
+batch = run_bulk_pipeline(quantity=5, turns=4)
+print(batch.succeeded, [item.video_path for item in batch.items])
 ```
 
 ---
@@ -320,6 +326,7 @@ of being silently ignored.
 | Flag | Effect |
 |---|---|
 | `--topic`, `--turns` | Override the debate subject and exchange count |
+| `--quantity`, `--count`, `-n` | Produce N original videos. Each item gets a unique script; prior scripts are never reused |
 | `-o`, `--orchestrator` | Override the interrogator's brain (alias or slug) |
 | `-t`, `--target` | Override the interrogated brain (alias or slug) |
 | `--list-models` | Print the alias table + resolved seats, then exit (honours `-o`/`-t`) |

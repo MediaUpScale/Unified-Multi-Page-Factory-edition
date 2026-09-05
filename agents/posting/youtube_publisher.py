@@ -24,6 +24,7 @@ gitignored and must NEVER be committed.
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
@@ -32,7 +33,7 @@ import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 _LOG = logging.getLogger(__name__)
 
@@ -62,7 +63,8 @@ _SCOPES = [
 _CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB resumable chunk
 
 _ENGINE_ROOT: Path = Path(__file__).resolve().parents[2]
-_DEFAULT_CLIENT_SECRETS: Path = _ENGINE_ROOT / "client_secret.json"
+_CREDENTIALS_DIR: Path = _ENGINE_ROOT / "credentials"
+_DEFAULT_CLIENT_SECRETS: Path = _CREDENTIALS_DIR / "client_secret.json"
 _DEFAULT_TOKEN_DIR: Path = _ENGINE_ROOT / "credentials" / "tokens"
 _DEFAULT_PENDING_QUEUE_PATH: Path = _ENGINE_ROOT / "credentials" / "pending_youtube_uploads.json"
 _QUEUE_LOCK = threading.Lock()
@@ -163,9 +165,6 @@ _PAGE_DEFAULT_PLAYLISTS: dict[str, str] = {
     "anna_protocol": "",
     # Three ACT playlists are created by wealth_main.py — do not auto-dump here.
     "principles_of_wealth_finance_economics": "",
-    "endless_summer_paradise": (
-        "Endless Summer Paradise — 1950s Surreal Architecture & Retro Dreamscapes"
-    ),
 }
 
 _PAGE_PLAYLIST_DESCRIPTIONS: dict[str, str] = {
@@ -178,7 +177,6 @@ _PAGE_EXPECTED_CHANNEL_HINTS: dict[str, str] = {
     "master_mei": "Master Mei",
     "ancient_knowledge": "Ancient Knowledge",
     "principles_of_wealth_finance_economics": "Principles of Wealth",
-    "endless_summer_paradise": "Endless Summer Paradise",
 }
 
 # Legacy Master Mei playlist titles — never assign new uploads here.
@@ -199,6 +197,24 @@ def _sanitize_page_name(page_name: str) -> str:
     slug = (page_name or "default").strip().lower()
     slug = _re.sub(r"[^a-z0-9_\-]+", "_", slug).strip("_")
     return slug or "default"
+
+
+def _channel_page_config(slug: str) -> Any:
+    """Load ``channels_config/{slug}/page_config.py`` when present."""
+    try:
+        return importlib.import_module(f"channels_config.{slug}.page_config")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _expected_channel_hint(slug: str) -> str:
+    """Prefer ``YOUTUBE_CHANNEL_HINT`` from the channel folder, then engine fallbacks."""
+    cfg = _channel_page_config(slug)
+    if cfg is not None:
+        hint = getattr(cfg, "YOUTUBE_CHANNEL_HINT", None)
+        if hint:
+            return str(hint)
+    return _PAGE_EXPECTED_CHANNEL_HINTS.get(slug, "")
 
 
 def default_token_dir() -> Path:
@@ -243,13 +259,41 @@ def _is_upload_limit_error(exc: BaseException) -> bool:
 
 
 def _resolve_client_secrets(path: Optional[str | Path] = None) -> Path:
-    target = Path(path) if path else _DEFAULT_CLIENT_SECRETS
-    if not target.is_file():
-        raise FileNotFoundError(
-            f"Google OAuth2 client-secrets file not found: {target}\n"
-            "Download it from Google Cloud Console → APIs & Services → Credentials."
-        )
-    return target
+    """Locate the Google OAuth2 desktop client-secrets file.
+
+    Search order:
+    1. Explicit *path* when it exists (absolute, CWD-relative, or repo-relative).
+    2. ``credentials/client_secret.json`` (default).
+    3. Any ``client_secret*.json`` inside ``credentials/``.
+    4. Legacy repo-root ``client_secret.json``.
+    """
+    candidates: list[Path] = []
+    if path:
+        given = Path(path)
+        candidates.append(given)
+        if not given.is_absolute():
+            candidates.append(_ENGINE_ROOT / given)
+
+    candidates.append(_DEFAULT_CLIENT_SECRETS)
+    if _CREDENTIALS_DIR.is_dir():
+        candidates.extend(sorted(_CREDENTIALS_DIR.glob("client_secret*.json")))
+    candidates.append(_ENGINE_ROOT / "client_secret.json")
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.is_file():
+            return candidate
+
+    raise FileNotFoundError(
+        f"Google OAuth2 client-secrets file not found: {_DEFAULT_CLIENT_SECRETS}\n"
+        "Place client_secret.json (or client_secret*.json) under credentials/, "
+        "or pass an explicit path.\n"
+        "Download it from Google Cloud Console → APIs & Services → Credentials."
+    )
 
 
 def resolve_youtube_token_path(
@@ -431,7 +475,7 @@ def verify_authorized_channel(
         custom,
     )
 
-    hint = _PAGE_EXPECTED_CHANNEL_HINTS.get(slug, "")
+    hint = _expected_channel_hint(slug)
     if hint and hint.lower() not in title.lower():
         warn = (
             f'[YouTube Uploader] CHANNEL MISMATCH: page="{page_name}" expected a channel '
@@ -489,7 +533,7 @@ def build_youtube_client_for_page(
             f"\n[YouTube Auth] Wrong channel for '{slug}'. "
             "Invalidating token and launching clean OAuth re-auth …\n"
             "Select the correct Brand Account "
-            f'("{_PAGE_EXPECTED_CHANNEL_HINTS.get(slug, slug)}").\n'
+            f'("{_expected_channel_hint(slug) or slug}").\n'
         )
         invalidate_youtube_token(slug, token_dir)
         creds = build_credentials(slug, client_secrets_path, token_dir)
@@ -543,7 +587,7 @@ def list_future_scheduled_videos(
 ) -> list[dict]:
     """Return channel videos with a future ``status.publishAt`` (newest pages first).
 
-    Each item: ``{"video_id", "publish_at", "privacy_status", "title"}``.
+    Each item: ``{"video_id", "publish_at", "privacy_status", "title", "duration_s"}``.
     """
     if channel_id is None:
         channel_id = _get_channel_id(youtube)
@@ -592,7 +636,7 @@ def list_future_scheduled_videos(
         if video_ids:
             try:
                 v_resp = youtube.videos().list(
-                    part="status,snippet",
+                    part="status,snippet,contentDetails",
                     id=",".join(video_ids),
                 ).execute()
             except Exception as exc:  # noqa: BLE001
@@ -620,6 +664,9 @@ def list_future_scheduled_videos(
                         "title": (v.get("snippet") or {}).get("title")
                         or titles.get(vid)
                         or "",
+                        "duration_s": _iso8601_duration_seconds(
+                            str((v.get("contentDetails") or {}).get("duration") or "")
+                        ),
                     }
                 )
 
@@ -628,6 +675,93 @@ def list_future_scheduled_videos(
             break
 
     out.sort(key=lambda row: row["publish_at"])
+    return out
+
+
+def list_channel_upload_videos(
+    youtube,
+    *,
+    channel_id: Optional[str] = None,
+    max_pages: int = 20,
+    page_size: int = 50,
+) -> list[dict[str, Any]]:
+    """Page the channel uploads playlist and return snippet/status/duration.
+
+    Each item: ``video_id``, ``title``, ``privacy``, ``publish_at`` (ISO or ""),
+    ``duration_s``, ``description``. Includes private/scheduled videos the
+    authorized channel owns.
+    """
+    if channel_id is None:
+        channel_id = _get_channel_id(youtube)
+    try:
+        ch_resp = youtube.channels().list(
+            part="contentDetails", id=channel_id
+        ).execute()
+        uploads_pl = (
+            ch_resp["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        )
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("Could not resolve uploads playlist (%s).", exc)
+        return []
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    page_token: Optional[str] = None
+    for _ in range(max(1, int(max_pages))):
+        try:
+            params: dict = {
+                "part": "snippet,contentDetails",
+                "playlistId": uploads_pl,
+                "maxResults": min(50, max(1, int(page_size))),
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            pl_resp = youtube.playlistItems().list(**params).execute()
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning("playlistItems.list failed (%s).", exc)
+            break
+
+        items = pl_resp.get("items") or []
+        video_ids = []
+        for it in items:
+            vid = (it.get("contentDetails") or {}).get("videoId") or (
+                ((it.get("snippet") or {}).get("resourceId") or {}).get("videoId")
+            )
+            if vid and vid not in seen:
+                video_ids.append(vid)
+        if video_ids:
+            try:
+                v_resp = youtube.videos().list(
+                    part="snippet,status,contentDetails",
+                    id=",".join(video_ids),
+                ).execute()
+            except Exception as exc:  # noqa: BLE001
+                _LOG.warning("videos.list failed (%s).", exc)
+                v_resp = {"items": []}
+            for v in v_resp.get("items") or []:
+                vid = str(v.get("id") or "")
+                if not vid or vid in seen:
+                    continue
+                seen.add(vid)
+                snippet = v.get("snippet") or {}
+                status = v.get("status") or {}
+                details = v.get("contentDetails") or {}
+                out.append(
+                    {
+                        "video_id": vid,
+                        "title": snippet.get("title") or "",
+                        "description": snippet.get("description") or "",
+                        "privacy": status.get("privacyStatus") or "",
+                        "publish_at": status.get("publishAt") or "",
+                        "duration_s": _iso8601_duration_seconds(
+                            str(details.get("duration") or "")
+                        ),
+                    }
+                )
+
+        page_token = pl_resp.get("nextPageToken")
+        if not page_token:
+            break
     return out
 
 
@@ -862,20 +996,18 @@ def _resolve_page_playlist_meta(page_name: str) -> tuple[str, str]:
     title = _PAGE_DEFAULT_PLAYLISTS.get(slug, "")
     description = _PAGE_PLAYLIST_DESCRIPTIONS.get(slug, "")
 
-    # Master Mei page_config is the source of truth when available.
-    if slug == "master_mei":
-        try:
-            from channels_config.master_mei import page_config as _mm_cfg  # type: ignore
+    cfg = _channel_page_config(slug)
+    if cfg is not None:
+        title = (
+            getattr(cfg, "YOUTUBE_PLAYLIST_TITLE", None) or title or ""
+        ).strip() or title
+        description = (
+            getattr(cfg, "YOUTUBE_PLAYLIST_DESCRIPTION", None) or description or ""
+        ).strip() or description
 
-            title = (
-                getattr(_mm_cfg, "YOUTUBE_PLAYLIST_TITLE", None) or title
-            ).strip() or _MASTER_MEI_PLAYLIST_TITLE
-            description = (
-                getattr(_mm_cfg, "YOUTUBE_PLAYLIST_DESCRIPTION", None) or description
-            ).strip() or _MASTER_MEI_PLAYLIST_DESCRIPTION
-        except Exception:  # noqa: BLE001
-            title = title or _MASTER_MEI_PLAYLIST_TITLE
-            description = description or _MASTER_MEI_PLAYLIST_DESCRIPTION
+    if slug == "master_mei":
+        title = title or _MASTER_MEI_PLAYLIST_TITLE
+        description = description or _MASTER_MEI_PLAYLIST_DESCRIPTION
 
     return title, description
 
@@ -1151,12 +1283,17 @@ def sanitize_youtube_title(
         if not clean:
             clean = "Principles of Wealth"
         return clean[:100], tags
-    # Endless Summer Paradise keeps [Hook] — Anchor | Brand pipe structure.
-    if slug == "endless_summer_paradise":
+    # Channels that opt in keep [Hook] — Anchor | Brand pipe structure.
+    _cfg = _channel_page_config(slug)
+    if getattr(_cfg, "YOUTUBE_PRESERVE_TITLE_STRUCTURE", False):
         clean = _re.sub(r"#\w+", " ", raw)
         clean = _re.sub(r"\s{2,}", " ", clean).strip()
         if not clean:
-            clean = "1950s Surreal Jell-O Waterpark | Endless Summer Paradise"
+            clean = str(
+                getattr(_cfg, "YOUTUBE_TITLE_CORE_ANCHOR", "")
+                or getattr(_cfg, "PAGE_DISPLAY_NAME", "")
+                or "Untitled"
+            )
         return clean[:100], tags
     if slug == "master_mei":
         clean = _re.sub(r"(?i)\bMASTER\s*MEI\b", " ", clean)
@@ -1174,16 +1311,13 @@ def sanitize_youtube_title(
 
 def _default_tags_for_page(page_name: str) -> list[str]:
     slug = _sanitize_page_name(page_name)
-    if slug == "master_mei":
-        try:
-            from channels_config.master_mei import page_config as _mm_cfg  # type: ignore
-
-            tags = getattr(_mm_cfg, "YOUTUBE_DEFAULT_TAGS", None)
-            if isinstance(tags, list) and tags:
-                return [str(t) for t in tags]
-        except Exception:  # noqa: BLE001
-            pass
-        return [
+    cfg = _channel_page_config(slug)
+    if cfg is not None:
+        tags = getattr(cfg, "YOUTUBE_DEFAULT_TAGS", None)
+        if isinstance(tags, list) and tags:
+            return [str(t) for t in tags]
+    defaults: dict[str, list[str]] = {
+        "master_mei": [
             "master mei",
             "mind control",
             "stoicism",
@@ -1195,19 +1329,8 @@ def _default_tags_for_page(page_name: str) -> list[str]:
             "executive mindset",
             "personal finance",
             "shorts",
-        ]
-    if slug == "principles_of_wealth_finance_economics":
-        try:
-            from channels_config.principles_of_wealth_finance_economics import (  # type: ignore
-                page_config as _pow_cfg,
-            )
-
-            tags = getattr(_pow_cfg, "YOUTUBE_DEFAULT_TAGS", None)
-            if isinstance(tags, list) and tags:
-                return [str(t) for t in tags]
-        except Exception:  # noqa: BLE001
-            pass
-        return [
+        ],
+        "principles_of_wealth_finance_economics": [
             "principles of wealth",
             "stock market analysis",
             "S&P 500 strategy",
@@ -1216,28 +1339,7 @@ def _default_tags_for_page(page_name: str) -> list[str]:
             "risk management",
             "wealth preservation",
             "ray dalio",
-        ]
-    if slug == "endless_summer_paradise":
-        try:
-            from channels_config.endless_summer_paradise import (  # type: ignore
-                page_config as _esp_cfg,
-            )
-
-            tags = getattr(_esp_cfg, "YOUTUBE_DEFAULT_TAGS", None)
-            if isinstance(tags, list) and tags:
-                return [str(t) for t in tags]
-        except Exception:  # noqa: BLE001
-            pass
-        return [
-            "endless summer paradise",
-            "1950s surreal jell-o waterpark",
-            "1950s mid-century architecture",
-            "vintage aesthetic",
-            "4K visual art",
-            "retro dreamscape",
-            "cinematic surrealism",
-        ]
-    defaults: dict[str, list[str]] = {
+        ],
         "ancient_knowledge": [
             "ancient knowledge",
             "ancient mysteries",
@@ -1764,6 +1866,74 @@ def update_video_metadata(
         len(existing_snippet.get("tags") or []),
     )
     return updated_id
+
+
+def fetch_videos_metadata(
+    youtube,
+    video_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Return ``{video_id: {title, privacy, publish_at, duration_s}}`` for known IDs."""
+    found: dict[str, dict[str, Any]] = {}
+    ids = [vid.strip() for vid in video_ids if str(vid).strip()]
+    if not ids:
+        return found
+    for offset in range(0, len(ids), 50):
+        chunk = ids[offset : offset + 50]
+        resp = youtube.videos().list(
+            part="snippet,status,contentDetails",
+            id=",".join(chunk),
+        ).execute()
+        for item in resp.get("items") or []:
+            vid = str(item.get("id") or "")
+            if not vid:
+                continue
+            snippet = item.get("snippet") or {}
+            status = item.get("status") or {}
+            details = item.get("contentDetails") or {}
+            found[vid] = {
+                "title": snippet.get("title") or "",
+                "privacy": status.get("privacyStatus") or "",
+                "publish_at": status.get("publishAt") or "",
+                "duration_s": _iso8601_duration_seconds(
+                    str(details.get("duration") or "")
+                ),
+            }
+    return found
+
+
+def delete_youtube_video(youtube, video_id: str) -> bool:
+    """Delete *video_id* via ``videos().delete``. True if gone (including 404)."""
+    from googleapiclient.errors import HttpError  # type: ignore[import]
+
+    vid = (video_id or "").strip()
+    if not vid:
+        return False
+    try:
+        youtube.videos().delete(id=vid).execute()
+        _LOG.info("Deleted YouTube video %s", vid)
+        return True
+    except HttpError as exc:
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        msg = str(exc).lower()
+        if status in {404} or "videonotfound" in msg or "notfound" in msg:
+            _LOG.warning("YouTube video %s already gone (%s).", vid, status or "notFound")
+            return True
+        _LOG.error("videos().delete failed for %s: %s", vid, exc)
+        raise
+
+
+def _iso8601_duration_seconds(raw: str) -> int:
+    """Parse YouTube ``PT1H2M3S`` contentDetails.duration into whole seconds."""
+    match = _re.fullmatch(
+        r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?",
+        (raw or "").strip().upper(),
+    )
+    if not match:
+        return 0
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    return hours * 3600 + minutes * 60 + seconds
 
 
 def set_video_thumbnail(youtube, video_id: str, thumbnail_path: str | Path) -> None:

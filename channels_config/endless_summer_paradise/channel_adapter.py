@@ -2,9 +2,9 @@
 """
 EndlessSummerParadiseAdapter — isolated BaseChannelConfig for library ingest.
 
-Reads channels_config/endless_summer_paradise/master_dna.json and page_config.py.
-Does not import other pages' DNA. Generation engines should not invent travel
-claims or resort affiliations for this channel.
+Reads only files in this channel directory: master_dna.json, page_config.py,
+factory_settings.json. Does not import other pages' DNA. Generation engines
+should not invent travel claims or resort affiliations for this channel.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from core.interfaces.channel import BaseChannelConfig, VisualRules
 
 _CHANNEL_DIR = Path(__file__).resolve().parent
 _DNA_PATH = _CHANNEL_DIR / "master_dna.json"
+_FACTORY_PATH = _CHANNEL_DIR / "factory_settings.json"
 
 
 class EndlessSummerParadiseAdapter(BaseChannelConfig):
@@ -24,7 +25,13 @@ class EndlessSummerParadiseAdapter(BaseChannelConfig):
     def __init__(self, dna_path: Path | None = None) -> None:
         self._dna_path = Path(dna_path) if dna_path else _DNA_PATH
         self._dna = self._load_dna()
+        self._factory = self._load_factory_settings()
         self._page_cfg = self._load_page_config()
+
+    @property
+    def _project(self) -> dict[str, Any]:
+        data = self._factory.get("PROJECT_CONFIG")
+        return data if isinstance(data, dict) else {}
 
     @property
     def channel_id(self) -> str:
@@ -74,9 +81,16 @@ class EndlessSummerParadiseAdapter(BaseChannelConfig):
         style = str(
             self._page_cfg.get("ILLUSTRATION_STYLE")
             or self._page_cfg.get("ATMOSPHERE_STYLE")
+            or self._project.get("style")
             or identity.get("style")
             or "tropical aesthetic, soft cinematic summer light"
         ).rstrip(" .")
+        lighting = str(
+            self._page_cfg.get("LIGHTING_STYLE")
+            or self._project.get("lighting")
+            or "soft cinematic summer light — golden hour or clean noon translucency"
+        ).strip()
+        factory_negative = str(self._project.get("negative_prompt") or "").strip()
         environments = [str(e) for e in (self._dna.get("environments") or []) if e]
         if not environments:
             for item in self._dna.get("Environments") or []:
@@ -92,12 +106,17 @@ class EndlessSummerParadiseAdapter(BaseChannelConfig):
             "draw_style": "NATURAL",
             "avatar_mode": "OFF",
             "aspect_ratio": str(self._page_cfg.get("IMAGE_ASPECT_RATIO") or "16:9"),
-            "atmosphere_style": str(self._page_cfg.get("ATMOSPHERE_STYLE") or style),
+            "atmosphere_style": str(
+                self._page_cfg.get("ATMOSPHERE_STYLE")
+                or self._project.get("theme")
+                or style
+            ),
             "illustration_style": style,
             "environments": environments,
             "forbidden_styles": forbidden,
             "negative_terms": negatives,
-            "negative_prompt": (
+            "negative_prompt": factory_negative
+            or (
                 "horror, cyberpunk, graphite sketch, finance charts, "
                 "hard-sell travel ad, resort logo watermark"
             ),
@@ -114,7 +133,7 @@ class EndlessSummerParadiseAdapter(BaseChannelConfig):
                 "Must read as high-visual summer aesthetic",
                 "Must avoid hard-sell travel advertising language",
             ],
-            "lighting_style": "soft cinematic summer light — golden hour or clean noon translucency",
+            "lighting_style": lighting,
         }
         return dict(rules)
 
@@ -156,14 +175,20 @@ class EndlessSummerParadiseAdapter(BaseChannelConfig):
             f"{niche}"
         ).strip()
 
-    def _load_dna(self) -> dict[str, Any]:
-        if not self._dna_path.is_file():
+    def _load_json(self, path: Path) -> dict[str, Any]:
+        if not path.is_file():
             return {}
         try:
-            data = json.loads(self._dna_path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
         return data if isinstance(data, dict) else {}
+
+    def _load_dna(self) -> dict[str, Any]:
+        return self._load_json(self._dna_path)
+
+    def _load_factory_settings(self) -> dict[str, Any]:
+        return self._load_json(_FACTORY_PATH)
 
     def _load_page_config(self) -> dict[str, Any]:
         path = _CHANNEL_DIR / "page_config.py"

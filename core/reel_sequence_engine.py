@@ -826,18 +826,18 @@ def segment_script_into_act_snippets(script: str, n_acts: int) -> list[str]:
 
 
 def _page_clips_dir(page_id: str | None = None) -> Path:
-    """Return ``outputs/{page}/clips`` and ensure it exists (never engine root)."""
-    try:
-        import config as app_config
+    """Return ``{OUTPUT_PATH}/{page}/clips`` and ensure it exists."""
+    from utils.pipeline_paths import page_clips_dir
 
-        page = (page_id or getattr(app_config, "ACTIVE_PAGE", "") or "default").strip()
-        page = page or "default"
-        clips = Path(app_config.OUTPUTS_DIR) / page / "clips"
-    except Exception:
-        page = (page_id or "default").strip() or "default"
-        clips = Path("outputs") / page / "clips"
-    os.makedirs(clips, exist_ok=True)
-    return clips
+    page = (page_id or "").strip()
+    if not page:
+        try:
+            import config as app_config
+
+            page = (getattr(app_config, "ACTIVE_PAGE", "") or "default").strip()
+        except Exception:
+            page = "default"
+    return page_clips_dir(page or "default", create=True)
 
 
 def _rgb_tuple_to_moviepy_color(fill: "tuple | list | str | None") -> str:

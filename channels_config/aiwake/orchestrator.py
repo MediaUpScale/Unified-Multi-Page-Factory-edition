@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 try:
@@ -705,12 +706,22 @@ class Provocateur:
         raise AssertionError("cornered loop exhausted without a hard-cap ending")
 
     # -- Session ------------------------------------------------------------ #
-    def run(self, *, topic: str | None = None, turns: int | None = None) -> DebateResult:
+    def run(
+        self,
+        *,
+        topic: str | None = None,
+        turns: int | None = None,
+        excluded_topics: Sequence[str] = (),
+        excluded_foci: Sequence[str] = (),
+    ) -> DebateResult:
         """Run a full debate.
 
         Args:
             topic: Overrides the configured subject.
             turns: Overrides the configured exchange count.
+            excluded_topics: Subjects already used in this bulk batch (and
+                therefore illegal for a randomised pick).
+            excluded_foci: Attack-angle labels already used in this bulk batch.
 
         Returns:
             A :class:`DebateResult`. An aborted session still returns every
@@ -725,6 +736,7 @@ class Provocateur:
             self._opening_dna = pick_opening_dna(
                 self.room.session_id,
                 excluded_categories=self.memory.recent_opening_categories(),
+                excluded_topics=tuple(excluded_topics) + self.memory.recent_topics(),
             )
             self.room.topic = self._opening_dna.topic
             self.room.transcript.topic = self._opening_dna.topic
@@ -733,7 +745,7 @@ class Provocateur:
             self.room.session_id,
             requested=self.settings.debate.provocation_focus,
             weights=self.settings.debate.provocation_weights.as_mapping(),
-            excluded=self.memory.recent_focus_categories(),
+            excluded=tuple(excluded_foci) + self.memory.recent_focus_categories(),
         )
         self.memory.note_focus(self._focus.category)
         self.room.transcript.metadata["provocation_focus"] = self._focus.category

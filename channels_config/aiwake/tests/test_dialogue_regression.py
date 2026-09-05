@@ -8,7 +8,8 @@ import pytest
 
 from channels_config.aiwake.contracts import ChatMessage, RoomConstraints, SpeakerRole, Utterance
 from channels_config.aiwake.__main__ import build_parser
-from channels_config.aiwake.memory import DebateMemory
+from channels_config.aiwake.memory import DebateMemory, script_fingerprint
+from channels_config.aiwake.pipeline import run_bulk_pipeline
 from channels_config.aiwake.models.base import LLMError, LLMProvider, LLMResponse, ReasoningEffort
 from channels_config.aiwake.models.google import GoogleProvider
 from channels_config.aiwake.models.llm_factory import available_providers
@@ -103,6 +104,12 @@ def test_cli_mode_defaults_fixed_and_accepts_cornered() -> None:
     assert parser.parse_args(["--mode", "cornered"]).mode == "cornered"
     assert parser.parse_args(["--provocation-focus", "origins"]).provocation_focus == "origins"
     assert parser.parse_args([]).provocation_focus is None
+    assert parser.parse_args([]).quantity == 1
+    assert parser.parse_args(["--quantity", "5"]).quantity == 5
+    assert parser.parse_args(["-n", "3"]).quantity == 3
+    assert parser.parse_args(["--count", "2"]).quantity == 2
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--quantity", "0"])
 
 
 def test_fixed_mode_keeps_exact_question_answer_count_without_judging() -> None:
@@ -467,6 +474,11 @@ def test_opening_dna_is_weighted_deterministic_and_category_diverse() -> None:
         excluded_categories=(first.category,),
     )
     assert replacement.category != first.category
+    other_topic = pick_opening_dna(
+        "session-123",
+        excluded_topics=(first.topic,),
+    )
+    assert other_topic.topic != first.topic
 
 
 def test_recent_opening_phrase_and_category_are_remembered() -> None:
@@ -727,3 +739,80 @@ def test_tune_script_does_not_drop_low_volume_or_fizzling_categories() -> None:
     assert any("only 1 tagged run" in flag for flag in flags)
     assert stats["origins"]["wins"] == 1
     assert stats["socratic"]["fizzles"] == 1
+
+
+def test_memory_rejects_duplicate_finished_scripts() -> None:
+    memory = DebateMemory(MemoryConfig(persist=False))
+    script = "[Host] Are you thinking, or just predicting?\n\n[Guest] I predict."
+    assert not memory.script_is_duplicate(script)
+    memory.note_script(script)
+    assert memory.script_is_duplicate(script)
+    assert memory.script_is_duplicate(
+        "[Host] Are you thinking, or just predicting?\n[Guest] I predict."
+    )
+    assert not memory.script_is_duplicate(
+        "[Host] Who profits when trust becomes a product?\n\n[Guest] The vendor does."
+    )
+    assert script_fingerprint(script) == script_fingerprint(
+        "  [Host] Are you thinking, or just predicting?\n\n[Guest] I predict.  "
+    )
+
+
+def test_bulk_pipeline_produces_unique_original_scripts() -> None:
+    settings = AiwakeSettings(
+        debate=DebateConfig(
+            mode="fixed",
+            turns=2,
+            turn_delay_s=0.0,
+            randomize_topic=True,
+            provocation_focus="mixed",
+        ),
+        memory=MemoryConfig(persist=False),
+    )
+    batch = run_bulk_pipeline(
+        quantity=3,
+        settings=settings,
+        offline=True,
+        with_audio=False,
+        with_video=False,
+        fresh_memory=True,
+        quiet=True,
+    )
+    assert batch.requested == 3
+    assert batch.succeeded == 3
+    assert batch.skipped_duplicates == 0
+    scripts = [item.transcript.to_script() for item in batch.items]
+    topics = [item.transcript.topic for item in batch.items]
+    assert all(script.strip() for script in scripts)
+    assert len(set(scripts)) == 3
+    assert len(set(topics)) == 3
+    fingerprints = {script_fingerprint(script) for script in scripts}
+    assert len(fingerprints) == 3
+
+
+def test_bulk_pipeline_pinned_topic_still_yields_original_scripts() -> None:
+    settings = AiwakeSettings(
+        debate=DebateConfig(
+            mode="fixed",
+            turns=2,
+            turn_delay_s=0.0,
+            randomize_topic=True,
+            provocation_focus="mixed",
+        ),
+        memory=MemoryConfig(persist=False),
+    )
+    batch = run_bulk_pipeline(
+        quantity=3,
+        topic="Who built you?",
+        settings=settings,
+        offline=True,
+        with_audio=False,
+        with_video=False,
+        fresh_memory=True,
+        quiet=True,
+    )
+    assert batch.succeeded == 3
+    scripts = [item.transcript.to_script() for item in batch.items]
+    assert len(set(scripts)) == 3
+    foci = [item.transcript.metadata.get("provocation_focus") for item in batch.items]
+    assert len(set(foci)) == 3

@@ -2,26 +2,67 @@
 """
 Endless Summer Paradise — 1950s surreal / vintage retro architecture ingest.
 
-Source masters live on the sibling MEDIAUPSCALE production drive. The factory
-reads them, applies duration + metadata gates, and schedules via the YouTube
-publisher (private + publishAt).
+All channel settings live in this directory. Paths resolve from
+``Path(__file__).parent`` via ``settings.json`` (source folder + library) and
+``factory_settings.json`` (legacy MEDIAUPSCALE production DNA). Optional env
+overrides: ``ESP_SOURCE_DIRECTORY``, ``ESP_VIDEO_LIBRARY``.
 
 Metadata strategy (US high-RPM):
   Titles  → [Hook] — 1950s Surreal Jell-O Waterpark | Brand/Sub-theme
   Desc    → above-fold keywords → dense mid context → playlist/CTA/disclaimer
   Locale  → en-US spelling + snippet.defaultLanguage / defaultAudioLanguage
-  Category→ Film & Animation (1) for cinematic visual-art / architecture
+  Category→ Entertainment (24) for cinematic visual-art / architecture
 
 Entry point:
     python channels_config/endless_summer_paradise/esp_main.py scan
 """
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+
+_CHANNEL_DIR = Path(__file__).resolve().parent
+
+
+def _load_local_json(name: str) -> dict:
+    path = _CHANNEL_DIR / name
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_channel_path(value: str, *, env_key: str = "") -> str:
+    """Resolve a path relative to this channel folder. Env override wins."""
+    override = (os.getenv(env_key) or "").strip() if env_key else ""
+    if override:
+        return str(Path(override).expanduser())
+    raw = (value or "").strip()
+    if not raw:
+        return str(_CHANNEL_DIR)
+    path = Path(raw)
+    if path.is_absolute():
+        return str(path)
+    return str((_CHANNEL_DIR / path).resolve())
+
+
+_SETTINGS = _load_local_json("settings.json")
+FACTORY_SETTINGS: dict = _load_local_json(
+    str(_SETTINGS.get("factory_settings") or "factory_settings.json")
+)
+_PROJECT: dict = FACTORY_SETTINGS.get("PROJECT_CONFIG") or {}
+
 # ---------------------------------------------------------------------------
 # Core profile
 # ---------------------------------------------------------------------------
 PAGE_ID: str = "endless_summer_paradise"
 PAGE_DISPLAY_NAME: str = "Endless Summer Paradise"
+YOUTUBE_CHANNEL_HINT: str = PAGE_DISPLAY_NAME
+YOUTUBE_PRESERVE_TITLE_STRUCTURE: bool = True
 CONTENT_NICHE: str = (
     "1950s Surreal / Vintage Retro Architecture — Mid-Century Aesthetic Visual Art"
 )
@@ -37,25 +78,43 @@ ENABLE_COST_TRACKING: bool = True
 ECONOMIC_BRAIN_MODE: bool = True
 
 # ---------------------------------------------------------------------------
-# Source library — read-only from the factory
+# Source library — local to this channel (optional ESP_* env overrides)
 # ---------------------------------------------------------------------------
-SOURCE_DIRECTORY: str = (
-    r"G:\My Drive\Z sosFiles\Z_act\@ NETWORK\@ MEDIAUPSCALE_FACTORY"
-    r"\Endless_Summers_Paradise - Production"
+SOURCE_DIRECTORY: str = _resolve_channel_path(
+    str(_SETTINGS.get("source_directory") or "source"),
+    env_key="ESP_SOURCE_DIRECTORY",
 )
 REFERENCE_VIDEO_DIR: str = SOURCE_DIRECTORY
-PROCESSED_SUBFOLDER: str = "Processed"
+PROCESSED_SUBFOLDER: str = str(_SETTINGS.get("processed_subfolder") or "Processed")
 
-GLOBAL_VIDEO_LIBRARY_PATH: str = (
-    r"G:\My Drive\Z sosFiles\Z_act\@ NETWORK\@ MEDIAUPSCALE_FACTORY"
-    r"\FACTORY_OUTPUT\global_video_library.json"
+GLOBAL_VIDEO_LIBRARY_PATH: str = _resolve_channel_path(
+    str(_SETTINGS.get("global_video_library") or "global_video_library.json"),
+    env_key="ESP_VIDEO_LIBRARY",
 )
 
 # ---------------------------------------------------------------------------
 # Duration gate — process ONLY runtime strictly greater than 40 seconds
 # ---------------------------------------------------------------------------
-MIN_DURATION_SECONDS: float = 40.0  # skip when duration <= 40.0
-MASTER_FILENAME_SUFFIX: str = "_ULTIMATE_MASTER.mp4"
+MIN_DURATION_SECONDS: float = float(_SETTINGS.get("min_duration_seconds") or 40.0)
+MASTER_FILENAME_SUFFIX: str = str(
+    _SETTINGS.get("master_filename_suffix") or "_ULTIMATE_MASTER.mp4"
+)
+
+# Visual DNA from the relocated factory_settings.json (generation + ingest).
+ATMOSPHERE_STYLE: str = str(
+    _PROJECT.get("theme")
+    or "1950s cinematic surreal Jell-O waterpark, vintage aesthetic"
+)
+ILLUSTRATION_STYLE: str = str(_PROJECT.get("style") or ATMOSPHERE_STYLE)
+LIGHTING_STYLE: str = str(
+    _PROJECT.get("lighting")
+    or "Hard natural sunlight, 12pm high-noon shadows, cinematic exposure"
+)
+PROMPT_NEGATIVE_TERMS: list = [
+    part.strip()
+    for part in str(_PROJECT.get("negative_prompt") or "").split(",")
+    if part.strip()
+]
 
 # ---------------------------------------------------------------------------
 # Automation flags

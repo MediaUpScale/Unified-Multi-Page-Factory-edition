@@ -8,12 +8,16 @@ files are written to a Processed/ sibling folder. YouTube tokens:
 Typical first run
 -----------------
     python channels_config/principles_of_wealth_finance_economics/wealth_main.py scan
-    python channels_config/principles_of_wealth_finance_economics/wealth_main.py process --episodes 1-2 --dry-run
+    python channels_config/principles_of_wealth_finance_economics/wealth_main.py process --dry-run
+    python channels_config/principles_of_wealth_finance_economics/wealth_main.py process
     python channels_config/principles_of_wealth_finance_economics/wealth_main.py publish --mode longs --episodes 1-10 --dry-run
     python channels_config/principles_of_wealth_finance_economics/wealth_main.py publish --mode longs --episodes 1-10
-    python channels_config/principles_of_wealth_finance_economics/wealth_main.py publish --mode shorts --episodes 1 --start-date 2026-08-25
+    python channels_config/principles_of_wealth_finance_economics/wealth_main.py publish --mode shorts --dry-run
+    python channels_config/principles_of_wealth_finance_economics/wealth_main.py publish --mode shorts --episodes 1
     python channels_config/principles_of_wealth_finance_economics/wealth_main.py metadata --dry-run
     python channels_config/principles_of_wealth_finance_economics/wealth_main.py metadata --apply
+    python channels_config/principles_of_wealth_finance_economics/wealth_main.py cleanup --from-episode 2 --longs-only --dry-run
+    python channels_config/principles_of_wealth_finance_economics/wealth_main.py cleanup --from-episode 2 --longs-only
 """
 from __future__ import annotations
 
@@ -34,6 +38,7 @@ except ImportError:
     pass
 
 from core.principles_of_wealth.pipeline import (  # noqa: E402
+    run_cleanup,
     run_metadata,
     run_playlists,
     run_process,
@@ -86,7 +91,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_common(p_scan)
 
-    p_proc = sub.add_parser("process", help="FFmpeg uniqueness pass + thumbnail re-sign into Processed/.")
+    p_proc = sub.add_parser(
+        "process",
+        help=(
+            "Sign every raw long, Short, and thumbnail in SOURCE_DIRECTORY "
+            "via core.utils.fingerprint_engine into Processed/."
+        ),
+    )
     _add_common(p_proc)
     p_proc.add_argument("--processed-dir", default=None, help="Override Processed/ output folder.")
     p_proc.add_argument("--force", action="store_true", help="Re-process even when output already exists.")
@@ -99,7 +110,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p_pub = sub.add_parser(
         "publish",
-        help="Independently schedule longs (weekly) or Shorts (daily) via private+publishAt.",
+        help=(
+            "Independently schedule longs (Tue/Thu, 2 per week) or Shorts "
+            "(daily 18:00 America/New_York) via private+publishAt. "
+            "Use --dry-run to preview dates."
+        ),
     )
     _add_common(p_pub)
     p_pub.add_argument(
@@ -117,12 +132,18 @@ def main(argv: list[str] | None = None) -> int:
     p_pub.add_argument(
         "--start-date",
         default=None,
-        help="First slot YYYY-MM-DD. Default: last_*_scheduled_at + interval, else next Thursday (longs) / tomorrow (shorts).",
+        help=(
+            "First slot YYYY-MM-DD. Default: day after the latest YouTube "
+            "publishAt (or state last_*_scheduled_at), else tomorrow / next Tue-Thu."
+        ),
     )
     p_pub.add_argument(
         "--time-utc",
         default=None,
-        help="HH:MM UTC. Default 18:00 for longs (2:00 PM Eastern), 16:00 for shorts (12:00 PM Eastern).",
+        help=(
+            "HH:MM UTC override. Default clock is 18:00 America/New_York "
+            "for both longs (Tue/Thu) and Shorts (daily)."
+        ),
     )
     p_pub.add_argument(
         "--privacy-long",
@@ -183,6 +204,27 @@ def main(argv: list[str] | None = None) -> int:
         help="Patch longs, Shorts, playlists, or all (default).",
     )
 
+    p_clean = sub.add_parser(
+        "cleanup",
+        help=(
+            "Query YouTube uploads/scheduled videos, match Ep 2+ longs by title, "
+            "and delete them. Never touches Episode 1 or any Shorts."
+        ),
+    )
+    _add_common(p_clean)
+    p_clean.add_argument(
+        "--from-episode",
+        type=int,
+        default=2,
+        help="First episode eligible for long deletion (minimum 2; Episode 1 is protected).",
+    )
+    p_clean.add_argument(
+        "--longs-only",
+        action="store_true",
+        default=True,
+        help="Only delete long-form videos (always enforced).",
+    )
+
     args = parser.parse_args(argv)
     _setup_logging(getattr(args, "verbose", False))
 
@@ -198,6 +240,15 @@ def main(argv: list[str] | None = None) -> int:
             hwaccel=not args.no_hwaccel,
             hw_encode=args.hw_encode,
             dry_run=args.dry_run,
+        )
+        return 0
+    if args.command == "cleanup":
+        run_cleanup(
+            from_episode=getattr(args, "from_episode", 2),
+            longs_only=True,
+            dry_run=args.dry_run,
+            episodes=args.episodes,
+            source_dir=args.source_dir,
         )
         return 0
     if args.command == "publish":

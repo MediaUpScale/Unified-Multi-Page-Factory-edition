@@ -545,7 +545,9 @@ class CostTracker:
             dest = Path(library_dir).expanduser().resolve()
         except Exception as exc:  # noqa: BLE001
             logger.warning("CostTracker | invalid library_dir=%r (%s)", library_dir, exc)
-            dest = Path.cwd() / "outputs" / "cost_telemetry"
+            from utils.pipeline_paths import outputs_root
+
+            dest = outputs_root() / "cost_telemetry"
         try:
             dest.mkdir(parents=True, exist_ok=True)
         except OSError as exc:

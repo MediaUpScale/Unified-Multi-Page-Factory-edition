@@ -2,18 +2,42 @@
 """
 ChannelFactory — hybrid router.
 
-Phase 3/4: ancient_knowledge and endless_summer_paradise are isolated behind
-their own adapters. Every other ACTIVE_PAGE still receives LegacyChannelAdapter
-(persona_dna + page_config) so Anna / Mei / Wonder Feed / LOFI keep working
-unchanged.
+Any ``channels_config/{slug}/channel_adapter.py`` that exposes a
+``BaseChannelConfig`` subclass is loaded dynamically. Channels without an
+adapter still receive ``LegacyChannelAdapter`` (persona_dna + page_config)
+so Anna / Mei / Wonder Feed / LOFI keep working unchanged.
 """
 from __future__ import annotations
 
+import importlib
+import inspect
 import os
+from typing import Type
 
 from core.interfaces.channel import BaseChannelConfig
 
+# Known isolated slugs (kept for callers that import the constant).
+# Isolation is also true whenever a dedicated channel_adapter.py exists.
 ISOLATED_CHANNEL_IDS = frozenset({"ancient_knowledge", "endless_summer_paradise"})
+
+
+def _adapter_class(channel_id: str) -> Type[BaseChannelConfig] | None:
+    """Return the first BaseChannelConfig subclass in the channel adapter module."""
+    cid = (channel_id or "").strip()
+    if not cid:
+        return None
+    try:
+        mod = importlib.import_module(f"channels_config.{cid}.channel_adapter")
+    except ImportError:
+        return None
+    for _name, obj in inspect.getmembers(mod, inspect.isclass):
+        if (
+            issubclass(obj, BaseChannelConfig)
+            and obj is not BaseChannelConfig
+            and obj.__module__ == mod.__name__
+        ):
+            return obj
+    return None
 
 
 class ChannelFactory:
@@ -21,23 +45,19 @@ class ChannelFactory:
 
     @staticmethod
     def is_isolated(channel_id: str | None) -> bool:
-        return (channel_id or "").strip().lower() in ISOLATED_CHANNEL_IDS
+        cid = (channel_id or "").strip().lower()
+        if not cid:
+            return False
+        if cid in ISOLATED_CHANNEL_IDS:
+            return True
+        return _adapter_class(cid) is not None
 
     @staticmethod
     def create(channel_id: str | None = None) -> BaseChannelConfig:
         cid = (channel_id or os.environ.get("ACTIVE_PAGE") or "anna_protocol").strip()
-        if cid == "ancient_knowledge":
-            from channels_config.ancient_knowledge.channel_adapter import (
-                AncientKnowledgeAdapter,
-            )
-
-            return AncientKnowledgeAdapter()
-        if cid == "endless_summer_paradise":
-            from channels_config.endless_summer_paradise.channel_adapter import (
-                EndlessSummerParadiseAdapter,
-            )
-
-            return EndlessSummerParadiseAdapter()
+        adapter_cls = _adapter_class(cid)
+        if adapter_cls is not None:
+            return adapter_cls()
         from core.interfaces.legacy_adapter import LegacyChannelAdapter
 
         return LegacyChannelAdapter(channel_id=cid)

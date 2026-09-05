@@ -22,7 +22,7 @@ from .contracts import DebateTranscript, SpeakerRole, Utterance
 from .memory import DebateMemory
 from .models import LLMFactory, LLMProvider
 from .orchestrator import DebateResult, Provocateur
-from .pipeline import PipelineResult, run_pipeline
+from .pipeline import BulkPipelineResult, PipelineResult, run_bulk_pipeline, run_pipeline
 from .room import DebateObserver, DebateRoom, Participant, RoomEvent
 from .settings import AiwakeSettings, load_settings
 
@@ -38,6 +38,7 @@ __all__ = [
     "LLMFactory",
     "LLMProvider",
     "Participant",
+    "BulkPipelineResult",
     "PipelineResult",
     "Provocateur",
     "RoomEvent",
@@ -45,5 +46,6 @@ __all__ = [
     "Utterance",
     "__version__",
     "load_settings",
+    "run_bulk_pipeline",
     "run_pipeline",
 ]

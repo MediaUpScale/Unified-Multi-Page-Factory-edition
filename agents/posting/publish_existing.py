@@ -128,7 +128,9 @@ def _extract_hashtags(text: str) -> list[str]:
 
 
 def _library_path(page: str) -> Path:
-    return _SCRIPT_DIR / "outputs" / page / "content_library.json"
+    from utils.pipeline_paths import page_outputs_dir
+
+    return page_outputs_dir(page) / "content_library.json"
 
 
 def lookup_metadata_from_library(
@@ -207,11 +209,13 @@ def lookup_metadata_by_video_id(page: str, video_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def resolve_video_paths(raw_paths: list[str]) -> list[Path]:
+    from utils.pipeline_paths import coerce_outputs_path
+
     resolved: list[Path] = []
     for raw in raw_paths:
         p = Path(raw)
         if not p.is_absolute():
-            p = _SCRIPT_DIR / p
+            p = coerce_outputs_path(p)
         if not p.is_file():
             print(f"[ERROR] Video file not found: {p}", file=sys.stderr)
             sys.exit(1)

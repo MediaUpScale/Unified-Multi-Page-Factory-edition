@@ -4,9 +4,10 @@ Endless Summer Paradise — YouTube library-ingest handler.
 
 Responsibilities
 ----------------
-1. Scan ``SOURCE_DIRECTORY`` for master videos (prefer ``*_ULTIMATE_MASTER.mp4``).
+1. Scan the channel-local ``SOURCE_DIRECTORY`` (``settings.json`` / ``source/``)
+   for master videos (prefer ``*_ULTIMATE_MASTER.mp4``).
 2. Keep only files with runtime **strictly greater than** ``MIN_DURATION_SECONDS`` (40).
-3. Map each kept file against ``global_video_library.json`` (filename / stem key).
+3. Map each kept file against the channel-local ``global_video_library.json``.
 4. Videos > 40s with no library match → ``needs_metadata`` staging queue.
 5. Build tropical SEO title / description / tags packs for schedule-ready rows.
 
@@ -15,7 +16,6 @@ publisher / ``esp_main.py schedule`` path.
 """
 from __future__ import annotations
 
-import os
 import json
 import logging
 import re
@@ -25,13 +25,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from utils.pipeline_paths import page_outputs_dir
+
 _LOG = logging.getLogger(__name__)
 
 _CHANNEL_DIR = Path(__file__).resolve().parent
-_ENGINE_ROOT = _CHANNEL_DIR.parents[1]
 _CHANNEL_ID = "endless_summer_paradise"
-_ENV_OUTPUT = os.getenv("OUTPUT_PATH")
-_OUTPUTS = Path(_ENV_OUTPUT) / _CHANNEL_ID if _ENV_OUTPUT else _ENGINE_ROOT / "outputs" / _CHANNEL_ID
+_OUTPUTS = page_outputs_dir(_CHANNEL_ID)
 _NEEDS_METADATA_DIR = _OUTPUTS / "needs_metadata"
 _SCAN_PATH = _OUTPUTS / "esp_asset_map.json"
 _QUEUE_PATH = _OUTPUTS / "esp_schedule_queue.json"

@@ -18,6 +18,7 @@ The memory does three jobs for the provocateur:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -100,6 +101,22 @@ def _opening_signature(text: str, words: int = 3) -> tuple[str, ...]:
     return tuple(match.group(0).lower() for match in _WORD_RE.finditer(text or ""))[:words]
 
 
+_SCRIPT_OVERLAP_THRESHOLD = 0.72
+
+
+def script_fingerprint(text: str) -> str:
+    """Stable identity of a finished debate script (whitespace-insensitive)."""
+    normalized = " ".join((text or "").lower().split())
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def scripts_overlap(left: str, right: str, *, threshold: float = _SCRIPT_OVERLAP_THRESHOLD) -> bool:
+    """True when two finished scripts share too much lexical mass."""
+    return _jaccard(_tokenise(left), _tokenise(right)) >= threshold
+
+
 class MemoryState(BaseModel):
     """Serialisable memory contents.
 
@@ -115,6 +132,8 @@ class MemoryState(BaseModel):
     opening_categories: list[str] = Field(default_factory=list)
     opening_lines: list[str] = Field(default_factory=list)
     focus_categories: list[str] = Field(default_factory=list)
+    script_fingerprints: list[str] = Field(default_factory=list)
+    script_token_prints: list[list[str]] = Field(default_factory=list)
     updated_at: str = ""
 
 
@@ -191,7 +210,13 @@ class DebateMemory:
         """Record the session subject so recall can weight against it."""
         if topic and topic not in self.state.topics_seen:
             self.state.topics_seen.append(topic)
-            del self.state.topics_seen[:-20]
+            del self.state.topics_seen[:-40]
+
+    def recent_topics(self, limit: int = 40) -> tuple[str, ...]:
+        """Return recently used debate subjects, newest last."""
+        if limit <= 0:
+            return ()
+        return tuple(self.state.topics_seen[-limit:])
 
     def note_opening(self, category: str, line: str) -> None:
         """Remember recent opening axes and wording across renders."""
@@ -335,6 +360,28 @@ class DebateMemory:
         recent = self.state.opening_lines[-window:]
         return any(_opening_signature(prior) == signature for prior in recent)
 
+    def note_script(self, script: str) -> None:
+        """Remember a finished video script so later runs cannot reprint it."""
+        fingerprint = script_fingerprint(script)
+        tokens = _tokenise(script)
+        if fingerprint:
+            self.state.script_fingerprints.append(fingerprint)
+            del self.state.script_fingerprints[:-80]
+        if tokens:
+            self.state.script_token_prints.append(sorted(set(tokens)))
+            del self.state.script_token_prints[:-40]
+
+    def script_is_duplicate(self, script: str, *, threshold: float | None = None) -> bool:
+        """True when ``script`` matches or heavily overlaps a produced video."""
+        fingerprint = script_fingerprint(script)
+        if fingerprint and fingerprint in self.state.script_fingerprints:
+            return True
+        tokens = _tokenise(script)
+        if not tokens:
+            return False
+        cutoff = _SCRIPT_OVERLAP_THRESHOLD if threshold is None else threshold
+        return any(_jaccard(tokens, prior) >= cutoff for prior in self.state.script_token_prints)
+
     # -- Prompt surface ----------------------------------------------------- #
     def build_brief(self, query: str, *, recall_k: int | None = None) -> str:
         """Render a memory brief for injection as a room ``extra_context`` block.
@@ -374,4 +421,4 @@ class DebateMemory:
         return [record.term for record in ranked[:k]]
 
 
-__all__ = ["DebateMemory", "MemoryState"]
+__all__ = ["DebateMemory", "MemoryState", "script_fingerprint", "scripts_overlap"]

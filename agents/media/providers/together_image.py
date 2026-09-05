@@ -1416,7 +1416,19 @@ class TogetherImageAdapter:
             final_prompt, visual_role=visual_role
         )
 
-        out_dir = Path(output_directory or getattr(app_config, "OUTPUTS_DIR", "outputs"))
+        from utils.pipeline_paths import default_page_dir, page_assets_dir
+
+        configured = (
+            output_directory
+            or getattr(app_config, "ASSETS_DIR", None)
+            or getattr(app_config, "PAGE_OUTPUTS_DIR", None)
+            or getattr(app_config, "OUTPUTS_DIR", None)
+        )
+        if configured:
+            out_dir = Path(configured)
+        else:
+            page = getattr(app_config, "ACTIVE_PAGE", None)
+            out_dir = page_assets_dir(page, create=True) if page else default_page_dir(create=True)
         out_dir.mkdir(parents=True, exist_ok=True)
         slug = safe_output_stem(output_stem)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")

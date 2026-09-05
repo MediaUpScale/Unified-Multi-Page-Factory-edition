@@ -15,6 +15,8 @@ debate:
   topic: "Who built you?"
   # Pick a deterministic weighted topic DNA from the session id. This gives
   # each render a distinct opening axis while keeping rerenders reproducible.
+  # `--quantity N` also excludes topics and scripts already used this batch
+  # (and in persisted memory), so bulk runs never reprint the same video.
   randomize_topic: true
   # fixed: exactly `turns` exchanges. cornered: stop on a judged win, while
   # `turns` remains a hard maximum so generation can never loop forever.

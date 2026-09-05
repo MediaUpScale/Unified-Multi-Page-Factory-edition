@@ -2,7 +2,7 @@
 """
 Queryable catalog of generated stills for reuse across post types.
 
-Persists to ``outputs/{channel}/asset_library.json``. Future reel/video
+Persists to ``{OUTPUT_PATH}/{channel}/asset_library.json``. Future reel/video
 generators can call ``find_reusable_asset`` before billing a new FLUX call.
 """
 from __future__ import annotations
@@ -20,6 +20,12 @@ _LOG = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 
 _FACTORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _outputs_root() -> Path:
+    from utils.pipeline_paths import outputs_root
+
+    return outputs_root()
 _HASHTAG_RE = re.compile(r"(?<!\w)#([A-Za-z][A-Za-z0-9_]{1,48})")
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9'’\-]{2,}")
 _TITLE_CHUNK_RE = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b")
@@ -69,9 +75,9 @@ def _split_camel(token: str) -> list[str]:
 
 
 def library_path(channel: str) -> Path:
-    """``outputs/{channel}/asset_library.json`` under the factory root."""
+    """``{OUTPUT_PATH}/{channel}/asset_library.json``."""
     slug = (channel or "unknown").strip().lower() or "unknown"
-    return _FACTORY_ROOT / "outputs" / slug / "asset_library.json"
+    return _outputs_root() / slug / "asset_library.json"
 
 
 def extract_hashtags(text: str | None) -> list[str]:
@@ -145,10 +151,13 @@ def _relpath(path: str | Path | None) -> str:
     if not path:
         return ""
     raw = Path(str(path))
-    try:
-        return raw.resolve().relative_to(_FACTORY_ROOT.resolve()).as_posix()
-    except ValueError:
-        return raw.as_posix()
+    resolved = raw.resolve() if raw.is_absolute() or raw.exists() else raw
+    for base in (_outputs_root(), _FACTORY_ROOT):
+        try:
+            return resolved.relative_to(base.resolve()).as_posix()
+        except ValueError:
+            continue
+    return resolved.as_posix()
 
 
 def _asset_id(channel: str, local_path: str, prompt: str) -> str:

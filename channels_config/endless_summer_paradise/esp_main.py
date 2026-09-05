@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """CLI for Endless Summer Paradise library-ingest + YouTube schedule.
 
-Source videos stay on the MEDIAUPSCALE production drive. Metadata comes from
-``FACTORY_OUTPUT/global_video_library.json``. Duration gate: keep only files
-with runtime strictly greater than 40 seconds. Missing metadata →
+Source videos default to ``channels_config/endless_summer_paradise/source/``
+(override with ``--source-dir`` or ``ESP_SOURCE_DIRECTORY``). Metadata comes
+from the channel-local ``global_video_library.json``. Duration gate: keep only
+files with runtime strictly greater than 40 seconds. Missing metadata →
 ``outputs/endless_summer_paradise/needs_metadata/``.
 
 Typical first run
@@ -86,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     p_scan.add_argument(
         "--source-dir",
         default=None,
-        help="Override Endless Summers Paradise production folder.",
+        help="Override the local source folder (default: channel source/).",
     )
     p_scan.add_argument(
         "--library",

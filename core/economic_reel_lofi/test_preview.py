@@ -40,13 +40,17 @@ def _engine_root() -> Path:
 
 
 def _preview_dir(page_id: str) -> Path:
-    """Inside the page clips tree: outputs/{page}/clips/economic_reels_tests/."""
-    return _engine_root() / "outputs" / page_id / "clips" / "economic_reels_tests"
+    """Inside the page clips tree: {OUTPUT_PATH}/{page}/clips/economic_reels_tests/."""
+    from utils.pipeline_paths import page_outputs_dir
+
+    return page_outputs_dir(page_id) / "clips" / "economic_reels_tests"
 
 
 def _purge_legacy_preview_dirs(page_id: str) -> None:
     """Remove the old duplicated economic_reel_lofi/test_preview tree."""
-    legacy_root = _engine_root() / "outputs" / page_id / "economic_reel_lofi"
+    from utils.pipeline_paths import page_outputs_dir
+
+    legacy_root = page_outputs_dir(page_id) / "economic_reel_lofi"
     if legacy_root.exists():
         try:
             shutil.rmtree(legacy_root)

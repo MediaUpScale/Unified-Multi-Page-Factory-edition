@@ -932,29 +932,30 @@ def cached_settings() -> AiwakeSettings:
 # Output routing
 # --------------------------------------------------------------------------- #
 def resolve_outputs_dir(settings: AiwakeSettings | None = None) -> Path:
-    """Return the directory for rendered media, creating it if needed.
+    """Return ``{OUTPUT_PATH}/<slug>/`` for rendered Aiwake media.
 
-    Prefers the host engine's global ``outputs/<slug>/`` or ``OUTPUT_PATH`` environment
-    variable so Aiwake artifacts land beside every other channel's. Degrades to a
-    module-local folder when the engine root is absent or read-only.
+    Always consults ``utils.pipeline_paths`` so Aiwake writes beside every
+    other channel. A module-local ``_local_outputs`` folder is used only
+    when the factory tree cannot be created (drive offline) — never as the
+    default, and never the repo ``outputs/`` directory.
     """
+    from utils.pipeline_paths import page_outputs_dir
+
     cfg = settings or cached_settings()
-    if cfg.paths.prefer_global_outputs:
-        env_output = os.getenv("OUTPUT_PATH")
-        if env_output:
-            global_dir = Path(env_output) / cfg.paths.channel_slug
-        else:
-            global_dir = ENGINE_ROOT / "outputs" / cfg.paths.channel_slug
-
-        try:
-            global_dir.mkdir(parents=True, exist_ok=True)
-            return global_dir
-        except OSError as exc:
-            _LOG.warning("Global outputs unavailable (%s); using local fallback", exc)
-
-    local_dir = MODULE_ROOT / cfg.paths.local_outputs_dirname
-    local_dir.mkdir(parents=True, exist_ok=True)
-    return local_dir
+    global_dir = page_outputs_dir(cfg.paths.channel_slug)
+    try:
+        global_dir.mkdir(parents=True, exist_ok=True)
+        return global_dir
+    except OSError as exc:
+        _LOG.error(
+            "Factory outputs unavailable at %s (%s); refusing repo-local outputs.",
+            global_dir, exc,
+        )
+        if not cfg.paths.prefer_global_outputs:
+            local_dir = MODULE_ROOT / cfg.paths.local_outputs_dirname
+            local_dir.mkdir(parents=True, exist_ok=True)
+            return local_dir
+        raise
 
 
 def resolve_store_dir() -> Path:
@@ -965,19 +966,10 @@ def resolve_store_dir() -> Path:
 
 
 def resolve_scratch_dir() -> Path:
-    """Scratch space for TTS chunks and MoviePy temp audio.
+    """Scratch space for TTS chunks and MoviePy temp audio under ``OUTPUT_PATH/tmp``."""
+    from utils.pipeline_paths import pipeline_tmp_dir
 
-    Reuses the engine's ``outputs/tmp/`` helper when importable so temp files
-    obey the host's hygiene rules, else falls back inside the module.
-    """
-    try:
-        from utils.pipeline_paths import pipeline_tmp_dir  # noqa: PLC0415
-
-        return Path(pipeline_tmp_dir("aiwake"))
-    except Exception:  # noqa: BLE001 — standalone mode, engine utils absent
-        scratch = resolve_outputs_dir() / "_scratch"
-        scratch.mkdir(parents=True, exist_ok=True)
-        return scratch
+    return Path(pipeline_tmp_dir("aiwake"))
 
 
 __all__ = [

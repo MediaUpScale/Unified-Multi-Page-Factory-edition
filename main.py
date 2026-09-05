@@ -164,6 +164,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import config as app_config
+from utils.pipeline_paths import outputs_root, page_outputs_dir, pipeline_logs_dir
 from agents.writer.caption_engine import (
     CaptionEngine,
     build_gemini_researcher_instruction,
@@ -284,6 +285,20 @@ _LOGO_ONLY_STILL_POST_TYPES = frozenset({"LONG_CAPTION_IMAGE", "CTA_CAPTION_IMAG
 
 def _is_sequence_video_post(post_type: str) -> bool:
     return str(post_type or "").strip().upper() in _SEQUENCE_VIDEO_POST_TYPES
+
+
+def _planner_media_url(
+    post_type: str,
+    *,
+    imgbb_url: str = "",
+    local_image: str = "",
+    b2_video_url: str = "",
+    video_path: str = "",
+) -> str:
+    """MEDIA URL for PostPlanner: stills never inherit leftover reel paths."""
+    if _is_sequence_video_post(post_type) or str(post_type or "").upper().endswith("REEL"):
+        return (b2_video_url or video_path or imgbb_url or local_image or "").strip()
+    return (imgbb_url or local_image or "").strip()
 
 
 def _is_logo_only_still(post_type: str) -> bool:
@@ -448,7 +463,7 @@ def _ensure_sequence_image(
     dest = Path(target_path) if target_path is not None else (
         candidate if candidate is not None else (
             (fb.parent / f"{fb.stem}_fallback{fb.suffix}") if fb is not None
-            else Path("outputs") / "seq_act_placeholder.png"
+            else outputs_root() / "seq_act_placeholder.png"
         )
     )
     os.makedirs(os.path.dirname(str(dest)) or ".", exist_ok=True)
@@ -5179,9 +5194,13 @@ def _produce_variant_worker(
                     run_stamp=run_stamp,
                     posting_time=posting_slot_display,
                     caption=caption_str,
-                    # Prefer B2 public video URL for reel posts; fall back to
-                    # local video path; then fall back to ImgBB for image posts.
-                    media_url=_b2_video_url or video_path_str or imgbb_url,
+                    media_url=_planner_media_url(
+                        post_type,
+                        imgbb_url=imgbb_url,
+                        local_image=str(img_path_display or ""),
+                        b2_video_url=_b2_video_url,
+                        video_path=video_path_str,
+                    ),
                 )
             if xlsx_path:
                 _LOG.info("PostPlanner XLSX row written: %s", xlsx_path.name)
@@ -5499,11 +5518,10 @@ def _persist_agentic_postplanner(
         caption = row.get("caption") or ""
         if not str(caption).strip():
             continue
-        media = (
-            row.get("imgbb_url")
-            or row.get("local_image_path")
-            or row.get("image_path")
-            or ""
+        media = _planner_media_url(
+            post_type,
+            imgbb_url=str(row.get("imgbb_url") or ""),
+            local_image=str(row.get("local_image_path") or row.get("image_path") or ""),
         )
         variant_ix = max(0, int(row.get("variant_index") or 1) - 1)
         posting_time = scheduled_bulk_post_display(variant_index=variant_ix)
@@ -5976,7 +5994,7 @@ def produce(
 
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     postplanner_dir = app_config.PAGE_OUTPUTS_DIR / "postplanner"
-    logs_dir = app_config.ENGINE_ROOT / "outputs" / "logs"
+    logs_dir = pipeline_logs_dir()
 
     # ------------------------------------------------------------------
     # ONE-CALL BATCH RESEARCH: generate all variant narratives upfront.
@@ -6414,10 +6432,10 @@ def run_test_images_debug_mode(
     # ------------------------------------------------------------------
     if is_mm:
         out_dir = (
-            app_config.OUTPUTS_DIR / page_id / "VisualQA_Agent_Judge" / "attempts"
+            page_outputs_dir(page_id) / "VisualQA_Agent_Judge" / "attempts"
         )
     else:
-        out_dir = app_config.OUTPUTS_DIR / page_id / "test_previews"
+        out_dir = page_outputs_dir(page_id) / "test_previews"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     _page_cost = page_ctx.cost_tier

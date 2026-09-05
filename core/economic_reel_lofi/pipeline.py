@@ -2535,11 +2535,12 @@ def _resolve_page_dirs(page_id: str, outputs_dir: Path | str | None) -> tuple[Pa
     Return ``(page_outputs, clips_dir, assets_dir)`` using the existing
     per-page layout: ``outputs/<page>/{clips,assets}/``.
     """
-    engine_root = _engine_root()
+    from utils.pipeline_paths import coerce_outputs_path, page_outputs_dir
+
     if outputs_dir is None:
-        page_outputs = engine_root / "outputs" / page_id
+        page_outputs = page_outputs_dir(page_id)
     else:
-        page_outputs = Path(outputs_dir)
+        page_outputs = coerce_outputs_path(outputs_dir)
         # Callers may pass .../clips by mistake — normalize to page root.
         if page_outputs.name == "clips":
             page_outputs = page_outputs.parent
