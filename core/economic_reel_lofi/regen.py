@@ -330,6 +330,9 @@ def regenerate_scene(
         "attempt_budget": attempts,
         "extra_prompt": extra,
     }
+    from core.economic_reel_lofi.visual_identity import assemble_v2_prompt
+
+    gen_kw["assemble_fn"] = assemble_v2_prompt
     if lofi_cfg.uses_flux_dev():
         from core.economic_reel_lofi.image_gen import generate_scene_image_dev
         from core.economic_reel_lofi.visual_identity import assemble_v2_prompt_dev

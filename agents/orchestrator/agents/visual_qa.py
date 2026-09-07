@@ -220,7 +220,9 @@ Return JSON:
   fix_instructions (actionable camera/lighting rewrite for FLUX; empty if passed).
 """.strip()
 
-        client = genai.Client(api_key=key)
+        from google_guardrail import guarded_generate_content, make_guarded_gemini_client
+
+        client = make_guarded_gemini_client(key)
         from quality.VisualQA_Agent import config as vqa_config
 
         model_id = vqa_config.GEMINI_CRITIC_MODEL
@@ -238,13 +240,15 @@ Return JSON:
             part,
             instruction,
         ]
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.15,
             ),
+            source="visual_qa._evaluate_direct_vision",
         )
         text = (getattr(response, "text", None) or "").strip()
         if text.startswith("```"):

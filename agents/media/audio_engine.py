@@ -112,6 +112,94 @@ def _ensure_tts_wire_logger() -> None:
     logger.info("TTS wire logger installed")
 
 
+def page_has_f5_voice_reference(page_id: str | None = None) -> bool:
+    """True when a local F5-TTS reference clip exists for *page_id* (or global)."""
+    try:
+        from core.remote_gpu_manager import resolve_page_voice_reference  # noqa: PLC0415
+    except Exception:
+        return False
+    pid = (
+        (page_id or "").strip()
+        or str(getattr(app_config, "ACTIVE_PAGE", "") or "").strip()
+        or (os.getenv("ACTIVE_PAGE") or "").strip()
+        or None
+    )
+    try:
+        audio, _sample = resolve_page_voice_reference(pid)
+    except Exception:
+        return False
+    return bool(audio) and Path(audio).is_file()
+
+
+def should_route_tts_to_remote_f5(
+    *,
+    force_elevenlabs: bool = False,
+    page_id: str | None = None,
+) -> bool:
+    """Remote F5 only when enabled AND a usable voice reference exists.
+
+    ancient_knowledge ships without a ``.wav``/``.mp3`` reference. Routing it
+    to F5 raises ``RemoteGPUError`` and historically compiled silent reels
+    because callers swallowed the exception.
+    """
+    if force_elevenlabs:
+        return False
+    try:
+        from core.remote_gpu_manager import is_remote_gpu_enabled  # noqa: PLC0415
+    except Exception:
+        return False
+    if not is_remote_gpu_enabled("audio"):
+        return False
+    pid = (
+        (page_id or "").strip()
+        or str(getattr(app_config, "ACTIVE_PAGE", "") or "").strip()
+        or (os.getenv("ACTIVE_PAGE") or "").strip()
+        or None
+    )
+    if not page_has_f5_voice_reference(pid):
+        logger.warning(
+            "F5-TTS skipped — no local voice reference for page=%s; "
+            "falling back to ElevenLabs",
+            pid or "?",
+        )
+        return False
+    return True
+
+
+def assert_voice_and_subtitles_ready(
+    *,
+    voice_audio: Path | str | None,
+    word_timings: list | None,
+    page_id: str | None = None,
+    min_voice_s: float = 8.0,
+    min_words: int = 20,
+    require_subtitles: bool = True,
+) -> None:
+    """Hard-abort a compile that would ship without narration or burnt-in subs."""
+    pid = (page_id or "").strip().lower()
+    problems: list[str] = []
+    path = Path(voice_audio) if voice_audio else None
+    if path is None or not path.is_file():
+        problems.append("voice track missing")
+    else:
+        size = path.stat().st_size
+        if size < 8_000:
+            problems.append(f"voice file empty/tiny ({size} bytes)")
+        dur = _audio_file_duration_s(path)
+        if dur < float(min_voice_s):
+            problems.append(f"voice track too short ({dur:.1f}s < {min_voice_s:.1f}s)")
+    n_words = len(word_timings or [])
+    if require_subtitles and n_words < int(min_words):
+        problems.append(f"subtitle timings missing ({n_words} words)")
+    if problems:
+        raise RuntimeError(
+            "REFUSING silent/unsubtitled compile"
+            + (f" for {pid}" if pid else "")
+            + ": "
+            + "; ".join(problems)
+        )
+
+
 def _resolve_elevenlabs_api_key() -> str:
     """Factory config first, then env.
 
@@ -461,6 +549,7 @@ def generate_voiceover(
     voice_settings: dict | None = None,
     enable_ssml: bool | None = None,
     expressive_mode: bool = True,
+    force_elevenlabs: bool = False,
 ) -> Path:
     """
     Generate a TTS voiceover from hook text using the ElevenLabs API.
@@ -481,38 +570,45 @@ def generate_voiceover(
 
     Notes
     -----
-    When ``ENABLE_REMOTE_GPU_WORKFLOWS=true``, routes to remote F5-TTS via
-    ``core.remote_gpu_manager.generate_audio`` and returns early.
-    Legacy ElevenLabs code below is otherwise unchanged.
+    When ``ENABLE_REMOTE_GPU_WORKFLOWS=true`` *and* the page has a local F5
+    voice reference, routes to remote F5-TTS via
+    ``core.remote_gpu_manager.generate_audio``. Missing reference or F5
+    failure falls back to ElevenLabs (never returns empty / raises into a
+    silent-reel compile).
     """
-    # --- Remote GPU adapter (opt-in only; legacy path untouched when false) ---
-    # Runtime env check so --schedule-uploads long-runs honour flag flips.
     from core.remote_gpu_manager import (  # noqa: PLC0415
         generate_audio as _remote_generate_audio,
-        is_remote_gpu_enabled,
     )
 
-    if is_remote_gpu_enabled("audio"):
+    page_id = (
+        getattr(app_config, "ACTIVE_PAGE", None)
+        or os.getenv("ACTIVE_PAGE")
+        or None
+    )
+    if should_route_tts_to_remote_f5(
+        force_elevenlabs=force_elevenlabs, page_id=page_id
+    ):
         cleaned = strip_tts_markers(text)
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
-        page_id = (
-            getattr(app_config, "ACTIVE_PAGE", None)
-            or os.getenv("ACTIVE_PAGE")
-            or None
-        )
         logger.info(
             "Voiceover -> RemoteGPU F5-TTS (flow/env audio provider=remote_gpu) | "
             "page=%s | chars=%d -> %s",
             page_id or "?", len(cleaned), out,
         )
-        result = _remote_generate_audio(
-            cleaned,
-            output_path=out,
-            speed=speed,
-            page_id=page_id,
-        )
-        return Path(result).resolve()
+        try:
+            result = _remote_generate_audio(
+                cleaned,
+                output_path=out,
+                speed=speed,
+                page_id=page_id,
+            )
+            return Path(result).resolve()
+        except Exception as _f5_exc:  # noqa: BLE001
+            logger.warning(
+                "Remote F5-TTS failed (%s) — falling back to ElevenLabs",
+                _f5_exc,
+            )
 
     try:
         from elevenlabs import ElevenLabs  # type: ignore
@@ -745,34 +841,53 @@ def generate_voiceover_with_timestamps(
 
     Notes
     -----
-    When ``ENABLE_REMOTE_GPU_WORKFLOWS=true``, delegates audio to remote F5-TTS
-    via ``generate_voiceover`` and synthesizes character-weighted approximate
-    word timings from the returned clip duration (F5 has no alignment API).
-    Pass ``force_elevenlabs=True`` to skip F5 (needed when the page has no
-    F5 voice reference, e.g. ancient_knowledge).
+    When remote F5-TTS is enabled *and* the page has a local voice
+    reference, delegates audio to F5 via ``generate_voiceover`` and
+    synthesizes character-weighted approximate word timings (F5 has no
+    alignment API). Missing reference, ``force_elevenlabs=True``, or F5
+    failure uses ElevenLabs ``convert_with_timestamps`` so subtitles
+    still burn in.
     """
-    from core.remote_gpu_manager import is_remote_gpu_enabled  # noqa: PLC0415
-
-    if not force_elevenlabs and is_remote_gpu_enabled("audio"):
-        path = generate_voiceover(
-            text,
-            output_path,
-            voice_id=voice_id,
-            model_id=model_id,
-            speed=speed,
-            voice_settings=voice_settings,
-            enable_ssml=enable_ssml,
-            expressive_mode=expressive_mode,
-        )
-        resolved = Path(path).resolve()
-        dur = _audio_file_duration_s(resolved)
-        word_timings = approximate_word_timings(text, dur)
-        logger.info(
-            "Voiceover+timestamps -> RemoteGPU F5-TTS | %s | dur=%.2fs | "
-            "approx_timings=%d words",
-            resolved.name, dur, len(word_timings),
-        )
-        return resolved, word_timings
+    page_id = (
+        getattr(app_config, "ACTIVE_PAGE", None)
+        or os.getenv("ACTIVE_PAGE")
+        or None
+    )
+    if should_route_tts_to_remote_f5(
+        force_elevenlabs=force_elevenlabs, page_id=page_id
+    ):
+        try:
+            path = generate_voiceover(
+                text,
+                output_path,
+                voice_id=voice_id,
+                model_id=model_id,
+                speed=speed,
+                voice_settings=voice_settings,
+                enable_ssml=enable_ssml,
+                expressive_mode=expressive_mode,
+                force_elevenlabs=False,
+            )
+            resolved = Path(path).resolve()
+            dur = _audio_file_duration_s(resolved)
+            if dur >= 1.0 and resolved.is_file() and resolved.stat().st_size >= 8_000:
+                word_timings = approximate_word_timings(text, dur)
+                logger.info(
+                    "Voiceover+timestamps -> RemoteGPU F5-TTS | %s | dur=%.2fs | "
+                    "approx_timings=%d words",
+                    resolved.name, dur, len(word_timings),
+                )
+                return resolved, word_timings
+            logger.warning(
+                "Remote F5-TTS returned unusable audio (dur=%.2fs) — "
+                "falling back to ElevenLabs timestamps",
+                dur,
+            )
+        except Exception as _f5_ts_exc:  # noqa: BLE001
+            logger.warning(
+                "Remote F5-TTS+timestamps failed (%s) — falling back to ElevenLabs",
+                _f5_ts_exc,
+            )
 
     try:
         from elevenlabs import ElevenLabs, VoiceSettings as _VoiceSettings  # type: ignore

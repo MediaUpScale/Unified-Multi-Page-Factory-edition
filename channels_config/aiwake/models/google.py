@@ -82,8 +82,10 @@ class GoogleProvider(LLMProvider):
                 self.spec.model,
                 "google-genai is not installed",
             ) from exc
-        self._client = genai.Client(
-            api_key=self.api_key,
+        from google_guardrail import make_guarded_gemini_client
+
+        self._client = make_guarded_gemini_client(
+            self.api_key,
             http_options={"api_version": self.google_config.api_version},
         )
         return self._client
@@ -113,7 +115,10 @@ class GoogleProvider(LLMProvider):
 
             system, contents = self._wire_messages(messages)
             started = time.perf_counter()
-            response = self._get_client().models.generate_content(
+            from google_guardrail import guarded_generate_content
+
+            response = guarded_generate_content(
+                self._get_client(),
                 model=self.spec.model,
                 contents=contents,
                 config=types.GenerateContentConfig(
@@ -121,6 +126,7 @@ class GoogleProvider(LLMProvider):
                     max_output_tokens=max_tokens,
                     temperature=temperature,
                 ),
+                source="aiwake.GoogleProvider._dispatch",
             )
             latency_ms = int((time.perf_counter() - started) * 1000)
         except LLMError:

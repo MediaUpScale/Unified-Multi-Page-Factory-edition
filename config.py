@@ -111,7 +111,24 @@ SAFE_GEMINI_IMAGE_FALLBACK_2: str = "black-forest-labs/FLUX.1-schnell"
 SAFE_GEMINI_IMAGE_FALLBACK_3: str = "black-forest-labs/FLUX.1-schnell"
 GEMINI_PRO_IMAGE_MODEL: str = "models/gemini-3-pro-image-preview"
 GEMINI_FLASH_IMAGE_MODEL: str = "models/gemini-2.5-flash-image"
+# 1K is the billing tier (not a forced 1:1 crop). 2K is opt-in only — it bills ~$0.134/img.
+GEMINI_IMAGE_SIZE: str = (os.getenv("GEMINI_IMAGE_SIZE") or "1K").strip().upper() or "1K"
+if GEMINI_IMAGE_SIZE not in {"1K", "2K"}:
+    GEMINI_IMAGE_SIZE = "1K"
+# Official 1K list prices used for pre-flight logs + guardrail estimates.
+GEMINI_FLASH_IMAGE_1K_USD: float = 0.005
+GEMINI_PRO_IMAGE_1K_USD: float = 0.03
+GEMINI_PRO_IMAGE_2K_USD: float = 0.134
 SAFE_CLAUDE_MODEL: str = "claude-3-5-sonnet-latest"
+
+# CLI --image-model aliases → native Gemini image SKUs
+IMAGE_MODEL_ALIASES: dict[str, str] = {
+    "flash": GEMINI_FLASH_IMAGE_MODEL,
+    "gemini-flash": GEMINI_FLASH_IMAGE_MODEL,
+    "gemini-2.5-flash": GEMINI_FLASH_IMAGE_MODEL,
+    "gemini-pro": GEMINI_PRO_IMAGE_MODEL,
+    "pro": GEMINI_PRO_IMAGE_MODEL,
+}
 
 # ---------------------------------------------------------------------------
 # Model Router — cost-first by default; premium ONLY when explicitly enabled
@@ -121,9 +138,30 @@ SAFE_CLAUDE_MODEL: str = "claude-3-5-sonnet-latest"
 USE_PREMIUM_MODEL: bool = _bool_env("USE_PREMIUM_MODEL", False)
 MODEL_TIER: str = (os.getenv("MODEL_TIER") or ("premium" if USE_PREMIUM_MODEL else "cheap")).strip().lower()
 USE_OPENROUTER_AUTO: bool = _bool_env("USE_OPENROUTER_AUTO", False)
+OPENROUTER_API_KEY: str | None = os.getenv("OPENROUTER_API_KEY") or None
+OPENROUTER_BASE_URL: str = (
+    os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+).strip()
+# Visual Control Agent — modular VLM evaluator (OpenRouter default).
+# Swap via VISUAL_EVAL_PROVIDER=openrouter|gemini|auto and VISUAL_EVAL_MODEL.
+VISUAL_EVAL_PROVIDER: str = (
+    os.getenv("VISUAL_EVAL_PROVIDER") or "openrouter"
+).strip().lower()
+VISUAL_EVAL_MODEL: str = (
+    os.getenv("VISUAL_EVAL_MODEL") or "qwen/qwen-2.5-vl-7b-instruct"
+).strip()
 
 # Hard timeout for every image API call (prevents terminal hangs)
 IMAGE_API_TIMEOUT_S: float = float(os.getenv("IMAGE_API_TIMEOUT_S") or "25")
+
+# ---------------------------------------------------------------------------
+# Google / Gemini emergency billing guardrails (see google_guardrail.py)
+# ---------------------------------------------------------------------------
+# ALLOW_GOOGLE_API=false → every Gemini/Imagen call aborts before the HTTP request.
+# Unset defaults to True so tests/CI stay unblocked; the factory .env may force false.
+ALLOW_GOOGLE_API: bool = _bool_env("ALLOW_GOOGLE_API", True)
+MAX_GOOGLE_COST_PER_RUN_USD: float = float(os.getenv("MAX_GOOGLE_COST_PER_RUN_USD") or "0.50")
+MAX_GOOGLE_RETRIES: int = max(0, int(os.getenv("MAX_GOOGLE_RETRIES") or "2"))
 
 # ---------------------------------------------------------------------------
 # API keys & versioning
@@ -447,6 +485,33 @@ PREMIUM_IMAGE_MODEL: str = SAFE_GEMINI_IMAGE_FALLBACK_3
 PREMIUM_TEXT_MODEL: str = "models/gemini-2.5-pro"
 
 
+def resolve_image_model_alias(raw: str | None) -> str | None:
+    """Map ``flash`` / ``gemini-pro`` (and raw SKUs) to a canonical image model id."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    key = text.lower().removeprefix("models/")
+    aliased = IMAGE_MODEL_ALIASES.get(key)
+    if aliased:
+        return aliased
+    return normalize_image_model_id(text)
+
+
+def estimate_gemini_image_usd(model_id: str | None, *, image_size: str | None = None) -> float:
+    """USD / image at the configured size tier (default 1K)."""
+    size = (image_size or GEMINI_IMAGE_SIZE or "1K").strip().upper()
+    low = (model_id or "").lower()
+    if "pro" in low or "imagen" in low:
+        return GEMINI_PRO_IMAGE_2K_USD if size == "2K" else GEMINI_PRO_IMAGE_1K_USD
+    if "flash" in low and "image" in low:
+        return GEMINI_FLASH_IMAGE_1K_USD
+    if is_gemini_image_model(model_id):
+        return GEMINI_FLASH_IMAGE_1K_USD
+    return 0.0
+
+
 def is_gemini_image_model(raw: str | None) -> bool:
     """True for native Gemini image SKUs (pro-image-preview, flash-image, …)."""
     low = (raw or "").strip().lower()
@@ -464,6 +529,13 @@ def normalize_image_model_id(raw: str | None) -> str:
     flux = "black-forest-labs/FLUX.1-schnell"
     name = (raw or flux).strip() or flux
     low = name.lower().removeprefix("models/")
+
+    # Together Juggernaut Lightning Flux — never remap to black-forest-labs
+    if "juggernaut" in low:
+        return "Rundiffusion/Juggernaut-Lightning-Flux"
+
+    if "flux.2-dev" in low or "flux2-dev" in low or "flux2dev" in low:
+        return "black-forest-labs/FLUX.2-dev"
 
     # Together / FLUX — keep as-is
     if "flux" in low or "black-forest-labs" in low:

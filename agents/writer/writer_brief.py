@@ -11,10 +11,11 @@ Nothing here decides line count, cadence, or shape. Those belong to the writer.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-BriefMode = Literal["theme", "quote"]
+BriefMode = Literal["theme", "quote", "paraphrase"]
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,31 @@ class WriterBrief:
             meta=dict(meta or {}),
         )
 
+    @classmethod
+    def from_paraphrase(
+        cls,
+        *,
+        aphorism: str,
+        theme: str = "",
+        module: str = "relationship",
+        source_id: str = "",
+        meta: dict[str, Any] | None = None,
+    ) -> WriterBrief:
+        """Request a light structural paraphrase of one complete aphorism."""
+        text = str(aphorism or "").strip()
+        if not text:
+            raise ValueError("from_paraphrase requires an aphorism")
+        details = dict(meta or {})
+        if source_id:
+            details["aphorism_id"] = source_id
+        return cls(
+            mode="paraphrase",
+            module=str(module or "relationship").strip() or "relationship",
+            theme=str(theme or "").strip(),
+            seed_quote=text,
+            meta=details,
+        )
+
     def with_revision(self, note: str) -> WriterBrief:
         """Same assignment, carrying the judge's reason the last draft failed."""
         from dataclasses import replace
@@ -115,10 +141,59 @@ class WriterBrief:
                 "do not paraphrase it as a line, do not name or gesture at whoever "
                 "said it. It is the thought you are arguing with or extending, not "
                 "material to reuse. If the seed is abstract, find the specific human "
-                "situation underneath it and write that instead."
+                "situation underneath it and write that instead.\n"
+                "PARABLE ARC: carry one concrete parable through four ordered "
+                "movements across the beats: (1) concept/setup, (2) contact creates "
+                "conflict or pain, (3) retreat creates loneliness or cost, "
+                "(4) a workable equilibrium that preserves connection without "
+                "repeating the harm. Each movement must change the situation; do "
+                "not flatten the seed into repeated commentary. End with a direct, "
+                "usable instruction the listener can act on; never end with "
+                "\"that's what love/healing/lasting looks like.\""
             )
             if self.theme:
                 parts.append(f"It should land somewhere near: {self.theme.replace('_', ' ')}")
+        elif self.mode == "paraphrase":
+            source_structure = str(
+                (self.meta or {}).get("source_structure") or ""
+            ).lower()
+            starts = [
+                word.lower()
+                for word in re.findall(
+                    r"(?:^|[.!?]\s+)([A-Za-z']+)",
+                    str(self.seed_quote or ""),
+                )
+            ]
+            repeated_opening = (
+                max((starts.count(word) for word in set(starts)), default=0) >= 3
+            )
+            if "anaphora" in source_structure or repeated_opening:
+                variation_rule = (
+                    "This source is ANAPHORA: its repeated opening and repeated "
+                    "closing refrain are protected. Keep every parallel repeat "
+                    "as its own sentence; do not merge or split those sentences. "
+                    "Preserve the repeated opening and refrain count. Create "
+                    "structural variation inside exactly 1–2 sentences by "
+                    "reordering clause elements or changing word order/tense. "
+                    "Never join two repeats with 'or'."
+                )
+            else:
+                variation_rule = (
+                    "Make exactly one sentence-level structural change: either "
+                    "merge one adjacent pair of short sentences into one, OR split "
+                    "one sentence into two. Do not do both. Do not keep a 1:1 "
+                    "sentence mirror."
+                )
+            parts.append(
+                "SOURCE APHORISM:\n"
+                f"  \u201c{self.seed_quote}\u201d\n"
+                "Make one light rewording only. Preserve the progression, repeated "
+                "refrain, approximate total word count, rhythm, and meaning. "
+                f"Substitute roughly 20–30% of the words. {variation_rule} "
+                "Do not expand "
+                "it into a story, add an arc, add examples, explain it, or improve "
+                "its argument. Return a genuine variation, not a new composition."
+            )
         else:
             parts.append(f"SUBJECT: {self.theme.replace('_', ' ')}")
             if self.subtheme:

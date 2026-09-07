@@ -39,6 +39,84 @@ def missing_keep_terms(text: str, terms: list[str] | tuple[str, ...] | None) -> 
     return [t for t in (terms or ()) if t and not _term_in_text(text, t)]
 
 
+def trim_at_clause_boundary(
+    text: str,
+    *,
+    max_words: int,
+    max_chars: int,
+) -> str:
+    """Deterministically fit a line without cutting a word or dangling punctuation."""
+    raw = " ".join(str(text or "").split())
+    if len(raw.split()) <= max_words and len(raw) <= max_chars:
+        return raw
+    terminal = raw[-1] if raw and raw[-1] in ".!?" else "."
+    words = raw.split()
+    take = 0
+    for i in range(1, min(len(words), max_words) + 1):
+        if len(" ".join(words[:i])) > max_chars:
+            break
+        take = i
+    if take <= 0:
+        return terminal
+    # Prefer a complete clause already inside the hard limits.
+    boundary = 0
+    for i, word in enumerate(words[:take], start=1):
+        if word.rstrip("\"'”’").endswith((",", ";", ":", "—", "–", ".", "!", "?")):
+            boundary = i
+    if boundary >= 2:
+        take = boundary
+    fitted = " ".join(words[:take]).rstrip(" ,;:—–.!?")
+    while fitted and len(fitted + terminal) > max_chars:
+        fitted = " ".join(fitted.split()[:-1]).rstrip(" ,;:—–.!?")
+    return (fitted + terminal) if fitted else terminal
+
+
+_TARGETED_REPAIR_SYSTEM = """Rewrite one spoken reel beat and nothing else.
+Obey the supplied constraint, preserve the original meaning and voice, and
+return strict JSON only. Do not add commentary or surrounding beats."""
+
+
+def repair_one_line(
+    text: str,
+    *,
+    constraint: str,
+    max_words: int,
+    max_chars: int,
+    provider: str | None = "claude",
+    must_keep: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """One scoped LLM call containing only the failing line and its constraint."""
+    from agents.mcp.text_model import complete_script
+
+    keep = [str(x).strip() for x in (must_keep or []) if str(x).strip()]
+    prompt = (
+        f"FAILING LINE: {text}\n"
+        f"CONSTRAINT: {constraint}\n"
+        f"HARD LIMITS: {max_words} words, {max_chars} characters.\n"
+        + (f"MUST KEEP: {', '.join(keep)}.\n" if keep else "")
+        + 'Return exactly: {"line":"<rewritten line>"}'
+    )
+    result = complete_script(
+        prompt,
+        system=_TARGETED_REPAIR_SYSTEM,
+        provider=provider,
+        kind="writer",
+    )
+    data = _extract_json(result.text)
+    line = " ".join(str(data.get("line") or "").split())
+    if not line:
+        raise ValueError("targeted repair returned an empty line")
+    if len(line.split()) > max_words or len(line) > max_chars:
+        raise ValueError(
+            f"targeted repair still exceeds limits "
+            f"({len(line.split())}w/{len(line)}c)"
+        )
+    missing = missing_keep_terms(line, keep)
+    if missing:
+        raise ValueError(f"targeted repair dropped required terms: {missing}")
+    return line
+
+
 def _duration_s(brief: WriterBrief | None) -> float:
     meta = (brief.meta if brief is not None else {}) or {}
     raw = meta.get("duration_s")
@@ -273,30 +351,34 @@ def enforce_spoken_budget(
             print(f"[LOFI spoken-budget] rewrite error: {exc}")
             return draft, report
         report = assess_draft(draft)
-        if not report["ok"]:
-            for i in list(report["over_indices"]):
-                try:
-                    print(f"[LOFI spoken-budget] single-line rewrite beat={i + 1}")
-                    draft.lines[i] = rewrite_single_line(
-                        draft.lines[i],
-                        ceiling=ceiling,
-                        theme=(draft.brief.theme if draft.brief else "") or "",
-                        subtheme=(draft.brief.subtheme if draft.brief else "") or "",
-                        neighbor_before=draft.lines[i - 1] if i > 0 else "",
-                        neighbor_after=(
-                            draft.lines[i + 1] if i + 1 < len(draft.lines) else ""
-                        ),
-                        provider=writer_provider,
-                        must_keep=keep.get(i) or [],
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    print(
-                        f"[LOFI spoken-budget] beat {i + 1} single-line rewrite error: {exc}"
-                    )
-            report = assess_draft(draft)
         if report["ok"]:
             print(f"[LOFI spoken-budget] PASS after rewrite pass {n}")
             return draft, report
+    max_chars = lofi_cfg.caption_limits(lofi_cfg.THEMATIC_ARC_ID)[1]
+    for i in list(report["over_indices"]):
+        draft.lines[i] = trim_at_clause_boundary(
+            draft.lines[i],
+            max_words=ceiling,
+            max_chars=max_chars,
+        )
+    report = assess_draft(draft)
+    keep_missing = {
+        i: missing_keep_terms(draft.lines[i], keep.get(i) or [])
+        for i in range(len(draft.lines))
+        if keep.get(i) and missing_keep_terms(draft.lines[i], keep.get(i) or [])
+    }
+    if report["ok"] and not keep_missing:
+        print(
+            f"[LOFI spoken-budget] PASS via deterministic clause trim "
+            f"after {passes} repair passes"
+        )
+        return draft, report
+    if keep_missing:
+        report["ok"] = False
+        report["reason"] = (
+            f"deterministic trim dropped required terms: {keep_missing}; "
+            f"{report.get('reason') or ''}"
+        )
     print(f"[LOFI spoken-budget] FAIL after {passes} rewrites: {report['reason']}")
     return draft, report
 

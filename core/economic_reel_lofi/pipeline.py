@@ -35,6 +35,7 @@ from core.economic_reel_lofi.riso_prompt_bank import (
     assign_riso_prompts_for_scenes,
     export_active_library_diff,
 )
+from google_guardrail import guarded_generate_content, make_guarded_gemini_client
 from agents.writer.script_agent import (
     _sanitize_caption_typos,
     assess_object_beat_continuity,
@@ -849,7 +850,7 @@ def assess_anchor_object_identity(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -881,7 +882,8 @@ def assess_anchor_object_identity(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1008,7 +1010,7 @@ def assess_spoken_line_prop_leak(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1044,7 +1046,8 @@ def assess_spoken_line_prop_leak(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1328,7 +1331,7 @@ def assess_anchor_painterly_lock(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1346,7 +1349,8 @@ def assess_anchor_painterly_lock(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1409,7 +1413,7 @@ def assess_couple_bed_pose(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1428,7 +1432,8 @@ def assess_couple_bed_pose(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1488,7 +1493,7 @@ def assess_hook_still(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1505,7 +1510,8 @@ def assess_hook_still(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1553,6 +1559,20 @@ def assess_hook_still(
         meta["skipped"] = True
         meta["skip_reason"] = f"error:{exc}"
         return True, [], meta
+
+
+def _is_critic_infra_error(exc: BaseException) -> bool:
+    """Retired/missing Gemini SKU — not a garment verdict."""
+    msg = str(exc).upper()
+    return any(
+        tok in msg
+        for tok in (
+            "404",
+            "NOT_FOUND",
+            "NO LONGER AVAILABLE",
+            "NOT AVAILABLE TO NEW USERS",
+        )
+    )
 
 
 COVERAGE_FLAW = "COVERAGE: incomplete garment / exposed skin on a human figure"
@@ -1622,7 +1642,7 @@ def assess_garment_coverage(
             meta["passed"] = False
             print(f"[LOFI coverage] FAIL-CLOSED {image_path.name} no Gemini key")
             return False, [COVERAGE_FLAW + " (coverage check unavailable)"], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1641,7 +1661,8 @@ def assess_garment_coverage(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1681,6 +1702,13 @@ def assess_garment_coverage(
         _LOG.warning("coverage check failed-closed for %s (%s)", image_path.name, exc)
         meta["skipped"] = True
         meta["skip_reason"] = f"error:{exc}"
+        if _is_critic_infra_error(exc):
+            # Retired/missing critic SKU must not burn a Flux retry.
+            print(
+                f"[LOFI coverage] SKIP infra {image_path.name} "
+                f"({exc.__class__.__name__})"
+            )
+            return True, [], meta
         meta["passed"] = False
         return False, [COVERAGE_FLAW + " (coverage check error)"], meta
 
@@ -1709,7 +1737,7 @@ def assess_portrait_close_style(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1731,7 +1759,8 @@ def assess_portrait_close_style(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -1823,7 +1852,7 @@ def assess_eye_close_crop(
             meta["skipped"] = True
             meta["skip_reason"] = "no_gemini_key"
             return True, [], meta
-        client = genai.Client(api_key=qa_cfg.GEMINI_API_KEY)
+        client = make_guarded_gemini_client(qa_cfg.GEMINI_API_KEY)
         model_id = qa_cfg.GEMINI_CRITIC_MODEL
         if not str(model_id).startswith("models/"):
             model_id = f"models/{model_id}"
@@ -1837,7 +1866,8 @@ def assess_eye_close_crop(
         from PIL import Image as PILImage
 
         img = PILImage.open(image_path)
-        response = client.models.generate_content(
+        response = guarded_generate_content(
+            client,
             model=model_id,
             contents=[prompt, img],
             config=types.GenerateContentConfig(
@@ -2413,34 +2443,327 @@ def _caption_cap_reasons_only(reasons: list[str]) -> bool:
     return all(any(p.search(r) for p in pats) for r in reasons)
 
 
+def _targeted_line_failure(
+    script: dict[str, Any],
+    reasons: list[str],
+) -> tuple[int, str, list[str]] | None:
+    """Return one repairable beat (index, constraint, required terms)."""
+    if not reasons:
+        anchor_holds = [
+            str(r)
+            for r in (script.get("narrative_holds") or [])
+            if str(r).startswith("anchor_object ") and "mentioned in " in str(r)
+        ]
+        other_holds = [
+            str(r)
+            for r in (script.get("narrative_holds") or [])
+            if str(r) not in anchor_holds
+        ]
+        lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+        anchor = str((script.get("anchor_object") or {}).get("name") or "").strip()
+        if len(anchor_holds) == 1 and not other_holds and lines and anchor:
+            return len(lines) - 1, anchor_holds[0], [anchor]
+        return None
+    lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+
+    # Story diagnostics can usually identify one weak transition or closing
+    # beat. Repair that beat instead of asking for another whole episode.
+    close_reason = next(
+        (r for r in reasons if "story-close:" in str(r)),
+        None,
+    )
+    if close_reason and lines:
+        return len(lines) - 1, str(close_reason), []
+    spine_reason = next(
+        (r for r in reasons if "story-spine:" in str(r)),
+        None,
+    )
+    if spine_reason and len(lines) > 1:
+        linked_pairs: set[int] = set()
+        for note in ((script.get("story_quality") or {}).get("links") or []):
+            match = re.match(r"(\d+)->(\d+):", str(note))
+            if match:
+                linked_pairs.add(int(match.group(1)))
+        # Pair notes are zero-based (0->1). Rewrite the second line of the
+        # first missing pair, while protecting the opening hook.
+        missing_pair = next(
+            (i for i in range(len(lines) - 1) if i not in linked_pairs),
+            0,
+        )
+        target_i = min(missing_pair + 1, len(lines) - 1)
+        prior = str(lines[target_i - 1].get("text") or "")
+        constraint = (
+            f"{spine_reason}; connect naturally to the prior beat {prior!r} "
+            "without adding a decorative transition"
+        )
+        return target_i, constraint, []
+    stakes_reason = next(
+        (r for r in reasons if "story-stakes:" in str(r)),
+        None,
+    )
+    if stakes_reason and lines:
+        return max(1, len(lines) // 2), str(stakes_reason), []
+
+    allowed = (
+        "spoken line has",
+        " words (max ",
+        "caption exceeds",
+        "setting/object not tied to caption",
+    )
+    scene_ids: set[int] = set()
+    for reason in reasons:
+        match = re.search(r"\bscene\s+(\d+)\b", reason)
+        if not match or not any(token in reason for token in allowed):
+            scene_ids.clear()
+            break
+        scene_ids.add(int(match.group(1)) - 1)
+    if len(scene_ids) == 1:
+        idx = next(iter(scene_ids))
+        if not 0 <= idx < len(lines):
+            return None
+        row = lines[idx]
+        must_keep: list[str] = []
+        if any("setting/object not tied to caption" in r for r in reasons):
+            must_keep.extend(
+                str(row.get(key) or "").strip()
+                for key in ("key_object",)
+                if str(row.get(key) or "").strip()
+            )
+        return idx, "; ".join(reasons), must_keep
+
+    return None
+
+
+def _repair_targeted_line(
+    script: dict[str, Any],
+    *,
+    module: str,
+    scene_count: int,
+    reasons: list[str],
+    persist_on_pass: bool,
+) -> tuple[Any, int]:
+    """Repair one beat up to MAX_LINE_REPAIRS, then use a local safe trim."""
+    target = _targeted_line_failure(script, reasons)
+    if target is None:
+        return None, 0
+    idx, constraint, must_keep = target
+    lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
+    row = lines[idx]
+    from agents.writer.freeform_writer import split_long_line
+    from agents.writer.spoken_budget import repair_one_line, trim_at_clause_boundary
+
+    max_words, max_chars = lofi_cfg.caption_limits(
+        str(script.get("arc_template") or "")
+    )
+    repairs = max(1, int(getattr(lofi_cfg, "MAX_LINE_REPAIRS", 2)))
+    for repair_n in range(1, repairs + 1):
+        original = str(row.get("text") or row.get("beat_text") or "")
+        try:
+            rewritten = repair_one_line(
+                original,
+                constraint=constraint,
+                max_words=max_words,
+                max_chars=max_chars,
+                provider="claude",
+                must_keep=must_keep,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[LOFI line-repair] scene={idx + 1} "
+                f"attempt={repair_n}/{repairs} failed: {exc}"
+            )
+            continue
+        row["text"] = rewritten
+        row["beat_text"] = rewritten
+        row["caption_beats"] = split_long_line(rewritten, max_words, max_chars)
+        script["monologue"] = " ".join(
+            str(item.get("text") or "") for item in lines
+        )
+        checked = validate_script(
+            script,
+            module=module,
+            scene_count=scene_count,
+            persist_on_pass=persist_on_pass,
+        )
+        if checked.ok:
+            if constraint.startswith("anchor_object "):
+                script["narrative_holds"] = []
+                script["holds_episode"] = False
+            print(
+                f"[LOFI line-repair] scene={idx + 1} PASS "
+                f"after {repair_n}/{repairs}"
+            )
+            return checked, repair_n
+        next_target = _targeted_line_failure(script, list(checked.reasons))
+        if next_target is None or next_target[0] != idx:
+            return checked, repair_n
+        constraint = "; ".join(checked.reasons)
+
+    current = str(row.get("text") or row.get("beat_text") or "")
+    trimmed = trim_at_clause_boundary(
+        current,
+        max_words=max_words,
+        max_chars=max_chars,
+    )
+    row["text"] = trimmed
+    row["beat_text"] = trimmed
+    row["caption_beats"] = [trimmed]
+    script["monologue"] = " ".join(str(item.get("text") or "") for item in lines)
+    print(
+        f"[LOFI line-repair] scene={idx + 1} deterministic fallback "
+        f"after {repairs} LLM attempts: {trimmed!r}"
+    )
+    checked = validate_script(
+        script,
+        module=module,
+        scene_count=scene_count,
+        persist_on_pass=persist_on_pass,
+    )
+    return checked, repairs
+
+
 def _generate_validated_script(
     *,
     module: str,
     theme_row: dict[str, Any],
     scene_count: int,
+    duration_s: float,
+    writer_mode: str = "paraphrase",
+    seed_quote: str | None = None,
+    aphorism_id: str | None = None,
     persist_on_pass: bool = True,
 ) -> tuple[dict[str, Any] | None, list[str], bool]:
     """Returns (script|None, errors, needs_manual_review)."""
     feedback: str | None = None
     last_errors: list[str] = []
     last_script: dict[str, Any] | None = None
-    for attempt in range(1, lofi_cfg.SCRIPT_MAX_RETRIES + 1):
-        script = generate_script(
-            module=module,
-            theme=str(theme_row.get("theme") or "connection"),
-            subtheme=str(theme_row.get("subtheme") or ""),
-            scene_count=scene_count,
-            feedback=feedback,
-            theme_row=theme_row,
-        )
+    mode = str(writer_mode or "paraphrase").strip().lower()
+    max_structural_attempts = (
+        1 if mode == "paraphrase" else int(lofi_cfg.SCRIPT_MAX_RETRIES)
+    )
+    for attempt in range(1, max_structural_attempts + 1):
+        if mode == "theme":
+            script = generate_script(
+                module=module,
+                theme=str(theme_row.get("theme") or "connection"),
+                subtheme=str(theme_row.get("subtheme") or ""),
+                scene_count=scene_count,
+                feedback=feedback,
+                theme_row=theme_row,
+                duration_s=duration_s,
+            )
+        else:
+            from agents.writer.script_brain import compose, draft_to_script, paraphrase
+            from agents.writer.writer_brief import WriterBrief
+
+            common = {
+                "duration_s": float(duration_s),
+                "beat_duration_s": lofi_cfg.beat_duration_s(),
+            }
+            if mode == "quote":
+                brief = WriterBrief.from_quote(
+                    quote=str(seed_quote or ""),
+                    theme=str(theme_row.get("theme") or ""),
+                    module=module,
+                    context_notes=[
+                        str(item.get("detail") or "")
+                        for item in rag.select_concrete_details(theme_row, module=module)
+                        if str(item.get("detail") or "").strip()
+                    ],
+                    meta=common,
+                )
+                if feedback:
+                    brief = brief.with_revision(feedback)
+                brain = compose(brief, max_attempts=1)
+                draft = brain.draft or next(
+                    (
+                        row.draft
+                        for row in reversed(brain.attempts)
+                        if row.draft is not None
+                    ),
+                    None,
+                )
+                if draft is None:
+                    last_errors = [brain.reason()]
+                    feedback = brain.reason()
+                    continue
+                script = draft_to_script(draft)
+                script["brain_gate_ok"] = bool(brain.ok)
+                script["brain_gate_errors"] = [] if brain.ok else [brain.reason()]
+                script["writer_diagnostics"] = brain.to_dict()
+            elif mode == "paraphrase":
+                from core.economic_reel_lofi.aphorism_bank import get_entry
+
+                # No --lofi-aphorism-id: pick a random bank entry for this
+                # module. Do not lock to the first theme-matched row.
+                entry = get_entry(aphorism_id, module=module)
+                print(
+                    f"[LOFI paraphrase] bank entry={entry.get('id')} "
+                    f"{'(forced)' if aphorism_id else '(random)'}"
+                )
+                brief = WriterBrief.from_paraphrase(
+                    aphorism=str(entry["text"]),
+                    theme=str(theme_row.get("theme") or ""),
+                    module=module,
+                    source_id=str(entry["id"]),
+                    meta={
+                        **common,
+                        "source_structure": str(entry.get("structure") or ""),
+                    },
+                )
+                script = draft_to_script(paraphrase(brief))
+            else:
+                raise ValueError(f"unsupported LOFI writer mode: {mode!r}")
+        script["writer_mode"] = mode
+        script["duration_requested_s"] = float(duration_s)
+        script["scene_duration_s"] = lofi_cfg.beat_duration_s()
         script["subtheme"] = theme_row.get("subtheme")
         last_script = script
-        result = validate_script(
+        pre_repaired, _ = _repair_targeted_line(
+            script,
+            module=module,
+            scene_count=scene_count,
+            reasons=[],
+            persist_on_pass=persist_on_pass,
+        )
+        result = pre_repaired or validate_script(
             script,
             module=module,
             scene_count=scene_count,
             persist_on_pass=persist_on_pass,
         )
+        narrative_structural = [
+            str(reason)
+            for reason in (script.get("narrative_holds") or [])
+            if str(reason).startswith(("HOOK:", "THESIS:", "THEME:"))
+            or "theme-drift" in str(reason).lower()
+            or str(reason).startswith(("story-spine:", "story-stakes:", "story-close:"))
+        ]
+        for reason in narrative_structural:
+            tagged = f"narrative_structure: {reason}"
+            if tagged not in result.reasons:
+                result.reasons.append(tagged)
+                result.ok = False
+        if result.ok and mode == "quote" and not script.get("brain_gate_ok"):
+            result.ok = False
+            result.reasons.extend(script.get("brain_gate_errors") or ["judge gate failed"])
+        if not result.ok:
+            # A draft may have two independent scoped misses (for example one
+            # weak transition and one generic close). Repair them in sequence;
+            # each beat retains its own MAX_LINE_REPAIRS safety cap.
+            for _ in range(min(3, scene_count)):
+                repaired, _ = _repair_targeted_line(
+                    script,
+                    module=module,
+                    scene_count=scene_count,
+                    reasons=list(result.reasons),
+                    persist_on_pass=persist_on_pass,
+                )
+                if repaired is None:
+                    break
+                result = repaired
+                if result.ok:
+                    break
         if (not result.ok) and _caption_cap_reasons_only(result.reasons):
             repair_script_captions(script)
             result = validate_script(
@@ -2465,32 +2788,21 @@ def _generate_validated_script(
             last_script["script_ship_errors"] = list(result.reasons)
         last_errors = list(result.reasons)
         feedback = result.feedback()
-        print(f"[LOFI script] attempt {attempt}/{lofi_cfg.SCRIPT_MAX_RETRIES} rejected: {feedback}")
+        print(f"[LOFI script] attempt {attempt}/{max_structural_attempts} rejected: {feedback}")
         _LOG.info(
             "Script attempt %d/%d rejected: %s",
             attempt,
-            lofi_cfg.SCRIPT_MAX_RETRIES,
+            max_structural_attempts,
             feedback,
         )
-        if (
-            not persist_on_pass
-            and str(script.get("writer") or "") == "claude"
-        ):
-            print(
-                "[LOFI script] script-only: keeping this Claude draft for review "
-                "(skipping further writer retries)"
-            )
-            break
-    if (
-        not persist_on_pass
-        and last_script
-        and str(last_script.get("writer") or "") == "claude"
-    ):
+    if not persist_on_pass and last_script:
         print(
-            "[LOFI script] script-only: keeping last Claude draft for review "
+            f"[LOFI script] script-only: keeping last {mode} draft for review "
             "(not substituting fallback)"
         )
         return last_script, last_errors, True
+    if mode != "theme":
+        return None, last_errors or [f"{mode} writer did not clear validation"], True
     # Last resort: deterministic short-line fallback so a test still renders
     from agents.writer.script_agent import _fallback_script
 
@@ -2779,6 +3091,9 @@ def _produce_one(
     assets_dir: Path,
     force_theme: str | None = None,
     force_subtheme: str | None = None,
+    writer_mode: str = "paraphrase",
+    seed_quote: str | None = None,
+    aphorism_id: str | None = None,
     index: int,
     script_only: bool = False,
     stills_only: bool = False,
@@ -2903,6 +3218,10 @@ def _produce_one(
             module=module,
             theme_row=theme_row,
             scene_count=scene_count,
+            duration_s=float(duration_s),
+            writer_mode=writer_mode,
+            seed_quote=seed_quote,
+            aphorism_id=aphorism_id,
             persist_on_pass=persist_on_pass,
         )
     if script is None:
@@ -2951,8 +3270,13 @@ def _produce_one(
             "duration_requested_s": duration_s,
             "scene_count": len(script.get("lines") or []),
             "scene_duration_s": lofi_cfg.beat_duration_s(),
-            "duration_expected_s": lofi_cfg.duration_for_beat_count(
-                len(script.get("lines") or [])
+            "duration_expected_s": round(
+                sum(
+                    float(row.get("duration_s") or lofi_cfg.beat_duration_s())
+                    for row in (script.get("lines") or [])
+                    if isinstance(row, dict)
+                ),
+                3,
             ),
             "subtheme": script.get("subtheme"),
             "hook_type": script.get("hook_type"),
@@ -4129,6 +4453,9 @@ def run_economic_reel_lofi(
     outputs_dir: Path | str | None = None,
     theme: str | None = None,
     subtheme: str | None = None,
+    writer_mode: str = "paraphrase",
+    seed_quote: str | None = None,
+    aphorism_id: str | None = None,
     script_only: bool = False,
     stills_only: bool = False,
     locked_scripts: list[str] | None = None,
@@ -4145,6 +4472,11 @@ def run_economic_reel_lofi(
     """
     page = (page_id or "").strip().lower()
     mod = lofi_cfg.validate_module_for_page(module or "relationship", page)
+    mode = str(writer_mode or "paraphrase").strip().lower()
+    if mode not in {"theme", "quote", "paraphrase"}:
+        raise ValueError("--lofi-mode must be theme, quote, or paraphrase")
+    if mode == "quote" and not str(seed_quote or "").strip():
+        raise ValueError("--lofi-mode quote requires --lofi-seed-quote")
     dur = lofi_cfg.validate_duration(duration if duration is not None else lofi_cfg.DEFAULT_DURATION_S)
     qty = max(1, int(quantity))
     if review_required is None:
@@ -4175,7 +4507,7 @@ def run_economic_reel_lofi(
         print(
             f"[ECONOMIC_REEL_LOFI] ({i}/{qty}) page={page} module={mod} "
             f"duration={dur}s scenes={lofi_cfg.scene_count_for_duration(dur)} "
-            f"theme={force_theme or 'auto'} "
+            f"theme={force_theme or 'auto'} writer_mode={mode} "
             f"{'STILLS-ONLY ' if stills_only else ''}"
             f"{'SCRIPT-ONLY ' if script_only and not stills_only else ''}"
             f"→ {clips_dir}"
@@ -4188,6 +4520,9 @@ def run_economic_reel_lofi(
             assets_dir=assets_dir,
             force_theme=force_theme,
             force_subtheme=force_subtheme,
+            writer_mode=mode,
+            seed_quote=seed_quote,
+            aphorism_id=aphorism_id,
             index=i,
             script_only=script_only and not stills_only,
             stills_only=stills_only,
@@ -4218,6 +4553,9 @@ def run_economic_reel_lofi(
         "page": page,
         "module": mod,
         "duration_s": dur,
+        "writer_mode": mode,
+        "seed_quote": str(seed_quote or "") if mode == "quote" else "",
+        "aphorism_id": str(aphorism_id or "") if mode == "paraphrase" else "",
         "quantity": qty,
         "successful": ok_n,
         "script_only": bool(script_only) and not stills_only,

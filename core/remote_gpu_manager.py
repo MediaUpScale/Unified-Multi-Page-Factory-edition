@@ -474,12 +474,15 @@ def _first_existing(paths: list[Path]) -> Path | None:
 
 
 def _list_voice_ref_media(voice_dir: Path, *, pattern: str) -> list[Path]:
-    """Glob *pattern* for every accepted voice-ref extension, sorted."""
+    """Glob *pattern* for every accepted voice-ref extension, sorted.
+
+    Extension match is case-insensitive so ``.MP3`` resolves on Windows.
+    """
     found: list[Path] = []
-    for ext in _VOICE_REF_EXTS:
-        # pattern is stem-ish, e.g. "*_voice_ref*" or "*"
-        found.extend(voice_dir.glob(f"{pattern}{ext}"))
-    return sorted({p.resolve() for p in found if p.is_file()})
+    for path in voice_dir.glob(f"{pattern}*"):
+        if path.suffix.lower() in _VOICE_REF_EXTS and path.is_file():
+            found.append(path.resolve())
+    return sorted(set(found))
 
 
 def resolve_page_voice_reference(

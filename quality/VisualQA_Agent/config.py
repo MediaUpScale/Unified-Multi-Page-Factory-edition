@@ -80,11 +80,30 @@ DEEPINFRA_FLUX_SCHNELL_MODEL: str = (
     os.getenv("DEEPINFRA_FLUX_SCHNELL_MODEL") or "black-forest-labs/FLUX-1-schnell"
 ).strip()
 
-GEMINI_CRITIC_MODEL: str = os.getenv(
-    "VISUALQA_GEMINI_MODEL", "models/gemini-2.5-flash-lite"
+# Gemini 2.5 Flash Lite is retired for new callers (404 NOT_FOUND).
+CURRENT_CRITIC_MODEL: str = "models/gemini-3.5-flash-lite"
+_RETIRED_CRITIC_MODELS: dict[str, str] = {
+    "models/gemini-2.5-flash-lite": CURRENT_CRITIC_MODEL,
+    "gemini-2.5-flash-lite": CURRENT_CRITIC_MODEL,
+}
+
+
+def resolve_critic_model(model_id: str | None) -> str:
+    """Map retired critic SKUs onto a live Flash Lite id."""
+    raw = (model_id or "").strip() or CURRENT_CRITIC_MODEL
+    mapped = _RETIRED_CRITIC_MODELS.get(raw) or _RETIRED_CRITIC_MODELS.get(
+        raw.removeprefix("models/")
+    )
+    if mapped:
+        return mapped
+    return raw if raw.startswith("models/") else f"models/{raw}"
+
+
+GEMINI_CRITIC_MODEL: str = resolve_critic_model(
+    os.getenv("VISUALQA_GEMINI_MODEL", CURRENT_CRITIC_MODEL)
 )
-GEMINI_REWRITE_MODEL: str = os.getenv(
-    "VISUALQA_REWRITE_MODEL", "models/gemini-2.5-flash-lite"
+GEMINI_REWRITE_MODEL: str = resolve_critic_model(
+    os.getenv("VISUALQA_REWRITE_MODEL", CURRENT_CRITIC_MODEL)
 )
 FLUX_MODEL: str = (
     os.getenv("TOGETHER_IMAGE_MODEL")
@@ -163,8 +182,8 @@ VISION_JPEG_QUALITY: int = int(os.getenv("VISUAL_QA_JPEG_QUALITY", "85") or "85"
 
 COST_GEMINI_FLASH_USD: float = 0.00015
 # Cheapest viable Vision model cost (per 1k tokens) for cost-logging only —
-# gemini-2.5-flash-lite. Kept separate from the old flash rate so the ledger
-# reflects the new, cheaper provider tier.
+# gemini-3.5-flash-lite. Kept separate from the old flash rate so the ledger
+# reflects the cheaper provider tier.
 COST_GEMINI_FLASH_LITE_USD: float = float(
     os.getenv("VISUAL_QA_FLASH_LITE_USD", "0.000032") or "0.000032"
 )

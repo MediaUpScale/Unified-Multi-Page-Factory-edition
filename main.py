@@ -192,6 +192,7 @@ from agents.posting.youtube_publisher import (
 )
 from agents.media.audio_engine import (
     apply_voice_loudnorm,
+    assert_voice_and_subtitles_ready,
     generate_voiceover,
     generate_voiceover_with_timestamps,
     generate_ambient_track,
@@ -831,9 +832,9 @@ def _snapshot_verified_models(
             humanizer_summary=humanizer,
         )
 
-    from google import genai  # lazy — google.genai SDK is heavy (~3 s); only needed with a key
+    from agents.media.providers.gemini_utils import make_gemini_client_with_fallback
 
-    client = genai.Client(api_key=gem_key)
+    client = make_gemini_client_with_fallback(gem_key)
     research_chain = build_model_chain(
         client, capability_type="text", preferred=research_pref
     )
@@ -855,6 +856,33 @@ def _snapshot_verified_models(
         image_primary_id=img_pref,
         research_primary_id=(research_chain[0] if research_chain else research_pref),
         humanizer_summary=humanizer,
+    )
+
+
+def _preflight_gemini_image_batch_cost(*, page_ctx: PageContext | None, quantity: int) -> None:
+    """Log estimated Gemini image spend before any API call is made."""
+    override = ""
+    if page_ctx is not None:
+        override = str(
+            page_ctx.page_cfg.get("IMAGE_MODEL_OVERRIDE")
+            or page_ctx.image_model_override
+            or ""
+        ).strip()
+    if not override or not app_config.is_gemini_image_model(override):
+        return
+    n = max(1, int(quantity or 1))
+    size = str(getattr(app_config, "GEMINI_IMAGE_SIZE", "1K") or "1K")
+    unit = float(app_config.estimate_gemini_image_usd(override, image_size=size))
+    total = unit * n
+    tier = "gemini-pro" if "pro" in override.lower() else "flash"
+    print(
+        f"[bootstrap] Pre-flight image cost | model={override} | tier={tier} | "
+        f"size={size} | {n} img × ${unit:.3f} = ~${total:.2f} USD"
+        + (
+            "  (flash ~$0.10 / 20)"
+            if tier == "flash"
+            else "  (gemini-pro 1K ~$0.60 / 20)"
+        )
     )
 
 
@@ -4205,6 +4233,14 @@ def _produce_variant_worker(
                 )
                 _word_timings = _filter_audio_tag_timings(_word_timings)
             except Exception as vaudio_exc:  # noqa: BLE001
+                _ak_must_speak = (
+                    (page_ctx.page_id if page_ctx else "").lower() == "ancient_knowledge"
+                )
+                if _ak_must_speak:
+                    raise RuntimeError(
+                        f"Voiceover generation failed (variant {variant + 1}): "
+                        f"{vaudio_exc} — refusing silent ancient_knowledge compile."
+                    ) from vaudio_exc
                 _LOG.warning(
                     "Voiceover generation failed (variant %s): %s — reel will be silent.",
                     variant + 1, vaudio_exc,
@@ -4355,10 +4391,17 @@ def _produce_variant_worker(
                 except Exception as _ln_exc:  # noqa: BLE001
                     _LOG.debug("VO loudnorm skipped: %s", _ln_exc)
         else:
-            _LOG.warning(
-                "ECONOMIC_REEL | Voiceover skipped — %s",
-                "ELEVENLABS_API_KEY not set" if not app_config.ELEVENLABS_API_KEY else "no narration script",
+            _skip_why = (
+                "ELEVENLABS_API_KEY not set"
+                if not app_config.ELEVENLABS_API_KEY
+                else "no narration script"
             )
+            if (page_ctx.page_id if page_ctx else "").lower() == "ancient_knowledge":
+                raise RuntimeError(
+                    f"ECONOMIC_REEL | Voiceover skipped — {_skip_why} "
+                    "(refusing silent ancient_knowledge compile)."
+                )
+            _LOG.warning("ECONOMIC_REEL | Voiceover skipped — %s", _skip_why)
 
         # ── COST TRACKING: audio/TTS ─────────────────────────────────────────
         if cost_tracker is not None and _voiceover_script:
@@ -4693,6 +4736,15 @@ def _produce_variant_worker(
                         _wan_stage_times["wan_video_s"], _n_wan, _n_fb,
                     )
                     _compile_t0 = time.monotonic()
+                if (
+                    page_ctx
+                    and (page_ctx.page_id or "").lower() == "ancient_knowledge"
+                ):
+                    assert_voice_and_subtitles_ready(
+                        voice_audio=_voice_path,
+                        word_timings=_word_timings,
+                        page_id="ancient_knowledge",
+                    )
                 reel_path = _core_compile_sequence_reel(
                     _sequence_image_paths,
                     overlay_text,
@@ -6547,6 +6599,20 @@ def run_test_images_debug_mode(
     )
 
 
+def _together_cli_image_model(args: argparse.Namespace) -> tuple[str, str] | None:
+    """Return (flag_label, together_model_id) for Together image CLI flags."""
+    from agents.media.providers.together_image import (
+        FLUX_2_DEV_MODEL,
+        JUGGERNAUT_LIGHTNING_FLUX_MODEL,
+    )
+
+    if getattr(args, "together_flux2dev", False):
+        return "together_flux2dev", FLUX_2_DEV_MODEL
+    if getattr(args, "together_juggernaut", False):
+        return "together_Juggernaut", JUGGERNAUT_LIGHTNING_FLUX_MODEL
+    return None
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(
         description="Unified Multi-Page Factory — holistic persona content engine.",
@@ -6710,7 +6776,7 @@ def cli() -> None:
             "and cinematic Ken Burns zoom-in. Outputs .mp4 + durable JSON. "
             "ECONOMIC_REEL_LOFI: separate LOFI pipeline (Flux Schnell, no LoRA) — multi-scene "
             "ink/graphic-novel stills, duotone grade, Ken Burns, channel watermark. "
-            "Uses --duration (15–30, default 24) and --module (relationship|parenting). "
+            "Uses --duration (15–90, default 27) and --module (relationship|parenting). "
             "Does NOT share state with ECONOMIC_REEL. "
             "WAN_REEL: ancient_knowledge only. Reuses ECONOMIC_REEL script/TTS/"
             "still pipeline, then Wan2.2 img2vid per act (bucket holds) with "
@@ -6759,6 +6825,36 @@ def cli() -> None:
         default=None,
         metavar="SUBTHEME",
         help="ECONOMIC_REEL_LOFI only: force a subtheme id when using --lofi-theme.",
+    )
+    parser.add_argument(
+        "--lofi-mode",
+        dest="lofi_mode",
+        choices=["theme", "quote", "paraphrase"],
+        default="paraphrase",
+        help=(
+            "ECONOMIC_REEL_LOFI writer mode (default: paraphrase). "
+            "theme explicitly selects the slower current composer; "
+            "quote develops --lofi-seed-quote as a parable; paraphrase lightly "
+            "rewords one aphorism-bank entry."
+        ),
+    )
+    parser.add_argument(
+        "--lofi-seed-quote",
+        dest="lofi_seed_quote",
+        default=None,
+        metavar="TEXT",
+        help="ECONOMIC_REEL_LOFI --lofi-mode quote: concept to develop.",
+    )
+    parser.add_argument(
+        "--lofi-aphorism-id",
+        dest="lofi_aphorism_id",
+        default=None,
+        metavar="ID",
+        help=(
+            "ECONOMIC_REEL_LOFI --lofi-mode paraphrase: entry id from "
+            "core/economic_reel_lofi/store/aphorism_bank.json. "
+            "Omit to pick a random unused bank entry each run."
+        ),
     )
     parser.add_argument(
         "--lofi-script",
@@ -7040,8 +7136,48 @@ def cli() -> None:
             "Image model SKU override (highest priority). "
             "Examples: models/gemini-3-pro-image-preview | "
             "models/gemini-2.5-flash-image | black-forest-labs/FLUX.1-schnell. "
-            "Flux is the default; Gemini Pro is used when you pass --avatar ON "
-            "or this flag."
+            "Flux is the default for non-avatar runs. "
+            "--avatar ON defaults to Flash Image (1K); pass this flag or "
+            "--image-model gemini-pro to pin a SKU."
+        ),
+    )
+    parser.add_argument(
+        "--together_Juggernaut", "--together_juggernaut", "--juggernaut", "--Juggernaut",
+        dest="together_juggernaut",
+        action="store_true",
+        default=False,
+        help=(
+            "Together AI image model override: "
+            "Rundiffusion/Juggernaut-Lightning-Flux ($0.0017/img). "
+            "When omitted, the engine keeps its current default image model. "
+            "Aliases: --together_juggernaut, --juggernaut."
+        ),
+    )
+    parser.add_argument(
+        "--together_flux2dev",
+        dest="together_flux2dev",
+        action="store_true",
+        default=False,
+        help=(
+            "Together AI image model override: "
+            "black-forest-labs/FLUX.2-dev ($0.0154/img). "
+            "Wins over --together_Juggernaut when both are set."
+        ),
+    )
+    parser.add_argument(
+        "--image-model",
+        dest="image_model",
+        type=str,
+        default=None,
+        choices=["flash", "gemini-pro"],
+        metavar="TIER",
+        help=(
+            "Avatar / Gemini image tier. "
+            "flash (default when --avatar ON): models/gemini-2.5-flash-image at 1K "
+            "(~$0.005/img, ~$0.10 / 20). "
+            "gemini-pro: models/gemini-3-pro-image-preview at 1K "
+            "($0.03/img, ~$0.60 / 20). "
+            "2K is never selected by this flag."
         ),
     )
     parser.add_argument(
@@ -7106,6 +7242,12 @@ def cli() -> None:
     args = parser.parse_args()
     # True CLI value before page locks (master_mei/anna) mutate args.avatar.
     _avatar_from_cli: str | None = args.avatar
+
+    # Together CLI flags pin the image SKU before flow resolution so
+    # remote_gpu env defaults cannot steal the image provider.
+    _together_cli = _together_cli_image_model(args)
+    if _together_cli and not getattr(args, "img_production", None):
+        args.img_production = f"together/{_together_cli[1]}"
 
     # ── model_api_flows: resolve + apply before any generation ──────────────
     # Precedence: per-media flags > --model-api-flow > .env default.
@@ -7205,7 +7347,7 @@ def cli() -> None:
 
     # ── ANNA_PROTOCOL STYLE LOCK ───────────────────────────────────────────
     # Photoreal stills (factory --draw-style default is SKETCH).
-    # Avatar / Gemini Pro are NOT implied — pass --avatar ON (or --image-primary).
+    # --avatar ON defaults to Flash Image 1K, not Gemini Pro.
     if getattr(args, "page", "").lower() == "anna_protocol":
         args.draw_style = "NATURAL"
 
@@ -7278,6 +7420,28 @@ def cli() -> None:
             page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _img_primary
             page_ctx.page_cfg["IMAGE_PRIMARY"] = _img_primary
             print(f"[bootstrap] image_primary={_img_primary} (CLI override)")
+    if _together_cli:
+        _together_label, _together_model = _together_cli
+        page_ctx.page_cfg["IMAGE_PRIMARY_CLI"] = _together_model
+        page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _together_model
+        page_ctx.page_cfg["IMAGE_PRIMARY"] = _together_model
+        app_config.TOGETHER_IMAGE_MODEL = _together_model
+        os.environ["TOGETHER_IMAGE_MODEL"] = _together_model
+        print(
+            f"[bootstrap] {_together_label}={_together_model} "
+            "(CLI override → Together AI)"
+        )
+    if getattr(args, "image_model", None) and not page_ctx.page_cfg.get("IMAGE_PRIMARY_CLI"):
+        _alias = app_config.resolve_image_model_alias(args.image_model)
+        if _alias:
+            page_ctx.page_cfg["IMAGE_PRIMARY_CLI"] = _alias
+            page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _alias
+            page_ctx.page_cfg["IMAGE_PRIMARY"] = _alias
+            page_ctx.page_cfg["IMAGE_MODEL_TIER"] = str(args.image_model)
+            print(
+                f"[bootstrap] image_model={args.image_model} → {_alias} "
+                f"(size={getattr(app_config, 'GEMINI_IMAGE_SIZE', '1K')})"
+            )
     if getattr(args, "img_production", None):
         page_ctx.page_cfg["IMG_PRODUCTION_CLI"] = str(args.img_production).strip()
     if _avatar_from_cli is not None:
@@ -7292,14 +7456,20 @@ def cli() -> None:
             and not page_ctx.page_cfg.get("IMAGE_PRIMARY_CLI")
             and not _provider_forced
         ):
-            _pro = getattr(
-                app_config, "GEMINI_PRO_IMAGE_MODEL", "models/gemini-3-pro-image-preview"
+            _flash = getattr(
+                app_config, "GEMINI_FLASH_IMAGE_MODEL", "models/gemini-2.5-flash-image"
             )
-            page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _pro
+            page_ctx.page_cfg["IMAGE_MODEL_OVERRIDE"] = _flash
+            page_ctx.page_cfg["IMAGE_MODEL_TIER"] = "flash"
             print(
-                f"[bootstrap] --avatar ON → image_primary={_pro} "
-                "(pass --image-primary or --img-production to override)"
+                f"[bootstrap] --avatar ON → image_primary={_flash} "
+                f"(1K Flash Image; pass --image-model gemini-pro to opt into Pro)"
             )
+
+    _preflight_gemini_image_batch_cost(
+        page_ctx=page_ctx,
+        quantity=int(getattr(args, "quantity", 1) or 1),
+    )
 
     # Scene pacing overrides — CLI > channels_config > factory default.
     if getattr(args, "video_length", None) is not None:
@@ -7353,10 +7523,26 @@ def cli() -> None:
         )
         return
 
-    planned_models = _snapshot_verified_models(
-        economic_brain_mode=econ_resolved,
-        page_ctx=page_ctx,
-    )
+    if str(getattr(args, "post_type", "")).upper() == "ECONOMIC_REEL_LOFI":
+        # LOFI owns its writer/image routing. Do not probe Gemini's generic
+        # caption/image chains, especially on --script-only where no image
+        # provider is used at all.
+        planned_models = PlannedModels(
+            image_primary_id="black-forest-labs/FLUX.1-schnell",
+            research_primary_id=(
+                "lofi-writer-runtime"
+                if not getattr(args, "script_only", False)
+                else "lofi-script-only"
+            ),
+            humanizer_summary=(
+                f"LOFI writer mode `{getattr(args, 'lofi_mode', 'paraphrase')}`"
+            ),
+        )
+    else:
+        planned_models = _snapshot_verified_models(
+            economic_brain_mode=econ_resolved,
+            page_ctx=page_ctx,
+        )
 
     logging.basicConfig(
         level=logging.WARNING,
@@ -7461,6 +7647,9 @@ def cli() -> None:
                 module=_lofi_module,
                 theme=getattr(args, "lofi_theme", None),
                 subtheme=getattr(args, "lofi_subtheme", None),
+                writer_mode=getattr(args, "lofi_mode", "paraphrase"),
+                seed_quote=getattr(args, "lofi_seed_quote", None),
+                aphorism_id=getattr(args, "lofi_aphorism_id", None),
                 script_only=bool(getattr(args, "script_only", False)),
                 stills_only=bool(getattr(args, "stills_only", False)),
                 locked_scripts=getattr(args, "lofi_scripts", None),

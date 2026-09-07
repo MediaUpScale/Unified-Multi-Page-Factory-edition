@@ -57,6 +57,9 @@ NARRATION_WPM: float = 150.0
 BEAT_WORD_BUDGET_SLACK: int = 2  # punchy-clause ceiling on top of floor(dur×wpm)
 TTS_DURATION_TOLERANCE: float = 0.15  # post-TTS vs declared duration_s
 LINE_REWRITE_MAX_PASSES: int = 2
+# Per-beat validator repair budget. These attempts do not consume
+# SCRIPT_MAX_RETRIES, which remains reserved for structural rewrites.
+MAX_LINE_REPAIRS: int = 2
 # Isolated TTS overrun: auto-bump one beat's duration_s instead of sign-off.
 TTS_AUTO_BUMP_MAX_BEATS: int = 1
 TTS_AUTO_BUMP_MAX_FRAC: float = 0.35  # overrun ≤ 35% of original declared

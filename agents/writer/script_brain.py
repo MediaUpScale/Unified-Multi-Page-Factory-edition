@@ -15,6 +15,8 @@ its way here.
 from __future__ import annotations
 
 import os
+import re
+from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -207,6 +209,200 @@ def compose(
     )
 
 
+_FUNCTION_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "because",
+    "but",
+    "for",
+    "from",
+    "have",
+    "if",
+    "in",
+    "is",
+    "it",
+    "just",
+    "more",
+    "not",
+    "of",
+    "or",
+    "than",
+    "that",
+    "the",
+    "there",
+    "to",
+    "was",
+    "when",
+    "what",
+    "you",
+}
+
+
+def _function_shape(sentence: str) -> tuple[str, ...]:
+    """Content-independent word-order signature for structural comparison."""
+    return tuple(
+        token
+        for token in re.findall(r"[a-z0-9']+", str(sentence).lower())
+        if token in _FUNCTION_WORDS
+    )
+
+
+def _anaphora_profile(sentences: list[str]) -> dict[str, Any] | None:
+    """Detect repeated sentence openings plus a repeated terminal refrain."""
+    if len(sentences) < 3:
+        return None
+    token_rows = [
+        re.findall(r"[a-z0-9']+", str(sentence).lower()) for sentence in sentences
+    ]
+    if any(not row for row in token_rows):
+        return None
+    openings = [row[0] for row in token_rows]
+    endings = [row[-1] for row in token_rows]
+    opening = max(set(openings), key=openings.count)
+    ending = max(set(endings), key=endings.count)
+    opening_count = openings.count(opening)
+    ending_count = endings.count(ending)
+    if opening_count < 3 or ending_count < 3:
+        return None
+    return {
+        "opening": opening,
+        "opening_count": opening_count,
+        "ending": ending,
+        "ending_count": ending_count,
+    }
+
+
+_PARAPHRASE_SYSTEM = """You make a light paraphrase of one complete aphorism.
+Preserve its progression, repeated refrain, approximate length, rhythm, and
+meaning. Substitute roughly 20-30 percent of its words. Follow the assignment's
+source-specific structural rule. Anaphoric parallel repeats are protected and
+must never be merged; vary their internal word order instead. Do not expand,
+explain, add examples, or turn it into a story. Return JSON only."""
+
+
+def paraphrase(brief: WriterBrief, *, provider: str | None = None) -> ScriptDraft:
+    """One LLM call for paraphrase mode; no developmental judge loop."""
+    if brief.mode != "paraphrase":
+        raise ValueError("paraphrase() requires WriterBrief.mode='paraphrase'")
+    from agents.mcp.text_model import complete_script
+    from agents.writer.freeform_writer import _extract_json
+
+    source = " ".join(str(brief.seed_quote or "").split())
+    source_sentences = [
+        s.strip() for s in re.split(r"(?<=[.!?])\s+", source) if s.strip()
+    ]
+    source_anaphora = _anaphora_profile(source_sentences)
+    structural_instruction = (
+        "Keep the same sentence count. Preserve every repeated opening and "
+        "closing refrain. Change the internal function-word order in exactly "
+        "1-2 sentences; never merge two repeats."
+        if source_anaphora
+        else "The output sentence count must differ from the source by exactly one."
+    )
+    prompt = (
+        f"{brief.assignment_block()}\n\n"
+        f"Return exactly: {{\"text\":\"<light paraphrase>\"}}\n"
+        f"Source word count: {len(source.split())}. Replace about "
+        f"{max(1, round(len(source.split()) * 0.20))}–"
+        f"{max(1, round(len(source.split()) * 0.30))} source words, "
+        "prefer one-for-one substitutions, and keep repeated refrains repeated. "
+        f"{structural_instruction}\n"
+        "HARD ACCEPTANCE GATE: token-sequence difference must measure between "
+        "18% and 32%. Count the changed source words before returning. Structural "
+        "reordering alone does not satisfy the substitution requirement."
+    )
+    name = (provider or os.getenv("LOFI_WRITER_MODEL") or "claude").strip().lower()
+    result = complete_script(
+        prompt,
+        system=_PARAPHRASE_SYSTEM,
+        provider=name,
+        kind="writer",
+    )
+    data = _extract_json(result.text)
+    text = " ".join(str(data.get("text") or "").split())
+    if not text:
+        raise ValueError("paraphrase response was empty")
+    output_sentences = [
+        s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()
+    ]
+    ratio = len(text.split()) / max(1, len(source.split()))
+    source_tokens = re.findall(r"[a-z0-9']+", source.lower())
+    output_tokens = re.findall(r"[a-z0-9']+", text.lower())
+    substitution_ratio = 1.0 - SequenceMatcher(
+        None, source_tokens, output_tokens
+    ).ratio()
+    sentence_delta = len(output_sentences) - len(source_sentences)
+    changed_shapes: list[int] = []
+    output_anaphora = _anaphora_profile(output_sentences)
+    if source_anaphora:
+        if sentence_delta != 0:
+            raise ValueError(
+                "anaphoric paraphrase changed repeat count "
+                f"({len(source_sentences)} -> {len(output_sentences)})"
+            )
+        if (
+            not output_anaphora
+            or output_anaphora["opening"] != source_anaphora["opening"]
+            or output_anaphora["opening_count"] != source_anaphora["opening_count"]
+            or output_anaphora["ending_count"] != source_anaphora["ending_count"]
+        ):
+            raise ValueError("paraphrase broke the protected anaphora/refrain pattern")
+        changed_shapes = [
+            i + 1
+            for i, (before, after) in enumerate(
+                zip(source_sentences, output_sentences)
+            )
+            if _function_shape(before) != _function_shape(after)
+        ]
+        if not changed_shapes:
+            raise ValueError(
+                "anaphoric paraphrase must vary internal structure on at least "
+                "one sentence"
+            )
+    elif abs(sentence_delta) != 1:
+        raise ValueError(
+            "paraphrase must merge one sentence pair or split one sentence "
+            f"({len(source_sentences)} -> {len(output_sentences)})"
+        )
+    if not 0.75 <= ratio <= 1.25:
+        raise ValueError(f"paraphrase changed length too much (ratio={ratio:.2f})")
+    if not 0.18 <= substitution_ratio <= 0.32:
+        raise ValueError(
+            "paraphrase substitution ratio outside light-reword band "
+            f"({substitution_ratio:.2f}, expected about 0.20-0.30)"
+        )
+    return ScriptDraft(
+        lines=output_sentences,
+        human_situation="light aphorism variation",
+        structure="light paraphrase preserving source rhythm",
+        closing_tool=output_sentences[-1],
+        brief=brief,
+        attempt=1,
+        provider=getattr(result, "provider", name) or name,
+        raw=result.text,
+        meta={
+            "source_text": source,
+            "source_word_count": len(source.split()),
+            "output_word_count": len(text.split()),
+            "length_ratio": round(ratio, 3),
+            "substitution_ratio": round(substitution_ratio, 3),
+            "source_sentence_count": len(source_sentences),
+            "output_sentence_count": len(output_sentences),
+            "structural_change": (
+                "anaphora_clause_reorder"
+                if source_anaphora
+                else ("split" if sentence_delta == 1 else "merge")
+            ),
+            "structurally_changed_sentences": changed_shapes,
+            "anaphora_preserved": bool(source_anaphora),
+        },
+    )
+
+
 def draft_to_script(
     draft: ScriptDraft,
     *,
@@ -229,19 +425,21 @@ def draft_to_script(
     brief = draft.brief
     units = draft.image_units()
     beat_s = float(lofi_cfg.beat_duration_s())
-    lines = [
-        {
-            "scene": i + 1,
-            "text": written,
-            "beat_text": written,
-            "caption_beats": captions,
-            "duration_s": beat_s,
-            "spoken_words": len(str(written).split()),
-            "spoken_word_ceiling": lofi_cfg.beat_word_ceiling(beat_s),
-            "arc_position": act_for_index(i, len(units)),
-        }
-        for i, (written, captions) in enumerate(units)
-    ]
+    lines = []
+    for i, (written, captions) in enumerate(units):
+        row_duration = beat_s * max(1, len(captions))
+        lines.append(
+            {
+                "scene": i + 1,
+                "text": written,
+                "beat_text": written,
+                "caption_beats": captions,
+                "duration_s": row_duration,
+                "spoken_words": len(str(written).split()),
+                "spoken_word_ceiling": lofi_cfg.beat_word_ceiling(row_duration),
+                "arc_position": act_for_index(i, len(units)),
+            }
+        )
     script: dict[str, Any] = {
         "theme": (brief.theme if brief else "") or "",
         "subtheme": (brief.subtheme if brief else "") or "",
@@ -251,6 +449,7 @@ def draft_to_script(
         "monologue": " ".join(draft.lines),
         "lines": lines,
         "writer": "freeform_v1",
+        "writer_mode": brief.mode if brief else "theme",
         "writer_structure": draft.structure,
         "human_situation": draft.human_situation,
         "closing_tool": draft.closing_tool,
@@ -264,4 +463,9 @@ def draft_to_script(
     if brief is not None and brief.mode == "quote":
         script["seed_quote"] = brief.seed_quote
         script["seed_attribution"] = brief.seed_attribution
+    elif brief is not None and brief.mode == "paraphrase":
+        script["writer"] = "freeform_paraphrase_v1"
+        script["source_aphorism"] = brief.seed_quote
+        script["source_aphorism_id"] = str((brief.meta or {}).get("aphorism_id") or "")
+        script["paraphrase_meta"] = dict(draft.meta)
     return script

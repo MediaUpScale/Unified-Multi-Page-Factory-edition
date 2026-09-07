@@ -73,11 +73,23 @@ def validate_script(
     hook = str(script.get("hook_type") or "").strip()
     if hook not in allowed_hooks:
         reasons.append(f"invalid or missing hook_type ({hook!r})")
+    if (
+        str(script.get("writer_mode") or "theme").strip() == "theme"
+        and not str(script.get("thesis") or "").strip()
+    ):
+        reasons.append("thesis absent for theme writer mode")
 
     lines = script.get("lines")
     min_scenes = int(getattr(lofi_cfg, "MIN_SCENES", 8))
+    requested = float(
+        script.get("duration_requested_s")
+        or script.get("duration_s")
+        or lofi_cfg.declared_duration_s(
+            scene_count=len(lines) if isinstance(lines, list) else scene_count
+        )
+    )
     max_scenes = (
-        int(lofi_cfg.thematic_max_scenes())
+        int(lofi_cfg.thematic_max_scenes(requested))
         if thematic
         else int(getattr(lofi_cfg, "MAX_SCENES", 12))
     )
@@ -210,7 +222,12 @@ def validate_script(
                             "id": row.get("episode_world_id"),
                             "place": row.get("atmosphere_place"),
                         }
-                if thematic and not visual_tied_to_caption(
+                # Visual callback motifs may be silent production metadata.
+                # Requiring their noun in narration recreates forced metaphors.
+                silent_visual_anchor = bool(
+                    str(row.get("anchor_beat") or "").strip()
+                )
+                if thematic and not silent_visual_anchor and not visual_tied_to_caption(
                     text,
                     str(row.get("setting") or ""),
                     str(row.get("key_object") or ""),
@@ -227,17 +244,20 @@ def validate_script(
                     reasons.append(f"scene {i} visual_prompt must differ from caption text")
 
         beat_s = float(script.get("scene_duration_s") or lofi_cfg.beat_duration_s())
-        requested = float(
-            script.get("duration_requested_s")
-            or script.get("duration_s")
-            or lofi_cfg.declared_duration_s(scene_count=len(lines))
-        )
         max_beats = lofi_cfg.max_beats_for_duration(requested)
-        if len(lines) > max_beats:
-            needed = round(len(lines) * beat_s, 3)
+        needed = round(
+            sum(
+                float(row.get("duration_s") or beat_s)
+                for row in lines
+                if isinstance(row, dict)
+            ),
+            3,
+        )
+        if needed > requested + 1e-9:
             reasons.append(
-                f"script has {len(lines)} beats × {beat_s:.1f}s = {needed:.1f}s "
-                f"but duration_requested_s is {requested:.1f}s (max {max_beats} beats). "
+                f"script needs {needed:.1f}s across {len(lines)} written lines "
+                f"but duration_requested_s is {requested:.1f}s (max {max_beats} "
+                f"{beat_s:.1f}s caption beats). "
                 f"Request a longer format up front; do not overrun silently."
             )
 
@@ -292,7 +312,8 @@ def validate_script(
     flat = _script_flat_text(script)
     mono = str(script.get("monologue") or "").strip()
     overlap_blob = "\n".join(p for p in (mono, flat) if p)
-    if overlap_blob:
+    is_paraphrase = str(script.get("writer_mode") or "").strip() == "paraphrase"
+    if overlap_blob and not is_paraphrase:
         hit, ref_reason = reference_overlap_hit(overlap_blob)
         if hit:
             reasons.append(ref_reason)
@@ -318,21 +339,22 @@ def validate_script(
     if re.search(r"\b(my|our)\s+(husband|wife|ex|boyfriend|girlfriend)\s+[A-Z][a-z]{2,}\b", blob):
         reasons.append("content safety: named private individual detected")
 
-    # Regex spine/stakes/close scoring. Recorded as a diagnostic note only — the
-    # writing itself is now judged by the five-criterion LLM gate in
-    # agents.writer.judge_gate, which scores what the piece does rather than
-    # whether it matches a shape.
+    # Regex spine/stakes/close scoring is a production gate on every path.
+    # Freeform quote mode also has the five-criterion LLM judge upstream, but
+    # locked/theme/paraphrase scripts must obey this same baseline here.
     from agents.writer.script_agent import assess_story_quality
 
     story = assess_story_quality(
         lines if isinstance(lines, list) else [],
         theme=str(script.get("theme") or ""),
     )
-    story["blocking"] = False
+    story["blocking"] = True
     script["story_quality"] = story
     if story.get("fails"):
-        _LOG.info("story_quality diagnostic (non-blocking): %s", story.get("fails"))
-        print(f"[LOFI validator] story_quality note (non-blocking): {story.get('fails')}")
+        story_reasons = [f"story_quality: {item}" for item in story["fails"]]
+        reasons.extend(story_reasons)
+        _LOG.info("story_quality REJECT: %s", story.get("fails"))
+        print(f"[LOFI validator] story_quality REJECT: {story.get('fails')}")
 
     if reasons:
         msg = "; ".join(reasons)

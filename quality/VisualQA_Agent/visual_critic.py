@@ -1032,7 +1032,9 @@ def evaluate_image(
         )
     )
 
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    from google_guardrail import guarded_generate_content, make_guarded_gemini_client
+
+    client = make_guarded_gemini_client(config.GEMINI_API_KEY)
     model_id = config.GEMINI_CRITIC_MODEL
     if not model_id.startswith("models/"):
         model_id = f"models/{model_id}"
@@ -1046,7 +1048,8 @@ def evaluate_image(
         + (f" | object={requested_object}" if requested_object else "")
     )
 
-    response = client.models.generate_content(
+    response = guarded_generate_content(
+        client,
         model=model_id,
         contents=contents,
         config=types.GenerateContentConfig(
@@ -1054,6 +1057,7 @@ def evaluate_image(
             response_schema=CriticVerdict,
             temperature=0.15,
         ),
+        source="visual_critic.evaluate_image",
     )
 
     parsed = getattr(response, "parsed", None)

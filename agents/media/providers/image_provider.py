@@ -33,10 +33,11 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Per-model retry budget for transient 503 / 429 / UNAVAILABLE errors.
-# 429 RESOURCE_EXHAUSTED: fixed 3.0 s delay, up to 3 attempts before rotating.
+# Hard-capped by google_guardrail.MAX_GOOGLE_RETRIES (default 2).
+# 429 RESOURCE_EXHAUSTED: fixed 3.0 s delay, then rotate SKU.
 # ---------------------------------------------------------------------------
 _IMG_MAX_503_RETRIES: int = 2
-_IMG_MAX_429_RETRIES: int = 3
+_IMG_MAX_429_RETRIES: int = 2
 _IMG_429_DELAY_S: float = 3.0
 _IMG_RETRY_BASE_S: int = 1
 _IMAGE_API_TIMEOUT_S: float = float(getattr(app_config, "IMAGE_API_TIMEOUT_S", 25.0) or 25.0)
@@ -98,13 +99,31 @@ def _call_generate_content_with_backoff(
     Returns ``(response, advanced)`` where ``advanced=True`` means the caller
     should skip to the next model in the chain (404 / timeout / exhausted retries).
     """
+    from google_guardrail import (
+        GoogleAPIBlockedError,
+        GoogleBudgetExceededError,
+        estimate_call_cost_usd,
+        get_google_cost_tracker,
+        max_google_retries,
+    )
+
     last_exc: BaseException | None = None
     attempts_429 = 0
     attempts_503 = 0
+    retry_cap = min(_IMG_MAX_429_RETRIES, max_retries, max_google_retries())
+    tracker = get_google_cost_tracker()
+    img_cost = estimate_call_cost_usd(model, images=1, kind="image")
     from google.genai import errors as _g_errors  # lazy — heavy SDK; resolve on demand
-    # Combined loop: allow up to max(429, 503) budget while honouring each type
-    for attempt in range(max(_IMG_MAX_429_RETRIES, max_retries) + 1):
+    # Combined loop: honour 429/503 budgets AND the global Google retry cap.
+    for attempt in range(retry_cap + 1):
         try:
+            tracker.preflight(
+                img_cost,
+                model=str(model),
+                source="image_provider._call_generate_content_with_backoff",
+                kind="image",
+            )
+
             def _do_call() -> Any:
                 kwargs: dict[str, Any] = {"model": model, "contents": contents}
                 if config is not None:
@@ -116,8 +135,18 @@ def _call_generate_content_with_backoff(
             response = _run_with_timeout(
                 _do_call, timeout_s=timeout_s, label=f"generate_content[{model}]"
             )
+            tracker.record(
+                model=str(model),
+                kind="image",
+                images=1,
+                retries=attempt,
+                source="image_provider._call_generate_content_with_backoff",
+                status="ok",
+            )
             return response, False
 
+        except (GoogleAPIBlockedError, GoogleBudgetExceededError):
+            raise
         except TimeoutError as exc:
             logger.warning("%s — advancing chain.", exc)
             return None, True
@@ -133,10 +162,10 @@ def _call_generate_content_with_backoff(
 
             if _is_retryable_429(exc):
                 attempts_429 += 1
-                if attempts_429 <= _IMG_MAX_429_RETRIES:
+                if attempts_429 <= retry_cap:
                     logger.warning(
                         "IMAGE 429/RESOURCE_EXHAUSTED '%s' attempt %d/%d — sleeping %.1fs.",
-                        model, attempts_429, _IMG_MAX_429_RETRIES, _IMG_429_DELAY_S,
+                        model, attempts_429, retry_cap, _IMG_429_DELAY_S,
                     )
                     time.sleep(_IMG_429_DELAY_S)
                     continue
@@ -148,11 +177,11 @@ def _call_generate_content_with_backoff(
 
             if _is_retryable_503(exc):
                 attempts_503 += 1
-                if attempts_503 < max_retries:
+                if attempts_503 <= retry_cap:
                     wait = base_delay * (2 ** (attempts_503 - 1))
                     logger.warning(
                         "IMAGE 503 '%s' attempt %d/%d — backoff %ds.",
-                        model, attempts_503, max_retries, wait,
+                        model, attempts_503, retry_cap, wait,
                     )
                     time.sleep(wait)
                     continue
@@ -322,13 +351,40 @@ def _extract_and_save_image(response: Any, out_path: Path) -> bool:
     return False
 
 
-def _generation_config_for_image(aspect_ratio: str):
-    """Build SDK config when ``ImageConfig`` is available."""
+def _gemini_image_size() -> str:
+    """Billing-tier size. Default 1K — never silently request 2K."""
+    raw = str(getattr(app_config, "GEMINI_IMAGE_SIZE", None) or "1K").strip().upper()
+    return raw if raw in {"1K", "2K"} else "1K"
+
+
+def _generation_config_for_image(aspect_ratio: str, image_size: str | None = None):
+    """Build SDK config. ``image_size`` defaults to 1K to stay on the cheap tier."""
+    size = (image_size or _gemini_image_size()).strip().upper()
+    if size not in {"1K", "2K"}:
+        size = "1K"
     try:
         from google.genai import types  # type: ignore
+
+        image_cfg = None
+        for kwargs in (
+            {"aspect_ratio": aspect_ratio, "image_size": size},
+            {"aspect_ratio": aspect_ratio, "size": size},
+            {"aspect_ratio": aspect_ratio},
+        ):
+            try:
+                image_cfg = types.ImageConfig(**kwargs)
+                break
+            except TypeError:
+                continue
+        if image_cfg is None:
+            return None
+        logger.info(
+            "Gemini ImageConfig | aspect_ratio=%s | image_size=%s",
+            aspect_ratio, size,
+        )
         return types.GenerateContentConfig(
             response_modalities=["TEXT", "IMAGE"],
-            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+            image_config=image_cfg,
         )
     except Exception:  # noqa: BLE001
         return None
@@ -363,11 +419,12 @@ def _gemini_image_chain(primary: str | None) -> list[str]:
     Flash requests never escalate to Pro.
     """
     raw = app_config.normalize_image_model_id(
-        primary or getattr(app_config, "GEMINI_PRO_IMAGE_MODEL", None)
-        or "models/gemini-3-pro-image-preview"
+        primary
+        or getattr(app_config, "GEMINI_FLASH_IMAGE_MODEL", None)
+        or "models/gemini-2.5-flash-image"
     )
     if not _is_gemini_image_sku(raw):
-        raw = "models/gemini-3-pro-image-preview"
+        raw = "models/gemini-2.5-flash-image"
     cheap = "flash" in raw.lower() and "pro" not in raw.lower()
     chain: list[str] = [raw]
     for sku in _GEMINI_FLASH_IMAGE_CHAIN:
@@ -393,7 +450,10 @@ def _gemini_cost_key(model_id: str | None) -> str:
 
 
 def _gemini_cost_usd(model_id: str | None) -> float:
-    return 0.040 if _gemini_cost_key(model_id) == "image_gemini_pro" else 0.003
+    try:
+        return float(app_config.estimate_gemini_image_usd(model_id))
+    except Exception:
+        return 0.03 if _gemini_cost_key(model_id) == "image_gemini_pro" else 0.005
 
 
 class ImageProvider(ABC):
@@ -491,9 +551,9 @@ class GeminiImageAdapter(ImageProvider):
                 )
                 self._gemini_client = make_gemini_client_with_fallback(key)
             except Exception:
-                from google import genai  # lazy — heavy SDK; fallback only
+                from google_guardrail import make_guarded_gemini_client
 
-                self._gemini_client = genai.Client(api_key=key)
+                self._gemini_client = make_guarded_gemini_client(api_key=key)
         return self._gemini_client
 
     def _generate_with_gemini(

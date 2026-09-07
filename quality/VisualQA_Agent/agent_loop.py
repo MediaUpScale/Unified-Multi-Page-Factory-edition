@@ -197,12 +197,19 @@ Do NOT write "NO …" phrases. Do NOT write metadata labels.
 Output ONLY the rewritten prompt text in English.
 """.strip()
 
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    from google_guardrail import guarded_generate_content, make_guarded_gemini_client
+
+    client = make_guarded_gemini_client(config.GEMINI_API_KEY)
     model_id = config.GEMINI_REWRITE_MODEL
     if not model_id.startswith("models/"):
         model_id = f"models/{model_id}"
 
-    response = client.models.generate_content(model=model_id, contents=instruction)
+    response = guarded_generate_content(
+        client,
+        model=model_id,
+        contents=instruction,
+        source="VisualQA_Agent.agent_loop",
+    )
     text = (getattr(response, "text", "") or "").strip()
     if text.startswith("```"):
         text = text.strip("`")

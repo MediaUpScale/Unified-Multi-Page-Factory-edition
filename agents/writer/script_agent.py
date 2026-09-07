@@ -461,7 +461,11 @@ def repair_script_captions(
     if not lines:
         return script
     max_words, max_chars = lofi_cfg.caption_limits(str(script.get("arc_template") or ""))
-    max_scenes = int(lofi_cfg.thematic_max_scenes())
+    max_scenes = int(
+        lofi_cfg.thematic_max_scenes(
+            script.get("duration_requested_s") or script.get("duration_s")
+        )
+    )
     min_scenes = int(getattr(lofi_cfg, "MIN_SCENES", 8))
     beat_texts = [
         str(r.get("text") or r.get("beat_text") or "").strip() for r in lines
@@ -874,7 +878,14 @@ def _thematic_fallback_beats(
     ]
     n = max(
         int(getattr(lofi_cfg, "MIN_SCENES", 8)),
-        min(int(scene_count), int(lofi_cfg.thematic_max_scenes())),
+        min(
+            int(scene_count),
+            int(
+                lofi_cfg.thematic_max_scenes(
+                    float(scene_count) * lofi_cfg.beat_duration_s()
+                )
+            ),
+        ),
     )
     out: list[tuple[str, str, str]] = []
     for i in range(n):
@@ -1486,56 +1497,15 @@ def _rewrite_cross_run_phrases(
     module: str,
     noun: str,
 ) -> list[str]:
+    """Report cross-run reuse without replacing prose with an anchor template."""
+    del noun
     hits = rag.cross_run_phrase_hits(module, data)
-    if not hits:
-        return []
-    lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
-    used = rag.recent_used_phrases(module)
-    for i, row in enumerate(lines):
-        if i == 0 or str(row.get("beat_function") or "") in {"hook", "insight"}:
-            continue
-        text = str(row.get("text") or "")
-        phrases = rag.phrases_from_text(text)
-        if not (phrases & used):
-            continue
-        repl = _rewrite_caption(i + 3, noun)
-        row["text"] = repl
-        row["beat_text"] = repl
-        row["cross_run_rewrite"] = True
-        print(f"[LOFI narrative] cross-run rewrite scene={i + 1} -> {repl!r}")
-    leftover = rag.cross_run_phrase_hits(module, data)
-    if leftover and lines:
-        target = None
-        for i, row in enumerate(lines):
-            fn = str(row.get("beat_function") or "")
-            if i == 0 or fn in {"hook", "insight"}:
-                continue
-            target = i
-        if target is not None:
-            repl = _rewrite_caption(target + 3, noun)
-            lines[target]["text"] = repl
-            lines[target]["beat_text"] = repl
-            lines[target]["cross_run_rewrite"] = True
-            print(
-                f"[LOFI narrative] cross-run rewrite scene={target + 1} "
-                f"(kept hook/insight) -> {repl!r}"
-            )
-    # Anchor noun reuse: swap to a different pool object if still colliding
-    ao = data.get("anchor_object") if isinstance(data.get("anchor_object"), dict) else {}
-    used_anchors = rag.recent_used_anchors(module)
-    name = str(ao.get("name") or "")
-    tokens = {name.lower()} | {w for w in re.findall(r"[a-z]+", name.lower()) if len(w) >= 3}
-    if tokens & used_anchors:
-        pool = setting_object_pool(None)
-        fresh = pick_episode_anchor(pool, avoid_stems=used_anchors)
-        data["anchor_object"] = {
-            "name": fresh["key_object"],
-            "initial_state": str(ao.get("initial_state") or "just set down"),
-            "final_state": str(ao.get("final_state") or "cold, untouched"),
-            "setting": fresh.get("setting") or "",
-        }
-        print(f"[LOFI narrative] anchor rotated off history -> {fresh['key_object']!r}")
-    return rag.cross_run_phrase_hits(module, data)
+    if hits:
+        print(
+            "[LOFI narrative] cross-run reuse held for scoped repair; "
+            "spoken draft left unchanged"
+        )
+    return hits
 
 
 def _ensure_thesis(data: dict[str, Any], theme: str) -> str:
@@ -2725,7 +2695,9 @@ def assess_load_bearing_connectives(lines: list[dict[str, Any]]) -> dict[str, An
 _CAUSAL_LINK_RE = re.compile(
     r"\b("
     r"because|so|but|yet|still|anyway|then|when|if|"
-    r"although|though|since|instead|almost|never"
+    r"although|though|since|instead|almost|never|"
+    r"after|before|later|meanwhile|finally|now|every time|"
+    r"one night|one day|weeks?|months?|by morning|by night"
     r")\b",
     re.I,
 )
@@ -2733,7 +2705,8 @@ _STAKES_RE = re.compile(
     r"\b("
     r"almost|never|nearly|stop(?:ped)?|lost|lose|losing|"
     r"dark|paid|cost|costs|broke|couldn't|cannot|failed|"
-    r"risk|worst|gone|empty|afraid|hurt|"
+    r"risk|worst|gone|empty|afraid|cold|silence|"
+    r"hurt(?:s|ing)?|wound(?:s|ed|ing)?|surviv(?:e|ed|ing|al)|"
     r"let (?:it|them|that) go"
     r")\b",
     re.I,
@@ -2742,10 +2715,41 @@ _TAKEAWAY_RE = re.compile(
     r"\b("
     r"because|so|that's why|that is why|"
     r"keep|kept|stay|stayed|wait|pay|paid|"
-    r"leave|left|hold|held|first"
+    r"leave|left|let|walk away|give up|hold|held|first"
     r")\b",
     re.I,
 )
+_STATED_LESSON_RE = re.compile(
+    r"\b(?:I|we)\s+(?:was|were|kept|keep|stopped|stop|learned|learnt|"
+    r"finally|now|will|won['’]t|refuse|choose)\b",
+    re.I,
+)
+_STORY_CONCEPT_GROUPS: dict[str, tuple[str, ...]] = {
+    "quiet": ("quiet", "silent", "silence", "still", "stillness", "calm"),
+    "security": (
+        "trust",
+        "certain",
+        "certainty",
+        "safe",
+        "safety",
+        "proof",
+        "warning",
+        "flinch",
+        "guard",
+        "brace",
+    ),
+    "warmth": ("blanket", "warm", "cold", "heat", "cover"),
+    "conflict": ("fight", "argue", "sharp", "wound", "hurt"),
+}
+
+
+def _story_concepts(text: str) -> set[str]:
+    low = str(text or "").lower()
+    return {
+        name
+        for name, words in _STORY_CONCEPT_GROUPS.items()
+        if any(re.search(rf"\b{re.escape(word)}\w*\b", low) for word in words)
+    }
 
 
 def _spoken_line_texts(lines: list[Any]) -> list[str]:
@@ -2779,22 +2783,31 @@ def assess_story_quality(
     linked = 0
     link_notes: list[str] = []
     prior_stems: set[str] = set()
+    prior_concepts: set[str] = set()
     for i, text in enumerate(texts):
         if i > 0:
             shared = _content_stems(text) & prior_stems
-            if _CAUSAL_LINK_RE.search(text) or shared:
+            shared_concepts = _story_concepts(text) & prior_concepts
+            if _CAUSAL_LINK_RE.search(text) or shared or shared_concepts:
                 linked += 1
                 why = (
                     "connective"
                     if _CAUSAL_LINK_RE.search(text)
-                    else f"shared={sorted(shared)[:4]}"
+                    else (
+                        f"shared={sorted(shared)[:4]}"
+                        if shared
+                        else f"concept={sorted(shared_concepts)}"
+                    )
                 )
                 link_notes.append(f"{i}->{i + 1}:{why}")
             else:
                 link_notes.append(f"{i}->{i + 1}:gap")
         prior_stems |= _content_stems(text)
+        prior_concepts |= _story_concepts(text)
     n_pairs = max(0, n - 1)
-    need = max(6, int(round(n_pairs * 0.75))) if n_pairs else 0
+    # Scale the 75% requirement to the actual form. The previous hard minimum
+    # of six made every valid 4-7-line freeform/paraphrase piece impossible.
+    need = max(1, (n_pairs * 3 + 3) // 4) if n_pairs else 0
     if n_pairs and linked < need:
         fails.append(
             f"story-spine: {linked}/{n_pairs} consecutive lines linked by "
@@ -2819,7 +2832,9 @@ def assess_story_quality(
         theme,
     )
     last = texts[-1] if texts else ""
-    takeaway_ok = bool(_TAKEAWAY_RE.search(last))
+    takeaway_ok = bool(
+        _TAKEAWAY_RE.search(last) or _STATED_LESSON_RE.search(last)
+    )
     if aphorism.get("fails"):
         fails.extend(str(x) for x in aphorism["fails"])
         fails.append(
@@ -3208,11 +3223,14 @@ def assess_hook_beat(lines: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
     reasons: list[str] = []
+    first_draft_gate: list[str] = []
     lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
     hook_rep = assess_hook_beat(lines)
     data["hook_gate"] = hook_rep
     if hook_rep.get("status") != "pass":
-        reasons.append(f"HOOK: {hook_rep.get('reason')}")
+        reason = f"HOOK: {hook_rep.get('reason')}"
+        reasons.append(reason)
+        first_draft_gate.append(reason)
     ao = data.get("anchor_object") if isinstance(data.get("anchor_object"), dict) else {}
     name = str(ao.get("name") or "").strip()
     if not name:
@@ -3220,24 +3238,27 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
     mentioned = []
     if name:
         for i, row in enumerate(lines):
-            blob = str(row.get("text") or row.get("beat_text") or "")
-            if _anchor_mentioned(blob, name):
+            visual_name = str(row.get("key_object") or "")
+            if str(row.get("anchor_beat") or "").strip() or _anchor_mentioned(
+                visual_name, name
+            ):
                 mentioned.append(i + 1)
     if name and len(mentioned) < 2:
         reasons.append(
-            f"anchor_object {name!r} mentioned in {len(mentioned)} beat(s) (need 2+)"
+            f"visual_anchor {name!r} assigned to {len(mentioned)} beat(s) (need 2+)"
         )
     elif name:
         early = [b for b in mentioned if b <= 5]
         late = [b for b in mentioned if b >= 6]
         if not early or not late:
             reasons.append(
-                f"anchor_object {name!r} needs early/mid + late callback "
+                f"visual_anchor {name!r} needs early/mid + late callback "
                 f"(beats={mentioned})"
             )
     thesis = str(data.get("thesis") or "").strip()
     if not thesis:
         reasons.append("missing internal thesis")
+        first_draft_gate.append("missing internal thesis")
     fns = [str(r.get("beat_function") or "") for r in lines]
     if any(f not in {"hook", "complication", "turn", "insight", "close"} for f in fns):
         reasons.append("beat_function missing or invalid")
@@ -3254,7 +3275,9 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
 
         drift_rep = assess_theme_drift(mono, str(data.get("theme") or ""))
         data["theme_drift"] = drift_rep
-        reasons.extend(drift_rep.get("fails") or [])
+        drift_fails = list(drift_rep.get("fails") or [])
+        reasons.extend(drift_fails)
+        first_draft_gate.extend(drift_fails)
         data["insight_agency"] = {
             "fails": [],
             "status": "skipped",
@@ -3267,7 +3290,9 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
         ]
         principle_rep = assess_principle_monologue(mono, beats=beat_texts)
         data["principle_voice"] = principle_rep
-        reasons.extend(principle_rep.get("fails") or [])
+        principle_fails = list(principle_rep.get("fails") or [])
+        reasons.extend(principle_fails)
+        first_draft_gate.extend(principle_fails)
         data["principle_scope"] = {
             "hits": [],
             "count": 0,
@@ -3290,7 +3315,9 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
         reasons.extend(insight_rep.get("fails") or [])
         principle_rep = assess_principle_lines(lines)
         data["principle_voice"] = principle_rep
-        reasons.extend(principle_rep.get("fails") or [])
+        principle_fails = list(principle_rep.get("fails") or [])
+        reasons.extend(principle_fails)
+        first_draft_gate.extend(principle_fails)
         scope_rep = assess_principle_scope(lines)
         data["principle_scope"] = scope_rep
         reasons.extend(scope_rep.get("fails") or [])
@@ -3412,7 +3439,12 @@ def _narrative_gate_reasons(data: dict[str, Any], module: str) -> list[str]:
     data["intra_dedup_pass"] = not dupes
     data["cross_run_dedup_pass"] = not phrase_hits
     data["episode_variety"] = variety
-    return reasons
+    # Keep the full report for post-generation repair and observability, but
+    # only hook, thesis/theme, and natural principle voice can reject draft one.
+    # Visual labels, anchors, pronouns, variety, and other production structure
+    # are downstream concerns and must not turn the prose prompt into a checklist.
+    data["narrative_diagnostics"] = list(dict.fromkeys(reasons))
+    return list(dict.fromkeys(first_draft_gate))
 
 
 def _log_narrative(data: dict[str, Any], reasons: list[str]) -> None:
@@ -3469,6 +3501,15 @@ def _log_narrative(data: dict[str, Any], reasons: list[str]) -> None:
     )
 
 
+def _anchor_only_narrative_hold(reasons: list[str]) -> bool:
+    """True when one callback beat can repair the entire narrative hold."""
+    return (
+        len(reasons) == 1
+        and str(reasons[0]).startswith("anchor_object ")
+        and "mentioned in " in str(reasons[0])
+    )
+
+
 def _stamp_thematic_meta(
     data: dict[str, Any],
     *,
@@ -3521,9 +3562,12 @@ def _rewrite_line_constraints(
     user_text: str,
     theme: str,
     scene_count: int,
+    *,
+    duration_s: float | None = None,
+    beat_s: float | None = None,
 ) -> list[str]:
-    """One Claude rewrite if theme-drift, wrong beat count, or a line over cap."""
-    from agents.writer.claude_compose import compose_lines
+    """Repair only over-cap beats; structural failures stay for outer retry."""
+    from agents.writer.spoken_budget import repair_one_line, trim_at_clause_boundary
     from core.economic_reel_lofi.theme_guard import assess_theme_drift
 
     max_w, max_c = lofi_cfg.thematic_caption_limits()
@@ -3532,38 +3576,61 @@ def _rewrite_line_constraints(
     contract = _line_contract_fails(texts, scene_count)
     if not drift.get("fails") and not contract:
         return texts
-    why = []
-    if drift.get("fails"):
-        why.append("theme-drift " + "; ".join(drift["fails"]))
-    if contract:
-        why.append("; ".join(contract))
-    print(f"[LOFI compose] rewrite — {'; '.join(why)}")
-    retry = (
-        user_text
-        + f"\nREWRITE as exactly {scene_count} lines about "
-        f"{theme.replace('_', ' ')} only. "
-        f"Each line HARD MAX {max_w} words and {max_c} characters. "
-        "Do not name any other theme (hope, grief, trust, etc.). "
-        "Keep the causal chain: each line depends on the one before it."
-    )
-    if drift.get("fails"):
-        retry += " Forbidden leftover: " + "; ".join(
-            h.get("match") or "" for h in (drift.get("hits") or [])
+    wrong_count = len(texts) != int(scene_count)
+    if drift.get("fails") or wrong_count:
+        why = (
+            "theme drift"
+            if drift.get("fails")
+            else f"beat-count {len(texts)} (need {scene_count})"
         )
-    try:
-        redone = compose_lines(retry, theme=f"{theme}_fix")
-        print(f"[LOFI compose] rewrite lines={len(redone)}: {redone}")
-        redone_drift = assess_theme_drift(" ".join(redone), theme)
-        redone_c = _line_contract_fails(redone, scene_count)
-        if not redone_drift.get("fails") and not redone_c:
-            return redone
-        if drift.get("fails") and not redone_drift.get("fails") and not redone_c:
-            return redone
-        if not redone_c and contract:
-            return redone
-    except Exception as exc_r:  # noqa: BLE001
-        print(f"[LOFI compose] rewrite failed ({exc_r})")
-    return texts
+        print(f"[LOFI compose] structural hold — {why}; outer regeneration")
+        return texts
+
+    repaired = list(texts)
+    max_repairs = max(1, int(getattr(lofi_cfg, "MAX_LINE_REPAIRS", 2)))
+    for i, text in enumerate(repaired):
+        if len(text.split()) <= max_w and len(text) <= max_c:
+            continue
+        constraint = (
+            f"beat {i + 1} exceeds {max_w} words/{max_c} characters; "
+            f"keep its meaning and role in the {theme.replace('_', ' ')} argument"
+        )
+        print(
+            f"[LOFI compose] targeted repair scene={i + 1} "
+            f"{len(text.split())}w/{len(text)}c"
+        )
+        candidate = text
+        fixed = False
+        for repair_n in range(1, max_repairs + 1):
+            try:
+                candidate = repair_one_line(
+                    candidate,
+                    constraint=constraint,
+                    max_words=max_w,
+                    max_chars=max_c,
+                    provider="claude",
+                )
+                fixed = True
+                print(
+                    f"[LOFI compose] scene={i + 1} repair "
+                    f"{repair_n}/{max_repairs} PASS"
+                )
+                break
+            except Exception as exc_r:  # noqa: BLE001
+                print(
+                    f"[LOFI compose] scene={i + 1} repair "
+                    f"{repair_n}/{max_repairs} failed ({exc_r})"
+                )
+        repaired[i] = (
+            candidate
+            if fixed
+            else trim_at_clause_boundary(
+                candidate,
+                max_words=max_w,
+                max_chars=max_c,
+            )
+        )
+    return repaired
 
 
 def _thematic_from_lines(
@@ -3649,6 +3716,8 @@ def generate_script(
     lock_thesis: str | None = None,
     lock_anchor: dict[str, Any] | None = None,
     skip_polish: bool = False,
+    duration_s: float | None = None,
+    allow_full_alternate: bool = False,
 ) -> dict[str, Any]:
     """
     Write exactly scene_count spoken beats as one causal argument.
@@ -3905,13 +3974,29 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             rhetoric=rhetoric,
             pool_block=pool_block,
             feedback=feedback_block,
+            scene_count=scene_count,
+            duration_s=duration_s,
+            beat_s=lofi_cfg.beat_duration_s(),
         )
         texts: list[str] = []
         writer = "claude"
         try:
-            texts = compose_lines(user_text, theme=theme)
+            texts = compose_lines(
+                user_text,
+                theme=theme,
+                scene_count=scene_count,
+                duration_s=duration_s,
+                beat_s=lofi_cfg.beat_duration_s(),
+            )
             print(f"[LOFI compose] lines ({len(texts)}): {texts}")
-            texts = _rewrite_line_constraints(texts, user_text, theme, scene_count)
+            texts = _rewrite_line_constraints(
+                texts,
+                user_text,
+                theme,
+                scene_count,
+                duration_s=duration_s,
+                beat_s=lofi_cfg.beat_duration_s(),
+            )
         except Exception as exc:  # noqa: BLE001
             _LOG.warning("Claude compose failed (%s) — DeepSeek lines fallback", exc)
             print(f"[LOFI compose] Claude failed ({exc}); DeepSeek fallback")
@@ -3923,11 +4008,22 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             if skip_ds:
                 print("[LOFI compose] DeepSeek fallback skipped — retrying Claude")
                 try:
-                    texts = compose_lines(user_text, theme=f"{theme}_retry")
+                    texts = compose_lines(
+                        user_text,
+                        theme=f"{theme}_retry",
+                        scene_count=scene_count,
+                        duration_s=duration_s,
+                        beat_s=lofi_cfg.beat_duration_s(),
+                    )
                     print(f"[LOFI compose] retry lines ({len(texts)}): {texts}")
                     if texts:
                         texts = _rewrite_line_constraints(
-                            texts, user_text, theme, scene_count
+                            texts,
+                            user_text,
+                            theme,
+                            scene_count,
+                            duration_s=duration_s,
+                            beat_s=lofi_cfg.beat_duration_s(),
                         )
                 except Exception as exc2:  # noqa: BLE001
                     print(f"[LOFI compose] Claude retry failed ({exc2})")
@@ -3971,7 +4067,12 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
             "true",
             "yes",
         }
-        if reasons and not skip_alt:
+        if (
+            reasons
+            and allow_full_alternate
+            and not skip_alt
+            and not _anchor_only_narrative_hold(reasons)
+        ):
             print(
                 f"[LOFI compose] first draft holds={len(reasons)} — "
                 "one DeepSeek alternate"
@@ -4027,7 +4128,10 @@ No NSFW. No real private individuals named. Brand-safe for {module}.
         data["narrative_holds"] = reasons
         if reasons:
             print("[LOFI narrative] HARD HOLD — rejecting script")
-            data["hook_type"] = ""
+            # Preserve the actual hook classification. The outer pipeline now
+            # carries structural hold reasons explicitly; blanking hook_type
+            # manufactured a second, unrelated validator failure and prevented
+            # scoped beat repair from running.
         lines = [r for r in (data.get("lines") or []) if isinstance(r, dict)]
         print("[LOFI script] source_monologue:", data.get("source_monologue"))
         print("[LOFI script] monologue:", data.get("monologue"))

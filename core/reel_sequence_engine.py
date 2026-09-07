@@ -2283,6 +2283,16 @@ def compile_sequence_reel(
 
     if not image_paths:
         raise ValueError("compile_sequence_reel: image_paths must not be empty.")
+    if (page_id or "").strip().lower() == "ancient_knowledge":
+        from agents.media.audio_engine import (  # noqa: PLC0415
+            assert_voice_and_subtitles_ready as _assert_ak_av,
+        )
+
+        _assert_ak_av(
+            voice_audio=voice_audio,
+            word_timings=word_timings,
+            page_id="ancient_knowledge",
+        )
 
     # Harden against Windows MAX_PATH / failed act saves — every path must exist.
     # Blinded fallback: Act 1 / first readable path — never FileNotFoundError.

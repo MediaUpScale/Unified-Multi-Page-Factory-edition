@@ -117,7 +117,7 @@
     "theme": "secure_love",
     "subtheme": "steadiness_vs_intensity",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "partners embracing in a doorway, warm lit window behind them, mid shot",
@@ -167,58 +167,59 @@
       {
         "detail": "two coats sharing one hook by the door",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a shared blanket folded over the sofa arm",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "an empty train platform at night",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "two coats hanging on one hook",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a single lamp left on in the kitchen",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "two umbrellas dripping in the same stand",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "the porch swing still moving after someone stood up",
-        "sensory_type": "place"
+        "sensory_type": "place",
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a closed suitcase resting on the floor",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-09-06",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "What if love is not intensity?",
-        "last_used_date": "2026-08-25",
+        "last_used_date": "2026-09-06",
         "performance_score": null
       },
       {
         "text": "Intensity fades. Character stays.",
-        "last_used_date": "2026-08-25",
+        "last_used_date": "2026-09-06",
         "performance_score": null
       },
       {
         "text": "Look for the calm, not the spike.",
-        "last_used_date": "2026-08-25",
+        "last_used_date": "2026-09-06",
         "performance_score": null
       }
     ]
@@ -227,7 +228,7 @@
     "theme": "self_respect",
     "subtheme": "boundaries_without_guilt",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "coral_day",
     "sample_scene": "two people sitting on a porch bench talking, amber porch light, mid shot",
@@ -277,42 +278,42 @@
       {
         "detail": "the door closed from the inside and left that way",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a streetlamp on a quiet corner",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a half-written reply never sent from the table",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a suitcase packed and left on the porch steps",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a bill for one still sitting in the cafe booth",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "the chain lock slid across after midnight",
         "sensory_type": "gesture",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a second chair pushed back under the table",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "two coats hanging on one hook",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23",
+        "last_used_date": "2026-09-06",
         "performance_score": null
       }
     ],
@@ -588,7 +589,7 @@
     "theme": "healing",
     "subtheme": "choosing_peace_over_chaos",
     "status": "used",
-    "last_used_date": "2026-08-20",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "couple on a porch, sun disc framed through porch opening behind them, mid shot",
@@ -686,7 +687,7 @@
     "theme": "vulnerability",
     "subtheme": "softness_as_strength",
     "status": "used",
-    "last_used_date": "2026-08-20",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "muted_dawn",
     "sample_scene": "empty train platform at night, empty platform, mid shot",
@@ -1307,7 +1308,7 @@
     "theme": "inspiration",
     "subtheme": "a_light_that_is_yours",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "someone looking up at a small window of sky between buildings, late sun, mid shot",
@@ -1388,7 +1389,7 @@
     "theme": "regret",
     "subtheme": "the_sentence_never_said",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "amber_teal",
     "sample_scene": "curb at evening, empty passenger seat, mid shot",
@@ -1421,15 +1422,18 @@
     "concrete_details": [
       {
         "detail": "a kettle that just clicked off",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a folded letter never sent from the night desk",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a hand still on the doorframe after someone left",
-        "sensory_type": "gesture"
+        "sensory_type": "gesture",
+        "last_used_date": "2026-09-06"
       },
       {
         "detail": "a folded blanket on the sofa",
@@ -1479,7 +1483,7 @@
     "theme": "belonging",
     "subtheme": "looking_for_a_place",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "muted_dawn",
     "sample_scene": "figure at the edge of a gathering, porch light behind them, mid shot",
@@ -1568,7 +1572,7 @@
     "theme": "time",
     "subtheme": "ordinary_minutes_leaving",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "golden_dusk",
     "sample_scene": "clock and cooling tea on a windowsill, late afternoon, still mid shot",
@@ -1838,7 +1842,7 @@
     "theme": "betrayal",
     "subtheme": "the_second_story",
     "status": "used",
-    "last_used_date": "2026-08-19",
+    "last_used_date": "2026-09-06",
     "performance_score": null,
     "preferred_mood_palette": "amber_interior",
     "sample_scene": "unread texts lighting a dark kitchen, mid shot",

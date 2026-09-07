@@ -68,6 +68,7 @@ PostPlanner_B2_*.xlsx
 postplan_*.xlsx
 
 # Temp / cache files
+core/economic_reel_lofi/store/aphorism_recent.json
 *.tmp
 *TEMP_MPY_wvf_snd*
 .cache/

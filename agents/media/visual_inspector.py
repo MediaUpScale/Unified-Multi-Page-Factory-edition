@@ -7,8 +7,9 @@ Runs AFTER sequence image generation, BEFORE reel compile:
   2. Reject if >2 frames share near-identical framing (duplicate prevention).
   3. Diversity: mix of wide / medium-action / high-concept biomechanical shots.
 
-Uses Gemini Vision when available; falls back to cheap perceptual hashing for
-duplicate detection so the pipeline never hard-fails offline.
+Uses the modular Visual Evaluation Provider (OpenRouter Qwen VL by default;
+Gemini / DeepSeek are swap-ins via VISUAL_EVAL_PROVIDER / VISUAL_EVAL_MODEL).
+Falls back to cheap perceptual hashing so the pipeline never hard-fails offline.
 """
 from __future__ import annotations
 
@@ -99,80 +100,54 @@ def _duplicate_indices(paths: Sequence[Path], *, max_same: int = 2, thresh: floa
     return sorted(set(regen))
 
 
-def _gemini_inspect_sequence(paths: Sequence[Path]) -> SequenceInspectResult | None:
-    """Full VLM pass — returns None if Gemini unavailable."""
-    try:
-        import config as app_config
-        from google import genai
-        from google.genai import types
-    except Exception as exc:  # noqa: BLE001
-        _LOG.debug("Visual inspector Gemini import failed: %s", exc)
-        return None
+_INSPECT_PROMPT = (
+    "You are the Visual Control Agent for Master Mei Shorts.\n"
+    "Inspect this ordered sequence of frames (Frame 1 = first image).\n\n"
+    "RULES:\n"
+    "1) Frame 1 AND the LAST frame MUST show Master Mei: elderly Asian "
+    "master, long white hair/beard, dark traditional robes. "
+    "If absent → fail that frame.\n"
+    "2) Duplicate prevention: if more than 2 frames share nearly identical "
+    "framing (e.g. repeating VR-goggle close-ups), list extras to regenerate.\n"
+    "3) Diversity: sequence should mix wide landscape, medium action, and "
+    "high-concept biomechanical/cyberpunk imagery.\n\n"
+    "Return STRICT JSON only:\n"
+    "{\n"
+    '  "frames": [{"index": 1, "has_master_mei": true/false, '
+    '"framing": "wide|medium|close|biomech", "ok": true/false, '
+    '"reason": "..."}],\n'
+    '  "regenerate": [2, 5],\n'
+    '  "diversity_ok": true/false,\n'
+    '  "notes": ["..."]\n'
+    "}\n"
+    "index is 1-based matching Frame numbers."
+)
 
-    api_key = getattr(app_config, "GEMINI_API_KEY", None) or ""
-    if not api_key:
+
+def _vlm_inspect_sequence(paths: Sequence[Path]) -> SequenceInspectResult | None:
+    """Full VLM pass via the modular visual-eval provider. None if unavailable."""
+    from agents.media.providers.visual_eval import resolve_visual_eval_provider
+
+    backend = resolve_visual_eval_provider()
+    if backend is None:
         return None
 
     valid = [(i, Path(p)) for i, p in enumerate(paths) if Path(p).is_file()]
     if not valid:
         return SequenceInspectResult(passed=False, notes=["no images"])
 
-    parts: list = [
-        types.Part.from_text(
-            text=(
-                "You are the Visual Control Agent for Master Mei Shorts.\n"
-                "Inspect this ordered sequence of frames (Frame 1 = first image).\n\n"
-                "RULES:\n"
-                "1) Frame 1 AND the LAST frame MUST show Master Mei: elderly Asian "
-                "master, long white hair/beard, dark traditional robes. "
-                "If absent → fail that frame.\n"
-                "2) Duplicate prevention: if more than 2 frames share nearly identical "
-                "framing (e.g. repeating VR-goggle close-ups), list extras to regenerate.\n"
-                "3) Diversity: sequence should mix wide landscape, medium action, and "
-                "high-concept biomechanical/cyberpunk imagery.\n\n"
-                "Return STRICT JSON only:\n"
-                "{\n"
-                '  "frames": [{"index": 1, "has_master_mei": true/false, '
-                '"framing": "wide|medium|close|biomech", "ok": true/false, '
-                '"reason": "..."}],\n'
-                '  "regenerate": [2, 5],\n'
-                '  "diversity_ok": true/false,\n'
-                '  "notes": ["..."]\n'
-                "}\n"
-                "index is 1-based matching Frame numbers."
-            )
+    labels = [f"FRAME {i + 1}" for i, _ in valid]
+    image_paths = [p for _, p in valid]
+    try:
+        ev = backend.evaluate(_INSPECT_PROMPT, image_paths, labels=labels)
+        text = (ev.text or "").strip()
+        _LOG.info(
+            "VISUAL_INSPECTOR provider=%s model=%s",
+            ev.provider, ev.model_id,
         )
-    ]
-    for i, p in valid:
-        try:
-            mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
-            parts.append(types.Part.from_text(text=f"FRAME {i + 1}:"))
-            parts.append(types.Part.from_bytes(data=p.read_bytes(), mime_type=mime))
-        except Exception as exc:  # noqa: BLE001
-            _LOG.warning("Inspector skip unreadable %s: %s", p.name, exc)
-
-    client = genai.Client(api_key=api_key)
-    model_ids = [
-        getattr(app_config, "GEMINI_FLASH_MODEL", None) or "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-    ]
-    text = ""
-    for mid in model_ids:
-        try:
-            resp = client.models.generate_content(
-                model=mid,
-                contents=parts,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    response_mime_type="application/json",
-                ),
-            )
-            text = (getattr(resp, "text", None) or "").strip()
-            if text:
-                break
-        except Exception as exc:  # noqa: BLE001
-            _LOG.debug("Inspector model %s failed: %s", mid, exc)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("Visual inspector VLM failed (%s): %s", backend.name, exc)
+        return None
 
     if not text:
         return None
@@ -246,8 +221,8 @@ def inspect_sequence_images(
     use_vlm: bool = True,
 ) -> SequenceInspectResult:
     """
-    Validate a Master Mei sequence. Prefer Gemini Vision; always run phash
-    duplicate guard as a safety net.
+    Validate a Master Mei sequence. Prefer the configured visual-eval
+    provider (OpenRouter Qwen VL by default); always run phash as a safety net.
     """
     paths = [Path(p) for p in image_paths]
     result = SequenceInspectResult(passed=True, frames=[FrameVerdict(index=i) for i in range(len(paths))])
@@ -266,7 +241,7 @@ def inspect_sequence_images(
 
     # 2) VLM inspector
     if use_vlm:
-        vlm = _gemini_inspect_sequence(paths)
+        vlm = _vlm_inspect_sequence(paths)
         if vlm is not None:
             # Merge regenerate sets
             result.regenerate_indices = sorted(
@@ -285,7 +260,7 @@ def inspect_sequence_images(
             )
         else:
             result.notes.append("VLM unavailable — phash-only inspection")
-            _LOG.warning("VISUAL_INSPECTOR | Gemini VLM unavailable — phash only")
+            _LOG.warning("VISUAL_INSPECTOR | VLM unavailable — phash only")
 
     # 3) Heuristic: if Frame 1/last are byte-identical to a middle slave frame, regen
     if len(paths) >= 3 and paths[0].is_file():

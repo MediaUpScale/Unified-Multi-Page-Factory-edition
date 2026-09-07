@@ -124,10 +124,14 @@ ELEVENLABS_VOICE_SETTINGS: dict = {
 }
 
 # F5-TTS remote voice reference (channels_config/.../voice_reference/).
-# Filenames are optional overrides — default convention is
-#   ancient_knowledge_voice_ref_10s.wav + matching .txt
-# VOICE_REFERENCE_AUDIO: str = "ancient_knowledge_voice_ref_10s.wav"
-# VOICE_REFERENCE_TEXT: str = "ancient_knowledge_voice_ref_10s.txt"
+VOICE_REFERENCE_AUDIO: str = (
+    r"C:\dev\omni-engine\channels_config\ancient_knowledge"
+    r"\voice_reference\ancient_knowledge_voice_ref.MP3"
+)
+VOICE_REFERENCE_TEXT: str = (
+    r"C:\dev\omni-engine\channels_config\ancient_knowledge"
+    r"\voice_reference\ancient_knowledge_voice_ref.txt"
+)
 
 # ---------------------------------------------------------------------------
 # Remote GPU Flux LoRA (ENABLE_REMOTE_GPU_WORKFLOWS=true)
@@ -206,12 +210,12 @@ REEL_CTA_TEXT: str = "Follow Ancient Knowledge for more hidden mysteries."
 # Local AMBIENT_AUDIO_RELPATH is fallback ONLY when generation fails.
 # ---------------------------------------------------------------------------
 USE_MUSIC_V2_BED: bool = True
-# Mix vs VO at 1.0: −18 dB = 0.126 (unducked CTA/tail), −20 dB = 0.100 under narration.
-AMBIENT_VOLUME: float = 0.126        # BGM bed ≈ −18 dB relative to voiceover
-ATMOSPHERE_SFX_VOLUME: float = 0.12  # soft atmosphere (also ducked under VO)
+# Mix vs VO at 1.0: 0.20 ≈ −14 dB (was 0.126 / −18 dB — too faint after duck+loudnorm).
+AMBIENT_VOLUME: float = 0.20         # BGM bed ≈ −14 dB relative to voiceover
+ATMOSPHERE_SFX_VOLUME: float = 0.16  # atmosphere loop (also ducked under VO)
 ATMOSPHERE_SFX_FADE_IN: float = 0.2
 AMBIENT_SFX_GAIN_MUL: float = 1.0
-AMBIENT_DUCK_RATIO: float = 0.80     # under VO: 0.126 × 0.80 ≈ 0.101 ≈ −20 dB
+AMBIENT_DUCK_RATIO: float = 0.80     # under VO: 0.20 × 0.80 = 0.16 ≈ −16 dB
 BGM_START_TIME: float = 0.5
 BGM_FADE_IN_DURATION: float = 0.35
 MUSIC_V2_MIN_SECONDS: float = 40.0

@@ -49,8 +49,8 @@ VISUAL_IDENTITY_PROFILES: dict[str, dict[str, Any]] = {
                 "expression on his face"
             ),
             "couple": (
-                "a man and a woman, both dark-haired, standing close with "
-                "[expression] expressions"
+                "a man and a woman, both dark-haired, standing apart, "
+                "small in the room, [expression] postures, not a close couple portrait"
             ),
             "silhouette": (
                 "a lone silhouetted figure, featureless against the light, "
@@ -114,8 +114,8 @@ VISUAL_IDENTITY_PROFILES: dict[str, dict[str, Any]] = {
                 "a quiet man with dark hair, everyday clothes, [expression] posture"
             ),
             "couple": (
-                "a man and a woman, both dark-haired, in everyday clothes, "
-                "[expression] postures, not posed for a camera"
+                "a man and a woman, both dark-haired, standing apart, "
+                "small in the room, [expression] postures, not a close couple portrait"
             ),
             "silhouette": (
                 "a lone silhouetted figure, featureless against the light, "

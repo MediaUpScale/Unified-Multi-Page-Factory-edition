@@ -116,7 +116,8 @@ def portrait_close_identity_clause(who: str) -> str:
         f"Medium close-up portrait of {sheet}, head and shoulders in frame, "
         "full face visible — eyes, nose, mouth, and some hair. "
         "High-neck sweater covering throat, collarbones, shoulders, and chest "
-        "to the jaw."
+        "to the jaw. Natural head turn, no extreme neck rotation, no looking "
+        "back over the shoulder at an impossible angle."
     )
 
 
@@ -597,17 +598,28 @@ def portrait_scene_with_locked_appearance(row: dict[str, Any]) -> str:
         noun = motif or obj
     appearance = character_sheet_prompt(who)
     row["character_appearance"] = appearance
-    noun = re.sub(r"^(a|an|the)\s+", "", str(noun or "the object"), flags=re.I)
-    scale = face_object_scale_clause(noun, who)
+    noun = re.sub(r"^(a|an|the)\s+", "", str(noun or ""), flags=re.I)
+    dummy_noun = noun.lower() in {"", "figure", "object", "the object"}
+    extra = ""
+    if not dummy_noun:
+        extra = (
+            f" A foreground {noun} remains in frame. "
+            f"{face_object_scale_clause(noun, who)}"
+        )
     return (
         f"Three-quarter portrait of {appearance}. "
-        "Head and shoulders with a furnished room still visible behind the head: "
+        "Head and shoulders facing a slight natural turn toward camera, "
+        "not looking back over the shoulder. "
         "walls, fabric, furniture, window light as gouache color blocks with "
-        "paper grain. "
+        "paper grain behind the head. "
+        "High-neck sweater covering throat, collarbones, shoulders, and chest "
+        "to the jaw. Natural head turn, no extreme neck rotation, no looking "
+        "back over the shoulder at an impossible angle. "
         "Single-temperature directional light: one side of the face bright, "
         "the other in shade. "
         f"{_PORTRAIT_FLAT_SKIN_EXACT} "
-        f"A foreground {noun} remains in frame. {scale}"
+        "Hands empty and out of frame. No miniature person, no tiny figure, "
+        f"no second body in the foreground.{extra}"
     )
 
 
@@ -1061,6 +1073,15 @@ def object_focus_scene_text(
         else only_object_clause(obj, keep_host=True)
     )
     text_clause = _TEXT_SURFACE_CLAUSE if _object_stem(obj) in _TEXT_BEARING_STEMS else ""
+    closed_clause = closed_volume_clause(key_object or obj)
+    if closed_clause:
+        obj = _CLOSED_HARDCOVER_NOUN
+        only = (
+            f"Only {obj} is the still-life subject. Atmosphere is grain, gradient, and light."
+            if not keep_host
+            else only_object_clause(obj, keep_host=True)
+        )
+        text_clause = f"{closed_clause} {text_clause}".strip()
     step = max(0, min(int(step), 2))
     kind = _OBJECT_FOCUS_FRAMING[step]
     texture = (
@@ -1120,6 +1141,35 @@ def silhouette_scene_text(
             f"Hands empty. {only}"
         )
     return " ".join(scene.split()), kind
+
+
+def couple_is_environment_shot(beat: dict[str, Any]) -> bool:
+    """Place-meaning / wide interior couple beats stay small-in-room, not a close-up."""
+    if str(beat.get("subject_type") or "").strip().lower().replace(" ", "_") != "couple":
+        return False
+    if beat_needs_specific_place(beat):
+        return True
+    if str(beat.get("shot_scale") or "").strip().lower() == "wide":
+        return True
+    pose = str(beat.get("pose_hint") or "").lower()
+    return "small" in pose or "environment dominates" in pose
+
+
+def couple_small_in_environment_scene(
+    setting: str,
+    tod: str,
+) -> tuple[str, str]:
+    """Two small figures in a textured room — environment owns the frame."""
+    place = _sanitize_visual_phrase(setting) or "a neglected interior"
+    scene = (
+        f"Wide interior of {place}, {tod}. "
+        f"{_COUPLE_SMALL_IN_ROOM_POSE}. "
+        "A man and a woman stand apart among the furniture, together occupying "
+        "less than a quarter of the frame. Faces are small brush marks. "
+        "Hands empty at their sides. No window opening. "
+        f"{_FLAT_RISO_LOCK}"
+    )
+    return " ".join(scene.split()), "wide_place"
 
 
 def couple_wide_silhouette_scene_text(
@@ -1522,6 +1572,14 @@ _WIDE_COUPLE_PLACE_RE = re.compile(
     r"\b(platform|station|park|landscape|horizon|street|field|corner|curb)\b",
     re.IGNORECASE,
 )
+_COUPLE_SMALL_IN_ROOM_POSE = (
+    "two figures small in frame, environment dominates, not a close couple portrait"
+)
+_FLAT_RISO_LOCK = (
+    "Flat gouache risograph poster: hard-edged color blocks, paper grain, "
+    "ink outline, no photographic shading, no graphic-novel rendering, "
+    "no smooth gradients."
+)
 _SATURATION_GUARD = (
     "Keep colors saturated and printed."
 )
@@ -1580,6 +1638,25 @@ _TEXT_SURFACE_CLAUSE = (
     "The visible surface is blank abstract color and paper grain only — "
     "unmarked, no letters, no cursive, no poster type."
 )
+_CLOSED_VOLUME_STEMS = frozenset({"journal", "notebook", "book", "diary"})
+_CLOSED_HARDCOVER_NOUN = (
+    "a hardcover book shut, spine and cover only visible, no pages, "
+    "no visible text, no bookmark ribbon showing pages"
+)
+
+
+def closed_volume_clause(key_object: str) -> str:
+    """Flux opens books unless 'closed' is a physical state, not an adjective."""
+    stem = _object_stem(key_object)
+    blob = str(key_object or "").lower()
+    if stem not in _CLOSED_VOLUME_STEMS and "closed" not in blob:
+        return ""
+    if stem not in _CLOSED_VOLUME_STEMS:
+        return ""
+    return (
+        f"The subject is {_CLOSED_HARDCOVER_NOUN}. The book is fully closed. "
+        "Do not show an open spread, inner pages, or any writing."
+    )
 
 
 def _visual_tokens(text: str, *, expand_aliases: bool = False) -> set[str]:
@@ -3361,15 +3438,70 @@ def tighten_licensed_subject_frame(row: dict[str, Any]) -> bool:
     return True
 
 
+_PLACE_MEANING_RE = re.compile(
+    r"\b("
+    r"place where|where love died|where .+ (?:died|lived|ended)|"
+    r"sunroom|solarium|living room|forgotten sunroom|neglected"
+    r")\b",
+    re.I,
+)
+_BLANK_WINDOWLESS = {
+    WINDOWLESS_WALL,
+    WINDOWLESS_WALL_TIGHT,
+    WINDOWLESS_FIELD,
+}
+
+
+def textured_interior_place(place: str) -> str:
+    """A specific room with gouache volume — not a flat void, not a window hole."""
+    name = " ".join(str(place or "").split()) or "a neglected sunroom"
+    if name in _BLANK_WINDOWLESS:
+        name = "a neglected sunroom"
+    return (
+        f"{name}, gouache furniture and paper-grain walls, room volume visible, "
+        "no window opening, no invented mug or still-life"
+    )
+
+
+def beat_needs_specific_place(row: dict[str, Any]) -> bool:
+    blob = " ".join(
+        str(row.get(k) or "")
+        for k in ("text", "beat_text", "meaning", "episode_place", "setting")
+    )
+    return bool(_PLACE_MEANING_RE.search(blob))
+
+
 def apply_windowless_interior_frame(row: dict[str, Any]) -> bool:
     """Stop asking Flux for an empty room — it will invent a window.
 
-    Replace room/hallway/apartment settings with a wall plane or color field
-    that has no opening to draw. Skip beats whose spoken line licenses a window.
+    Replace generic room/hallway settings with a wall plane or color field
+    that has no opening to draw. Keep place-meaning beats as a textured
+    interior (sunroom / living room), not a blank portrait field.
     """
     if not isinstance(row, dict):
         return False
+    if row.get("hook_template") or beat_shot_type(row) == "hook":
+        return False
     if spoken_line_licenses_window(row):
+        return False
+    if beat_needs_specific_place(row):
+        place = str(
+            row.get("episode_place")
+            or row.get("atmosphere_place")
+            or ""
+        ).strip()
+        if not place or place in _BLANK_WINDOWLESS:
+            place = "neglected sunroom"
+        row["setting"] = textured_interior_place(place)
+        row["episode_place"] = place
+        if str(row.get("subject_type") or "") == "couple":
+            row["pose_hint"] = _COUPLE_SMALL_IN_ROOM_POSE
+            row["shot_scale"] = "wide"
+            row["framing"] = "full_scene"
+        print(
+            f"[LOFI windowless] scene={row.get('scene') or '?'} "
+            f"keep-place={row['setting']!r}"
+        )
         return False
     blob = " ".join(
         str(row.get(k) or "")
@@ -3725,16 +3857,17 @@ def apply_anchor_callback_beats(
     pool: list[dict[str, str]] | None = None,
 ) -> list[int]:
     """
-    Same motif on two beats: introduce early/mid, callback late, different state.
+    Keep the same visual motif on two beats without rewriting spoken prose.
 
-    Mentions are caption-level. Visual key_object is aligned on those two beats
-    so the stem cap exemption can keep the callback.
+    An anchor is production metadata for visual continuity. Forcing its noun
+    into otherwise natural narration creates the exact symbolic-object prose
+    this pipeline is meant to avoid.
     """
     del pool
     name = str((anchor or {}).get("name") or (anchor or {}).get("key_object") or "").strip()
     if not name or not lines:
         return []
-    stem = stamp_episode_anchor(lines, name)
+    stamp_episode_anchor(lines, name)
     setting = str((anchor or {}).get("setting") or "").strip()
     n = len(lines)
     mentioned = [
@@ -3764,28 +3897,6 @@ def apply_anchor_callback_beats(
         row["key_object"] = name
         hint = f"{name}, {state}"
         row["visual_anchor_hint"] = hint
-        text = str(row.get("text") or row.get("beat_text") or "").strip()
-        fn = str(row.get("beat_function") or "")
-        if (i == 0 or fn in {"hook", "insight"}) and not _anchor_mentioned(text, name):
-            row["anchor_beat"] = "introduce" if i == intro_i else "callback"
-            continue
-        if not _anchor_mentioned(text, name):
-            noun = stem or name.split()[-1]
-            addon = f"the {noun}"
-            if i == callback_i:
-                addon = f"the {noun} now {final.split(',')[0].strip()}"
-            cand = f"{text.rstrip('.')} — {addon}."
-            if len(cand.split()) <= 9 and len(cand) <= 56:
-                row["text"] = cand
-                row["beat_text"] = cand
-            else:
-                short = (
-                    f"The {noun} has gone cold."
-                    if i == callback_i
-                    else f"You notice the {noun}."
-                )
-                row["text"] = short
-                row["beat_text"] = short
         row["anchor_beat"] = "introduce" if i == intro_i else "callback"
     return [intro_i, callback_i]
 
@@ -4166,6 +4277,12 @@ def apply_abstract_license(
         or row.get("episode_place")
         or "a quiet indoor room at night"
     ).strip()
+    if setting in _BLANK_WINDOWLESS:
+        setting = str(
+            row.get("episode_place")
+            or row.get("atmosphere_place")
+            or ""
+        ).strip() or "neglected sunroom"
     tod = str(row.get("time_of_day") or "night")
     cluster = _best_meaning_cluster(text)
     treat = dict((cluster or {}).get("treatment") or {})
@@ -4176,7 +4293,15 @@ def apply_abstract_license(
     row["visual_fallback"] = f"abstract_{path}"
     spoken = _spoken_focus_noun(text)
     prior = _prior_licensed_focus_object(lines, row)
-    focus_obj = spoken or prior
+    existing = str(row.get("key_object") or "").strip()
+    existing_ok = existing.lower() not in {
+        "",
+        "figure",
+        "object",
+        "the requested object",
+        "the object",
+    }
+    focus_obj = spoken or prior or (existing if existing_ok else "")
     if path == "symbolic":
         row["subject_type"] = "object_focus"
         row["framing"] = "macro_no_setting"
@@ -5045,6 +5170,16 @@ def assemble_v2_prompt(
     expr = str(beat.get("subject_expression") or "sad")
     setting = _sanitize_visual_phrase(str(beat.get("setting") or ""))
     key_object = _sanitize_visual_phrase(str(beat.get("key_object") or ""))
+    if beat_needs_specific_place(beat) and not (
+        beat.get("hook_template") or beat_shot_type(beat) == "hook"
+    ):
+        setting = textured_interior_place(
+            str(beat.get("episode_place") or setting or "neglected sunroom")
+        )
+        if str(beat.get("subject_type") or "") == "couple":
+            beat["pose_hint"] = _COUPLE_SMALL_IN_ROOM_POSE
+            beat["shot_scale"] = "wide"
+            beat["framing"] = "full_scene"
     beat["setting"] = setting
     beat["key_object"] = key_object
     key_object_prompt = _grounded_object_phrase(key_object, setting)
@@ -5054,7 +5189,42 @@ def assemble_v2_prompt(
     beat["palette_key"] = palette_key
     framing_kind = ""
 
-    if st == "object_focus":
+    if beat.get("hook_template") or beat_shot_type(beat) == "hook":
+        scene = hook_silhouette_dissolve_scene(
+            dissolve_element=str(beat.get("dissolve_element") or ""),
+            memory_overlay=str(beat.get("hook_memory_overlay") or ""),
+        )
+        framing_kind = "hook_dissolve"
+        beat["subject_type"] = "silhouette"
+        beat["close_variant"] = "silhouette"
+        parts = [
+            open_b,
+            scene,
+            tech_b,
+            palette_sentence,
+            _SATURATION_GUARD,
+            _TEXT_LEGIBILITY_GUARD,
+            mood_b,
+            fmt_b,
+        ]
+        prompt = " ".join(p for p in parts if p)
+        return ensure_object_focus_texture_prompt(prompt, beat)
+
+    if couple_is_environment_shot(beat) or (
+        st == "couple" and beat_needs_specific_place(beat)
+    ):
+        open_b = re.sub(r"\bclose[- ]up\b", "", open_b, flags=re.I)
+        open_b = " ".join(open_b.split())
+        scene, framing_kind = couple_small_in_environment_scene(setting, tod)
+        beat["shot_scale"] = "wide"
+        beat["framing"] = "full_scene"
+        beat["pose_hint"] = _COUPLE_SMALL_IN_ROOM_POSE
+    elif str(beat.get("close_variant") or "") == "portrait_close" or (
+        beat_shot_type(beat) == "portrait"
+    ):
+        scene = portrait_scene_with_locked_appearance(beat)
+        framing_kind = "portrait_close"
+    elif st == "object_focus":
         # Do not fill the bank template "in [setting] at [time_of_day]" —
         # named desks/tables cue Schnell's mug+screen still-life prior.
         scene, framing_kind = object_focus_scene_text(
@@ -5930,7 +6100,17 @@ def assemble_v2_prompt_dev(
     riso_lock = is_riso_painting_retro_vintage(profile_name)
 
     abstract_path = str(beat.get("abstract_license") or "").strip()
-    if abstract_path == "symbolic":
+    if beat.get("hook_template") or beat_shot_type(beat) == "hook":
+        scene = hook_silhouette_dissolve_scene(
+            dissolve_element=str(beat.get("dissolve_element") or ""),
+            memory_overlay=str(beat.get("hook_memory_overlay") or ""),
+        )
+        beat["subject_type"] = "silhouette"
+        beat["close_variant"] = "silhouette"
+        beat["dev_scene_builder"] = "hook_dissolve"
+        framing_kind = "hook_dissolve"
+        abstract_path = ""
+    elif abstract_path == "symbolic":
         scene = str(beat.get("scene_description") or beat.get("visual_concept") or "")
         if not scene:
             scene = (
@@ -6008,6 +6188,16 @@ def assemble_v2_prompt_dev(
         if scene:
             scene = scene[0].upper() + scene[1:]
         beat["dev_scene_builder"] = "object_focus"
+    elif couple_is_environment_shot(beat) or (
+        st == "couple" and beat_needs_specific_place(beat)
+    ):
+        open_b = re.sub(r"\bclose[- ]up\b", "", open_b, flags=re.I)
+        open_b = " ".join(open_b.split())
+        scene, framing_kind = couple_small_in_environment_scene(setting, tod)
+        beat["shot_scale"] = "wide"
+        beat["framing"] = "full_scene"
+        beat["pose_hint"] = _COUPLE_SMALL_IN_ROOM_POSE
+        beat["dev_scene_builder"] = "couple_small_in_room"
     elif (
         st == "couple"
         and _WIDE_COUPLE_PLACE_RE.search(f"{setting} {key_object}")

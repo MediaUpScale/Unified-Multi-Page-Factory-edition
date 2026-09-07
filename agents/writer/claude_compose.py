@@ -23,38 +23,57 @@ import time
 
 _LOG = logging.getLogger(__name__)
 
-def compose_max_tokens() -> int:
-    # 9 short caption strings + JSON wrapper. Do not size this from a
+def compose_max_tokens(scene_count: int | None = None) -> int:
+    # Short caption strings + JSON wrapper. Do not size this from a
     # monologue word-budget — that target is retired.
-    return 360
+    n = int(scene_count or lofi_cfg.THEMATIC_DEFAULT_SCENES)
+    return max(360, n * 40)
 
 
-def compose_instruction() -> str:
+def _spoken_contract(
+    scene_count: int | None = None,
+    *,
+    duration_s: float | None = None,
+    beat_s: float | None = None,
+) -> tuple[int, float, int, int]:
+    """Resolve the same production budget used by spoken_budget.py."""
+    from agents.writer.spoken_budget import assess_lines
+
+    n = int(scene_count or lofi_cfg.THEMATIC_DEFAULT_SCENES)
+    slot = float(beat_s or lofi_cfg.beat_duration_s())
+    duration = float(duration_s if duration_s is not None else n * slot)
+    budget = assess_lines([], duration_s=duration, beat_s=slot)
+    return n, slot, int(budget["budget"]), int(budget["ceiling"])
+
+
+def compose_instruction(
+    scene_count: int | None = None,
+    *,
+    duration_s: float | None = None,
+    beat_s: float | None = None,
+) -> str:
     max_w, max_c = lofi_cfg.thematic_caption_limits()
-    n = int(lofi_cfg.THEMATIC_DEFAULT_SCENES)
+    n, slot, target_w, spoken_ceiling = _spoken_contract(
+        scene_count, duration_s=duration_s, beat_s=beat_s
+    )
     return (
-        f"You write exactly {n} spoken caption lines for a short vertical reel. "
-        f"Each line is one short breath: HARD MAX {max_w} words and {max_c} characters. "
-        "These 9 lines are ONE continuous spoken argument delivered as 9 short "
-        "breaths — not 9 independent image-captions and not a collage of scenes. "
-        "Hold one fixed referent across all 9 lines: either 'you' or 'I'. Do not "
-        "write a repeating indefinite 'someone' with no 'you' and no 'I'. "
-        "Use at least two load-bearing logical connectives across the nine lines "
-        "(because, so, but, although, when/then). A connective must change what "
-        "the next line is allowed to mean. Each line must follow from the previous "
-        "one by consequence or contrast, not by stacking a new picture. Do not "
-        "start a new object or room each line. The last line is a specific "
-        "realization or turn about the same person and the same object — not a "
-        "general inspirational definition ('Hope is the light…', 'X is what Y was'). "
-        "If the last line could caption any video on this theme, rewrite it. "
-        "Stay on the assigned theme — do not name a different emotion or concept "
-        "from the pattern's original domain. "
-        'Return STRICT JSON only: {"lines":["...","...","...","...","...","...","...","...","..."]}.'
+        f"Write exactly {n} spoken lines for a short vertical reel. Each line has "
+        f"{slot:.1f}s: target {target_w} words, hard maximum "
+        f"{min(max_w, spoken_ceiling)} words and {max_c} characters.\n\n"
+        "Only three writing priorities:\n"
+        "1. Open with an immediate, concrete hook from a recognisable human moment.\n"
+        "2. Develop one clear thesis naturally from beginning to end.\n"
+        "3. Sound like a person speaking plainly. Do not invent or sustain a "
+        "metaphor, symbolic object, or literary conceit merely to carry the theme. "
+        "Use an object only when it genuinely belongs in the human situation.\n\n"
+        "Do not write a title, stage direction, hashtag, attribution, or commentary. "
+        f'Return STRICT JSON only with exactly {n} strings: '
+        '{"lines":["<line 1>","<line 2>","..."]}.'
     )
 
-# Prompt cache requires >=1024 tokens. House voice only — no third-party copy,
-# no full pattern library, no gate checklist.
-_COMPOSE_VOICE_PAD = """
+# Historical prompt retained temporarily for output-comparison archaeology.
+# It is deliberately not referenced by compose_system().
+_LEGACY_COMPOSE_VOICE_PAD_UNUSED = """
 House voice for these 9 lines (style and causality only):
 Speak as if the listener is already in the room. Line follows line.
 Pick one person and keep them: you, or I — not a floating someone.
@@ -122,8 +141,17 @@ cap, it is already off. JSON only.
 """.strip()
 
 
-def compose_system() -> str:
-    return f"{compose_instruction()}\n\n{_COMPOSE_VOICE_PAD}"
+def compose_system(
+    scene_count: int | None = None,
+    *,
+    duration_s: float | None = None,
+    beat_s: float | None = None,
+) -> str:
+    return compose_instruction(
+        scene_count,
+        duration_s=duration_s,
+        beat_s=beat_s,
+    )
 
 
 COMPOSE_INSTRUCTION = compose_instruction()
@@ -207,7 +235,6 @@ def _request_params(
             {
                 "type": "text",
                 "text": system if system is not None else compose_system(),
-                "cache_control": {"type": "ephemeral"},
             }
         ],
         "messages": [{"role": "user", "content": user_text}],
@@ -222,59 +249,58 @@ def format_compose_user(
     rhetoric: dict[str, Any] | None,
     pool_block: str,
     feedback: str = "",
+    scene_count: int | None = None,
+    duration_s: float | None = None,
+    beat_s: float | None = None,
 ) -> str:
-    ao = anchor if isinstance(anchor, dict) else {}
-    rec = rhetoric if isinstance(rhetoric, dict) else {}
-    example = rec.get("in_house_example") or ""
-    if isinstance(example, list):
-        example = " ".join(str(x).strip() for x in example if str(x).strip())
+    # Anchor, rhetoric pattern, and visual pool are intentionally excluded from
+    # first-draft instructions. They are downstream production metadata, not
+    # prose requirements.
+    _ = anchor, rhetoric, pool_block
     max_w, max_c = lofi_cfg.thematic_caption_limits()
-    n = int(lofi_cfg.THEMATIC_DEFAULT_SCENES)
+    n, slot, target_w, spoken_ceiling = _spoken_contract(
+        scene_count, duration_s=duration_s, beat_s=beat_s
+    )
+    hard_words = min(max_w, spoken_ceiling)
     theme_s = str(theme or "").replace("_", " ")
     extra = f"\n{feedback.strip()}\n" if str(feedback or "").strip() else ""
     return (
-        f"THEME: {theme}\n"
-        f"THEME LOCK: This episode is about {theme_s}, not about any other "
-        f"named emotion or concept — do not let the pattern's original domain "
-        f"override the assigned theme. Do not write \"that's what hope was\" "
-        f"or name grief, trust, forgiveness, or any other bank theme unless "
-        f"it is {theme_s}.\n"
-        f"OUTPUT: exactly {n} spoken lines. Each line HARD MAX {max_w} words "
-        f"and {max_c} characters. The model must satisfy the cap itself.\n"
-        "These 9 lines are ONE continuous spoken argument delivered as 9 short "
-        "breaths — not 9 independent image-captions. Hold you or I across all "
-        "nine lines. Do not write a repeating indefinite someone. Put at least "
-        "two load-bearing connectives (because/so/but/although/when-then) in the "
-        "set. The last line is a realization about this person and this object, "
-        "not a general inspirational statement.\n"
-        "Match the pattern SHAPE, not the example's length, wording, or domain.\n"
-        f"THESIS (internal — do not speak it as a slogan dump): {thesis}\n"
-        f"ANCHOR OBJECT: {ao.get('name') or ''}\n"
-        f"  first seen: {ao.get('initial_state') or ''}\n"
-        f"  later: {ao.get('final_state') or ''}\n"
-        f"ASSIGNED PATTERN: {rec.get('name') or ''}\n"
-        f"shape: {rec.get('shape') or ''}\n"
-        f"example (shape only — a model of throughline; invent every line; "
-        f"do not copy; compress the same kind of argument into {n} short beats):\n"
-        f"{example}\n"
-        f"VISUAL BANK (locked look — not a shot list; do not tour a new "
-        f"room or object each line):\n{pool_block}\n"
+        f"THEME: {theme_s}\n"
+        f"THESIS: {thesis}\n"
+        "Write about a specific human experience that makes this thesis true. "
+        "The thesis is direction, not a slogan that must be quoted verbatim. "
+        "No anchor object or metaphor is required in this first draft.\n"
+        f"OUTPUT: exactly {n} spoken lines for {float(duration_s or n * slot):.0f}s "
+        f"total. Each {slot:.1f}s line TARGETS {target_w} words and has a HARD MAX "
+        f"of {hard_words} words and {max_c} characters. "
+        "Satisfy the limits directly; do not output a paragraph for later slicing.\n"
         f"{extra}"
     )
 
 
-def compose_lines(user_text: str, *, theme: str = "") -> list[str]:
-    """Nine spoken beats via Message Batches API (same cost path as polish)."""
+def compose_lines(
+    user_text: str,
+    *,
+    theme: str = "",
+    scene_count: int | None = None,
+    duration_s: float | None = None,
+    beat_s: float | None = None,
+) -> list[str]:
+    """Duration-aware spoken beats via Message Batches API."""
     if compose_skip():
         raise RuntimeError("LOFI_SKIP_CLAUDE_COMPOSE is set")
     client, model = _client_and_model()
     model = _resolve_polish_model(client) or model or POLISH_MODEL_DEFAULT
-    system = compose_system()
-    max_tokens = compose_max_tokens()
+    n, slot, target_w, spoken_ceiling = _spoken_contract(
+        scene_count, duration_s=duration_s, beat_s=beat_s
+    )
+    system = compose_system(n, duration_s=duration_s, beat_s=slot)
+    max_tokens = compose_max_tokens(n)
     max_w, max_c = lofi_cfg.thematic_caption_limits()
     print(
         f"[LOFI compose] batch submit theme={theme or '?'} model={model} "
-        f"max_tokens={max_tokens} beats=9 cap={max_w}w/{max_c}c cache=ephemeral "
+        f"max_tokens={max_tokens} beats={n} duration={float(duration_s or n * slot):.0f}s "
+        f"target={target_w}w cap={min(max_w, spoken_ceiling)}w/{max_c}c cache=off "
         f"system_chars={len(system)}"
     )
     batch = client.messages.batches.create(

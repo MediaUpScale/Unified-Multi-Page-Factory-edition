@@ -11,8 +11,9 @@ Architecture
   models.list(). If a model is absent from the live list, it is skipped and the
   available options are logged. Hardcoded fallbacks are a last-resort only when
   models.list() returns nothing at all (e.g. network failure at init time).
-* Retry policy: 503/UNAVAILABLE -> exponential backoff (2^n s, max 3 attempts).
+* Retry policy: 503/UNAVAILABLE -> exponential backoff (2^n s, max 2 retries).
   404/NOT_FOUND -> advance chain immediately.
+  All generateContent calls honour ``google_guardrail`` (kill-switch + USD cap).
 
 REST base (v1beta default):
   https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent
@@ -31,6 +32,7 @@ Capability = Literal["text", "image"]
 # Validated GA defaults -- used ONLY when models.list() returns nothing.
 # Cost-first: flash / flash-image only. Pro SKUs are NEVER last-resort defaults.
 _LAST_RESORT_TEXT = [
+    "models/gemini-3.5-flash-lite",
     "models/gemini-2.5-flash",
     "models/gemini-2.0-flash",
     "models/gemini-flash-latest",
@@ -48,8 +50,9 @@ STABLE_TEXT_MODEL = "models/gemini-2.5-flash"
 UNIVERSAL_TEXT_FALLBACKS = _LAST_RESORT_TEXT
 UNIVERSAL_IMAGE_FALLBACKS = _LAST_RESORT_IMAGE
 
-# Per-model 503 retry budget.
-MAX_503_RETRIES = 3
+# Per-model 503 retry budget (additional attempts after the first failure).
+# Hard-capped by google_guardrail.MAX_GOOGLE_RETRIES (default 2).
+MAX_503_RETRIES = 2
 
 
 # ---------------------------------------------------------------------------
@@ -60,11 +63,13 @@ def make_gemini_client(api_key: str, *, api_version: str = "v1beta") -> genai.Cl
     """
     Return a google-genai Client pinned to ``api_version``.
     The SDK sends ``x-goog-api-key`` automatically.
+    Honours ``ALLOW_GOOGLE_API`` — raises ``GoogleAPIBlockedError`` when false.
     """
-    from google import genai  # lazy — heavy SDK (~3 s); only loaded on demand
+    from google_guardrail import assert_google_allowed, make_guarded_gemini_client
 
-    return genai.Client(
-        api_key=api_key,
+    assert_google_allowed(context="gemini_utils.make_gemini_client")
+    return make_guarded_gemini_client(
+        api_key,
         http_options={"api_version": api_version},
     )
 
@@ -436,19 +441,50 @@ def generate_content_with_model_fallback(
 
     If the chain is exhausted, re-raises the last exception.
     """
+    from google_guardrail import (
+        GoogleAPIBlockedError,
+        GoogleBudgetExceededError,
+        estimate_call_cost_usd,
+        estimate_contents_tokens,
+        extract_usage_tokens,
+        get_google_cost_tracker,
+        is_image_model,
+        max_google_attempts,
+        max_google_retries,
+    )
+
     if not model_chain:
         raise RuntimeError("generate_content_with_model_fallback: model_chain is empty.")
 
     last: BaseException | None = None
     total = len(model_chain)
+    retry_budget = min(MAX_503_RETRIES, max_google_retries())
+    attempts = min(1 + MAX_503_RETRIES, max_google_attempts())
+    tracker = get_google_cost_tracker()
+    in_est = estimate_contents_tokens(contents)
 
     for i, model_id in enumerate(model_chain):
         next_id = model_chain[i + 1] if i + 1 < total else None
+        kind = "image" if is_image_model(model_id) else "text"
+        img_n = 1 if kind == "image" else 0
+        est = estimate_call_cost_usd(
+            model_id,
+            input_tokens=in_est,
+            output_tokens=0 if kind == "image" else 512,
+            images=img_n,
+            kind=kind,
+        )
 
-        for attempt in range(MAX_503_RETRIES):
+        for attempt in range(attempts):
             from google.genai import errors as _g_errors  # lazy — resolve exception class on demand
 
             try:
+                tracker.preflight(
+                    est,
+                    model=str(model_id),
+                    source="gemini_utils.generate_content_with_model_fallback",
+                    kind=kind,
+                )
                 try:
                     import config as _app_cfg  # noqa: PLC0415
 
@@ -463,24 +499,37 @@ def generate_content_with_model_fallback(
                     response = client.models.generate_content(
                         model=model_id, contents=contents
                     )
+                in_tok, out_tok = extract_usage_tokens(response, fallback_input=in_est)
+                tracker.record(
+                    model=str(model_id),
+                    kind=kind,
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    images=img_n,
+                    retries=attempt,
+                    source="gemini_utils.generate_content_with_model_fallback",
+                    status="ok",
+                )
                 logger.info("Gemini OK | model=%s | attempt=%d", model_id, attempt)
                 return response
 
+            except (GoogleAPIBlockedError, GoogleBudgetExceededError):
+                raise
             except (_g_errors.APIError, Exception) as exc:  # noqa: BLE001
                 last = exc
 
-                if _is_retryable_503(exc):
-                    if attempt < MAX_503_RETRIES - 1:
+                if _is_retryable_503(exc) or _is_retryable_429(exc):
+                    if attempt < attempts - 1:
                         wait = 2 ** (attempt + 1)
                         logger.warning(
-                            "Gemini 503 on '%s' (attempt %d/%d); backing off %ds.",
-                            model_id, attempt + 1, MAX_503_RETRIES, wait,
+                            "Gemini 503/429 on '%s' (attempt %d/%d); backing off %ds.",
+                            model_id, attempt + 1, retry_budget, wait,
                         )
                         time.sleep(wait)
                         continue
                     logger.warning(
-                        "Gemini 503 on '%s' -- all %d retry attempts exhausted. Advancing chain.",
-                        model_id, MAX_503_RETRIES,
+                        "Gemini 503/429 on '%s' -- all %d retry attempts exhausted. Advancing chain.",
+                        model_id, retry_budget,
                     )
                     break
 

@@ -67,7 +67,9 @@ PREMIUM_IMAGE_CHAIN: list[str] = [
 TOGETHER_IMAGE_COST_USD: dict[str, float] = {
     "black-forest-labs/FLUX.1-schnell": 0.003,
     "black-forest-labs/FLUX.1-dev": 0.025,
+    "black-forest-labs/FLUX.2-dev": 0.0154,
     "black-forest-labs/FLUX.1-pro": 0.050,
+    "Rundiffusion/Juggernaut-Lightning-Flux": 0.0017,
     "stabilityai/stable-diffusion-xl-base-1.0": 0.008,
 }
 
@@ -110,7 +112,12 @@ def _strip(name: str | None) -> str:
     raw = str(name).strip().removeprefix("models/")
     low = raw.lower()
     # Keep org/model paths intact (Together, OpenRouter)
-    if low.startswith("openrouter/") or low.startswith("black-forest-labs/") or low.startswith("stabilityai/"):
+    if (
+        low.startswith("openrouter/")
+        or low.startswith("black-forest-labs/")
+        or low.startswith("stabilityai/")
+        or low.startswith("rundiffusion/")
+    ):
         return raw.strip()
     if "/" in raw:
         raw = raw.rsplit("/", maxsplit=1)[-1]
@@ -127,6 +134,7 @@ def _full(slug_or_full: str) -> str:
         or low.startswith("models/")
         or low.startswith("black-forest-labs/")
         or low.startswith("stabilityai/")
+        or low.startswith("rundiffusion/")
     ):
         return s
     if s.lower().startswith("gemini") or s.lower().startswith("imagen"):

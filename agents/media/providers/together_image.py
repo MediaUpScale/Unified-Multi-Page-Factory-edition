@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 FLUX_SCHNELL_MODEL: str = "black-forest-labs/FLUX.1-schnell"
 FLUX_DEV_MODEL: str = "black-forest-labs/FLUX.1-dev"
+FLUX_2_DEV_MODEL: str = "black-forest-labs/FLUX.2-dev"
+JUGGERNAUT_LIGHTNING_FLUX_MODEL: str = "Rundiffusion/Juggernaut-Lightning-Flux"
+TOGETHER_JUGGERNAUT_USD_PER_IMAGE: float = 0.0017
+TOGETHER_FLUX2DEV_USD_PER_IMAGE: float = 0.0154
 FLUX_DEFAULT_STEPS: int = 4
 FLUX_DEV_DEFAULT_STEPS: int = 28
 SDXL_DEFAULT_STEPS: int = 20
@@ -63,6 +67,11 @@ _TOGETHER_COST_TABLE: dict[str, float] = {
     "sdxl": 0.008,
     "stable-diffusion-xl": 0.008,
     "stable-diffusion": 0.006,
+    "juggernaut-lightning-flux": TOGETHER_JUGGERNAUT_USD_PER_IMAGE,
+    "juggernaut": TOGETHER_JUGGERNAUT_USD_PER_IMAGE,
+    "flux.2-dev": TOGETHER_FLUX2DEV_USD_PER_IMAGE,
+    "flux2-dev": TOGETHER_FLUX2DEV_USD_PER_IMAGE,
+    "flux2dev": TOGETHER_FLUX2DEV_USD_PER_IMAGE,
 }
 
 # Aspect presets — native portrait for all outputs (including --test-images)
@@ -173,6 +182,14 @@ def normalize_together_model_id(raw: str | None) -> str:
         "dev": FLUX_DEV_MODEL,
         "flux-dev": FLUX_DEV_MODEL,
         "flux.1-dev": FLUX_DEV_MODEL,
+        "juggernaut": JUGGERNAUT_LIGHTNING_FLUX_MODEL,
+        "juggernaut-lightning-flux": JUGGERNAUT_LIGHTNING_FLUX_MODEL,
+        "juggernaut-lightning": JUGGERNAUT_LIGHTNING_FLUX_MODEL,
+        "together_juggernaut": JUGGERNAUT_LIGHTNING_FLUX_MODEL,
+        "flux2dev": FLUX_2_DEV_MODEL,
+        "flux2-dev": FLUX_2_DEV_MODEL,
+        "flux.2-dev": FLUX_2_DEV_MODEL,
+        "together_flux2dev": FLUX_2_DEV_MODEL,
     }
     if low in aliases:
         return aliases[low]
@@ -184,6 +201,17 @@ def normalize_together_model_id(raw: str | None) -> str:
 def _is_flux_schnell_model(model_id: str | None) -> bool:
     """True when the active image model is FLUX Schnell (Together or DeepInfra id)."""
     return "schnell" in (model_id or "").strip().lower()
+
+
+def _is_juggernaut_model(model_id: str | None) -> bool:
+    """True when the active image model is Juggernaut Lightning Flux."""
+    return "juggernaut" in (model_id or "").strip().lower()
+
+
+def _is_flux2_dev_model(model_id: str | None) -> bool:
+    """True when the active image model is Together FLUX.2-dev."""
+    low = (model_id or "").strip().lower()
+    return "flux.2-dev" in low or "flux2-dev" in low or "flux2dev" in low
 
 
 def default_together_image_model() -> str:
@@ -219,6 +247,10 @@ def cost_key_for_together_model(model_id: str | None) -> str:
     low = normalize_together_model_id(model_id).lower()
     if "schnell" in low:
         return "image_flux_schnell"
+    if "juggernaut" in low:
+        return "image_together_juggernaut"
+    if "flux.2-dev" in low or "flux2-dev" in low or "flux2dev" in low:
+        return "image_together_flux2dev"
     if "flux.1-dev" in low or "flux-dev" in low or "/flux.1-dev" in low:
         return "image_flux_dev"
     if "flux.1-pro" in low or "flux-pro" in low:
@@ -469,9 +501,9 @@ def post_deepinfra_flux_dev(
 def default_steps_for_model(model_id: str | None) -> int:
     """Cost-efficient default step count for the active Together model."""
     low = normalize_together_model_id(model_id).lower()
-    if "schnell" in low:
+    if "schnell" in low or _is_juggernaut_model(low):
         return FLUX_DEFAULT_STEPS
-    if "flux.1-dev" in low or "flux-dev" in low:
+    if _is_flux2_dev_model(low) or "flux.1-dev" in low or "flux-dev" in low:
         return FLUX_DEV_DEFAULT_STEPS
     if "sdxl" in low or "stable-diffusion" in low:
         return SDXL_DEFAULT_STEPS
@@ -1049,6 +1081,10 @@ class TogetherImageGenerator:
             tier). Default True preserves existing Dev/LoRA callers.
         """
         active_model = normalize_together_model_id(model_name or self.model)
+        if _is_juggernaut_model(active_model):
+            active_model = JUGGERNAUT_LIGHTNING_FLUX_MODEL
+        elif _is_flux2_dev_model(active_model):
+            active_model = FLUX_2_DEV_MODEL
         if width is None or height is None:
             width, height = orientation_to_size(orientation)
 
@@ -1110,7 +1146,12 @@ class TogetherImageGenerator:
                     }
                     # Optional Together LoRA (Dev-tier URL path — never Schnell).
                     # LOFI / economic callers pass allow_lora=False to hard-bypass.
-                    if allow_lora and not _is_flux_schnell_model(active_model):
+                    if (
+                        allow_lora
+                        and not _is_flux_schnell_model(active_model)
+                        and not _is_juggernaut_model(active_model)
+                        and not _is_flux2_dev_model(active_model)
+                    ):
                         try:
                             from agents.mcp.model_api_flows import (  # noqa: PLC0415
                                 resolve_effective_lora,
@@ -1377,6 +1418,10 @@ class TogetherImageAdapter:
         self.last_gemini_image_failure_model_id = None
 
         active = normalize_together_model_id(model_name or self._model_id)
+        if _is_juggernaut_model(active):
+            active = JUGGERNAUT_LIGHTNING_FLUX_MODEL
+        elif _is_flux2_dev_model(active):
+            active = FLUX_2_DEV_MODEL
         ratio = aspect_ratio or getattr(app_config, "GEMINI_IMAGE_ASPECT_RATIO", "9:16")
         orientation = aspect_ratio_to_orientation(ratio)
         if width is None or height is None:

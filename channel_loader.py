@@ -74,9 +74,9 @@ def _extract_style_anchor_via_gemini_vision(image_paths: "list[Path]", page_id: 
         return ""
     try:
         from PIL import Image
-        from google import genai
 
         import config as app_config
+        from google_guardrail import guarded_generate_content, make_guarded_gemini_client
         api_key = getattr(app_config, "GEMINI_API_KEY", None)
         if not api_key:
             _LOG.warning(
@@ -96,9 +96,12 @@ def _extract_style_anchor_via_gemini_vision(image_paths: "list[Path]", page_id: 
             return ""
         contents.append(_STYLE_VISION_PROMPT)
 
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="models/gemini-2.5-flash", contents=contents,
+        client = make_guarded_gemini_client(api_key)
+        response = guarded_generate_content(
+            client,
+            model="models/gemini-2.5-flash",
+            contents=contents,
+            source="channel_loader._extract_dynamic_style_anchor",
         )
         text = (getattr(response, "text", "") or "").strip()
         if text:

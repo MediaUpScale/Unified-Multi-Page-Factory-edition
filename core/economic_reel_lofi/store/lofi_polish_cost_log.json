@@ -1751,5 +1751,481 @@
       "batch_discount": 0.5
     },
     "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T05:00:11.765542+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1163,
+    "uncached_input_tokens": 1163,
+    "output_tokens": 167,
+    "cache_creation_input_tokens": 1657,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.004069,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T05:02:21.318803+00:00",
+    "theme": "secure_love_fix",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1245,
+    "uncached_input_tokens": 1245,
+    "output_tokens": 163,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1657,
+    "cost_usd": 0.002226,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T05:22:01.009292+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1186,
+    "uncached_input_tokens": 1186,
+    "output_tokens": 140,
+    "cache_creation_input_tokens": 1657,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.003957,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T14:18:01.209979+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1208,
+    "uncached_input_tokens": 1208,
+    "output_tokens": 178,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1657,
+    "cost_usd": 0.002264,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T14:19:06.356132+00:00",
+    "theme": "secure_love_fix",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1290,
+    "uncached_input_tokens": 1290,
+    "output_tokens": 155,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1657,
+    "cost_usd": 0.002231,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:48:46.568112+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1196,
+    "uncached_input_tokens": 1196,
+    "output_tokens": 219,
+    "cache_creation_input_tokens": 1681,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.004392,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:49:53.425104+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1210,
+    "uncached_input_tokens": 1210,
+    "output_tokens": 133,
+    "cache_creation_input_tokens": 1676,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.00397,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:49:53.862511+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1255,
+    "uncached_input_tokens": 1255,
+    "output_tokens": 236,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.002603,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:50:58.864415+00:00",
+    "theme": "secure_love_fix",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1337,
+    "uncached_input_tokens": 1337,
+    "output_tokens": 277,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.00289,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:51:00.767980+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1204,
+    "uncached_input_tokens": 1204,
+    "output_tokens": 133,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1676,
+    "cost_usd": 0.002037,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:53:34.759358+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1238,
+    "uncached_input_tokens": 1238,
+    "output_tokens": 254,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.002676,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:54:44.863049+00:00",
+    "theme": "secure_love_fix",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1320,
+    "uncached_input_tokens": 1320,
+    "output_tokens": 269,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.002833,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:54:45.163715+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1178,
+    "uncached_input_tokens": 1178,
+    "output_tokens": 239,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.002541,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:58:29.175849+00:00",
+    "theme": "secure_love_fix",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1260,
+    "uncached_input_tokens": 1260,
+    "output_tokens": 234,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.002598,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T16:58:32.190479+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1212,
+    "uncached_input_tokens": 1212,
+    "output_tokens": 128,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1676,
+    "cost_usd": 0.00202,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:01:17.458216+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1209,
+    "uncached_input_tokens": 1209,
+    "output_tokens": 141,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1676,
+    "cost_usd": 0.002082,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:01:18.488661+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1223,
+    "uncached_input_tokens": 1223,
+    "output_tokens": 198,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.002381,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:02:34.539806+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1232,
+    "uncached_input_tokens": 1232,
+    "output_tokens": 218,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1681,
+    "cost_usd": 0.00249,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:03:58.471168+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1238,
+    "uncached_input_tokens": 1238,
+    "output_tokens": 138,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1676,
+    "cost_usd": 0.002096,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:14:05.101177+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1233,
+    "uncached_input_tokens": 1233,
+    "output_tokens": 154,
+    "cache_creation_input_tokens": 1676,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.004098,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:16:29.860010+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1167,
+    "uncached_input_tokens": 1167,
+    "output_tokens": 139,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1676,
+    "cost_usd": 0.00203,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T17:18:47.373739+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 1211,
+    "uncached_input_tokens": 1211,
+    "output_tokens": 149,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1676,
+    "cost_usd": 0.002124,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T18:28:19.791945+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 435,
+    "uncached_input_tokens": 435,
+    "output_tokens": 128,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.001075,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T18:29:28.870010+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 457,
+    "uncached_input_tokens": 457,
+    "output_tokens": 117,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.001042,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T18:30:39.654524+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 457,
+    "uncached_input_tokens": 457,
+    "output_tokens": 145,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.001182,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T18:33:59.483946+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 435,
+    "uncached_input_tokens": 435,
+    "output_tokens": 120,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.001035,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T18:36:12.938315+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 457,
+    "uncached_input_tokens": 457,
+    "output_tokens": 129,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.001102,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
+  },
+  {
+    "at": "2026-09-06T18:39:40.407058+00:00",
+    "theme": "secure_love",
+    "model": "claude-sonnet-5",
+    "input_tokens": 435,
+    "uncached_input_tokens": 435,
+    "output_tokens": 131,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.00109,
+    "pricing": {
+      "input_usd_per_mtok": 2.0,
+      "output_usd_per_mtok": 10.0,
+      "batch_discount": 0.5
+    },
+    "kind": "compose"
   }
 ]

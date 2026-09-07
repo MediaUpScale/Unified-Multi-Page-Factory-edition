@@ -176,12 +176,24 @@ def stamp_stage1_timing(
     n = len(lines)
     for i, row in enumerate(lines):
         row["scene"] = int(row.get("scene") or i + 1)
-        row["duration_s"] = float(beat_s)
+        try:
+            existing = float(row.get("duration_s") or 0.0)
+        except (TypeError, ValueError):
+            existing = 0.0
+        # Gate-1 / locked scripts already carry per-beat spoken duration.
+        # Do not flatten those to the default slot length.
+        row["duration_s"] = existing if existing > 0 else float(beat_s)
         row.pop("visual_prompt", None)
+    spoken = round(sum(float(row.get("duration_s") or 0.0) for row in lines), 3)
     script["scene_count"] = n
     script["beat_duration_s"] = float(beat_s)
-    script["duration_s"] = round(float(n) * float(beat_s), 3)
-    script["duration_requested_s"] = float(duration_s)
+    script["duration_s"] = spoken
+    try:
+        requested = float(script.get("duration_requested_s") or 0.0)
+    except (TypeError, ValueError):
+        requested = 0.0
+    if requested <= 0:
+        script["duration_requested_s"] = float(duration_s)
     return script
 
 

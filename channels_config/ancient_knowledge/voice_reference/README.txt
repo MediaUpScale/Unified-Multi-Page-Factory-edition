@@ -7,18 +7,17 @@ folder; do not reuse another page's sample.
 
 Expected files
 --------------
-  ancient_knowledge_voice_ref_10s.wav   (preferred)
-  OR ancient_knowledge_voice_ref_10s.mp3
-      ~10s mono reference cut — LoadAudio accepts wav/mp3/flac/ogg.
+  ancient_knowledge_voice_ref.MP3
+      Page-configured F5-TTS reference clip (LoadAudio accepts wav/mp3/flac/ogg).
 
-  ancient_knowledge_voice_ref_10s.txt
+  ancient_knowledge_voice_ref.txt
       Exact transcript of that clip (F5-TTS sample_text). Must match
       the spoken words in the audio file.
 
-Optional page_config.py overrides
+page_config.py overrides (active)
 ---------------------------------
-  VOICE_REFERENCE_AUDIO = "ancient_knowledge_voice_ref_10s.mp3"
-  VOICE_REFERENCE_TEXT  = "ancient_knowledge_voice_ref_10s.txt"
+  VOICE_REFERENCE_AUDIO = ancient_knowledge_voice_ref.MP3
+  VOICE_REFERENCE_TEXT  = ancient_knowledge_voice_ref.txt
 
 Resolution order (RemoteGPUManager)
 -----------------------------------

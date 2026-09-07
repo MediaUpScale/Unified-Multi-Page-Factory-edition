@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "note": "User-supplied reference set, explicitly licensed here for light paraphrase mode.",
+  "entries": [
+    {
+      "id": "let_people_lose_you",
+      "modules": ["relationship"],
+      "themes": ["release", "self_respect", "misunderstanding"],
+      "text": "Let people lose you. Let them misunderstand you. Let them create their own stories. Don't rush to fix them. Let time answer what you never needed to explain. Every truth reveals itself when the right time comes."
+    },
+    {
+      "id": "liar_chain",
+      "modules": ["relationship"],
+      "themes": ["betrayal", "trust", "deception"],
+      "text": "Never ask a liar why they lied. To explain it, they would have to lie again. One lie is never born alone. It always needs another to keep alive, then another to protect the last, until even they forget where the truth ended and the lie becomes the only story they remember."
+    },
+    {
+      "id": "consistent_effort",
+      "modules": ["relationship"],
+      "themes": ["love", "security", "connection"],
+      "text": "If someone values you, they make time for you. Genuine love is easy to recognize because it shows up in simple ways. It's a text to check in, a callback when they said they would, a plan that actually happens. Even on busy days, they still find a moment because you matter to them. Love becomes clear through consistent effort and time given on purpose."
+    },
+    {
+      "id": "soul_is_story",
+      "modules": ["relationship"],
+      "themes": ["love", "character", "aging"],
+      "text": "A beautiful face will age and a perfect body will change. But a beautiful soul will always be a beautiful soul. Faces are just the cover. Souls are the story."
+    },
+    {
+      "id": "quiet_observation",
+      "modules": ["relationship"],
+      "themes": ["silence", "discernment", "boundaries"],
+      "text": "I kept my words to myself, but I saw everything and noticed everything. When I stay quiet, it doesn't mean I'm clueless. Not everything needs an immediate response, and sometimes the best approach is to let people reveal themselves over time."
+    },
+    {
+      "id": "nothing_to_prove",
+      "modules": ["relationship"],
+      "themes": ["self_respect", "boundaries", "peace"],
+      "text": "The best decision I ever made was to be quiet. I have nothing to prove. I'm not convincing anyone that I'm a great person. I'm not fixing what I didn't break. I'm not fighting for anyone to see my worth. Whatever you do is on you. Just make sure the choices you make today are ones you can live with."
+    },
+    {
+      "id": "more_tears_than_smiles",
+      "modules": ["relationship"],
+      "themes": ["leaving", "self_respect", "toxic_relationships"],
+      "structure": "anaphora_refrain",
+      "text": "When there are more tears than smiles, leave. When there are more fights than jokes, leave. When it hurts more than it feels good, leave. When you have to leave what you love just to live, leave."
+    },
+    {
+      "id": "loyalty_after_benefit",
+      "modules": ["relationship"],
+      "themes": ["loyalty", "betrayal", "abandonment"],
+      "text": "Once the rain is over, an umbrella becomes a burden to everyone. The day a blind man sees, the first thing he throws away is the stick that helped him all his life. When the sun returns, the first thing people extinguish is the candle that guided them through the dark. That's how loyalty ends when benefits stop."
+    },
+    {
+      "id": "gift_of_time",
+      "modules": ["relationship"],
+      "themes": ["time", "love", "presence"],
+      "text": "Value the people who give you their time. Time is the one thing they can never get back. Money can be earned again. Opportunities can return. But a moment shared with you is gone forever. When someone chooses to listen, stay, or simply be there, they are giving a part of their life away."
+    },
+    {
+      "id": "detach_and_breathe",
+      "modules": ["relationship"],
+      "themes": ["release", "acceptance", "endings"],
+      "text": "Just detach, let it end, accept whatever life will send, because not everything is meant to stay, and not every story finds its way. So loosen your grip, make peace with the ending, just breathe."
+    },
+    {
+      "id": "absent_message",
+      "modules": ["relationship"],
+      "themes": ["distance", "longing", "loneliness"],
+      "text": "You would message me. Ask me how I am, what I am doing. To think that I probably don't go through your mind at all."
+    },
+    {
+      "id": "understanding_villains",
+      "modules": ["relationship"],
+      "themes": ["empathy", "hurt", "perspective"],
+      "text": "As kids, we loved the heroes. But as adults, we understand the villains. Life teaches us that people aren't simply good or bad. Sometimes the villain is someone who got tired of being unheard, stopped explaining, and chose themselves after being forgotten."
+    },
+    {
+      "id": "healing_responsibility",
+      "modules": ["relationship", "parenting"],
+      "themes": ["healing", "responsibility", "generational_patterns"],
+      "text": "It is not your fault, but your healing is your responsibility. No one can rewrite your past, but you can decide how your story continues. Heal so the pain ends with you, not with the people you love."
+    },
+    {
+      "id": "unsent_home",
+      "modules": ["relationship"],
+      "themes": ["unrequited_love", "loss", "longing"],
+      "text": "This is my unsent message to you. I'm sorry for falling for you. I never planned it. I simply found a home in someone who was never meant to be mine."
+    },
+    {
+      "id": "version_you_lost",
+      "modules": ["relationship"],
+      "themes": ["loss", "regret", "self_respect"],
+      "text": "You look back and realize I was the one who tried, stayed, and cared when you didn't. That is the part that will hurt most. You didn't only lose me. You lost the version of me you will never get again."
+    },
+    {
+      "id": "version_you_lost_negative_variant",
+      "modules": ["relationship"],
+      "themes": ["loss", "regret", "self_respect"],
+      "text": "You look back and realize I wasn't the one who tried, the one who stayed, the one who cared when you didn't. And that's the part that'll hurt the most. You didn't lose me. You lost the version of me you'll never get again."
+    },
+    {
+      "id": "memories_without_permission",
+      "modules": ["relationship"],
+      "themes": ["memory", "grief", "lost_love"],
+      "text": "I tried to forget you, but memories don't ask permission. They arrive quietly, sit beside me, and remind me love once lived here. So I carry you gently now, not as pain, but as proof that I was alive once."
+    },
+    {
+      "id": "truth_or_illusion",
+      "modules": ["relationship"],
+      "themes": ["truth", "illusion", "choice"],
+      "text": "Perhaps it is better to suffer and know the truth than to be happy in a delusion. Yet illusions can be kinder than truth. So which do you want: the truth or the illusion?"
+    },
+    {
+      "id": "hard_to_love",
+      "modules": ["relationship"],
+      "themes": ["self_worth", "love", "rejection"],
+      "text": "Sometimes I wonder whether I am hard to love, or whether I gave my heart to the wrong people. I am not cold. I learned that not everyone deserves the softest parts of me. Maybe I was never difficult to love."
+    },
+    {
+      "id": "stop_explaining",
+      "modules": ["relationship"],
+      "themes": ["peace", "boundaries", "misunderstanding"],
+      "text": "I used to explain myself to everyone. Now I don't. Not because I stopped caring, but because peace doesn't come from being understood. It comes from no longer needing to be. So I let people think what they want, and I don't chase anymore."
+    },
+    {
+      "id": "listen_to_absence",
+      "modules": ["relationship"],
+      "themes": ["silence", "discernment", "absence"],
+      "text": "Silence taught me something. Not everything deserves a response. Some truths reveal themselves when no one is speaking. I used to wait for words. Now I listen to absence. Not bitter, just aware."
+    },
+    {
+      "id": "love_enriches_life",
+      "modules": ["relationship"],
+      "themes": ["love", "connection", "meaning"],
+      "text": "What is love? It is everything that enhances, widens, and enriches our life. In its heights and depths, it makes each moment worth living."
+    },
+    {
+      "id": "freedom_or_loneliness",
+      "modules": ["relationship"],
+      "themes": ["freedom", "loneliness", "solitude"],
+      "text": "Nobody wakes you in the morning, nobody waits for you at night, and you can do whatever you want. What do you call it: freedom or loneliness?"
+    }
+  ]
+}

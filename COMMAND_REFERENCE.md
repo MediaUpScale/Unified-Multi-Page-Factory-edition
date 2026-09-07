@@ -233,7 +233,16 @@ Image gen **always** uses Together `FLUX.1-schnell` with LoRA off. `--model-api-
 Duration: default 27s / 9 beats × 3s. Larger `--duration` adds beats at 3s (max 90s). Visual style is `riso_retro_flat_v4` in `core/economic_reel_lofi/style_modules/` (swap via `LOFI_STYLE_MODULE`).
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --module relationship --lofi-theme hope`  
-*// Writer + validator + RAG only (no images). Same inspectable RAG/cost logs.*
+*// Writer + validator + RAG only (no images). Default writer mode is paraphrase.*
+
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --lofi-mode theme --module relationship --lofi-theme hope`
+*// Explicitly selects the slower duration-aware theme composer.*
+
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --lofi-mode quote --lofi-seed-quote "A concept to develop"`
+*// Develops a seed concept through a concrete parable: setup → conflict → retreat → workable equilibrium.*
+
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --lofi-mode paraphrase --lofi-aphorism-id more_tears_than_smiles`
+*// One light, structure-preserving paraphrase from `store/aphorism_bank.json`; no story expansion. Omit `--lofi-aphorism-id` to pick a random unused bank entry each run.*
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --test-preview`  
 *// Single-image aesthetic review (Flux Schnell + production grading + LOFI caption typography + watermark). No script, video, publish, or RAG history write.*
