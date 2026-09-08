@@ -10,9 +10,12 @@ from PIL import Image, ImageDraw, ImageFont
 from utils.quote_renderer import (
     ImageTextsAssetError,
     ImageTextsRenderEngine,
+    _length_font_scale,
+    _rotation_choices_for_quote,
     generate_notebook_template,
     resolve_channel_assets,
     wrap_quote,
+    wrap_quote_balanced,
 )
 
 
@@ -61,6 +64,27 @@ def test_wrap_quote_respects_newlines_and_width() -> None:
     lines = wrap_quote("Hello world\n\nA second paragraph here", font, max_width=40)
     assert lines[0]
     assert "" in lines
+
+
+def test_balanced_wrap_merges_orphan_words() -> None:
+    font = ImageFont.load_default()
+    text = "Behind my strength is a little person\ngiving\nme all the reasons to keep going."
+    lines = wrap_quote_balanced(text, font, max_width=220)
+    assert any("giving" in line for line in lines)
+    assert "giving" not in {line.strip() for line in lines}
+
+
+def test_long_quote_keeps_readable_type() -> None:
+    long_quote = (
+        "If I'm ever gone before my time I hope my children know they "
+        "were behind every sacrifice, every dream, the greatest gift "
+        "I was ever given."
+    )
+    scale = _length_font_scale(long_quote)
+    assert 0.68 <= scale <= 0.86
+    assert _length_font_scale("Be gentle with yourself.") == 1.0
+    assert max(abs(angle) for angle in _rotation_choices_for_quote(long_quote)) == 15.0
+    assert max(abs(angle) for angle in _rotation_choices_for_quote("Be gentle.")) == 20.0
 
 
 def test_generate_image_texts_writes_pngs(

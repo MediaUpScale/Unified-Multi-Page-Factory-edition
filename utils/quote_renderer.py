@@ -66,18 +66,26 @@ FONT_EXTENSIONS: frozenset[str] = frozenset({".ttf", ".otf"})
 
 # Notebook safe-zone as fractions of canvas size. Leaves room for spiral
 # binding on the left and a bottom footer for the channel logo.
-_MARGIN_LEFT: float = 0.16
-_MARGIN_RIGHT: float = 0.10
+_MARGIN_LEFT: float = 0.20
+_MARGIN_RIGHT: float = 0.14
 _MARGIN_TOP: float = 0.15
 _MARGIN_BOTTOM: float = 0.16
 _LINE_HEIGHT_RATIO: float = 1.38
 _MIN_FONT_SIZE: int = 14
-_DEFAULT_FONT_SIZE: int = 54
+_MIN_READABLE_SIZE: int = 22
+_DEFAULT_FONT_SIZE: int = 49
 _DEFAULT_CANVAS: tuple[int, int] = (1080, 1350)
 OUTPUT_SIZE: tuple[int, int] = (1080, 1350)
 _LAYOUT_REF_WIDTH: int = 1080
 _TEXT_OPACITY: float = 0.8
+_BIG_QUOTE_WORDS: int = 24
+_BIG_QUOTE_LINES: int = 7
 _ROTATION_CHOICES: tuple[float, ...] = (-20.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0)
+_ROTATION_CHOICES_BIG: tuple[float, ...] = (-15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0)
+_CROP_KEEP: float = 1.0
+_ROTATION_SAFE_PAD: float = 0.04
+_BIG_QUOTE_HEIGHT_FILL: float = 0.66
+_BIG_QUOTE_SIDE_INSET: float = 0.06
 _HEART_CHARS: frozenset[str] = frozenset("♡❤♥💕💗❥")
 _HEART_SENTINEL: str = "\u0001"
 _GLYPH_FALLBACKS: dict[str, str] = {
@@ -331,10 +339,87 @@ def wrap_quote(
     return lines or [""]
 
 
+def _flatten_quote(text: str) -> str:
+    return " ".join((text or "").replace("\r\n", "\n").split())
+
+
+def _merge_orphan_lines(
+    lines: Sequence[str],
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+) -> list[str]:
+    """Pull single-word leftover lines into a neighbor when they fit."""
+    merged: list[str] = []
+    index = 0
+    items = list(lines)
+    while index < len(items):
+        line = items[index]
+        words = line.split()
+        if len(words) == 1 and merged:
+            trial = f"{merged[-1]} {line}".strip()
+            if _measure_text(font, trial)[0] <= max_width:
+                merged[-1] = trial
+                index += 1
+                continue
+        if len(words) == 1 and index + 1 < len(items):
+            trial = f"{line} {items[index + 1]}".strip()
+            if _measure_text(font, trial)[0] <= max_width:
+                merged.append(trial)
+                index += 2
+                continue
+        merged.append(line)
+        index += 1
+    return merged
+
+
+def wrap_quote_balanced(
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+) -> list[str]:
+    """Flatten OCR line breaks, wrap, and even out leftover stub lines."""
+    flat = _flatten_quote(text)
+    if not flat:
+        return [""]
+    greedy = _merge_orphan_lines(_wrap_line(flat, font, max_width), font, max_width)
+    if len(greedy) <= 1:
+        return greedy
+    last_w = _measure_text(font, greedy[-1])[0]
+    longest = max(_measure_text(font, line)[0] for line in greedy)
+    if last_w >= int(longest * 0.55) and all(len(line.split()) >= 2 for line in greedy):
+        return greedy
+    low, high = max(40, max_width // 2), max_width
+    best = greedy
+    for _ in range(14):
+        mid = (low + high) // 2
+        trial = _merge_orphan_lines(_wrap_line(flat, font, mid), font, max_width)
+        if len(trial) <= len(greedy) + 1:
+            best = trial
+            high = mid
+        else:
+            low = mid + 1
+        if low >= high:
+            break
+    return _merge_orphan_lines(best, font, max_width)
+
+
 def _block_height(lines: Sequence[str], line_height: int) -> int:
     if not lines:
         return 0
     return len(lines) * line_height
+
+
+def _quote_overflows(
+    lines: Sequence[str],
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+    max_height: int,
+    line_height: int,
+) -> bool:
+    if _block_height(lines, line_height) > max_height:
+        return True
+    heart = max(16, int(line_height * 0.55))
+    return any(_line_pixel_width(line, font, heart) > max_width for line in lines if line)
 
 
 def _fit_wrapped_text(
@@ -347,28 +432,52 @@ def _fit_wrapped_text(
 ) -> tuple[ImageFont.FreeTypeFont | ImageFont.ImageFont, list[str], int, int]:
     size = max(_MIN_FONT_SIZE, int(font_size))
     chosen_font = _load_font(font_path, size)
-    lines = wrap_quote(text, chosen_font, max_width)
+    lines = wrap_quote_balanced(text, chosen_font, max_width)
     line_height = max(1, int(round(size * line_height_ratio)))
-    while size > _MIN_FONT_SIZE and _block_height(lines, line_height) > max_height:
-        size -= 2
+    floor = _MIN_READABLE_SIZE if size > _MIN_READABLE_SIZE else _MIN_FONT_SIZE
+    while size > floor and _quote_overflows(
+        lines, chosen_font, max_width, max_height, line_height
+    ):
+        size -= 1
         chosen_font = _load_font(font_path, size)
-        lines = wrap_quote(text, chosen_font, max_width)
+        lines = wrap_quote_balanced(text, chosen_font, max_width)
+        line_height = max(1, int(round(size * line_height_ratio)))
+    while size > _MIN_FONT_SIZE and _quote_overflows(
+        lines, chosen_font, max_width, max_height, line_height
+    ):
+        size -= 1
+        chosen_font = _load_font(font_path, size)
+        lines = wrap_quote_balanced(text, chosen_font, max_width)
         line_height = max(1, int(round(size * line_height_ratio)))
     return chosen_font, lines, size, line_height
 
 
+def _quote_word_count(text: str) -> int:
+    return len(_flatten_quote(text).split())
+
+
+def _is_big_quote(text: str, line_count: int | None = None) -> bool:
+    if _quote_word_count(text) >= _BIG_QUOTE_WORDS:
+        return True
+    return line_count is not None and line_count >= _BIG_QUOTE_LINES
+
+
+def _rotation_choices_for_quote(text: str, line_count: int | None = None) -> tuple[float, ...]:
+    if _is_big_quote(text, line_count):
+        return _ROTATION_CHOICES_BIG
+    return _ROTATION_CHOICES
+
+
 def _length_font_scale(text: str) -> float:
-    """Shrink type further when the quote is long so it stays centered."""
-    words = len((text or "").split())
-    lines = max(1, (text or "").count("\n") + 1)
-    scale = 1.0
-    if words > 18 or lines > 6:
-        scale *= 0.82
-    if words > 32 or lines > 10:
-        scale *= 0.76
-    if words > 50 or lines > 14:
-        scale *= 0.70
-    return scale
+    """Comfort size for long copy: readable, not page-filling, never tiny."""
+    words = _quote_word_count(text)
+    if words >= 55:
+        return 0.68
+    if words >= 40:
+        return 0.74
+    if words >= _BIG_QUOTE_WORDS:
+        return 0.82
+    return 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -620,14 +729,69 @@ def _estimate_paper_box(image: Image.Image) -> tuple[int, int, int, int] | None:
     top = int(min(hits_y) / probe_h * height)
     bottom = int((max(hits_y) + 1) / probe_h * height)
     # Inset past the spiral binding and keep a footer for the logo.
-    pad_l = max(18, int((right - left) * 0.12))
-    pad_r = max(12, int((right - left) * 0.08))
-    pad_t = max(16, int((bottom - top) * 0.08))
-    pad_b = max(22, int((bottom - top) * 0.10))
+    pad_l = max(36, int((right - left) * 0.20))
+    pad_r = max(28, int((right - left) * 0.14))
+    pad_t = max(18, int((bottom - top) * 0.09))
+    pad_b = max(26, int((bottom - top) * 0.11))
     box = (left + pad_l, top + pad_t, right - pad_r, bottom - pad_b)
     if box[2] - box[0] < 80 or box[3] - box[1] < 80:
         return None
     return box
+
+
+def _rotation_safe_box(
+    width: int,
+    height: int,
+    max_angle: float = 20.0,
+) -> tuple[int, int, int, int]:
+    """Keep type inside the area that survives the heaviest tilt crop."""
+    ins_w, ins_h = _inscribed_crop_size(width, height, max_angle)
+    crop_w = int(round(width - _CROP_KEEP * (width - min(ins_w, width))))
+    crop_h = int(round(height - _CROP_KEEP * (height - min(ins_h, height))))
+    pad_x = max(0, (width - crop_w) // 2) + max(12, int(width * _ROTATION_SAFE_PAD))
+    pad_y = max(0, (height - crop_h) // 2) + max(10, int(height * _ROTATION_SAFE_PAD))
+    return pad_x, pad_y, width - pad_x, height - pad_y
+
+
+def _intersect_boxes(
+    first: tuple[int, int, int, int],
+    second: tuple[int, int, int, int],
+) -> tuple[int, int, int, int]:
+    left = max(first[0], second[0])
+    top = max(first[1], second[1])
+    right = min(first[2], second[2])
+    bottom = min(first[3], second[3])
+    if right - left < 80 or bottom - top < 80:
+        return first
+    return left, top, right, bottom
+
+
+def _text_box_for_page(
+    page: TemplatePage,
+    width: int,
+    height: int,
+    *,
+    max_angle: float = 20.0,
+    extra_inset: float = 0.0,
+) -> tuple[int, int, int, int]:
+    if page.text_box is not None:
+        paper = page.text_box
+    else:
+        left = page.text_left if page.text_left is not None else int(width * _MARGIN_LEFT)
+        right = width - int(width * _MARGIN_RIGHT)
+        top = page.first_line_y if page.first_line_y is not None else int(height * _MARGIN_TOP)
+        bottom = height - int(height * _MARGIN_BOTTOM)
+        paper = (left, top, right, bottom)
+    box = _intersect_boxes(paper, _rotation_safe_box(width, height, max_angle))
+    if extra_inset <= 0:
+        return box
+    inset_x = max(8, int((box[2] - box[0]) * extra_inset))
+    left, top, right, bottom = box
+    left += inset_x
+    right -= inset_x
+    if right - left < 80:
+        return box
+    return left, top, right, bottom
 
 
 def _open_template(path: Path | None, variant: int) -> TemplatePage:
@@ -869,13 +1033,37 @@ def _inscribed_crop_size(width: int, height: int, angle_deg: float) -> tuple[int
     return max(1, int(crop_w)), max(1, int(crop_h))
 
 
-def _rotate_and_crop(image: Image.Image, angle: float) -> Image.Image:
-    """Rotate the finished card and crop out empty corner wedges."""
+def _sample_page_fill(image: Image.Image) -> tuple[int, int, int]:
+    """Pick a light paper-like color so rotated corners do not go black."""
     rgb = image.convert("RGB")
-    rotated = rgb.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False)
-    crop_w, crop_h = _inscribed_crop_size(rgb.width, rgb.height, angle)
-    crop_w = min(crop_w, rotated.width)
-    crop_h = min(crop_h, rotated.height)
+    width, height = rgb.size
+    xs = (max(0, width // 2), max(0, width // 3), min(width - 1, (2 * width) // 3))
+    ys = (max(0, height // 6), max(0, height // 4), max(0, height // 3))
+    samples = [rgb.getpixel((x, y)) for y in ys for x in xs]
+    samples.sort(key=lambda pixel: pixel[0] + pixel[1] + pixel[2], reverse=True)
+    best = samples[:3] or [(247, 241, 228)]
+    return (
+        sum(pixel[0] for pixel in best) // len(best),
+        sum(pixel[1] for pixel in best) // len(best),
+        sum(pixel[2] for pixel in best) // len(best),
+    )
+
+
+def _rotate_and_crop(image: Image.Image, angle: float) -> Image.Image:
+    """Tilt the card, then zoom-crop so side bars never remain."""
+    rgb = image.convert("RGB")
+    fill = _sample_page_fill(rgb)
+    rotated = rgb.rotate(
+        angle,
+        resample=Image.Resampling.BICUBIC,
+        expand=False,
+        fillcolor=fill,
+    )
+    if abs(angle) < 0.01:
+        return rotated
+    ins_w, ins_h = _inscribed_crop_size(rgb.width, rgb.height, angle)
+    crop_w = min(max(1, ins_w), rotated.width)
+    crop_h = min(max(1, ins_h), rotated.height)
     left = max(0, (rotated.width - crop_w) // 2)
     top = max(0, (rotated.height - crop_h) // 2)
     return rotated.crop((left, top, left + crop_w, top + crop_h))
@@ -917,9 +1105,9 @@ class ImageTextsRenderEngine:
     template_mode:
         ``random`` (default) or ``cycle``.
     rotate_text:
-        Rotate the finished card by a random angle from
-        ``(-20, -15, -10, -5, 0, 5, 10, 15, 20)`` (0° is allowed), then crop
-        empty corners and fit ``output_size``.
+        Rotate the finished card by a random angle (0° allowed), then
+        zoom-crop empty corners and fit ``output_size``. Short quotes use
+        up to ±20°; long quotes cap at ±15°.
     output_size:
         Final card size. Defaults to ``OUTPUT_SIZE`` (1080×1350).
     seed:
@@ -1051,23 +1239,23 @@ class ImageTextsRenderEngine:
         page = _open_template(template_path, variant=index)
         canvas = page.image
         width, height = canvas.size
+        big_quote = _is_big_quote(raw_text)
+        max_tilt = 15.0 if big_quote else 20.0
         layout_scale = width / _LAYOUT_REF_WIDTH
-        fitted_font_size = max(_MIN_FONT_SIZE, int(round(font_size * layout_scale)))
+        fitted_font_size = max(_MIN_READABLE_SIZE, int(round(font_size * layout_scale)))
         fitted_font_size = max(
-            _MIN_FONT_SIZE,
+            _MIN_READABLE_SIZE,
             int(round(fitted_font_size * _length_font_scale(raw_text))),
         )
-        if page.text_box is not None:
-            left, top, box_right, box_bottom = page.text_box
-            max_width = max(80, box_right - left)
-            max_height = max(80, box_bottom - top)
-        else:
-            left = page.text_left if page.text_left is not None else int(width * _MARGIN_LEFT)
-            right = int(width * _MARGIN_RIGHT)
-            top = page.first_line_y if page.first_line_y is not None else int(height * _MARGIN_TOP)
-            bottom = int(height * _MARGIN_BOTTOM)
-            max_width = max(80, width - left - right)
-            max_height = max(80, height - top - bottom)
+        left, top, box_right, box_bottom = _text_box_for_page(
+            page,
+            width,
+            height,
+            max_angle=max_tilt,
+            extra_inset=_BIG_QUOTE_SIDE_INSET if big_quote else 0.0,
+        )
+        max_width = max(80, box_right - left)
+        max_height = max(80, box_bottom - top)
         height_ratio = self.line_height_ratio
         if page.pitch:
             # Prefer double-ruled spacing (matches the source notebook photos),
@@ -1078,12 +1266,18 @@ class ImageTextsRenderEngine:
 
         probe_font = _load_font(assets.font_path, fitted_font_size)
         quote = _sanitize_quote_text(raw_text, probe_font)
+        sig_reserve = max(22, int(round(fitted_font_size * 0.58))) + max(
+            18, int(round(fitted_font_size * height_ratio * 0.50))
+        )
+        quote_height = max(80, max_height - sig_reserve)
+        if big_quote:
+            quote_height = max(80, min(quote_height, int(max_height * _BIG_QUOTE_HEIGHT_FILL)))
         font, lines, used_size, line_height = _fit_wrapped_text(
             quote,
             assets.font_path,
             fitted_font_size,
             max_width,
-            max_height,
+            quote_height,
             height_ratio,
         )
         if page.pitch:
@@ -1093,10 +1287,10 @@ class ImageTextsRenderEngine:
         sig_size = max(_MIN_FONT_SIZE, int(round(used_size * 0.58)))
         sig_font = _load_font(assets.font_path, sig_size)
         sig_w, sig_h = _measure_text(sig_font, signature)
-        sig_gap = max(4, int(line_height * 0.12))
+        sig_gap = max(18, int(line_height * 0.50))
         total_h = block_h + sig_gap + sig_h
         origin_y = (height - total_h) // 2
-        origin_x = (width - max_width) // 2
+        origin_x = left
         origin_y = min(max(origin_y, top), top + max(0, max_height - total_h))
         origin_x = min(max(origin_x, left), left + max(0, max_width - 80))
         text_layer = _draw_text_layer(
@@ -1110,7 +1304,17 @@ class ImageTextsRenderEngine:
             align="center",
             box_width=max_width,
         )
-        sig_x = origin_x + max(0, (max_width - sig_w) // 2) - max(28, int(used_size * 1.15))
+        heart_size = max(16, int(line_height * 0.55))
+        line_rights = [
+            origin_x + (max_width + _line_pixel_width(line, font, heart_size)) // 2
+            for line in lines
+            if line
+        ]
+        block_right = max(line_rights) if line_rights else origin_x + max_width
+        # Slightly right of the quote, like a short handwritten sign-off.
+        sig_x = block_right - sig_w + max(14, int(used_size * 0.34))
+        sig_x = min(max(sig_x, origin_x), box_right - sig_w)
+        sig_x = max(left, min(sig_x, width - sig_w - 8))
         sig_y = origin_y + block_h + sig_gap
         ImageDraw.Draw(text_layer).text((sig_x, sig_y), signature, font=sig_font, fill=(*text_color, 255))
         text_layer = _apply_opacity(text_layer, _TEXT_OPACITY)
@@ -1118,7 +1322,8 @@ class ImageTextsRenderEngine:
         composed = Image.alpha_composite(canvas.convert("RGBA"), text_layer)
         finished = composed.convert("RGB")
         if self.rotate_text:
-            angle = float(self._rng.choice(_ROTATION_CHOICES))
+            choices = _rotation_choices_for_quote(quote, len(lines))
+            angle = float(self._rng.choice(choices))
             if abs(angle) > 0.01:
                 finished = _rotate_and_crop(finished, angle)
         finished = _cover_resize(finished, self.output_size)
