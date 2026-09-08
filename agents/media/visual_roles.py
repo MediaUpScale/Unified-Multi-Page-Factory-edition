@@ -224,20 +224,17 @@ _MEI_PHILOSOPHY_ATMOSPHERE: tuple[tuple[str, str], ...] = (
 
 _FALLBACK_PENULTIMATE: str = (
     "===VARIATION_A===\n"
-    "Cyberpunk dystopian Earth, attention monopoly era: Wide cinematic night shot of a "
-    "fully clothed shinobi-samurai in black ninja garb tearing himself free. Thick glowing "
-    "fiber-optic matrix wires and rusted iron shackles are locked around his wrists, "
-    "ankles, and torso, binding him to the attention-monopoly slavery system. He rips the "
-    "cables from the manacles; severed neon umbilicals spray sparks. Far in the background "
-    "Master Mei observes from a distant ridge: snow-white topknot, extra-long white "
-    "eyebrows, mid-chest beard, white robe, black gold vest, mala beads.\n"
+    "Cyberpunk dystopian Earth, attention monopoly era: Wide cinematic shot of a fully "
+    "clothed ninja-warrior doing one-handed push-ups in freezing rain on cracked ashen "
+    "ground. Devastated earth of rusted mega-gears and broken clockwork. He does not stop. "
+    "Far in the background Master Mei watches the rigorous training: snow-white topknot, "
+    "extra-long white eyebrows, mid-chest beard, white robe, black gold vest, mala beads.\n"
     "===VARIATION_B===\n"
-    "Cyberpunk dystopian Earth, attention monopoly era: Extreme wide night shot of a "
-    "fully clothed shinobi-samurai holding a rigid horse-stance kata. Freshly severed "
-    "glowing matrix wires and snapped iron chains still hang from his wrists and belt. "
-    "Other ninja trainees drill in formation. Far away on a high cliff, tiny in frame, "
-    "Master Mei watches the rigorous training: snow-white topknot, extra-long white "
-    "eyebrows, mid-chest beard, white robe, black gold-embroidered vest, mala beads."
+    "Cyberpunk dystopian Earth, attention monopoly era: Extreme wide shot of a fully "
+    "clothed ninja-warrior balancing on one foot atop a giant rusted gear in a frozen "
+    "wasteland. Icy wind, devastated earth of broken cogs. He does not stop. Far away "
+    "Master Mei observes the balance drill: snow-white topknot, extra-long white "
+    "eyebrows, mid-chest beard, white robe, black gold vest, mala beads."
 )
 _FALLBACK_SCENE_03: str = (
     "Cyberpunk dystopian Earth, attention monopoly era: Dark cinematic shot of two "
@@ -295,7 +292,7 @@ def _load_prompt_file(path: Path, fallback: str) -> str:
     return fallback
 
 
-_VARIATION_SPLIT_RE = re.compile(r"(?m)^===VARIATION_[AB]===\s*$")
+_VARIATION_SPLIT_RE = re.compile(r"(?m)^===VARIATION_[A-F]===\s*$")
 
 
 def _parse_prompt_variations(raw: str) -> list[str]:
@@ -595,6 +592,7 @@ PENULTIMATE_LIBERATION_NEGATIVE: str = (
     "text, watermark, typography, close-up, cropped head, face zoom, subtitles, "
     "UI elements, video game HUD, cartoon, anime, glossy CGI superhero, "
     "shirtless, bare chest, bare torso, muscular gym body, bodybuilder, "
+    "breaking a chain, kneeling chain snap, decorative chain pose, "
     "incubation pod smash, glass capsule hero, liquid vat escape, "
     "single monk portrait, idle pose, looking at viewer, bright daylight, "
     f"{GLOBAL_FIREARM_BAN}"
@@ -1056,12 +1054,15 @@ def validate_mei_visual_prompt(
 
     if idx == n - 2 or beat == BEAT_BREAKFREE:
         pen = _load_penultimate_prompt(seed=_qa_seed)
-        need = ("samurai", "ninja", "shinobi", "chain", "wire", "shackle", "wrist")
-        bound = bool(re.search(r"(?i)wrist|ankle|torso|shackle|manacle|umbilical", repaired))
+        need = ("ninja", "warrior", "gear", "wasteland", "train")
+        drill = bool(re.search(
+            r"(?i)push-?up|horse stance|balance|knuckle|one-hand|one-arm|sprint|does not stop",
+            repaired,
+        ))
         shirtless = bool(re.search(r"(?i)shirtless|bare[- ]chest|bare[- ]torso|muscular warrior", repaired))
-        if sum(1 for k in need if k in repaired.lower()) < 2 or not bound or shirtless:
+        if sum(1 for k in need if k in repaired.lower()) < 2 or not drill or shirtless:
             violations.append(
-                "PENULTIMATE: missing body-bound wire/chain liberation — replacing with FLUX RAG prompt"
+                "PENULTIMATE: missing harsh wasteland gear-training — replacing with FLUX RAG prompt"
             )
             repaired = pen
 

@@ -23,7 +23,7 @@
       "assault rifle"
     ],
     "mandatory_elements": [
-      "8–10 FRAME LORE (90–120s): F1 Master Mei identity lock + unique pose/camera/env (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate shinobi-samurai breaking system chains, Mei watching training (RAG override); final Master Mei base anchor + temple eyes-on-camera",
+      "8–10 FRAME LORE (90–120s): F1 Master Mei identity lock + unique pose/camera/env (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate ninja-warrior harsh drill on devastated geared earth (RAG override); final Master Mei base anchor + temple eyes-on-camera",
       "Master Mei DNA: snow-white topknot + two long white chest locks, extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white beard + flowing mustache, white inner robe + black vest gold lapels + mala beads",
       "Mei environments: ~70% high-altitude nature (cliffs/ridges/sea of clouds), ~30% open-air mountain shrines; templates are references — match script philosophy",
       "FLUX dystopia: 120–180 words, mandatory prefix 'Cyberpunk dystopian Earth, attention monopoly era:', no tag spam",
@@ -38,7 +38,7 @@
       "training": "Master Mei instructing martial monks carrying stone blocks in harsh cold rain — high physical intensity",
       "system": "Scene 3 RAG: pale agonizing human slaves, cybernetic goggles, wires in skin",
       "maya": "Biomechanical Maya goddess/entity holding glowing digital chains around human necks",
-      "focus": "Penultimate RAG: ninja/samurai breaking system chains, Mei observing training",
+      "focus": "Penultimate RAG: ninja-warrior harsh training on geared wasteland, Mei observing",
       "outro": "Master Mei base anchor on mountain ridge / open-air shrine, eyes locked on camera"
     },
     "script_rules": {

@@ -34,6 +34,7 @@ def main() -> int:
         SCENE_FINAL_HOOK_PROMPT,
         SCENE_01_HOOK_PROMPT,
         PENULTIMATE_LIBERATION_PROMPT,
+        _load_penultimate_prompt,
         build_role_prompt,
         compute_mei_act_durations,
         frame_lore_for_acts,
@@ -104,12 +105,15 @@ def main() -> int:
     from agents.media.visual_roles import SCENE_08_UNPLUG_ESCAPE_PROMPT
     if "samurai" not in SCENE_08_UNPLUG_ESCAPE_PROMPT.lower() or "katana" not in SCENE_08_UNPLUG_ESCAPE_PROMPT.lower():
         fails.append("Scene 8 missing samurai matrix-slice details")
-    if "samurai" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "ninja" not in PENULTIMATE_LIBERATION_PROMPT.lower():
-        fails.append("Penultimate prompt missing ninja/samurai aesthetic")
-    if "chain" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "wire" not in PENULTIMATE_LIBERATION_PROMPT.lower():
-        fails.append("Penultimate prompt missing body-bound wires/chains")
-    if "wrist" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "shackle" not in PENULTIMATE_LIBERATION_PROMPT.lower():
-        fails.append("Penultimate prompt missing shackles on the body")
+    if "ninja" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "warrior" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("Penultimate prompt missing ninja-warrior")
+    if "gear" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("Penultimate prompt missing devastated gears")
+    if not re.search(r"(?i)push-?up|balance|horse stance|train", PENULTIMATE_LIBERATION_PROMPT):
+        fails.append("Penultimate prompt missing a rigorous training drill")
+    pen_drills = {_load_penultimate_prompt(seed=f"drill-{i}") for i in range(18)}
+    if len(pen_drills) < 3:
+        fails.append(f"Penultimate drills not rotating: {len(pen_drills)} unique prompts")
     if re.search(r"(?i)shirtless|bare[- ]chest|muscular warrior", PENULTIMATE_LIBERATION_PROMPT):
         fails.append("Penultimate still describes a shirtless strongman")
     if "firearm" not in GLOBAL_FIREARM_BAN.lower():
@@ -225,12 +229,12 @@ def main() -> int:
         fails.append("Scene 8 still contains graphite")
 
     pos_pen, _ = build_role_prompt(role="disciple", beat="break_free", act_index=8, subject="test")
-    if "samurai" not in pos_pen.lower() and "ninja" not in pos_pen.lower() and "shinobi" not in pos_pen.lower():
-        fails.append("Penultimate build_role_prompt missing ninja/samurai")
-    if "chain" not in pos_pen.lower() and "wire" not in pos_pen.lower():
-        fails.append("Penultimate build_role_prompt missing body-bound wires/chains")
-    if "wrist" not in pos_pen.lower() and "shackle" not in pos_pen.lower():
-        fails.append("Penultimate build_role_prompt missing shackles on the body")
+    if "ninja" not in pos_pen.lower() and "warrior" not in pos_pen.lower():
+        fails.append("Penultimate build_role_prompt missing ninja-warrior")
+    if "gear" not in pos_pen.lower():
+        fails.append("Penultimate build_role_prompt missing gears")
+    if not re.search(r"(?i)push-?up|balance|horse stance|train", pos_pen):
+        fails.append("Penultimate build_role_prompt missing a rigorous drill")
     if "mei" not in pos_pen.lower():
         fails.append("Penultimate missing distant Master Mei observer")
     if re.search(r"(?i)shirtless|bare[- ]chest|muscular warrior", pos_pen):

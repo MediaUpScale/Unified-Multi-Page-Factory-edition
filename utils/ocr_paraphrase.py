@@ -24,6 +24,19 @@ from typing import Any, Mapping
 
 from dotenv import load_dotenv
 
+_ENGINE_ROOT: Path = Path(__file__).resolve().parents[1]
+if str(_ENGINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ENGINE_ROOT))
+
+from utils.gemini_usage import (
+    GeminiUsage,
+    extract_usage,
+    hush_gemini_sdk_logs,
+    log_usage,
+    unwrap_json_object,
+)
+from utils.ocr_text import strip_wrapping_quotes
+
 # ---------------------------------------------------------------------------
 # Keywords removed from every quote before / after paraphrase
 # ---------------------------------------------------------------------------
@@ -48,7 +61,6 @@ FACTORY_ROOT: Path = Path(
 DEFAULT_VAULT: Path = FACTORY_ROOT / "assets" / "ocr_vault.json"
 DEFAULT_OUTPUT_NAME: str = "ocr_vault_original.json"
 
-_ENGINE_ROOT: Path = Path(__file__).resolve().parents[1]
 _FENCE_RE = re.compile(
     r"^```(?:[a-zA-Z0-9_-]+)?\r?\n(.*)\r?\n```\s*$",
     re.DOTALL,
@@ -87,7 +99,7 @@ def strip_keywords(text: str, keywords: tuple[str, ...] = REMOVE_KEYWORDS) -> st
         cleaned = re.sub(re.escape(keyword), "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
+    return strip_wrapping_quotes(cleaned)
 
 
 def _word_list(text: str) -> list[str]:
@@ -142,7 +154,7 @@ def _response_text(response: Any) -> str:
     return "\n".join(chunks).strip()
 
 
-def _paraphrase_chunk(client: Any, types: Any, items: Mapping[str, str]) -> dict[str, str]:
+def _paraphrase_all(client: Any, types: Any, items: Mapping[str, str]) -> tuple[dict[str, str], GeminiUsage]:
     instruction = (
         "You lightly paraphrase short notebook quotes for a parenting social channel.\n"
         f"For each value, change at most {int(MAX_WORD_CHANGE_RATIO * 100)}% of the words.\n"
@@ -153,12 +165,15 @@ def _paraphrase_chunk(client: Any, types: Any, items: Mapping[str, str]) -> dict
     config_kwargs: dict[str, Any] = {
         "system_instruction": instruction,
         "temperature": 0.4,
-        "max_output_tokens": 4096,
+        "max_output_tokens": 32768,
         "response_mime_type": "application/json",
     }
     thinking = getattr(types, "ThinkingConfig", None)
     if thinking is not None:
         config_kwargs["thinking_config"] = thinking(thinking_budget=0)
+    afc = getattr(types, "AutomaticFunctionCallingConfig", None)
+    if afc is not None:
+        config_kwargs["automatic_function_calling"] = afc(disable=True)
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=json.dumps(items, ensure_ascii=False),
@@ -167,24 +182,21 @@ def _paraphrase_chunk(client: Any, types: Any, items: Mapping[str, str]) -> dict
     text = _response_text(response)
     if not text:
         raise RuntimeError("Gemini returned an empty paraphrase payload")
-    parsed = _unwrap_json(text)
-    if not isinstance(parsed, dict):
-        raise RuntimeError("Gemini paraphrase payload must be a JSON object")
-    return {str(key): str(value) for key, value in parsed.items()}
+    parsed = unwrap_json_object(text)
+    rewritten = {str(key): str(value) for key, value in parsed.items()}
+    return rewritten, extract_usage(response)
 
 
-def _paraphrase_batch(items: Mapping[str, str], chunk_size: int = 6) -> dict[str, str]:
+def _paraphrase_batch(items: Mapping[str, str]) -> tuple[dict[str, str], GeminiUsage]:
+    """One Gemini call for the whole vault. No per-quote or chunked requests."""
     from google import genai
     from google.genai import types
 
+    if not items:
+        return {}, GeminiUsage()
     client = genai.Client(api_key=_api_key())
-    keys = list(items.keys())
-    merged: dict[str, str] = {}
-    for start in range(0, len(keys), chunk_size):
-        chunk_keys = keys[start : start + chunk_size]
-        chunk = {key: items[key] for key in chunk_keys}
-        merged.update(_paraphrase_chunk(client, types, chunk))
-    return merged
+    logger.info("OCR paraphrase | %d quote(s) | 1 Gemini call", len(items))
+    return _paraphrase_all(client, types, items)
 
 
 def paraphrase_vault(
@@ -222,12 +234,14 @@ def paraphrase_vault(
             locations.append((key, str(item_key)))
 
     rewritten = dict(quotes)
+    usage = GeminiUsage()
     if quotes:
         try:
-            batch = _paraphrase_batch(quotes)
+            batch, usage = _paraphrase_batch(quotes)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("OCR paraphrase | Gemini batch failed (%s); keeping keyword-stripped text", exc)
+            logger.warning("OCR paraphrase | Gemini failed (%s); keeping keyword-stripped text", exc)
             batch = {}
+        reverted = 0
         for composite, cleaned in quotes.items():
             candidate = strip_keywords(str(batch.get(composite) or cleaned))
             if not candidate:
@@ -235,14 +249,12 @@ def paraphrase_vault(
                 continue
             ratio = word_change_ratio(cleaned, candidate)
             if ratio > MAX_WORD_CHANGE_RATIO + 0.05:
-                logger.info(
-                    "OCR paraphrase | revert %s (changed %.0f%% > 20%%)",
-                    composite,
-                    ratio * 100,
-                )
                 rewritten[composite] = cleaned
+                reverted += 1
             else:
                 rewritten[composite] = candidate
+        if reverted:
+            logger.info("OCR paraphrase | kept original on %d quote(s) over 20%% change", reverted)
 
     for dataset_name, item_key in locations:
         dataset = vault[dataset_name]
@@ -257,17 +269,19 @@ def paraphrase_vault(
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(vault, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    logger.info("OCR paraphrase | wrote %s (%d quote(s))", dest, len(locations))
+    logger.info("OCR paraphrase | wrote %s (%d quote(s))", dest.name, len(locations))
+    if usage.input_tokens or usage.output_tokens:
+        log_usage("OCR paraphrase", usage)
     return dest
 
 
 def _configure_logging() -> None:
-    if logging.getLogger().handlers:
-        return
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(message)s",
+        )
+    hush_gemini_sdk_logs()
 
 
 def main(argv: list[str] | None = None) -> int:

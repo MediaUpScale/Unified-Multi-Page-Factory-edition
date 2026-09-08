@@ -42,7 +42,7 @@ SCENE LOCKS (FLUX RAG TEMPLATES):
 - Scene 3: Post-apocalyptic Matrix slaves — load scene_03_biomechanical_slaves.txt
 - Scene 7: Computing apparatus captive — load scene_07_human_cyborg_closeup.txt
 - Scene 8: Samurai slicing matrix illusion — load scene_08_unplug_escape.txt
-- Penultimate (N-1): Shinobi-samurai breaks system chains, ninja aesthetic, Mei watches training — load penultimate_frame.txt
+- Penultimate (N-1): Ninja-warrior in a unique harsh drill (push-ups, balance, stance) on devastated geared earth, adverse weather, Mei watches — load penultimate_frame.txt
 - Final Hook: Master Mei snow-white DNA + dynamic outdoor authority — load/compose scene_final
 
 OUTPUT LAYOUT:

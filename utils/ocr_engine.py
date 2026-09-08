@@ -2,8 +2,8 @@
 """Gemini 2.5 Flash OCR engine with incremental vault caching.
 
 Standalone, production-oriented module. Running this file as a script OCRs every
-image under ``TARGET_FOLDER`` and upserts results into ``ocr_vault.json`` under
-the ``ocr_momma_deploy`` dataset key.
+image under ``TARGET_FOLDER`` in one Gemini call (max 100 images) and upserts
+results into ``ocr_vault.json`` under the ``ocr_momma_deploy`` dataset key.
 
 Typical usage::
 
@@ -17,7 +17,6 @@ Typical usage::
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import mimetypes
@@ -25,6 +24,7 @@ import os
 import random
 import re
 import sys
+import time
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -33,7 +33,19 @@ from typing import Any, Iterable, Mapping, TypedDict
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from tqdm import tqdm
+
+_PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from utils.gemini_usage import (
+    GeminiUsage,
+    extract_usage,
+    hush_gemini_sdk_logs,
+    log_usage,
+    unwrap_json_object,
+)
+from utils.ocr_text import strip_wrapping_quotes
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +85,21 @@ OCR_SYSTEM_PROMPT: str = (
     "the raw transcribed text without markdown code blocks (e.g., no ```text), "
     "commentary, or greetings."
 )
-OCR_USER_PROMPT: str = "Transcribe every visible character in this image. Return raw text only."
+OCR_USER_PROMPT: str = (
+    "OCR every attached image. Return ONLY a JSON object that maps each "
+    "IMAGE_KEY to the exact transcribed text. Preserve line breaks. Use an "
+    "empty string when an image has no readable text."
+)
 
 _MAX_RETRIES: int = 6
 _BACKOFF_BASE_S: float = 1.0
 _BACKOFF_CAP_S: float = 60.0
+_MAX_IMAGES_PER_CALL: int = 100
 _MAX_IMAGE_BYTES: int = 15 * 1024 * 1024
 _FENCE_RE = re.compile(
     r"^```(?:[a-zA-Z0-9_-]+)?\r?\n(.*)\r?\n```\s*$",
     re.DOTALL,
 )
-
-_PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +194,34 @@ def _clean_ocr_text(raw: str) -> str:
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
-    return text
+    return strip_wrapping_quotes(text)
+
+
+def _response_text(response: Any) -> str:
+    direct = (getattr(response, "text", None) or "").strip()
+    if direct:
+        return direct
+    chunks: list[str] = []
+    for candidate in getattr(response, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            piece = getattr(part, "text", None)
+            if piece and not getattr(part, "thought", False):
+                chunks.append(str(piece))
+    return "\n".join(chunks).strip()
+
+
+def _map_ocr_texts(payload: Mapping[str, Any], keys: list[str]) -> dict[str, str]:
+    """Match model JSON keys to vault item keys (exact, then filename)."""
+    raw = {str(key): "" if value is None else str(value) for key, value in payload.items()}
+    mapped: dict[str, str] = {}
+    by_name = {Path(key).name: text for key, text in raw.items()}
+    for key in keys:
+        if key in raw:
+            mapped[key] = raw[key]
+        elif Path(key).name in by_name:
+            mapped[key] = by_name[Path(key).name]
+    return mapped
 
 
 def _exception_status(exc: BaseException) -> tuple[int | None, str]:
@@ -395,19 +437,6 @@ def _persist_dataset(vault_path: Path, vault: dict[str, Any], dataset_key: str, 
     _atomic_write_json(vault_path, vault)
 
 
-def _run_async(coro: Any) -> Any:
-    """Run ``coro`` from sync code, including when an event loop is already active."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    import concurrent.futures
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
-
-
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
@@ -436,20 +465,21 @@ class OCREngine:
         target_folder: str,
         dataset_key: str = DATASET_KEY,
         vault_path: str | None = None,
-        batch_size: int = 5,
+        chunk_size: int = _MAX_IMAGES_PER_CALL,
         force_reprocess: bool = False,
+        batch_size: int | None = None,
     ) -> dict:
-        """OCR every image in ``target_folder`` and upsert into the vault dataset.
+        """OCR every image in ``target_folder`` in one Gemini call per chunk.
 
-        Already-successful items in ``dataset_key`` are skipped unless
-        ``force_reprocess`` is true. Failed items are retried automatically.
-
-        Returns a run summary dict with counts and vault metadata.
+        ``chunk_size`` is the max number of images per API call (default 100).
+        Already-successful items are skipped unless ``force_reprocess`` is true.
         """
         folder = Path(target_folder)
         dest = Path(vault_path) if vault_path else VAULT_PATH
-        if batch_size < 1:
-            raise ValueError("batch_size must be >= 1")
+        per_call = int(batch_size if batch_size is not None else chunk_size)
+        if per_call < 1:
+            raise ValueError("chunk_size must be >= 1")
+        per_call = min(per_call, _MAX_IMAGES_PER_CALL)
 
         images = _discover_images(folder)
         vault = _load_vault(dest)
@@ -465,33 +495,34 @@ class OCREngine:
                 continue
             pending.append((key, image))
 
+        calls = (len(pending) + per_call - 1) // per_call if pending else 0
         logger.info(
-            "OCR | folder=%s | discovered=%d | pending=%d | cached=%d | dataset=%s",
-            folder,
-            len(images),
+            "OCR | %d image(s) | %d Gemini call(s) | cached=%d",
             len(pending),
+            calls,
             skipped,
-            dataset_key,
         )
 
         processed = 0
         failed = 0
+        usage = GeminiUsage()
         if pending:
-            processed, failed = _run_async(
-                self._process_pending(
-                    pending=pending,
-                    items=items,
-                    vault=vault,
-                    dataset=dataset,
-                    dataset_key=dataset_key,
-                    vault_path=dest,
-                    batch_size=batch_size,
-                )
+            processed, failed, usage = self._process_pending(
+                pending=pending,
+                items=items,
+                vault=vault,
+                dataset=dataset,
+                dataset_key=dataset_key,
+                vault_path=dest,
+                chunk_size=per_call,
             )
         else:
             dataset["total_items"] = len(items)
             if images:
                 _persist_dataset(dest, vault, dataset_key, dataset)
+
+        if usage.input_tokens or usage.output_tokens or processed or failed:
+            log_usage(f"OCR | ok={processed} fail={failed}", usage)
 
         summary: ProcessSummary = {
             "dataset_key": dataset_key,
@@ -505,7 +536,7 @@ class OCREngine:
         }
         return dict(summary)
 
-    async def _process_pending(
+    def _process_pending(
         self,
         *,
         pending: list[tuple[str, Path]],
@@ -514,105 +545,93 @@ class OCREngine:
         dataset: OCRDataset,
         dataset_key: str,
         vault_path: Path,
-        batch_size: int,
-    ) -> tuple[int, int]:
-        semaphore = asyncio.Semaphore(batch_size)
-        lock = asyncio.Lock()
+        chunk_size: int,
+    ) -> tuple[int, int, GeminiUsage]:
         processed = 0
         failed = 0
-
-        async def _one(key: str, path: Path) -> None:
-            nonlocal processed, failed
-            async with semaphore:
-                record = await self._ocr_image(path)
-            async with lock:
-                items[key] = record
-                _persist_dataset(vault_path, vault, dataset_key, dataset)
-                if record.get("status") == "success":
+        usage = GeminiUsage()
+        for start in range(0, len(pending), chunk_size):
+            chunk = pending[start : start + chunk_size]
+            texts, chunk_usage = self._ocr_chunk(chunk)
+            usage = usage + chunk_usage
+            stamp = _utc_now_iso()
+            for key, path in chunk:
+                if key in texts:
+                    items[key] = {
+                        "file_path": str(path.resolve()),
+                        "extracted_text": _clean_ocr_text(texts[key]),
+                        "processed_at": stamp,
+                        "status": "success",
+                    }
                     processed += 1
                 else:
+                    items[key] = {
+                        "file_path": str(path.resolve()),
+                        "extracted_text": "",
+                        "processed_at": stamp,
+                        "status": "error",
+                        "error": "missing from Gemini OCR payload",
+                    }
                     failed += 1
+            _persist_dataset(vault_path, vault, dataset_key, dataset)
+        return processed, failed, usage
 
-        tasks = [
-            asyncio.create_task(_one(key, path), name=f"ocr:{key}")
-            for key, path in pending
+    def _ocr_chunk(self, pending: list[tuple[str, Path]]) -> tuple[dict[str, str], GeminiUsage]:
+        keys = [key for key, _path in pending]
+        contents: list[Any] = [
+            OCR_USER_PROMPT + "\nKeys:\n" + "\n".join(keys),
         ]
-        with tqdm(total=len(pending), desc="OCR Gemini 2.5 Flash", unit="img") as bar:
-            for task in asyncio.as_completed(tasks):
-                try:
-                    await task
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("OCR | unexpected worker failure: %s", exc)
-                    failed += 1
-                finally:
-                    bar.update(1)
-        return processed, failed
+        for key, path in pending:
+            data, mime = _read_image_payload(path)
+            contents.append(f"IMAGE_KEY={key}")
+            contents.append(types.Part.from_bytes(data=data, mime_type=mime))
 
-    async def _ocr_image(self, path: Path) -> OCRItem:
-        resolved = str(path.resolve())
-        stamp = _utc_now_iso()
-        try:
-            data, mime = await asyncio.to_thread(_read_image_payload, path)
-            text = await self._generate_ocr_text(data, mime)
-            return {
-                "file_path": resolved,
-                "extracted_text": text,
-                "processed_at": stamp,
-                "status": "success",
-            }
-        except Exception as exc:  # noqa: BLE001
-            logger.error("OCR | failed %s: %s", path.name, exc)
-            return {
-                "file_path": resolved,
-                "extracted_text": "",
-                "processed_at": stamp,
-                "status": "error",
-                "error": str(exc),
-            }
-
-    async def _generate_ocr_text(self, data: bytes, mime: str) -> str:
-        image_part = types.Part.from_bytes(data=data, mime_type=mime)
-        config = types.GenerateContentConfig(
-            system_instruction=OCR_SYSTEM_PROMPT,
-            temperature=0.0,
-            max_output_tokens=8192,
-        )
-        contents = [image_part, OCR_USER_PROMPT]
+        config_kwargs: dict[str, Any] = {
+            "system_instruction": OCR_SYSTEM_PROMPT,
+            "temperature": 0.0,
+            "max_output_tokens": 32768,
+            "response_mime_type": "application/json",
+        }
+        thinking = getattr(types, "ThinkingConfig", None)
+        if thinking is not None:
+            config_kwargs["thinking_config"] = thinking(thinking_budget=0)
+        afc = getattr(types, "AutomaticFunctionCallingConfig", None)
+        if afc is not None:
+            config_kwargs["automatic_function_calling"] = afc(disable=True)
+        config = types.GenerateContentConfig(**config_kwargs)
 
         last_exc: BaseException | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                response = await self._client.aio.models.generate_content(
+                response = self._client.models.generate_content(
                     model=self.model,
                     contents=contents,
                     config=config,
                 )
-                text = _clean_ocr_text(getattr(response, "text", None) or "")
-                return text
+                raw = _response_text(response)
+                if not raw:
+                    raise RuntimeError("Gemini returned an empty OCR payload")
+                mapped = _map_ocr_texts(unwrap_json_object(raw), keys)
+                return mapped, extract_usage(response)
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if not _is_retryable(exc) or attempt >= _MAX_RETRIES - 1:
-                    raise
+                    break
                 wait = _retry_after_seconds(exc, attempt)
-                logger.warning(
-                    "OCR | retryable Gemini error (attempt %d/%d, sleep %.1fs): %s",
-                    attempt + 1,
-                    _MAX_RETRIES,
-                    wait,
-                    exc,
-                )
-                await asyncio.sleep(wait)
+                logger.warning("OCR | retry %d/%d (%.0fs)", attempt + 1, _MAX_RETRIES, wait)
+                time.sleep(wait)
         assert last_exc is not None
-        raise last_exc
+        logger.error("OCR | Gemini call failed: %s", last_exc)
+        return {key: "" for key, _path in pending}, GeminiUsage()
 
 
 def _configure_logging() -> None:
-    if logging.getLogger().handlers:
-        return
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(message)s",
+        )
+    hush_gemini_sdk_logs()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -622,7 +641,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--folder", default=str(TARGET_FOLDER), help="Image source directory")
     parser.add_argument("--dataset", default=DATASET_KEY, help="Vault dataset key")
     parser.add_argument("--vault", default=str(VAULT_PATH), help="ocr_vault.json path")
-    parser.add_argument("--batch-size", type=int, default=5, help="Concurrent Gemini calls")
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=_MAX_IMAGES_PER_CALL,
+        help="Max images per Gemini call (default 100, one call per folder)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--force", action="store_true", help="Re-OCR images already in the vault")
     args = parser.parse_args(argv)
 
@@ -631,17 +661,13 @@ def main(argv: list[str] | None = None) -> int:
         target_folder=args.folder,
         dataset_key=args.dataset,
         vault_path=args.vault,
+        chunk_size=args.chunk_size,
         batch_size=args.batch_size,
         force_reprocess=args.force,
     )
     print(
-        "OCR complete | "
-        f"discovered={summary['discovered']} "
-        f"processed={summary['processed']} "
-        f"skipped={summary['skipped']} "
-        f"failed={summary['failed']} "
-        f"total_items={summary['total_items']} "
-        f"vault={summary['vault_path']}"
+        f"OCR complete | ok={summary['processed']} fail={summary['failed']} "
+        f"cached={summary['skipped']} vault={summary['vault_path']}"
     )
     return 1 if int(summary["failed"]) else 0
 

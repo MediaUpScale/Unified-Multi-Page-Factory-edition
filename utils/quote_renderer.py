@@ -13,7 +13,7 @@ Typical usage::
     paths = engine.generate_image_texts("momma_circle", limit=5)
 
     # or:
-    # python utils/quote_renderer.py --channel momma_circle --dataset ocr_momma_deploy --limit 1
+    # python utils/quote_renderer.py --channel wonder_feed --vault path/to/ocr_vault_original.json
 """
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ _ENGINE_ROOT: Path = Path(__file__).resolve().parents[1]
 if str(_ENGINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENGINE_ROOT))
 
+from utils.ocr_text import strip_wrapping_quotes
 from utils.pipeline_paths import page_outputs_dir
 FACTORY_ROOT: Path = Path(
     r"G:\My Drive\Z sosFiles\Z_act\@ NETWORK"
@@ -49,7 +50,6 @@ FACTORY_ROOT: Path = Path(
     r"\Unified Multi-Page Factory"
 )
 VAULT_PATH: Path = FACTORY_ROOT / "assets" / "ocr_vault.json"
-DEFAULT_DATASET_KEY: str = "ocr_momma_deploy"
 
 IMAGE_TEXTS_DIRNAME: str = "image_texts"
 TEMPLATE_DIRNAME: str = "image_texts_templates"
@@ -63,6 +63,13 @@ IMAGE_EXTENSIONS: frozenset[str] = frozenset({
     ".tiff",
 })
 FONT_EXTENSIONS: frozenset[str] = frozenset({".ttf", ".otf"})
+_CHANNEL_FONTS: dict[str, str] = {
+    "momma_circle": "Fonts/MoreSugar/MoreSugar-Thin.ttf",
+    "wonder_feed": "Fonts/Covered_By_Your_Grace/CoveredByYourGrace-Regular.ttf",
+}
+_CHANNEL_FONTS_BIG: dict[str, str] = {
+    "wonder_feed": "Fonts/Caveat/Caveat-VariableFont_wght.ttf",
+}
 
 # Notebook safe-zone as fractions of canvas size. Leaves room for spiral
 # binding on the left and a bottom footer for the channel logo.
@@ -187,6 +194,38 @@ def _load_vault(vault_path: Path) -> dict[str, Any]:
     return payload
 
 
+def _vault_dataset_keys(vault: Mapping[str, Any]) -> list[str]:
+    return [str(key) for key, value in vault.items() if isinstance(value, Mapping)]
+
+
+def _resolve_dataset_key(
+    vault: Mapping[str, Any],
+    requested: str | None,
+    channel_name: str = "",
+) -> str:
+    """Pick a vault dataset. Channel and dataset are independent.
+
+    If *requested* is set, that key is required. Otherwise prefer
+    ``ocr_<channel>`` when present, or the only dataset in the file.
+    """
+    keys = _vault_dataset_keys(vault)
+    available = ", ".join(keys) or "(none)"
+    if requested and str(requested).strip():
+        key = str(requested).strip()
+        if key in vault and isinstance(vault[key], Mapping):
+            return key
+        raise KeyError(f"Dataset '{key}' not in vault. Available: {available}")
+    slug = (channel_name or "").strip()
+    preferred = f"ocr_{slug}" if slug else ""
+    if preferred and preferred in keys:
+        return preferred
+    if len(keys) == 1:
+        return keys[0]
+    raise KeyError(
+        f"Vault has multiple datasets ({available}). Pass --dataset to choose one."
+    )
+
+
 def _coerce_items(raw: Any) -> dict[str, dict[str, Any]]:
     if isinstance(raw, Mapping):
         items: dict[str, dict[str, Any]] = {}
@@ -266,7 +305,7 @@ def _sanitize_quote_text(
     text: str,
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
 ) -> str:
-    cleaned = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    cleaned = strip_wrapping_quotes((text or "").replace("\r\n", "\n").replace("\r", "\n"))
     out: list[str] = []
     for char in cleaned:
         if char in _HEART_CHARS:
@@ -502,6 +541,58 @@ def _discover_templates_dir(channel_dir: Path, image_texts_dir: Path) -> Path:
     return sibling
 
 
+def _page_config_attr(slug: str, name: str) -> Any | None:
+    try:
+        module = importlib.import_module(f"channels_config.{slug}.page_config")
+    except Exception:  # noqa: BLE001
+        return None
+    value = getattr(module, name, None)
+    if value is None or not str(value).strip():
+        return None
+    return value
+
+
+def _resolve_named_font(relative: str, factory_roots: Sequence[Path]) -> Path | None:
+    rel = Path(str(relative).strip().replace("\\", "/"))
+    if rel.is_absolute() and rel.is_file():
+        return rel
+    for root in factory_roots:
+        candidate = root / rel
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _channel_font_path(
+    slug: str,
+    factory_roots: Sequence[Path],
+    *,
+    big: bool = False,
+) -> Path | None:
+    if big:
+        configured = _page_config_attr(slug, "IMAGE_TEXTS_FONT_BIG")
+        if configured:
+            found = _resolve_named_font(str(configured), factory_roots)
+            if found is not None:
+                return found
+        mapped_big = _CHANNEL_FONTS_BIG.get(slug)
+        if mapped_big:
+            found = _resolve_named_font(mapped_big, factory_roots)
+            if found is not None:
+                return found
+    configured = _page_config_attr(slug, "IMAGE_TEXTS_FONT")
+    if configured:
+        found = _resolve_named_font(str(configured), factory_roots)
+        if found is not None:
+            return found
+    mapped = _CHANNEL_FONTS.get(slug)
+    if mapped:
+        found = _resolve_named_font(mapped, factory_roots)
+        if found is not None:
+            return found
+    return None
+
+
 def _factory_font_fallbacks(factory_roots: Sequence[Path]) -> list[Path]:
     relative = (
         Path("Fonts") / "MoreSugar" / "MoreSugar-Thin.ttf",
@@ -570,30 +661,30 @@ def resolve_channel_assets(
     templates_dir = _discover_templates_dir(channel_dir, image_texts_dir)
     templates = tuple(_list_images(templates_dir))
 
-    font_path: Path | None = None
-    channel_fonts = [
-        path
-        for path in (*_list_fonts(image_texts_dir), *_list_fonts(channel_dir))
-        if TEMPLATE_DIRNAME not in path.parts
-    ]
-    # Prefer a font sitting directly in image_texts/, then any other channel font.
-    channel_fonts.sort(key=lambda path: (0 if path.parent == image_texts_dir else 1, path.name.lower()))
-    if channel_fonts:
-        font_path = channel_fonts[0]
-    else:
+    font_path: Path | None = _channel_font_path(slug, roots)
+    if font_path is None:
+        channel_fonts = [
+            path
+            for path in (*_list_fonts(image_texts_dir), *_list_fonts(channel_dir))
+            if TEMPLATE_DIRNAME not in path.parts
+        ]
+        channel_fonts.sort(key=lambda path: (0 if path.parent == image_texts_dir else 1, path.name.lower()))
+        if channel_fonts:
+            font_path = channel_fonts[0]
+    if font_path is None:
         fallbacks = _factory_font_fallbacks(roots)
         if fallbacks:
             font_path = fallbacks[0]
             logger.warning(
-                "IMAGE-TEXTS | no .ttf in %s — falling back to %s",
-                image_texts_dir,
+                "IMAGE-TEXTS | no channel font for %s — falling back to %s",
+                slug,
                 font_path,
             )
         else:
             logger.warning(
-                "IMAGE-TEXTS | no channel or factory font found under %s; "
+                "IMAGE-TEXTS | no channel or factory font found for %s; "
                 "Pillow default bitmap font will be used",
-                image_texts_dir,
+                slug,
             )
 
     logo_candidates = (
@@ -973,14 +1064,14 @@ def _draw_text_layer(
 
 def _channel_display_name(channel_name: str) -> str:
     slug = (channel_name or "").strip()
-    if slug:
-        try:
-            module = importlib.import_module(f"channels_config.{slug}.page_config")
-            label = getattr(module, "PAGE_DISPLAY_NAME", None)
-            if label and str(label).strip():
-                return str(label).strip()
-        except Exception:  # noqa: BLE001
-            pass
+    signature = _page_config_attr(slug, "IMAGE_TEXTS_SIGNATURE")
+    if signature:
+        return str(signature).strip()
+    label = _page_config_attr(slug, "PAGE_DISPLAY_NAME")
+    if label:
+        short = re.split(r"\s+[—–-]\s+", str(label).strip(), maxsplit=1)[0].strip()
+        if short:
+            return short
     return slug.replace("_", " ").title() or "Channel"
 
 
@@ -1145,7 +1236,7 @@ class ImageTextsRenderEngine:
     def generate_image_texts(
         self,
         channel_name: str,
-        dataset_key: str = DEFAULT_DATASET_KEY,
+        dataset_key: str | None = None,
         font_size: int = _DEFAULT_FONT_SIZE,
         text_color: tuple[int, int, int] = (30, 30, 30),
         limit: int | None = None,
@@ -1179,11 +1270,7 @@ class ImageTextsRenderEngine:
             )
 
         vault = _load_vault(self.vault_path)
-        if dataset_key not in vault:
-            available = ", ".join(sorted(str(key) for key in vault.keys())) or "(none)"
-            raise KeyError(
-                f"Dataset '{dataset_key}' not in vault {self.vault_path}. Available: {available}"
-            )
+        dataset_key = _resolve_dataset_key(vault, dataset_key, channel_name)
         dataset = vault[dataset_key]
         if not isinstance(dataset, Mapping):
             raise RuntimeError(f"Vault dataset '{dataset_key}' must be a JSON object")
@@ -1240,6 +1327,15 @@ class ImageTextsRenderEngine:
         canvas = page.image
         width, height = canvas.size
         big_quote = _is_big_quote(raw_text)
+        font_path = assets.font_path
+        if big_quote:
+            alt_font = _channel_font_path(
+                assets.channel_name,
+                _candidate_factory_roots(self.factory_root),
+                big=True,
+            )
+            if alt_font is not None:
+                font_path = alt_font
         max_tilt = 15.0 if big_quote else 20.0
         layout_scale = width / _LAYOUT_REF_WIDTH
         fitted_font_size = max(_MIN_READABLE_SIZE, int(round(font_size * layout_scale)))
@@ -1264,7 +1360,7 @@ class ImageTextsRenderEngine:
             single = page.pitch / max(fitted_font_size, 1)
             height_ratio = double if double >= 1.05 else single
 
-        probe_font = _load_font(assets.font_path, fitted_font_size)
+        probe_font = _load_font(font_path, fitted_font_size)
         quote = _sanitize_quote_text(raw_text, probe_font)
         sig_reserve = max(22, int(round(fitted_font_size * 0.58))) + max(
             18, int(round(fitted_font_size * height_ratio * 0.50))
@@ -1274,7 +1370,7 @@ class ImageTextsRenderEngine:
             quote_height = max(80, min(quote_height, int(max_height * _BIG_QUOTE_HEIGHT_FILL)))
         font, lines, used_size, line_height = _fit_wrapped_text(
             quote,
-            assets.font_path,
+            font_path,
             fitted_font_size,
             max_width,
             quote_height,
@@ -1285,7 +1381,7 @@ class ImageTextsRenderEngine:
         block_h = _block_height(lines, line_height)
         signature = _channel_display_name(assets.channel_name)
         sig_size = max(_MIN_FONT_SIZE, int(round(used_size * 0.58)))
-        sig_font = _load_font(assets.font_path, sig_size)
+        sig_font = _load_font(font_path, sig_size)
         sig_w, sig_h = _measure_text(sig_font, signature)
         sig_gap = max(18, int(line_height * 0.50))
         total_h = block_h + sig_gap + sig_h
@@ -1333,7 +1429,7 @@ class ImageTextsRenderEngine:
         logger.debug(
             "IMAGE-TEXTS | %s font=%s size=%d lines=%d template=%s",
             dest.name,
-            assets.font_path.name if assets.font_path else "default",
+            font_path.name if font_path else "default",
             used_size,
             len(lines),
             template_path.name if template_path else "generated",
@@ -1358,8 +1454,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Render IMAGE-TEXTS quote cards from ocr_vault.json",
     )
-    parser.add_argument("--channel", required=True, help="Channel slug (e.g. ancient_knowledge)")
-    parser.add_argument("--dataset", default=DEFAULT_DATASET_KEY, help="Vault dataset key")
+    parser.add_argument("--channel", required=True, help="Channel slug (e.g. wonder_feed)")
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Optional vault dataset key. Default: ocr_<channel> if present, else the only dataset in the vault",
+    )
     parser.add_argument("--vault", default=str(VAULT_PATH), help="ocr_vault.json path")
     parser.add_argument("--limit", type=int, default=None, help="Max items to render")
     parser.add_argument("--font-size", type=int, default=_DEFAULT_FONT_SIZE, help="Starting type size")

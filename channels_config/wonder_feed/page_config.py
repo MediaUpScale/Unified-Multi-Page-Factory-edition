@@ -9,6 +9,9 @@ Niche: emotional resilience, attachment theory, relationship psychology, inner c
 from __future__ import annotations
 
 PAGE_DISPLAY_NAME = "Wonder Feed — Emotional Intelligence & Relationships"
+IMAGE_TEXTS_SIGNATURE = "Wonder Feed"
+IMAGE_TEXTS_FONT = "Fonts/Covered_By_Your_Grace/CoveredByYourGrace-Regular.ttf"
+IMAGE_TEXTS_FONT_BIG = "Fonts/Caveat/Caveat-VariableFont_wght.ttf"
 
 DEBUG_MODE: bool = False   # Set True only for local dev; keeps console output clean in production
 

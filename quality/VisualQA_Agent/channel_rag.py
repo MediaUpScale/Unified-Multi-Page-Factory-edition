@@ -70,7 +70,7 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
             "8–10 FRAME LORE (90–120s): F1 Master Mei identity lock + unique pose/camera/env (≤8s); "
             "F3 agonizing human slaves / cybernetic implants (RAG override); "
             "F7 extreme close-up human cyborg (9–10 frame lore); "
-            "penultimate shinobi-samurai breaking system chains, Mei watching training (RAG override); "
+            "penultimate ninja-warrior harsh drill on devastated geared earth (RAG override); "
             "final Master Mei base anchor + temple eyes-on-camera",
             "Master Mei DNA: snow-white topknot + two long white chest locks, "
             "extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white "
@@ -110,8 +110,9 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
                 "crude brass cybernetic visors, temple wires, dramatic cinematic lighting"
             ),
             "penultimate_pods": (
-                "RAG OVERRIDE penultimate: shinobi-samurai in full ninja garb breaking "
-                "iron-and-neon system chains; Master Mei watches the rigorous training from afar"
+                "RAG OVERRIDE penultimate: ninja-warrior in a unique harsh drill "
+                "(one-handed push-ups, balance, horse stance) on devastated earth of mega-gears, "
+                "adverse weather; Master Mei watches from afar"
             ),
             "10_outro": (
                 "Master Mei base anchor on mountain ridge / open-air shrine, "
@@ -134,7 +135,7 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
                 "chains around human necks"
             ),
             "focus": (
-                "Penultimate RAG: ninja/samurai breaking system chains, Mei observing training"
+                "Penultimate RAG: ninja-warrior harsh training on geared wasteland, Mei observing"
             ),
             "outro": (
                 "Master Mei base anchor on mountain ridge / open-air shrine, "
