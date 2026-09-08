@@ -48,6 +48,9 @@ def test_theme_compose_prompt_is_duration_aware() -> None:
     assert "Each line has 3.0s" in instruction
     assert "exactly 15 spoken lines for 45s" in user
     assert "TARGETS 7 words" in user
+    assert "HOOK LINE (beat 1)" in instruction
+    assert "HOOK LINE (beat 1)" in user
+    assert "under ~7 words" in instruction
     assert "Only three writing priorities" in instruction
     assert "ANCHOR OBJECT" not in user
     assert "ASSIGNED PATTERN" not in user
@@ -64,6 +67,8 @@ def test_quote_brief_requires_four_part_parable_arc() -> None:
     assert brief.mode == "quote"
     assert "PARABLE ARC" in block
     assert "workable equilibrium" in block
+    assert "HOOK LINE (beat 1)" in block
+    assert "under ~7 words" in block
 
 
 def test_paraphrase_bank_and_brief() -> None:
@@ -76,6 +81,8 @@ def test_paraphrase_bank_and_brief() -> None:
     assert brief.mode == "paraphrase"
     assert brief.meta["aphorism_id"] == "more_tears_than_smiles"
     assert "20–30%" in brief.assignment_block()
+    assert "HOOK LINE (beat 1)" in brief.assignment_block()
+    assert "protected anaphora" in brief.assignment_block()
     assert "ANAPHORA" in brief.assignment_block()
     assert "do not merge or split those sentences" in brief.assignment_block()
     assert bank_path() == (
@@ -410,6 +417,69 @@ def test_critic_model_remaps_retired_flash_lite() -> None:
     assert "2.5-flash-lite" not in GEMINI_CRITIC_MODEL
     assert resolve_critic_model("models/gemini-2.5-flash-lite") == CURRENT_CRITIC_MODEL
     assert resolve_critic_model("gemini-2.5-flash-lite") == CURRENT_CRITIC_MODEL
+
+
+def test_deepinfra_flux2_backend_and_cost() -> None:
+    import os
+
+    from agents.media.providers.together_image import (
+        DEEPINFRA_FLUX2_DEV_MODEL,
+        estimate_deepinfra_flux2_cost_usd,
+    )
+
+    usd = estimate_deepinfra_flux2_cost_usd(720, 1280, 28)
+    assert abs(usd - 0.008789) < 0.00001
+    from agents.media.providers.together_image import _is_flux2_dev_model
+
+    assert _is_flux2_dev_model("black-forest-labs/FLUX-2-dev")
+    assert _is_flux2_dev_model("black-forest-labs/FLUX.2-dev")
+    prev = os.environ.get("LOFI_FLUX_BACKEND")
+    os.environ["LOFI_FLUX_BACKEND"] = "flux2-dev"
+    try:
+        assert lofi_cfg.uses_flux2_dev() is True
+        assert lofi_cfg.uses_flux_dev() is True
+        cost, meta = lofi_cfg.lofi_image_cost_per_call_usd()
+        assert meta["backend"] == "flux2-dev"
+        assert meta["provider"] == "deepinfra"
+        assert meta["model"] == DEEPINFRA_FLUX2_DEV_MODEL
+        assert abs(cost - 0.008789) < 0.00001
+    finally:
+        if prev is None:
+            os.environ.pop("LOFI_FLUX_BACKEND", None)
+        else:
+            os.environ["LOFI_FLUX_BACKEND"] = prev
+
+
+def test_hook_line_brevity_is_writer_target_not_still_hold() -> None:
+    from agents.writer.freeform_writer import _output_contract
+    from agents.writer.writer_brief import WriterBrief
+
+    clause = lofi_cfg.hook_line_brevity_clause()
+    assert "under ~7 words" in clause
+    assert "~3s" in clause
+    assert "still duration follows the rendered VO" in clause
+    theme = WriterBrief.from_theme(theme="healing").assignment_block()
+    assert "HOOK LINE (beat 1)" in theme
+    contract = _output_contract(
+        WriterBrief.from_theme(theme="healing", meta={"duration_s": 27})
+    )
+    assert "HOOK LINE (beat 1)" in contract
+
+
+def test_slot_duration_follows_measured_vo_not_estimate() -> None:
+    from core.economic_reel_lofi.config import slot_duration_for_vo
+
+    slot, driven = slot_duration_for_vo(4.13, base_s=6.0, trailing_silence_s=0.30)
+    assert driven is True
+    assert abs(slot - 4.43) < 0.001
+    slot_last, driven_last = slot_duration_for_vo(
+        3.80, base_s=4.0, trailing_silence_s=0.12
+    )
+    assert driven_last is True
+    assert abs(slot_last - 3.92) < 0.001
+    fallback, driven_fb = slot_duration_for_vo(0.0, base_s=6.0, trailing_silence_s=0.30)
+    assert driven_fb is False
+    assert fallback == 6.0
 
 
 def test_coverage_infra_error_does_not_fail_closed() -> None:

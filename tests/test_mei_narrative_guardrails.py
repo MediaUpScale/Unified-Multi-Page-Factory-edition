@@ -98,8 +98,10 @@ def main() -> int:
 
     if "attention monopoly" not in PENULTIMATE_LIBERATION_PROMPT.lower():
         fails.append("penultimate missing attention-monopoly prefix")
-    if "pod" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "incubation" not in PENULTIMATE_LIBERATION_PROMPT.lower():
-        fails.append("penultimate missing matrix pod escape")
+    if "samurai" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "ninja" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("penultimate missing ninja/samurai aesthetic")
+    if "chain" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("penultimate missing system-chain break")
     if "MASTER SCRIPTWRITER" not in MASTER_SCRIPTWRITER_DIRECTIVE and "NARRATIVE ENGINE" not in MASTER_SCRIPTWRITER_DIRECTIVE:
         fails.append("embedded directive header missing")
 
@@ -123,7 +125,7 @@ def main() -> int:
     print(f"[PASS] Duration profile 105s -> frames={p105['frames']} words={wmin}-{wmax}")
     print("[PASS] Humble voice sanitize (no disciples / I demand / I studied)")
     print("[PASS] CTA subtitle-matching color helper")
-    print("[PASS] Penultimate Infinite Matrix pod-escape prompt")
+    print("[PASS] Penultimate ninja/samurai chain-break prompt")
     print("\nALL LOCAL GUARDRAIL CHECKS PASSED")
     return 0
 

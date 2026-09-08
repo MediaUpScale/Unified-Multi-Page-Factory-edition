@@ -2972,7 +2972,7 @@ def _assemble_stage3_prompts(
             )
 
             print(
-                "[LOFI stage3] flux=dev | "
+                f"[LOFI stage3] flux={'flux2-dev' if lofi_cfg.uses_flux2_dev() else 'dev'} | "
                 f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
                 "assemble=assemble_v2_prompt_dev"
             )
@@ -3459,7 +3459,7 @@ def _produce_one(
     use_dev = bool(lofi_cfg.uses_flux_dev())
     print(
         "[LOFI backend] "
-        f"flux={'dev' if use_dev else 'schnell'} | "
+        f"flux={'flux2-dev' if lofi_cfg.uses_flux2_dev() else ('dev' if use_dev else 'schnell')} | "
         f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
         f"gen={lofi_cfg.LOFI_IMAGE_WIDTH}x{lofi_cfg.LOFI_IMAGE_HEIGHT} "
         f"delivery={lofi_cfg.REEL_WIDTH}x{lofi_cfg.REEL_HEIGHT}"
@@ -4139,15 +4139,19 @@ def _produce_one(
                 (lines[i].get("duration_s") if i < len(lines) and isinstance(lines[i], dict) else None)
                 or beat_s
             )
-            if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
-                raise ValueError(
-                    f"scene {i + 1} VO {vo_dur:.2f}s exceeds declared "
-                    f"{declared_s:.1f}s +{int(float(lofi_cfg.TTS_DURATION_TOLERANCE) * 100)}% "
-                    "— rewrite the spoken line; will not stretch the still"
-                )
+            if vo_dur > 0.05 and i >= n_beats - 1:
+                trail = float(getattr(lofi_cfg, "VO_SLOT_PAD_S", 0.12))
             dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
-                vo_dur, base_s=declared_s, trailing_silence_s=trail
+                vo_dur,
+                base_s=0.0 if vo_dur > 0.05 else declared_s,
+                trailing_silence_s=trail,
             )
+            if vo_dur > 0.05:
+                print(
+                    f"[LOFI assemble] scene {i + 1} audio-driven "
+                    f"vo={vo_dur:.3f}s slot={dur_i:.3f}s "
+                    f"ignored_estimate={declared_s:.3f}s"
+                )
             n_words = len(str(cap).split())
             wps = (n_words / vo_dur) if vo_dur > 0.05 else 0.0
             dur_meta = {

@@ -92,6 +92,7 @@ _PRICE: dict[str, float] = {
     "image_flux_pro":      0.050_0,
     "image_together_juggernaut": 0.001_7,
     "image_together_flux2dev":   0.015_4,
+    "image_deepinfra_flux2dev":  0.008_8,
     "image_sdxl":          0.008_0,
     "image_nano":          FLUX_SCHNELL_USD_PER_IMAGE,
     "image_economic":      FLUX_SCHNELL_USD_PER_IMAGE,

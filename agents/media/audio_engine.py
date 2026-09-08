@@ -68,8 +68,9 @@ def _log_tts_wire_payload(layer: str, path_or_url: Any, payload: Any) -> None:
         f"top_level_speed={'speed' in body} "
         f"vs_keys={vs_keys} text={preview!r}"
     )
-    print(msg)
-    logger.info(msg)
+    logger.debug(msg)
+    if (os.getenv("ENGINE_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"):
+        print(msg)
 
 
 def _ensure_tts_wire_logger() -> None:
@@ -108,8 +109,9 @@ def _ensure_tts_wire_logger() -> None:
 
     httpx.Client.request = _hx_request  # type: ignore[method-assign]
     _TTS_WIRE_PATCHED = True
-    print("[ElevenLabs TTS] WIRE logger installed (HttpClient + httpx)")
-    logger.info("TTS wire logger installed")
+    if (os.getenv("ENGINE_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on"):
+        print("[ElevenLabs TTS] WIRE logger installed (HttpClient + httpx)")
+    logger.debug("TTS wire logger installed")
 
 
 def page_has_f5_voice_reference(page_id: str | None = None) -> bool:
@@ -157,7 +159,7 @@ def should_route_tts_to_remote_f5(
         or None
     )
     if not page_has_f5_voice_reference(pid):
-        logger.warning(
+        logger.debug(
             "F5-TTS skipped — no local voice reference for page=%s; "
             "falling back to ElevenLabs",
             pid or "?",

@@ -6,13 +6,14 @@ Used by the Visual Control Agent (sequence inspector). The brain is decoupled
 from any single vendor: swap the backend via ``VISUAL_EVAL_PROVIDER`` /
 ``VISUAL_EVAL_MODEL`` (OpenRouter Qwen VL, DeepSeek VL, Gemini, …).
 
-Default: OpenRouter OpenAI-compatible client → ``qwen/qwen-2.5-vl-7b-instruct``.
+Default: OpenRouter OpenAI-compatible client → ``qwen/qwen3.5-flash-02-23``.
 """
 from __future__ import annotations
 
 import base64
 import logging
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
@@ -20,7 +21,8 @@ from typing import Protocol, Sequence
 _LOG = logging.getLogger(__name__)
 
 OPENROUTER_DEFAULT_BASE_URL: str = "https://openrouter.ai/api/v1"
-DEFAULT_OPENROUTER_VISION_MODEL: str = "qwen/qwen-2.5-vl-7b-instruct"
+DEFAULT_OPENROUTER_VISION_MODEL: str = "qwen/qwen3.5-flash-02-23"
+DEFAULT_OPENROUTER_VISION_FALLBACK: str = "qwen/qwen3.5-9b"
 DEFAULT_GEMINI_VISION_MODEL: str = "models/gemini-2.5-flash"
 
 
@@ -62,6 +64,49 @@ def _cfg(name: str, default: str | None = None) -> str:
     return env or (default or "")
 
 
+def _eval_timeout_s(default: float = 10.0) -> float:
+    raw = _cfg("VISUAL_EVAL_TIMEOUT_S")
+    try:
+        val = float(raw) if raw else default
+    except (TypeError, ValueError):
+        val = default
+    return max(1.0, min(val, 30.0))
+
+
+def _engine_debug() -> bool:
+    raw = (os.getenv("ENGINE_DEBUG") or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    try:
+        import config as app_config
+
+        return bool(getattr(app_config, "ENGINE_DEBUG", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _is_model_unavailable_error(exc: BaseException) -> bool:
+    """True for 404 / missing-endpoint / unknown-model failures."""
+    code = getattr(exc, "status_code", None)
+    if code is None:
+        resp = getattr(exc, "response", None)
+        code = getattr(resp, "status_code", None)
+    if code in (404, 400):
+        return True
+    msg = str(exc).lower()
+    needles = (
+        "404",
+        "not found",
+        "no endpoints",
+        "no endpoint",
+        "unknown model",
+        "invalid model",
+        "model does not exist",
+        "is not a valid model",
+    )
+    return any(n in msg for n in needles)
+
+
 def _read_data_url(path: Path) -> str | None:
     try:
         raw = path.read_bytes()
@@ -86,7 +131,7 @@ class OpenRouterVisualEval:
         api_key: str | None = None,
         model_id: str | None = None,
         base_url: str | None = None,
-        timeout_s: float = 90.0,
+        timeout_s: float | None = None,
     ) -> None:
         self.model_id = (
             model_id
@@ -98,8 +143,20 @@ class OpenRouterVisualEval:
             base_url or _cfg("OPENROUTER_BASE_URL", OPENROUTER_DEFAULT_BASE_URL)
             or OPENROUTER_DEFAULT_BASE_URL
         ).rstrip("/")
-        self.timeout_s = timeout_s
+        self.timeout_s = float(timeout_s) if timeout_s is not None else _eval_timeout_s()
         self._client = None
+
+    def _model_chain(self) -> list[str]:
+        fallback = (
+            _cfg("VISUAL_EVAL_MODEL_FALLBACK", DEFAULT_OPENROUTER_VISION_FALLBACK)
+            or DEFAULT_OPENROUTER_VISION_FALLBACK
+        )
+        chain: list[str] = []
+        for mid in (self.model_id, fallback, DEFAULT_OPENROUTER_VISION_MODEL, DEFAULT_OPENROUTER_VISION_FALLBACK):
+            name = (mid or "").strip()
+            if name and name not in chain:
+                chain.append(name)
+        return chain
 
     def _client_or_raise(self):
         if not self.api_key:
@@ -142,29 +199,65 @@ class OpenRouterVisualEval:
             content.append({"type": "image_url", "image_url": {"url": data_url}})
 
         client = self._client_or_raise()
-        kwargs: dict = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": content}],
-            "temperature": 0.1,
-            "max_tokens": 2048,
-        }
-        try:
-            resp = client.chat.completions.create(
-                **kwargs,
-                response_format={"type": "json_object"},
-            )
-        except Exception:
-            resp = client.chat.completions.create(**kwargs)
-        text = ""
-        try:
-            text = (resp.choices[0].message.content or "").strip()
-        except Exception:  # noqa: BLE001
-            text = ""
-        if not text:
-            raise RuntimeError(
-                f"OpenRouter visual eval returned empty text | model={self.model_id}"
-            )
-        return VisualEvalResult(text=text, provider=self.name, model_id=self.model_id)
+        last_exc: BaseException | None = None
+        started = time.monotonic()
+        budget = max(1.0, float(self.timeout_s))
+        for mid in self._model_chain():
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0.3:
+                last_exc = TimeoutError(
+                    f"OpenRouter visual eval exceeded {budget:.0f}s budget"
+                )
+                break
+            req_timeout = max(1.0, min(remaining, budget))
+            tagged = client
+            try:
+                tagged = client.with_options(timeout=req_timeout)
+            except Exception:  # noqa: BLE001
+                tagged = client
+            kwargs: dict = {
+                "model": mid,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.1,
+                "max_tokens": 2048,
+            }
+            try:
+                try:
+                    resp = tagged.chat.completions.create(
+                        **kwargs,
+                        response_format={"type": "json_object"},
+                    )
+                except Exception as fmt_exc:
+                    if _is_model_unavailable_error(fmt_exc):
+                        raise
+                    resp = tagged.chat.completions.create(**kwargs)
+                text = ""
+                try:
+                    text = (resp.choices[0].message.content or "").strip()
+                except Exception:  # noqa: BLE001
+                    text = ""
+                if text:
+                    self.model_id = mid
+                    return VisualEvalResult(text=text, provider=self.name, model_id=mid)
+                last_exc = RuntimeError(
+                    f"OpenRouter visual eval returned empty text | model={mid}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if _is_model_unavailable_error(exc):
+                    if _engine_debug():
+                        _LOG.warning("OpenRouter visual eval 404/unavailable | model=%s | %s", mid, exc)
+                    else:
+                        _LOG.debug("OpenRouter visual eval fallback | model=%s | %s", mid, exc)
+                    continue
+                if _engine_debug():
+                    _LOG.warning("OpenRouter visual eval failed | model=%s | %s", mid, exc)
+                else:
+                    _LOG.debug("OpenRouter visual eval failed | model=%s | %s", mid, exc)
+                continue
+        raise RuntimeError(
+            f"OpenRouter visual eval exhausted models {self._model_chain()}: {last_exc}"
+        ) from last_exc
 
 
 class GeminiVisualEval:
@@ -279,14 +372,18 @@ def resolve_visual_eval_provider(
     if name in ("openrouter", "qwen", "deepseek"):
         backend = _openrouter()
         if backend is None:
-            _LOG.warning(
-                "VisualEval | provider=%s requested but OPENROUTER_API_KEY missing",
-                name,
-            )
+            msg = "VisualEval | provider=%s requested but OPENROUTER_API_KEY missing"
+            if _engine_debug():
+                _LOG.warning(msg, name)
+            else:
+                _LOG.debug(msg, name)
         return backend
     if name == "gemini":
         return _gemini()
     if name == "auto":
         return _openrouter() or _gemini()
-    _LOG.warning("VisualEval | unknown provider=%s — no backend", name)
+    if _engine_debug():
+        _LOG.warning("VisualEval | unknown provider=%s — no backend", name)
+    else:
+        _LOG.debug("VisualEval | unknown provider=%s — no backend", name)
     return None

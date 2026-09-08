@@ -787,13 +787,21 @@ def mei_voice_prompt_block(*, duration_s: float | None = None) -> str:
         "Every script must invent a UNIQUE allegory for ONE focal idea — "
         "never cram multiple philosophies into one episode."
     )
+    wmin = int(profile["words_min"])
+    wmax = int(profile["words_max"])
+    if wmin <= 115:
+        aim_lo, aim_hi, aim_target = 120, min(135, wmax), 128
+    else:
+        aim_lo = min(wmax - 5, max(wmin + 5, int(profile["words_target"])))
+        aim_hi, aim_target = wmax, int(profile["words_target"])
     words = (
         f"VOICE PACING: Humble, cinematic, deliberate (0.86× TTS). "
         f"After key philosophical impacts insert exactly: {_PHILOSOPHICAL_BREAK_TAG} "
         f"(no other SSML / emotion tags). "
-        f"STRICT WORD COUNT for {profile['target_s']}s target: "
-        f"{profile['words_min']}–{profile['words_max']} words MAX "
-        f"(target ~{profile['words_target']}). Frames={profile['frames']}."
+        f"LENGTH LOCK for {profile['target_s']}s: WRITE {aim_lo}–{aim_hi} spoken words "
+        f"(aim {aim_target}). Acceptance floor is {wmin} but drafts under {aim_lo} FAIL. "
+        f"Count spoken prose only — exclude [ACT N] markers and break tags. "
+        f"Frames={profile['frames']}."
     )
     directive = MASTER_SCRIPTWRITER_DIRECTIVE + "\n\n"
     if not is_v3_active():

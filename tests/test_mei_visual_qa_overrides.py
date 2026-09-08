@@ -38,6 +38,16 @@ def main() -> int:
         compute_mei_act_durations,
         frame_lore_for_acts,
         pick_mei_meditation_environment,
+        pick_mei_frame1_setup,
+        pick_mei_frame_final_setup,
+        compose_scene_01_prompt,
+        compose_scene_final_prompt,
+        select_style_references_for_mei_frame,
+        MEI_FRAME1_ACTIONS,
+        MEI_FRAME1_CAMERAS,
+        MEI_FINAL_ACTIONS,
+        MEI_FINAL_CAMERAS,
+        MEI_OUTDOOR_TOKENS,
         validate_mei_visual_prompt,
     )
     from channels_config.master_mei import page_config as mei_cfg
@@ -79,8 +89,8 @@ def main() -> int:
         fails.append("MEI_BASE_ANCHOR missing extra-long eyebrows past temples")
     if "topknot" not in SCENE_01_HOOK_PROMPT.lower() or "snow-white" not in SCENE_01_HOOK_PROMPT.lower():
         fails.append("Scene 1 missing Master Mei snow-white DNA")
-    if "mountain" not in SCENE_01_HOOK_PROMPT.lower() and "cliff" not in SCENE_01_HOOK_PROMPT.lower():
-        fails.append("Scene 1 missing high-altitude outdoor environment")
+    if not any(k in SCENE_01_HOOK_PROMPT.lower() for k in MEI_OUTDOOR_TOKENS):
+        fails.append("Scene 1 missing outdoor environment")
     if re.search(r"(?i)\binside\b.*\btemple\b|\btemple\s+hall\b", SCENE_01_HOOK_PROMPT):
         fails.append("Scene 1 still defaults to indoor temple")
     if "topknot" not in SCENE_FINAL_HOOK_PROMPT.lower():
@@ -94,8 +104,14 @@ def main() -> int:
     from agents.media.visual_roles import SCENE_08_UNPLUG_ESCAPE_PROMPT
     if "samurai" not in SCENE_08_UNPLUG_ESCAPE_PROMPT.lower() or "katana" not in SCENE_08_UNPLUG_ESCAPE_PROMPT.lower():
         fails.append("Scene 8 missing samurai matrix-slice details")
-    if "pod" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "incubation" not in PENULTIMATE_LIBERATION_PROMPT.lower():
-        fails.append("Penultimate prompt missing matrix pod escape")
+    if "samurai" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "ninja" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("Penultimate prompt missing ninja/samurai aesthetic")
+    if "chain" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "wire" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("Penultimate prompt missing body-bound wires/chains")
+    if "wrist" not in PENULTIMATE_LIBERATION_PROMPT.lower() and "shackle" not in PENULTIMATE_LIBERATION_PROMPT.lower():
+        fails.append("Penultimate prompt missing shackles on the body")
+    if re.search(r"(?i)shirtless|bare[- ]chest|muscular warrior", PENULTIMATE_LIBERATION_PROMPT):
+        fails.append("Penultimate still describes a shirtless strongman")
     if "firearm" not in GLOBAL_FIREARM_BAN.lower():
         fails.append("firearm ban missing")
 
@@ -143,7 +159,7 @@ def main() -> int:
         fails.append("Scene 1 missing two long white hair strands")
     if "eyebrow" not in pos1.lower():
         fails.append("Scene 1 missing iconic eyebrows DNA")
-    if "mountain" not in pos1.lower() and "cliff" not in pos1.lower() and "ridge" not in pos1.lower() and "shrine" not in pos1.lower():
+    if not any(k in pos1.lower() for k in MEI_OUTDOOR_TOKENS):
         fails.append("Scene 1 build_role_prompt missing dynamic outdoor environment")
     if re.search(r"(?i)\binside\b.*\btemple\b|\btemple\s+hall\b", pos1):
         fails.append("Scene 1 build_role_prompt still uses indoor temple default")
@@ -160,6 +176,33 @@ def main() -> int:
     }
     if not picked.intersection(set(MEI_PRIMARY_ENVIRONMENTS) | set(MEI_SECONDARY_ENVIRONMENTS)):
         fails.append("pick_mei_meditation_environment not drawing from primary/secondary pools")
+
+    setups = {
+        pick_mei_frame1_setup(episode_seed=f"ep-{i}", spoken_beat="discipline")
+        for i in range(24)
+    }
+    if len(setups) < 8:
+        fails.append(f"Frame 1 setup not diversifying across seeds: {len(setups)} unique triples")
+    actions = {a for a, _c, _e in setups}
+    cameras = {c for _a, c, _e in setups}
+    if len(actions) < 3:
+        fails.append(f"Frame 1 actions not rotating: {actions}")
+    if len(cameras) < 3:
+        fails.append(f"Frame 1 cameras not rotating: {cameras}")
+    if not actions.intersection(set(MEI_FRAME1_ACTIONS)):
+        fails.append("Frame 1 actions not drawn from MEI_FRAME1_ACTIONS")
+    if not cameras.intersection(set(MEI_FRAME1_CAMERAS)):
+        fails.append("Frame 1 cameras not drawn from MEI_FRAME1_CAMERAS")
+    p_a = compose_scene_01_prompt(episode_seed="alpha-cliff-scroll")
+    p_b = compose_scene_01_prompt(episode_seed="beta-bamboo-tea")
+    if p_a == p_b:
+        fails.append("compose_scene_01_prompt identical across distinct episode seeds")
+    if "lotus posture atop" in p_a.lower() and "lotus posture atop" in p_b.lower():
+        fails.append("Frame 1 still hard-locks lotus posture across seeds")
+    if select_style_references_for_mei_frame(
+        [Path(__file__)], act_index=0, episode_seed="x"
+    ):
+        fails.append("Frame 1 style-reference selector must return empty (no pose bake)")
 
     pos3, neg3 = build_role_prompt(role="slave", beat="gears", act_index=2, subject="test")
     if "attention monopoly" not in pos3.lower() and "wasteland" not in pos3.lower():
@@ -182,14 +225,44 @@ def main() -> int:
         fails.append("Scene 8 still contains graphite")
 
     pos_pen, _ = build_role_prompt(role="disciple", beat="break_free", act_index=8, subject="test")
-    if "pod" not in pos_pen.lower() and "incubation" not in pos_pen.lower() and "warrior" not in pos_pen.lower():
-        fails.append("Penultimate build_role_prompt missing pod escape")
+    if "samurai" not in pos_pen.lower() and "ninja" not in pos_pen.lower() and "shinobi" not in pos_pen.lower():
+        fails.append("Penultimate build_role_prompt missing ninja/samurai")
+    if "chain" not in pos_pen.lower() and "wire" not in pos_pen.lower():
+        fails.append("Penultimate build_role_prompt missing body-bound wires/chains")
+    if "wrist" not in pos_pen.lower() and "shackle" not in pos_pen.lower():
+        fails.append("Penultimate build_role_prompt missing shackles on the body")
+    if "mei" not in pos_pen.lower():
+        fails.append("Penultimate missing distant Master Mei observer")
+    if re.search(r"(?i)shirtless|bare[- ]chest|muscular warrior", pos_pen):
+        fails.append("Penultimate build_role_prompt still shirtless strongman")
     if "graphite" in pos_pen.lower():
         fails.append("Penultimate still contains graphite")
 
     pos_out, _ = build_role_prompt(role="master", beat="outro", act_index=8, subject="test")
     if "topknot" not in pos_out.lower() or "snow-white" not in pos_out.lower():
         fails.append("Outro build_role_prompt missing snow-white DNA")
+    if "headroom" not in pos_out.lower():
+        fails.append("Outro missing last-frame headroom lock")
+    finals = {
+        pick_mei_frame_final_setup(episode_seed=f"fin-{i}", spoken_beat="sovereign")
+        for i in range(24)
+    }
+    if len(finals) < 8:
+        fails.append(f"Last-frame setup not diversifying: {len(finals)} unique triples")
+    if not {a for a, _c, _e in finals}.intersection(set(MEI_FINAL_ACTIONS)):
+        fails.append("Last-frame actions not drawn from MEI_FINAL_ACTIONS")
+    if not {c for _a, c, _e in finals}.intersection(set(MEI_FINAL_CAMERAS)):
+        fails.append("Last-frame cameras not drawn from MEI_FINAL_CAMERAS")
+    f_a = compose_scene_final_prompt(episode_seed="omega-ridge")
+    f_b = compose_scene_final_prompt(episode_seed="zeta-bamboo")
+    if f_a == f_b:
+        fails.append("compose_scene_final_prompt identical across distinct seeds")
+    if "looking directly at the camera" in f_a.lower() and "looking directly at the camera" in f_b.lower():
+        fails.append("Last frame still hard-locks eyes-on-camera stare")
+    if select_style_references_for_mei_frame(
+        [Path(__file__)], act_index=7, n_acts=8, episode_seed="x"
+    ):
+        fails.append("Last-frame style-reference selector must return empty")
 
     ok, viol, repaired = validate_mei_visual_prompt(
         "Original scene concept: A precise graphite drawing of a man with a handgun",

@@ -661,67 +661,48 @@ class PageContext:
 
     @property
     def subtitle_words_per_phrase(self) -> int:
-        try:
-            return max(3, min(5, int(self.page_cfg.get("SUBTITLE_WORDS_PER_PHRASE", 4))))
-        except (TypeError, ValueError):
-            return 4
+        from channels_config.shared.mei_chrome import SUBTITLE_WORDS_PER_PHRASE
+
+        return max(3, min(5, int(SUBTITLE_WORDS_PER_PHRASE)))
 
     @property
     def subtitle_fill(self) -> tuple:
-        raw = self.page_cfg.get("SUBTITLE_FILL", (255, 230, 0))
-        if isinstance(raw, (list, tuple)) and len(raw) >= 3:
-            return (int(raw[0]), int(raw[1]), int(raw[2]))
-        return (255, 230, 0)
+        from channels_config.shared.mei_chrome import SUBTITLE_FILL
+
+        return tuple(int(c) for c in SUBTITLE_FILL)
 
     @property
     def subtitle_stroke_fill(self) -> "tuple | None":
-        raw = self.page_cfg.get("SUBTITLE_STROKE_FILL", None)
-        if isinstance(raw, (list, tuple)) and len(raw) >= 3:
-            return (int(raw[0]), int(raw[1]), int(raw[2]))
-        return None
+        from channels_config.shared.mei_chrome import SUBTITLE_STROKE_FILL
+
+        return tuple(int(c) for c in SUBTITLE_STROKE_FILL)
 
     @property
     def subtitle_stroke_width(self) -> int:
-        try:
-            return max(0, int(self.page_cfg.get("SUBTITLE_STROKE_WIDTH", 0)))
-        except (TypeError, ValueError):
-            return 0
+        from channels_config.shared.mei_chrome import SUBTITLE_STROKE_WIDTH
+
+        return max(0, int(SUBTITLE_STROKE_WIDTH))
 
     @property
     def subtitle_fontsize(self) -> int:
-        """Subtitle font size in pixels for ECONOMIC_REEL word-level subtitles."""
-        try:
-            return max(20, int(self.page_cfg.get("SUBTITLE_FONTSIZE", 46)))
-        except (TypeError, ValueError):
-            return 46
+        """ECONOMIC_REEL subtitle size — inherited from master_mei chrome."""
+        from channels_config.shared.mei_chrome import SUBTITLE_FONTSIZE
+
+        return max(20, int(SUBTITLE_FONTSIZE))
 
     @property
     def subtitle_y_position(self) -> "int | None":
-        """Absolute Y-pixel from canvas top for subtitle placement.
-        Returns None when not set, causing video_engine to fall back to its
-        default y_frac=0.82 positioning."""
-        raw = self.page_cfg.get("SUBTITLE_Y_POSITION", None)
-        if raw is None:
-            return None
-        try:
-            return max(0, int(raw))
-        except (TypeError, ValueError):
-            return None
+        """Lower-third Y — inherited from master_mei chrome."""
+        from channels_config.shared.mei_chrome import SUBTITLE_Y_POSITION
+
+        return max(0, int(SUBTITLE_Y_POSITION))
 
     @property
     def cta_subtitle_y_position(self) -> "int | None":
-        """Absolute Y-pixel from canvas top for the isolated Follow/CTA overlay.
+        """Follow/CTA overlay Y — inherited from master_mei chrome."""
+        from channels_config.shared.mei_chrome import CTA_SUBTITLE_Y_POSITION
 
-        Two-line CTA captions sit lower than body phrases, so they need a
-        dedicated offset to stay clear of the logo. ``None`` → use body Y.
-        """
-        raw = self.page_cfg.get("CTA_SUBTITLE_Y_POSITION", None)
-        if raw is None:
-            return None
-        try:
-            return max(0, int(raw))
-        except (TypeError, ValueError):
-            return None
+        return max(0, int(CTA_SUBTITLE_Y_POSITION))
 
     @property
     def logo_width_px(self) -> int:
@@ -1352,8 +1333,8 @@ class PageContext:
     @property
     def hook_environments(self) -> list:
         """
-        Scenic environments for Master Mei Act-1 meditation hook.
-        Prefers PRIMARY+SECONDARY pools (70/30 at runtime via pick_mei_meditation_environment).
+        Scenic environments for Master Mei Act-1 identity hook.
+        Hash-picks across PRIMARY+SECONDARY outdoor pools (never a fixed cliff lock).
         """
         primary = self.page_cfg.get("HOOK_ENVIRONMENTS_PRIMARY", [])
         secondary = self.page_cfg.get("HOOK_ENVIRONMENTS_SECONDARY", [])

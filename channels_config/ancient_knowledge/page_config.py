@@ -102,7 +102,7 @@ TEXT_OUTLINE_WIDTH: int = 2            # subtle outline for readability over dar
 # ---------------------------------------------------------------------------
 # Brand logo layout
 # ---------------------------------------------------------------------------
-LOGO_SIZE_SCALE: float = 0.38      # static image watermark — matches reel pixel ratio (420/1080)
+LOGO_SIZE_SCALE: float = 0.28      # stable baseline — 300/1080 reel watermark
 LOGO_POSITION: str = "bottom_center"
 
 # ---------------------------------------------------------------------------
@@ -245,13 +245,19 @@ ENABLE_LIGHT_REFRACTION: bool = False  # prismatic crystal glow (enable per-topi
 # SEQUENCE_REEL — video layout
 # ---------------------------------------------------------------------------
 HOOK_Y_FRAC: float = 0.25             # hook headline in the upper quarter
-SUBTITLE_FONTSIZE: int = 56           # large, bold, legible on dark stone frames
-SUBTITLE_Y_POSITION: int = 1450       # 50px above prior 1500 — lower third, clearer of logo
-CTA_SUBTITLE_Y_POSITION: int = 1400   # 50px above body captions — 2-line Follow CTA clears logo
-LOGO_WIDTH: int = 420          # 1.4× prior size (300→420) for mobile readability
-LOGO_MAX_HEIGHT: int = 115     # 1.4× prior cap  (82→115)
+# Sequence subtitle chrome is inherited from master_mei (mei_chrome.py).
+# Keys below are documentation-only — channel_loader ignores them for reels.
+SUBTITLE_FONTSIZE: int = 58
+SUBTITLE_Y_POSITION: int = 1570
+CTA_SUBTITLE_Y_POSITION: int = 1520
+SUBTITLE_WORDS_PER_PHRASE: int = 4
+SUBTITLE_FILL: tuple = (255, 204, 0)
+SUBTITLE_STROKE_FILL: tuple = (0, 0, 0)
+SUBTITLE_STROKE_WIDTH: int = 3
+LOGO_WIDTH: int = 300          # stable baseline (pre-1.4× bump)
+LOGO_MAX_HEIGHT: int = 82
 LOGO_OPACITY: float = 0.75
-LOGO_BOTTOM_MARGIN: int = 240  # 150px above prior 90 — still bottom-center, not over subtitles
+LOGO_BOTTOM_MARGIN: int = 90   # stable baseline — bottom-center, clear of lower-third
 
 # ---------------------------------------------------------------------------
 # Style flags

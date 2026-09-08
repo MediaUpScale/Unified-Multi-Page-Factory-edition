@@ -280,7 +280,9 @@ _PARAPHRASE_SYSTEM = """You make a light paraphrase of one complete aphorism.
 Preserve its progression, repeated refrain, approximate length, rhythm, and
 meaning. Substitute roughly 20-30 percent of its words. Follow the assignment's
 source-specific structural rule. Anaphoric parallel repeats are protected and
-must never be merged; vary their internal word order instead. Do not expand,
+must never be merged; vary their internal word order instead. Prefer a short
+first spoken sentence (under ~7 words / ~3s of natural pace) when that does
+not break a protected refrain or the light-reword contract. Do not expand,
 explain, add examples, or turn it into a story. Return JSON only."""
 
 

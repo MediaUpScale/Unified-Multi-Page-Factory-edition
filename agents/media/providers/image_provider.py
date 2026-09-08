@@ -602,9 +602,11 @@ class GeminiImageAdapter(ImageProvider):
                 w = reference_image_weight if reference_image_weight is not None else 0.75
                 reference_prompt = (
                     "Use the uploaded reference portrait ONLY to preserve facial identity "
-                    "across the frame: bone structure, age cues, complexion, hairstyle. "
-                    f"Recreate wardrobe and staging from the prompt. Do not caricature. "
-                    f"(likeness weight≈{w:.2f})\n\n"
+                    "across the frame: bone structure, age cues, complexion, hairstyle, "
+                    "beard, eyebrows, and robe silhouette. "
+                    "Do NOT copy the reference pose, camera angle, seating position, or "
+                    "background. Recreate action, staging, and environment strictly from "
+                    f"the written prompt. Do not caricature. (likeness weight≈{w:.2f})\n\n"
                 )
                 contents.extend([reference_prompt + prompt_with_ratio, Image.open(ref)])
             except Exception as exc:  # noqa: BLE001

@@ -179,18 +179,19 @@ TTS_ENABLE_SSML: bool = True
 # reference_image_path wiring in main.py — never as English "rules" here.
 # ---------------------------------------------------------------------------
 MASTER_MEI_VISUAL_DNA: str = (
-    "Master Mei — wise East Asian martial arts grandmaster meditating serenely. "
+    "Master Mei — wise East Asian martial arts grandmaster. "
     "Pure radiant snow-white hair (zero gray/ash/silver) in a high topknot with "
     "hairpin, plus two long distinct white strands falling down both sides of his "
     "chest and shoulders. Iconic extra-long ultra-thick snow-white eyebrows sweeping "
     "dramatically outward past his temples. Full majestic snow-white beard extending "
     "to mid-chest with matching flowing snow-white mustache. Weathered skin, deep-set "
-    "eyes, calm meditative expression. White inner robe, black outer vest with gold "
-    "lapel embroidery, wooden mala prayer beads. "
+    "eyes, calm focused authoritative expression. White inner robe, black outer vest "
+    "with gold lapel embroidery, wooden mala prayer beads. "
     "OLDER East Asian sage (approx 72 years old), implacable, uncompromising, stern. "
     "NEVER gray or silver hair. NEVER a middle-aged short-haired warrior. "
     "NEVER modern athletic wear. NEVER clean-shaven. NEVER black hair. "
-    "STRICT SINGLE MASTER RULE: Master Mei is the ONLY master/elder allowed."
+    "STRICT SINGLE MASTER RULE: Master Mei is the ONLY master/elder allowed. "
+    "Frame 1 identity lock only — pose, camera, and environment must vary every episode."
 )
 
 # Force avatar.png likeness on Master Mei–present frames ONLY (Shot 1 + Final)
@@ -214,10 +215,13 @@ AVATAR_IMAGE_WEIGHT: float = 0.92
 REEL_DURATION: float = 105.0         # primary target: 90–120 s band
 REEL_SECONDS_PER_ACT: float = 11.0   # body scenes ~10–12s (Scene 1 capped at 8s)
 REEL_ACT_DURATION: float = 11.0
-REEL_HOOK_MAX_S: float = 8.0         # Scene 1 (meditation hook) hard cap
+REEL_HOOK_MAX_S: float = 8.0         # Scene 1 (identity hook) hard cap
 REEL_BODY_MIN_S: float = 10.0
 REEL_BODY_MAX_S: float = 12.0
 ENABLE_SEQUENCE_REEL: bool = True
+# Reuse valid stills already on disk (episode work/ + scene_XX.png) instead of
+# re-calling Together/Gemini. Saves API cost on re-runs and verification.
+REUSE_EXISTING_IMAGES: bool = True
 # Frame count from duration profile (8 / 9 / 10); hard clamps
 REEL_IMAGE_MIN_COUNT: int = 8
 REEL_IMAGE_COUNT: int = 10

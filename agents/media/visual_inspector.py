@@ -16,11 +16,16 @@ from __future__ import annotations
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
 _LOG = logging.getLogger(__name__)
+
+_QA_SKIP_PREFIX = "visual QA skipped"
+_DEFAULT_QA_TIMEOUT_S = 10.0
 
 
 @dataclass
@@ -38,6 +43,32 @@ class SequenceInspectResult:
     frames: list[FrameVerdict] = field(default_factory=list)
     regenerate_indices: list[int] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+
+
+def _qa_timeout_s() -> float:
+    try:
+        import config as app_config
+
+        val = float(
+            getattr(app_config, "VISUAL_EVAL_TIMEOUT_S", _DEFAULT_QA_TIMEOUT_S)
+            or _DEFAULT_QA_TIMEOUT_S
+        )
+    except Exception:  # noqa: BLE001
+        val = _DEFAULT_QA_TIMEOUT_S
+    return max(1.0, min(val, 30.0))
+
+
+def _fail_open(reason: str) -> SequenceInspectResult:
+    """Soft-pass so TTS / MoviePy never wait on a hung or empty VLM."""
+    note = f"{_QA_SKIP_PREFIX} ({reason}) — proceeding"
+    _LOG.warning("Visual Inspector non-blocking: %s", note)
+    return SequenceInspectResult(passed=True, notes=[note])
+
+
+def _is_fail_open(result: SequenceInspectResult | None) -> bool:
+    if result is None:
+        return False
+    return any(_QA_SKIP_PREFIX.lower() in (n or "").lower() for n in result.notes)
 
 
 def _phash_similarity(a: Path, b: Path) -> float:
@@ -138,27 +169,33 @@ def _vlm_inspect_sequence(paths: Sequence[Path]) -> SequenceInspectResult | None
 
     labels = [f"FRAME {i + 1}" for i, _ in valid]
     image_paths = [p for _, p in valid]
+    timeout_s = _qa_timeout_s()
+    pool = ThreadPoolExecutor(max_workers=1)
     try:
-        ev = backend.evaluate(_INSPECT_PROMPT, image_paths, labels=labels)
+        fut = pool.submit(backend.evaluate, _INSPECT_PROMPT, image_paths, labels=labels)
+        try:
+            ev = fut.result(timeout=timeout_s)
+        except FuturesTimeout:
+            return _fail_open(f"timeout after {timeout_s:.0f}s")
         text = (ev.text or "").strip()
         _LOG.info(
             "VISUAL_INSPECTOR provider=%s model=%s",
             ev.provider, ev.model_id,
         )
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("Visual inspector VLM failed (%s): %s", backend.name, exc)
-        return None
+        return _fail_open(f"{backend.name}: {exc}")
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     if not text:
-        return None
+        return _fail_open("empty VLM response")
 
     try:
         # Strip fences if present
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
         data = json.loads(text)
     except Exception as exc:  # noqa: BLE001
-        _LOG.warning("Inspector JSON parse failed: %s | raw=%.200s", exc, text)
-        return None
+        return _fail_open(f"invalid JSON: {exc}")
 
     n = len(paths)
     frames: list[FrameVerdict] = [
@@ -239,9 +276,17 @@ def inspect_sequence_images(
             result.frames[i].ok = False
             result.frames[i].reasons.append("near-duplicate framing")
 
-    # 2) VLM inspector
+    # 2) VLM inspector (hard-timeout, fail-open — never block render)
     if use_vlm:
         vlm = _vlm_inspect_sequence(paths)
+        if _is_fail_open(vlm):
+            # Empty / error / timeout → pass through immediately (no regen).
+            return SequenceInspectResult(
+                passed=True,
+                frames=result.frames,
+                regenerate_indices=[],
+                notes=list(vlm.notes) if vlm else [_QA_SKIP_PREFIX],
+            )
         if vlm is not None:
             # Merge regenerate sets
             result.regenerate_indices = sorted(
@@ -260,7 +305,7 @@ def inspect_sequence_images(
             )
         else:
             result.notes.append("VLM unavailable — phash-only inspection")
-            _LOG.warning("VISUAL_INSPECTOR | VLM unavailable — phash only")
+            _LOG.info("VISUAL_INSPECTOR | VLM unavailable — phash only")
 
     # 3) Heuristic: if Frame 1/last are byte-identical to a middle slave frame, regen
     if len(paths) >= 3 and paths[0].is_file():

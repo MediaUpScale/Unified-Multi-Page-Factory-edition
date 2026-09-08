@@ -60,6 +60,50 @@ from utils.pipeline_paths import moviepy_temp_audio_dir
 
 logger = logging.getLogger(__name__)
 
+_ENGINE_ROOT = Path(__file__).resolve().parents[1]
+_SUBTITLE_FONT_FALLBACKS: tuple[Path, ...] = (
+    _ENGINE_ROOT / "Fonts" / "Montserrat" / "static" / "Montserrat-Bold.ttf",
+    Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "arialbd.ttf",
+    Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "Arial Bold.ttf",
+    Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "trebucbd.ttf",
+)
+
+
+def _load_reel_fonts(
+    font_path: str | None,
+    subtitle_fontsize: int,
+) -> tuple["ImageFont.FreeTypeFont | ImageFont.ImageFont", "ImageFont.FreeTypeFont | ImageFont.ImageFont"]:
+    """Load subtitle/hook fonts at the requested size. Never use the tiny PIL default."""
+    size = max(20, int(subtitle_fontsize or 56))
+    hook_size = max(28, int(size * 1.35))
+    candidates: list[Path] = []
+    if font_path:
+        candidates.append(Path(font_path))
+    candidates.extend(_SUBTITLE_FONT_FALLBACKS)
+    seen: set[str] = set()
+    for cand in candidates:
+        key = str(cand).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if cand.is_file():
+                return (
+                    ImageFont.truetype(str(cand), size),
+                    ImageFont.truetype(str(cand), hook_size),
+                )
+        except Exception:
+            continue
+    logger.warning(
+        "Subtitle TTF missing — using sized default (requested=%d). "
+        "Burned-in captions will look thin until FONT_PATH is restored.",
+        size,
+    )
+    try:
+        return ImageFont.load_default(size=size), ImageFont.load_default(size=hook_size)
+    except TypeError:
+        return ImageFont.load_default(), ImageFont.load_default()
+
 
 def _ensure_parent_dir(filepath: str | Path) -> Path:
     """Create parent directories for *filepath* before any save/open side-effect."""
@@ -999,6 +1043,10 @@ def _synthesize_ambient_drone(
 # 30 % linear so the camera velocity floor at t=1 is 30 % of peak — never freezes.
 _ZOOM_PER_ACT_START: float = 1.0
 _ZOOM_PER_ACT_END: float   = 1.30
+# Last Master Mei frame: tiny push only so the topknot stays inside the frame.
+_MEI_LAST_ZOOM_START: float = 1.00
+_MEI_LAST_ZOOM_END: float = 1.06
+_MEI_LAST_PAN_MUL: float = 0.25
 
 # ── Per-act motion profiles ───────────────────────────────────────────────────
 # Each act cycles through 4 distinct camera-movement styles so successive
@@ -1496,6 +1544,7 @@ def _build_act_clip(
     enable_dust_particles: bool = False,
     # Subtle prismatic light refraction (opt-in for glass/crystal subjects).
     enable_light_refraction: bool = False,
+    protect_headroom: bool = False,
 ):
     """
     Build one MoviePy VideoClip for a single act.
@@ -1603,18 +1652,7 @@ def _build_act_clip(
         _prism_overlay = np.clip(_po, 0.0, 1.0)
 
     # ── Font resolution ───────────────────────────────────────────────────────
-    _font_subtitle: "ImageFont.FreeTypeFont | ImageFont.ImageFont"
-    _font_hook: "ImageFont.FreeTypeFont | ImageFont.ImageFont"
-    try:
-        if font_path:
-            _font_subtitle = ImageFont.truetype(font_path, subtitle_fontsize)
-            _font_hook     = ImageFont.truetype(font_path, max(28, int(subtitle_fontsize * 1.35)))
-        else:
-            _font_subtitle = ImageFont.load_default()
-            _font_hook     = ImageFont.load_default()
-    except Exception:
-        _font_subtitle = ImageFont.load_default()
-        _font_hook     = ImageFont.load_default()
+    _font_subtitle, _font_hook = _load_reel_fonts(font_path, subtitle_fontsize)
 
     _subtitle_y = subtitle_y_position if subtitle_y_position is not None else int(_REEL_HEIGHT * 0.82)
 
@@ -1668,11 +1706,18 @@ def _build_act_clip(
     # ── Diagonal pan direction (acts rotate through 8 compass directions) ─────
     # ── Motion profile (cycles across acts for varied camera dynamics) ────────
     _mp = _MOTION_PROFILES[act_index % len(_MOTION_PROFILES)]
-    _mp_zoom_start = _mp["zoom_start"]
-    _mp_zoom_end   = _mp["zoom_end"]
-    _mp_pan_mul    = _mp["pan_mul"]
-    _mp_rev        = -1 if _mp["reverse_dir"] else 1
-    _pan_dir = _PAN_DIRS[act_index % len(_PAN_DIRS)]
+    if protect_headroom:
+        _mp_zoom_start = _MEI_LAST_ZOOM_START
+        _mp_zoom_end = _MEI_LAST_ZOOM_END
+        _mp_pan_mul = _MEI_LAST_PAN_MUL
+        _mp_rev = 1
+        _pan_dir = (0, -1)  # bias crop toward the top so the topknot stays in
+    else:
+        _mp_zoom_start = _mp["zoom_start"]
+        _mp_zoom_end   = _mp["zoom_end"]
+        _mp_pan_mul    = _mp["pan_mul"]
+        _mp_rev        = -1 if _mp["reverse_dir"] else 1
+        _pan_dir = _PAN_DIRS[act_index % len(_PAN_DIRS)]
 
     # ── Frame renderer ────────────────────────────────────────────────────────
     def _make_frame(t: float) -> np.ndarray:
@@ -1703,8 +1748,9 @@ def _build_act_clip(
             (scaled_w - _REEL_WIDTH)  // 2 + pan_x_total + drift_x,
             scaled_w - _REEL_WIDTH,
         ))
+        _headroom_bias = -int(scaled_h * 0.04) if protect_headroom else 0
         cy = max(0, min(
-            (scaled_h - _REEL_HEIGHT) // 2 + pan_y_total + drift_y,
+            (scaled_h - _REEL_HEIGHT) // 2 + pan_y_total + drift_y + _headroom_bias,
             scaled_h - _REEL_HEIGHT,
         ))
         cropped = scaled.crop((cx, cy, cx + _REEL_WIDTH, cy + _REEL_HEIGHT))
@@ -1893,16 +1939,7 @@ def _build_wan_video_act_clip(
             pass
         raise ValueError(f"Wan clip has no duration: {video_path}")
 
-    try:
-        if font_path:
-            _font_subtitle = ImageFont.truetype(font_path, subtitle_fontsize)
-            _font_hook = ImageFont.truetype(font_path, max(28, int(subtitle_fontsize * 1.35)))
-        else:
-            _font_subtitle = ImageFont.load_default()
-            _font_hook = ImageFont.load_default()
-    except Exception:
-        _font_subtitle = ImageFont.load_default()
-        _font_hook = ImageFont.load_default()
+    _font_subtitle, _font_hook = _load_reel_fonts(font_path, subtitle_fontsize)
 
     _subtitle_y = subtitle_y_position if subtitle_y_position is not None else int(_REEL_HEIGHT * 0.82)
     _raw_phrases = _chunk_words_into_phrases(word_timings, words_per_phrase)
@@ -2578,11 +2615,15 @@ def compile_sequence_reel(
                     "WAN act %d wrap failed (%s) — Ken Burns fallback.",
                     i + 1, _wan_wrap_exc,
                 )
+        _protect_head = (page_id or "").lower() == "master_mei" and i == n_acts - 1
+        _log_z0 = _MEI_LAST_ZOOM_START if _protect_head else _ZOOM_PER_ACT_START
+        _log_z1 = _MEI_LAST_ZOOM_END if _protect_head else _ZOOM_PER_ACT_END
         logger.info(
-            "Rendering act %d/%d | %s | dur=%.1fs | zoom=%.2f→%.2f | pan_dir=%s | transition=hard_cut",
+            "Rendering act %d/%d | %s | dur=%.1fs | zoom=%.2f→%.2f | pan_dir=%s | transition=hard_cut%s",
             i + 1, n_acts, img_path.name, _this_act_dur,
-            _ZOOM_PER_ACT_START, _ZOOM_PER_ACT_END,
-            _PAN_DIRS[i % len(_PAN_DIRS)],
+            _log_z0, _log_z1,
+            (0, -1) if _protect_head else _PAN_DIRS[i % len(_PAN_DIRS)],
+            " | mei_last_headroom" if _protect_head else "",
         )
         clip = _build_act_clip(
             img_path,
@@ -2614,6 +2655,7 @@ def compile_sequence_reel(
             enable_light_rays = enable_light_rays,
             enable_dust_particles   = enable_dust_particles,
             enable_light_refraction = enable_light_refraction,
+            protect_headroom  = _protect_head,
         )
         clips.append(clip)
 

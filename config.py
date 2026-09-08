@@ -54,8 +54,13 @@ DOTENV_PATH: Path = ENGINE_ROOT / ".env"
 
 def _load_project_dotenv() -> tuple[Path, bool]:
     resolved = DOTENV_PATH.expanduser().resolve()
+    # CLI / Phase-0 preparse wins over .env for the active channel.
+    preserved_page = (os.environ.get("ACTIVE_PAGE") or "").strip()
     if resolved.is_file():
-        return resolved, bool(load_dotenv(dotenv_path=resolved, override=True, encoding="utf-8-sig"))
+        loaded = bool(load_dotenv(dotenv_path=resolved, override=True, encoding="utf-8-sig"))
+        if preserved_page:
+            os.environ["ACTIVE_PAGE"] = preserved_page
+        return resolved, loaded
     return resolved, False
 
 
@@ -148,8 +153,15 @@ VISUAL_EVAL_PROVIDER: str = (
     os.getenv("VISUAL_EVAL_PROVIDER") or "openrouter"
 ).strip().lower()
 VISUAL_EVAL_MODEL: str = (
-    os.getenv("VISUAL_EVAL_MODEL") or "qwen/qwen-2.5-vl-7b-instruct"
+    os.getenv("VISUAL_EVAL_MODEL") or "qwen/qwen3.5-flash-02-23"
 ).strip()
+VISUAL_EVAL_MODEL_FALLBACK: str = (
+    os.getenv("VISUAL_EVAL_MODEL_FALLBACK") or "qwen/qwen3.5-9b"
+).strip()
+# Hard cap for Visual Inspector OpenRouter calls. On timeout/empty/error the
+# inspector fail-opens so TTS / MoviePy are never blocked.
+VISUAL_EVAL_TIMEOUT_S: float = float(os.getenv("VISUAL_EVAL_TIMEOUT_S") or "10")
+ENGINE_DEBUG: bool = _bool_env("ENGINE_DEBUG", False)
 
 # Hard timeout for every image API call (prevents terminal hangs)
 IMAGE_API_TIMEOUT_S: float = float(os.getenv("IMAGE_API_TIMEOUT_S") or "25")
@@ -686,6 +698,45 @@ if _LEGACY_PLANNER_XLSX.is_file() and not POST_PLANNER_XLSX.exists():
         shutil.copy2(_LEGACY_PLANNER_XLSX, POST_PLANNER_XLSX)
     except OSError:
         logger.debug("Legacy planner copy skipped.", exc_info=True)
+
+
+def bind_active_page(page: str) -> str:
+    """Rebind page-namespaced output paths after a late ``--channel`` resolve.
+
+    ``config`` may have been imported before ``sys.argv`` was rewritten
+    (E2E harnesses, CaptionEngine preloads). Call this once the CLI channel
+    is known so clips land under ``{OUTPUT_PATH}/{page}/clips``.
+    """
+    global ACTIVE_PAGE, ACTIVE_PAGE_DIR, PERSONA_DNA_PATH, MASTER_DNA_PATH
+    global PAGE_OUTPUTS_DIR, ASSETS_DIR, LIBRARY_DIR, CHANNEL_STORE_DIR
+    global CONTENT_LIBRARY_PATH, SESSION_HOOKS_CACHE_PATH, POST_PLANNER_XLSX
+
+    slug = (page or "").strip().lower() or "anna_protocol"
+    os.environ["ACTIVE_PAGE"] = slug
+    ACTIVE_PAGE = slug
+    ACTIVE_PAGE_DIR = (
+        (CHANNELS_CONFIG_ROOT / ACTIVE_PAGE)
+        if (CHANNELS_CONFIG_ROOT / ACTIVE_PAGE).is_dir()
+        else (_LEGACY_PAGES_CONFIG_ROOT / ACTIVE_PAGE)
+    )
+    PERSONA_DNA_PATH = ACTIVE_PAGE_DIR / "persona_dna.py"
+    MASTER_DNA_PATH = ACTIVE_PAGE_DIR / "master_dna.json"
+    PAGE_OUTPUTS_DIR = page_outputs_dir(ACTIVE_PAGE)
+    ASSETS_DIR = page_assets_dir(ACTIVE_PAGE)
+    LIBRARY_DIR = PAGE_OUTPUTS_DIR / "library"
+    CHANNEL_STORE_DIR = channel_store_dir(ACTIVE_PAGE)
+    CONTENT_LIBRARY_PATH = CHANNEL_STORE_DIR / "content_library.json"
+    SESSION_HOOKS_CACHE_PATH = CHANNEL_STORE_DIR / "session_hooks_cache.json"
+    POST_PLANNER_XLSX = PAGE_OUTPUTS_DIR / "automated_bulk_posts_import.xlsx"
+    PAGE_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+    (PAGE_OUTPUTS_DIR / "clips").mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "ACTIVE_PAGE bound | page=%s outputs=%s clips=%s",
+        ACTIVE_PAGE, PAGE_OUTPUTS_DIR, PAGE_OUTPUTS_DIR / "clips",
+    )
+    return ACTIVE_PAGE
 
 
 # ---------------------------------------------------------------------------

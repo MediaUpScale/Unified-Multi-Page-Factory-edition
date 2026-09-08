@@ -24,10 +24,13 @@ import logging
 import math
 import os
 import struct
+import threading
 from pathlib import Path
 from typing import Any
 
 from quality.VisualQA_Agent import config
+
+_STORE_LOCK = threading.Lock()
 
 _LOG = logging.getLogger(__name__)
 
@@ -64,10 +67,10 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
             "assault rifle",
         ],
         "mandatory_elements": [
-            "8–10 FRAME LORE (90–120s): F1 Master Mei base anchor + meditation (≤8s); "
+            "8–10 FRAME LORE (90–120s): F1 Master Mei identity lock + unique pose/camera/env (≤8s); "
             "F3 agonizing human slaves / cybernetic implants (RAG override); "
             "F7 extreme close-up human cyborg (9–10 frame lore); "
-            "penultimate matrix pod facility breakout (RAG override); "
+            "penultimate shinobi-samurai breaking system chains, Mei watching training (RAG override); "
             "final Master Mei base anchor + temple eyes-on-camera",
             "Master Mei DNA: snow-white topknot + two long white chest locks, "
             "extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white "
@@ -87,13 +90,14 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
         ),
         "target_audience_rules": (
             "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. "
-            "Scene 1 ≤8s meditation landscapes. Scenes 2+ ≈10–12s. "
+            "Scene 1 ≤8s unique outdoor identity lock. Scenes 2+ ≈10–12s. "
             "Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens."
         ),
         "frame_lore": {
             "1_intro": (
-                "Master Mei base anchor meditating on high-altitude cliff / misty ridge "
-                "or open-air mountain shrine — white robe + black vest gold trim — NO tech"
+                "Master Mei identity lock in a UNIQUE pose, camera, and outdoor setting "
+                "(cliff, bamboo, waterfall, courtyard, dojo, wilderness) — "
+                "white robe + black vest gold trim — NO tech, never copy avatar pose"
             ),
             "3_human_slaves": (
                 "RAG OVERRIDE scene_03: pale agonizing human men, cybernetic goggles, "
@@ -106,8 +110,8 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
                 "crude brass cybernetic visors, temple wires, dramatic cinematic lighting"
             ),
             "penultimate_pods": (
-                "RAG OVERRIDE penultimate: dark matrix pod facility, rows of glass pods, "
-                "muscular Asian warrior smashing out of liquid capsule"
+                "RAG OVERRIDE penultimate: shinobi-samurai in full ninja garb breaking "
+                "iron-and-neon system chains; Master Mei watches the rigorous training from afar"
             ),
             "10_outro": (
                 "Master Mei base anchor on mountain ridge / open-air shrine, "
@@ -130,7 +134,7 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
                 "chains around human necks"
             ),
             "focus": (
-                "Penultimate RAG: warrior smashing out of liquid-filled matrix pod"
+                "Penultimate RAG: ninja/samurai breaking system chains, Mei observing training"
             ),
             "outro": (
                 "Master Mei base anchor on mountain ridge / open-air shrine, "
@@ -152,6 +156,91 @@ CHANNEL_DNA_SEED: dict[str, dict[str, Any]] = {
             "(120–180 words) — Subject + Action/Emotion + Environment/Lighting; "
             "no 8k/photorealistic/masterpiece tags"
         ),
+        # ── script_rules ────────────────────────────────────────────────
+        "script_rules": {
+            "voice": (
+                "First-person Master Mei only — humble, measured, ancestral. "
+                "You ARE the master. Never address the audience as disciples, "
+                "students, or followers. Never aggressive commands, never "
+                "'I studied X', never third-person 'Master Mei'. Prefer "
+                "'Consider how…', 'The ancients observed that…', "
+                "'When the mind ceases to fight…'."
+            ),
+            "tone": (
+                "Deep humility, respect, ancestral tranquility. Cinematic "
+                "allegory and metaphor only — no checklists, no Step 1, "
+                "no wellness fluff, no hustle-bro clichés."
+            ),
+            "pacing": (
+                "Humble cinematic delivery at 0.86× TTS. After 2–4 key "
+                "philosophical impacts insert exactly "
+                "<break time=\"1.5s\"/> — no other SSML or emotion tags."
+            ),
+            "word_budget": (
+                "When the acceptance floor is 115 spoken words, WRITE 120–135 "
+                "words (aim 128). Hard fail under 120. Longer 105s/120s "
+                "profiles use their own min/target/max from "
+                "MEI_DURATION_PROFILES. Count spoken words only — exclude "
+                "[ACT N] markers and break tags."
+            ),
+            "structure": (
+                "ONE central idea per episode. Invariant flow: "
+                "(1) philosophical hook / ancestral grounding; "
+                "(2) focused unconscious trap; "
+                "(3) spiritual and financial liberation; "
+                "(4) one humble practical discipline; "
+                "(5) seamless reflective close. CTA is stitched separately — "
+                "never write Follow/Subscribe in the narration."
+            ),
+            "visual_consistency": (
+                "Frame 1 and the last frame must show Master Mei (snow-white "
+                "topknot, extra-long white eyebrows, mid-chest beard, white "
+                "robe + black vest gold lapels). Middle frames are dystopian "
+                "allegory (slaves, gears, pods) — never fuse cybernetics onto "
+                "Mei. No firearms, gore, gym, Gossip Goblin, or lifestyle "
+                "soft-focus. 8–10 frames for a 90–120s reel; Scene 1 ≤8s."
+            ),
+            "forbidden_phrases": [
+                "my disciples",
+                "students",
+                "followers",
+                "I studied",
+                "Step 1",
+                "Follow Master Mei",
+                "Subscribe",
+            ],
+        },
+        "motion_rules": {
+            "motion_cadence": (
+                "Cycle act_index % 4: Rapid Push-In, Wide Pull-Out, "
+                "Sweeping Lateral Parallax, Overhead Crane Sweep. "
+                "No static slow-zooms."
+            ),
+            "parallax_depth_directive": (
+                "Every still needs a foreground (dust, stone arch, observer) "
+                "and a background (temple, starfield, horizon) for parallax."
+            ),
+            "shot_variety_rule": (
+                "No two consecutive acts repeat the same shot type. "
+                "Frame 1 + last = Mei; middle = dystopian variety."
+            ),
+        },
+        "music_rules": {
+            "mood": (
+                "Industrial cyberpunk percussion under a solemn warrior "
+                "narration — dark, slow, never pop or lofi chillhop."
+            ),
+            "mix_levels": (
+                "BGM ~0.24, atmosphere SFX ~0.35, voice 1.0. "
+                "Music starts at 0.5s. Narration 0.86×."
+            ),
+            "forbidden": [
+                "upbeat pop",
+                "chillhop lofi",
+                "wellness flute bed",
+                "EDM drop",
+            ],
+        },
     },
     # ECONOMIC_REEL_LOFI — ink / graphic-novel stills (no LoRA, Flux Schnell)
     "lofi_economic": {
@@ -576,7 +665,8 @@ def _load_json_store() -> dict[str, dict[str, Any]]:
     if not _JSON_STORE.is_file():
         return {}
     try:
-        data = json.loads(_JSON_STORE.read_text(encoding="utf-8"))
+        with _STORE_LOCK:
+            data = json.loads(_JSON_STORE.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except Exception:  # noqa: BLE001
         return {}
@@ -585,10 +675,11 @@ def _load_json_store() -> dict[str, dict[str, Any]]:
 def _save_json_store(store: dict[str, dict[str, Any]]) -> None:
     config.ensure_runtime_dirs()
     _JSON_STORE.parent.mkdir(parents=True, exist_ok=True)
-    _JSON_STORE.write_text(
-        json.dumps(store, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    with _STORE_LOCK:
+        _JSON_STORE.write_text(
+            json.dumps(store, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -697,7 +788,7 @@ def register_channel_dna(channel_name: str, rules: dict[str, Any]) -> None:
     store[name] = normalized
     _save_json_store(store)
     _mirror_to_chroma(name, normalized)
-    _LOG.info("CHANNEL_RAG | upserted DNA for channel=%s", name)
+    _LOG.debug("CHANNEL_RAG | upserted DNA for channel=%s", name)
 
 
 def seed_default_channels(*, force: bool = False) -> None:
@@ -737,7 +828,7 @@ def set_channel_context(channel_name: str) -> str:
             ) from exc
 
     _active_channel = name
-    _LOG.info("CHANNEL_RAG | active context → %s", name)
+    _LOG.debug("CHANNEL_RAG | active context → %s", name)
     return name
 
 
@@ -756,8 +847,13 @@ def get_channel_rules(channel_name: str) -> dict[str, Any]:
 
     seed_default_channels(force=False)
     store = _load_json_store()
-    if name in store:
-        return _normalize_rules(store[name])
+    key = _resolve_store_key(name, store)
+    if key:
+        return _normalize_rules(store[key])
+
+    seed = _resolve_seed_key(name)
+    if seed:
+        return _normalize_rules(CHANNEL_DNA_SEED[seed])
 
     # Optional Chroma lookup (similarity) if JSON miss
     col = _try_get_chroma_collection()
@@ -773,6 +869,26 @@ def get_channel_rules(channel_name: str) -> dict[str, Any]:
             _LOG.warning("CHANNEL_RAG | Chroma query failed (%s)", exc)
 
     raise KeyError(f"Channel '{name}' not found")
+
+
+def _resolve_store_key(name: str, store: dict[str, Any]) -> str:
+    if name in store:
+        return name
+    lower = name.lower()
+    for key in store:
+        if str(key).lower() == lower:
+            return str(key)
+    return ""
+
+
+def _resolve_seed_key(name: str) -> str:
+    if name in CHANNEL_DNA_SEED:
+        return name
+    lower = name.lower()
+    for key in CHANNEL_DNA_SEED:
+        if str(key).lower() == lower:
+            return str(key)
+    return ""
 
 
 def get_active_channel() -> str | None:

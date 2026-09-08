@@ -133,7 +133,10 @@ class WriterBrief:
     def assignment_block(self) -> str:
         """The part of the writer prompt that changes per episode."""
         parts: list[str] = []
+        from core.economic_reel_lofi import config as lofi_cfg
+
         if self.mode == "quote":
+            parts.append(lofi_cfg.hook_line_brevity_clause())
             parts.append(
                 "SEED IDEA — one line from another writer:\n"
                 f"  \u201c{self.seed_quote}\u201d\n"
@@ -184,6 +187,7 @@ class WriterBrief:
                     "one sentence into two. Do not do both. Do not keep a 1:1 "
                     "sentence mirror."
                 )
+            parts.append(lofi_cfg.hook_line_brevity_clause(paraphrase=True))
             parts.append(
                 "SOURCE APHORISM:\n"
                 f"  \u201c{self.seed_quote}\u201d\n"
@@ -195,6 +199,7 @@ class WriterBrief:
                 "its argument. Return a genuine variation, not a new composition."
             )
         else:
+            parts.append(lofi_cfg.hook_line_brevity_clause())
             parts.append(f"SUBJECT: {self.theme.replace('_', ' ')}")
             if self.subtheme:
                 parts.append(f"NARROWER ANGLE: {self.subtheme.replace('_', ' ')}")

@@ -271,8 +271,12 @@ _PHOTOREAL: str = (
 _MEI_FIRST_POSES: tuple[str, ...] = (
     "POSE: Master Mei meditating in lotus on a high-altitude cliff above a sea of clouds "
     "— kinetic stillness, never idle indoor temple, no neon, no cybernetics.",
-    "POSE: Master Mei guiding a disciple's blade mid-kata under cold rain on a misty ridge.",
-    "POSE: Master Mei channeling energy through an open-palm martial form on a storm cliff.",
+    "POSE: Master Mei in a low martial horse stance on a mist-covered peak, open palms ready.",
+    "POSE: Master Mei walking a bamboo-forest path with a wooden staff, measured steps.",
+    "POSE: Master Mei seated for a tea ceremony on an ancient stone courtyard, pouring from clay.",
+    "POSE: Master Mei reading an unrolled scroll at a waterfall ledge, head slightly bowed.",
+    "POSE: Master Mei standing in deep contemplation on an open-air dojo platform, wind in robes.",
+    "POSE: Master Mei performing a slow open-palm martial form on a storm cliff.",
 )
 
 _MEI_MIDDLE_POSES: tuple[str, ...] = (
@@ -651,12 +655,21 @@ def build_test_preview_prompts(
 # Full production act prompt builder
 # ---------------------------------------------------------------------------
 
-def _mei_pose_for_slot(act_index: int, n_acts: int, slots: set[int]) -> str:
+def _mei_pose_for_slot(
+    act_index: int,
+    n_acts: int,
+    slots: set[int],
+    *,
+    episode_seed: str = "",
+) -> str:
+    del slots
     if act_index == 0:
-        return _MEI_FIRST_POSES[0]
+        from agents.media.visual_roles import _mei_hash_pick
+
+        return _mei_hash_pick(_MEI_FIRST_POSES, episode_seed or "frame1", "first_pose")
     if act_index == n_acts - 1:
         return _MEI_FINAL_POSES[act_index % len(_MEI_FINAL_POSES)]
-    return _MEI_MIDDLE_POSES[0]
+    return _MEI_MIDDLE_POSES[act_index % len(_MEI_MIDDLE_POSES)]
 
 
 def build_master_mei_script_act_prompts(

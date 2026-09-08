@@ -4,11 +4,11 @@ Master Mei — 10-frame narrative lore + 3 Visual Roles (anti-contamination).
 
 FRAME LORE (strict distribution for 10-act reels)
 ------------------------------------------------
-1       INTRO          — Master Mei in dynamic high-altitude nature / open-air shrine
+1       INTRO          — Master Mei identity lock + unique pose / camera / environment
 2–4     MATRIX / MAYA  — biomechanical illusion, gears, panopticon slaves
 5–7     TRAINING       — Master Mei instructing monks in harsh elements
-8–9     TRAP vs WILL   — dopamine crowds vs monk breaking free
-10      OUTRO / CTA    — Master Mei on mountain ridge / open-air shrine, eyes on camera
+8–9     TRAP vs WILL   — dopamine crowds vs shinobi-samurai breaking system chains
+10      OUTRO / CTA    — Master Mei identity lock + unique pose / camera / environment (headroom)
 
 Avatar / DNA injection: ROLE A frames only (1, 5–7, 10).
 """
@@ -101,47 +101,102 @@ _SCENE_08_FILE: Path = _PROMPTS_DIR / "scene_08_unplug_escape.txt"
 _SCENE_FINAL_FILE: Path = _PROMPTS_DIR / "scene_final_hook.txt"
 _MEI_ANCHOR_FILE: Path = _PROMPTS_DIR / "master_mei_base_anchor.txt"
 
-# Hardcoded FLUX identity lock — Scene 1 + Final Hook (snow-white DNA)
+# Identity lock ONLY — pose / camera / location are chosen per episode (Frame 1).
 MEI_BASE_ANCHOR: str = (
-    "Master Mei — wise East Asian martial arts grandmaster meditating serenely. "
+    "Master Mei — wise East Asian martial arts grandmaster. "
     "Pure radiant snow-white hair styled in a high topknot secured with a polished "
     "metallic or bamboo hairpin, featuring two long distinct strands of white hair "
     "falling down both sides of his chest and shoulders. Iconic extra-long ultra-thick "
     "snow-white eyebrows sweeping dramatically outward past his temples. Full majestic "
     "snow-white beard extending all the way down to mid-chest with a matching flowing "
-    "snow-white mustache. Weathered skin, deep-set eyes, calm meditative expression. "
-    "White inner robe, black outer vest with gold lapel embroidery, wooden mala prayer "
-    "beads resting on his chest."
+    "snow-white mustache. Weathered skin, deep-set eyes, calm focused authoritative "
+    "expression. White inner robe, black outer vest with gold lapel embroidery, "
+    "wooden mala prayer beads resting on his chest."
 )
 
 # Dynamic Master Mei environments — templates are REFERENCES only; backdrops must
 # vary with each episode's philosophical narrative (weather / lighting / setting).
 MEI_ENV_LLM_DIRECTIVE: str = (
-    "Act templates are REFERENCES only. Dynamically modify backdrops, weather, and "
-    "lighting (golden-hour sunlight, snowy mountain fog, storm cliffs, misty ridges) "
-    "to mirror the core philosophical concept of the specific script. Prefer "
-    "high-altitude epic nature (~70%) over open-air mountain shrines (~30%). "
+    "Act templates are REFERENCES only. Dynamically vary pose, camera, backdrop, "
+    "weather, and lighting every episode. Never reuse the default avatar pose or "
+    "background on Frame 1. Identity (face, age, robe, hair, beard) stays locked. "
     "NEVER default to generic indoor temple halls."
 )
 
-# ~70% — high-altitude epic nature
+# Outdoor nature
 MEI_PRIMARY_ENVIRONMENTS: tuple[str, ...] = (
     "towering jagged Himalayan precipice above a sea of clouds",
     "high alpine cliff ledge overlooking endless cloud valleys",
-    "misty mountain ridge summit under cold wind",
+    "mist-covered peak cliff with wind-cut stone and rising fog",
     "natural mountain spring carved into living rock at high altitude",
     "rocky Alps precipice at golden hour above rolling fog",
     "snow-dusted peak ledge with vast alpine vista",
     "sheer storm-lit cliff above a boiling sea of clouds",
-    "high-altitude stone outcrop above endless mist valleys",
+    "serene bamboo forest path with filtered green light and drifting mist",
+    "lush cascading waterfall plunging into a mossy mountain pool",
+    "vibrant wilderness terrace of wild grass and ancient pines",
 )
 
-# ~30% — open-air ancient stone shrines / outdoor mountain courtyard temples
+# Built outdoor / ancestral grounds (never generic indoor halls)
 MEI_SECONDARY_ENVIRONMENTS: tuple[str, ...] = (
-    "open-air ancient stone shrine on a mountain terrace during rain",
+    "open-air ancient mountain temple terrace carved into the cliff",
+    "ancient stone courtyard with weathered lanterns and wet flagstones",
+    "traditional open-air dojo platform overlooking a mountain valley",
     "outdoor mountain courtyard temple veiled in thick fog",
     "rain-soaked open-air stone shrine overlooking alpine ridges",
     "misty outdoor mountain temple courtyard with wet stone and incense haze",
+)
+
+# Frame 1 action / posture — one option per episode, never a fixed lotus lock.
+MEI_FRAME1_ACTIONS: tuple[str, ...] = (
+    "meditating in a lotus posture, spine erect, hands resting in a mudra",
+    "holding a low martial horse stance, ancient discipline, open palms ready",
+    "performing a slow open-palm martial form, robes moving in the wind",
+    "seated at a low stone table for a tea ceremony, pouring from a clay pot",
+    "walking through the landscape with measured steps, a wooden staff in one hand",
+    "reading an unrolled ancient scroll, head slightly bowed in study",
+    "standing in deep contemplation at the edge of the scene, hands clasped behind his back",
+    "kneeling in quiet contemplation before weathered stone",
+)
+
+MEI_FRAME1_CAMERAS: tuple[str, ...] = (
+    "cinematic wide dynamic shot, full body in frame, epic environmental scale",
+    "low-angle tracking shot looking up at him, monumental presence",
+    "side-profile view, three-quarter cinematic framing",
+    "atmospheric over-the-shoulder shot, the environment stretching beyond him",
+    "close-up focused gaze with the environment still visible behind him, not a studio portrait",
+)
+
+# Last frame — identity lock + scene variety. Meditation is allowed, never required.
+# Cameras stay wide/medium-wide so Ken Burns cannot crop the topknot off-frame.
+MEI_FINAL_ACTIONS: tuple[str, ...] = (
+    "meditating in a lotus posture, spine erect, hands resting in a mudra",
+    "standing in deep contemplation, hands clasped behind his back",
+    "standing with quiet authority, gaze level, full body visible",
+    "seated at a low stone table finishing a tea ceremony",
+    "walking the last steps of a mountain path, a wooden staff in one hand",
+    "reading an unrolled ancient scroll at rest",
+    "holding a still martial ready stance, open palms lowered",
+)
+
+MEI_FINAL_CAMERAS: tuple[str, ...] = (
+    "cinematic wide full-body shot with generous empty sky above the topknot",
+    "medium-wide three-quarter shot, entire figure including hairpin in frame",
+    "side-profile full-body view with empty sky above his head",
+    "slight low-angle full-body shot that still keeps the topknot fully visible",
+    "static locked-off wide shot, no tight crop, space above and below the figure",
+)
+
+MEI_FINAL_HEADROOM: str = (
+    "Full-body composition with generous headroom above the topknot and hairpin, "
+    "never cropped at the skull, subject vertically centered with empty air above "
+    "the head. Identity lock for face, age, snow-white hair, robe and beads only."
+)
+
+MEI_OUTDOOR_TOKENS: tuple[str, ...] = (
+    "mountain", "cliff", "ridge", "alpine", "himalayan", "alps", "cloud",
+    "shrine", "courtyard", "precipice", "spring", "bamboo", "waterfall",
+    "wilderness", "forest", "dojo", "temple", "pine", "terrace", "valley",
 )
 
 _MEI_PHILOSOPHY_ATMOSPHERE: tuple[tuple[str, str], ...] = (
@@ -169,21 +224,20 @@ _MEI_PHILOSOPHY_ATMOSPHERE: tuple[tuple[str, str], ...] = (
 
 _FALLBACK_PENULTIMATE: str = (
     "===VARIATION_A===\n"
-    "Cyberpunk dystopian Earth, attention monopoly era: High-action cinematic shot inside "
-    "a massive atmospheric pod vault under neon emergency billboards and hanging cable "
-    "bundles. In the foreground, a muscular warrior violently smashes open his polymer "
-    "incubation chamber. Shattered glass, steam, and thick liquid splash across the metal "
-    "floor as he tears heavy spinal umbilical cables from his back, creating bright "
-    "electric sparks. In the background, endless glowing incubation pods stretch into the "
-    "dark abyss under red emergency lights while industrial haze and cybernetic conduits "
-    "frame the escape amid attention monopoly arrays and crimson AI beacons.\n"
+    "Cyberpunk dystopian Earth, attention monopoly era: Wide cinematic night shot of a "
+    "fully clothed shinobi-samurai in black ninja garb tearing himself free. Thick glowing "
+    "fiber-optic matrix wires and rusted iron shackles are locked around his wrists, "
+    "ankles, and torso, binding him to the attention-monopoly slavery system. He rips the "
+    "cables from the manacles; severed neon umbilicals spray sparks. Far in the background "
+    "Master Mei observes from a distant ridge: snow-white topknot, extra-long white "
+    "eyebrows, mid-chest beard, white robe, black gold vest, mala beads.\n"
     "===VARIATION_B===\n"
-    "Cyberpunk dystopian Earth, attention monopoly era: Vast wide-angle view of a towering "
-    "matrix of translucent human incubation pods submerged in viscous fluid. In the "
-    "immediate foreground, a liberated human forcibly rips off a skull-mounted sensory "
-    "chassis, bending metal clamps with raw power. Severed fiber-optic cables spark on "
-    "the wet grid floor. Monolithic central AI array glowing crimson in the far dark "
-    "background amid industrial haze, neon billboards, and cybernetic conduits."
+    "Cyberpunk dystopian Earth, attention monopoly era: Extreme wide night shot of a "
+    "fully clothed shinobi-samurai holding a rigid horse-stance kata. Freshly severed "
+    "glowing matrix wires and snapped iron chains still hang from his wrists and belt. "
+    "Other ninja trainees drill in formation. Far away on a high cliff, tiny in frame, "
+    "Master Mei watches the rigorous training: snow-white topknot, extra-long white "
+    "eyebrows, mid-chest beard, white robe, black gold-embroidered vest, mala beads."
 )
 _FALLBACK_SCENE_03: str = (
     "Cyberpunk dystopian Earth, attention monopoly era: Dark cinematic shot of two "
@@ -212,14 +266,14 @@ _FALLBACK_SCENE_07: str = (
     "flickering cyan propaganda light, oppressive bio-mechanical horror."
 )
 _FALLBACK_SCENE_01: str = (
-    f"{MEI_BASE_ANCHOR} Meditating in lotus posture atop a towering jagged mountain "
-    "cliff above a sea of clouds. Serene sunrise light, vast alpine vista, dramatic "
-    "cinematic framing, absolute stillness, spiritual authority without technology."
+    f"{MEI_BASE_ANCHOR} Standing in deep contemplation at the edge of a mist-covered "
+    "peak cliff, side-profile view, cinematic wide shot, sea of clouds at sunrise, "
+    "mist rising, spiritual authority without technology."
 )
 _FALLBACK_SCENE_FINAL: str = (
-    f"{MEI_BASE_ANCHOR} Standing on a misty high-altitude mountain ridge above a sea "
-    "of clouds, looking directly at the camera with uncompromising spiritual command. "
-    "Moody cinematic dawn light, no technology, no cybernetics, pure ancestral presence."
+    f"{MEI_BASE_ANCHOR} Standing in deep contemplation on a mist-covered peak cliff, "
+    "cinematic wide full-body shot with generous empty sky above the topknot, "
+    "sea of clouds at dusk, no technology, no cybernetics, pure ancestral presence."
 )
 
 # Global QA negatives — firearms / action-movie tropes banned unless explicitly requested
@@ -322,6 +376,15 @@ def _mei_atmosphere_from_philosophy(spoken_beat: str = "", subject: str = "") ->
     return "serene sunrise light, vast alpine vista, dramatic cinematic framing"
 
 
+def _mei_hash_pick(items: Sequence[str], seed: str, salt: str) -> str:
+    if not items:
+        return ""
+    digest = hashlib.md5(
+        f"{seed}|{salt}".encode("utf-8", errors="ignore")
+    ).hexdigest()
+    return items[int(digest[:8], 16) % len(items)]
+
+
 def pick_mei_meditation_environment(
     *,
     episode_seed: str = "",
@@ -329,22 +392,38 @@ def pick_mei_meditation_environment(
     hook_env: str = "",
 ) -> str:
     """
-    Pick a Master Mei meditation / authority setting.
+    Pick a unique Master Mei outdoor setting for this episode.
 
-    Frequency: ~70% high-altitude epic nature, ~30% open-air mountain shrines.
     ``hook_env`` (when supplied) wins so callers can pin a chosen backdrop.
+    Otherwise hash-picks across the full nature + ancestral-grounds pool so
+    Frame 1 is not locked to the same cliff.
     """
     forced = (hook_env or "").strip()
     if forced:
         return forced
-    seed = f"{episode_seed}|mei_env|{(spoken_beat or '')[:120]}"
-    digest = hashlib.md5(seed.encode("utf-8", errors="ignore")).hexdigest()
-    roll = int(digest[:8], 16) % 100
-    pool = MEI_PRIMARY_ENVIRONMENTS if roll < 70 else MEI_SECONDARY_ENVIRONMENTS
+    pool = MEI_PRIMARY_ENVIRONMENTS + MEI_SECONDARY_ENVIRONMENTS
     if not pool:
         return "towering jagged mountain cliff above a sea of clouds"
-    idx = int(digest[8:16], 16) % len(pool)
-    return pool[idx]
+    seed = f"{episode_seed}|mei_env|{(spoken_beat or '')[:120]}"
+    return _mei_hash_pick(pool, seed, "env")
+
+
+def pick_mei_frame1_setup(
+    *,
+    episode_seed: str = "",
+    spoken_beat: str = "",
+    hook_env: str = "",
+) -> tuple[str, str, str]:
+    """Return ``(action, camera, environment)`` unique to this episode seed."""
+    seed = f"{episode_seed}|{(spoken_beat or '')[:120]}"
+    action = _mei_hash_pick(MEI_FRAME1_ACTIONS, seed, "action")
+    camera = _mei_hash_pick(MEI_FRAME1_CAMERAS, seed, "camera")
+    env = pick_mei_meditation_environment(
+        episode_seed=episode_seed,
+        spoken_beat=spoken_beat,
+        hook_env=hook_env,
+    )
+    return action, camera, env
 
 
 def compose_scene_01_prompt(
@@ -355,25 +434,59 @@ def compose_scene_01_prompt(
     episode_seed: str = "",
 ) -> str:
     """
-    Scene 1 — DNA lock + dynamic environment (no cyberpunk prefix).
+    Scene 1 — identity lock + unique pose / camera / environment.
 
-    Templates are references only; backdrop / weather / lighting track the
-    episode's philosophical narrative.
+    Format: [Master Mei DNA] [pose/action] [camera] [environment] [atmosphere].
+    Never force the default avatar pose or background.
     """
     from agents.media.prompt_builder import finalize_flux_prompt
 
-    anchor = _load_mei_base_anchor()
-    env = pick_mei_meditation_environment(
-        episode_seed=episode_seed or subject,
+    anchor = _strip_pose_from_mei_anchor(_load_mei_base_anchor())
+    action, camera, env = pick_mei_frame1_setup(
+        episode_seed=episode_seed or subject or "frame1",
         spoken_beat=spoken_beat or subject,
         hook_env=hook_env,
     )
     atmosphere = _mei_atmosphere_from_philosophy(spoken_beat, subject)
     raw = (
-        f"{anchor.rstrip('.')}. Meditating in lotus posture atop {env}. "
-        f"{atmosphere}. Absolute stillness, spiritual authority without technology."
+        f"{anchor.rstrip('.')}. {action.capitalize() if action[:1].islower() else action} "
+        f"on {env}, {camera}, {atmosphere}. "
+        "Likeness lock for face, age, snow-white hair, robe and beads only — "
+        "do not copy any reference-image pose or background. "
+        "Spiritual authority without technology."
     )
     return finalize_flux_prompt(raw, require_prefix=False)
+
+
+def _strip_pose_from_mei_anchor(anchor: str) -> str:
+    """Keep identity nouns; drop baked lotus / meditating-serenely pose locks."""
+    text = (anchor or "").strip()
+    text = re.sub(
+        r"(?i)\bmeditat(?:ing|e|ion)?\s+serenely\b",
+        "with calm focused presence",
+        text,
+    )
+    text = re.sub(r"(?i)\bseated in meditation\b", "present in the scene", text)
+    text = re.sub(r"(?i)\bin lotus posture\b", "", text)
+    return re.sub(r"\s{2,}", " ", text).strip(" ,.")
+
+
+def pick_mei_frame_final_setup(
+    *,
+    episode_seed: str = "",
+    spoken_beat: str = "",
+    hook_env: str = "",
+) -> tuple[str, str, str]:
+    """Return ``(action, camera, environment)`` for the last frame."""
+    seed = f"final|{episode_seed}|{(spoken_beat or '')[:120]}"
+    action = _mei_hash_pick(MEI_FINAL_ACTIONS, seed, "action")
+    camera = _mei_hash_pick(MEI_FINAL_CAMERAS, seed, "camera")
+    env = pick_mei_meditation_environment(
+        episode_seed=f"final|{episode_seed}",
+        spoken_beat=spoken_beat,
+        hook_env=hook_env,
+    )
+    return action, camera, env
 
 
 def compose_scene_final_prompt(
@@ -383,20 +496,26 @@ def compose_scene_final_prompt(
     subject: str = "",
     episode_seed: str = "",
 ) -> str:
-    """Final Hook — same DNA + dynamic outdoor setting, eyes on camera."""
+    """
+    Last frame — identity lock + unique pose / camera / environment.
+
+    Meditation is one option, not the default. Always keep headroom so
+    Ken Burns cannot crop the topknot off-frame.
+    """
     from agents.media.prompt_builder import finalize_flux_prompt
 
-    anchor = _load_mei_base_anchor()
-    env = pick_mei_meditation_environment(
-        episode_seed=f"final|{episode_seed or subject}",
+    anchor = _strip_pose_from_mei_anchor(_load_mei_base_anchor())
+    action, camera, env = pick_mei_frame_final_setup(
+        episode_seed=episode_seed or subject or "frame_final",
         spoken_beat=spoken_beat or subject,
         hook_env=hook_env,
     )
     atmosphere = _mei_atmosphere_from_philosophy(spoken_beat, subject)
     raw = (
-        f"{anchor.rstrip('.')}. Standing on {env}, looking directly at the camera "
-        f"with uncompromising spiritual command. {atmosphere}. No technology, "
-        f"no cybernetics, pure ancestral presence."
+        f"{anchor.rstrip('.')}. {action.capitalize() if action[:1].islower() else action} "
+        f"on {env}, {camera}, {atmosphere}. {MEI_FINAL_HEADROOM} "
+        "Do not copy any reference-image pose or background. "
+        "No technology, no cybernetics, pure ancestral presence."
     )
     return finalize_flux_prompt(raw, require_prefix=False)
 
@@ -408,26 +527,40 @@ def _load_scene_01_prompt(
     subject: str = "",
     episode_seed: str = "",
 ) -> str:
-    """Scene 1 hook — Master Mei snow-white DNA + dynamic environment."""
-    # Always compose dynamically when seed/env/beat available; else file fallback
-    if hook_env or spoken_beat or subject or episode_seed:
-        return compose_scene_01_prompt(
-            hook_env=hook_env,
-            spoken_beat=spoken_beat,
-            subject=subject,
-            episode_seed=episode_seed,
-        )
-    from agents.media.prompt_builder import finalize_flux_prompt
+    """Scene 1 hook — identity lock + unique pose / camera / environment."""
+    return compose_scene_01_prompt(
+        hook_env=hook_env,
+        spoken_beat=spoken_beat,
+        subject=subject,
+        episode_seed=episode_seed or subject or "default_hook",
+    )
 
-    raw = _load_prompt_file(_SCENE_01_FILE, _FALLBACK_SCENE_01)
-    anchor = _load_mei_base_anchor()
-    lo = raw.lower()
-    if "topknot" not in lo and "snow-white" not in lo and "mala" not in lo:
-        raw = f"{anchor.rstrip('.')}. {raw}"
-    # Ban leftover indoor-temple defaults when file is stale
-    if re.search(r"(?i)\binside\b.*\btemple\b|\btemple\s+hall\b|\bindoor\b", raw):
-        return compose_scene_01_prompt(episode_seed="default_hook")
-    return finalize_flux_prompt(raw, require_prefix=False)
+
+def select_style_references_for_mei_frame(
+    refs: Sequence[Path] | None,
+    *,
+    act_index: int,
+    episode_seed: str = "",
+    max_images: int = 3,
+    n_acts: int = 0,
+) -> list[Path]:
+    """
+    Frame 1 and the last frame never attach style stills — they bake a static
+    pose/background and a tight crop. Other Mei frames rotate which refs are used.
+    """
+    paths = [Path(p) for p in (refs or []) if p and Path(p).is_file()]
+    last = int(n_acts) - 1 if int(n_acts) > 0 else -1
+    if int(act_index) == 0 or int(act_index) == last or not paths:
+        return []
+    cap = max(1, int(max_images or 3))
+    if len(paths) <= cap:
+        return paths[:cap]
+    digest = hashlib.md5(
+        f"{episode_seed}|sref|{act_index}".encode("utf-8", errors="ignore")
+    ).hexdigest()
+    start = int(digest[:8], 16) % len(paths)
+    rotated = paths[start:] + paths[:start]
+    return rotated[:cap]
 
 
 def _load_scene_final_prompt(
@@ -437,24 +570,13 @@ def _load_scene_final_prompt(
     subject: str = "",
     episode_seed: str = "",
 ) -> str:
-    """Final hook — same snow-white identity + dynamic outdoor setting."""
-    if hook_env or spoken_beat or subject or episode_seed:
-        return compose_scene_final_prompt(
-            hook_env=hook_env,
-            spoken_beat=spoken_beat,
-            subject=subject,
-            episode_seed=episode_seed,
-        )
-    from agents.media.prompt_builder import finalize_flux_prompt
-
-    raw = _load_prompt_file(_SCENE_FINAL_FILE, _FALLBACK_SCENE_FINAL)
-    anchor = _load_mei_base_anchor()
-    lo = raw.lower()
-    if "topknot" not in lo and "snow-white" not in lo and "mala" not in lo:
-        raw = f"{anchor.rstrip('.')}. {raw}"
-    if re.search(r"(?i)\btemple\s+hall\b|\binside\b.*\btemple\b|\bindoor\b", raw):
-        return compose_scene_final_prompt(episode_seed="default_final")
-    return finalize_flux_prompt(raw, require_prefix=False)
+    """Last frame — identity lock + unique pose / camera / environment."""
+    return compose_scene_final_prompt(
+        hook_env=hook_env,
+        spoken_beat=spoken_beat,
+        subject=subject,
+        episode_seed=episode_seed or subject or "default_final",
+    )
 
 
 PENULTIMATE_LIBERATION_PROMPT: str = _load_penultimate_prompt()
@@ -472,6 +594,8 @@ SCENE_08_NEGATIVE: str = (
 PENULTIMATE_LIBERATION_NEGATIVE: str = (
     "text, watermark, typography, close-up, cropped head, face zoom, subtitles, "
     "UI elements, video game HUD, cartoon, anime, glossy CGI superhero, "
+    "shirtless, bare chest, bare torso, muscular gym body, bodybuilder, "
+    "incubation pod smash, glass capsule hero, liquid vat escape, "
     "single monk portrait, idle pose, looking at viewer, bright daylight, "
     f"{GLOBAL_FIREARM_BAN}"
 )
@@ -889,17 +1013,13 @@ def validate_mei_visual_prompt(
     _qa_seed = f"{n}:{idx}:{beat}"
 
     if idx == 0 or beat == BEAT_INTRO:
-        hook = _load_scene_01_prompt(episode_seed=_qa_seed)
+        hook = _load_scene_01_prompt(episode_seed=_qa_seed, spoken_beat=beat)
         need = (
-            "meditat", "topknot", "snow-white", "mala", "gold",
+            "topknot", "snow-white", "mala", "gold",
             "eyebrow", "beard", "strand",
         )
-        outdoor = (
-            "mountain", "cliff", "ridge", "alpine", "himalayan", "alps",
-            "cloud", "shrine", "courtyard", "precipice", "spring",
-        )
         dna_hits = sum(1 for k in need if k in repaired.lower())
-        outdoor_hits = sum(1 for k in outdoor if k in repaired.lower())
+        outdoor_hits = sum(1 for k in MEI_OUTDOOR_TOKENS if k in repaired.lower())
         indoor_default = bool(
             re.search(r"(?i)\binside\b.*\btemple\b|\btemple\s+hall\b|\bindoor\b", repaired)
         )
@@ -926,30 +1046,30 @@ def validate_mei_visual_prompt(
             violations.append("SCENE_7: missing computing-apparatus captive — replacing with FLUX RAG prompt")
             repaired = s7
 
-    # Scene 8 (1-based) = act_index 7 — samurai slicing matrix illusion (9–10 frame lore)
-    if idx == 7 and beat != BEAT_OUTRO and n >= 9:
+    # Scene 8 (1-based) = act_index 7 — samurai matrix-slice (only when NOT penultimate)
+    if idx == 7 and beat != BEAT_OUTRO and beat != BEAT_BREAKFREE and n >= 9:
         s8 = _load_scene_08_prompt(seed=_qa_seed)
         need = ("samurai", "katana", "holographic", "matrix", "propaganda", "machine city")
         if sum(1 for k in need if k in repaired.lower()) < 2:
             violations.append("SCENE_8: missing samurai matrix-slice — replacing with FLUX RAG prompt")
             repaired = s8
 
-    if (idx == n - 2 or beat == BEAT_BREAKFREE) and not (idx == 7 and n >= 9):
+    if idx == n - 2 or beat == BEAT_BREAKFREE:
         pen = _load_penultimate_prompt(seed=_qa_seed)
-        need = ("pod", "incubation", "cable", "matrix", "warrior", "liberat")
-        if sum(1 for k in need if k in repaired.lower()) < 2:
-            violations.append("PENULTIMATE: missing matrix pod escape — replacing with FLUX RAG prompt")
+        need = ("samurai", "ninja", "shinobi", "chain", "wire", "shackle", "wrist")
+        bound = bool(re.search(r"(?i)wrist|ankle|torso|shackle|manacle|umbilical", repaired))
+        shirtless = bool(re.search(r"(?i)shirtless|bare[- ]chest|bare[- ]torso|muscular warrior", repaired))
+        if sum(1 for k in need if k in repaired.lower()) < 2 or not bound or shirtless:
+            violations.append(
+                "PENULTIMATE: missing body-bound wire/chain liberation — replacing with FLUX RAG prompt"
+            )
             repaired = pen
 
     if idx == n - 1 or beat == BEAT_OUTRO:
-        final = _load_scene_final_prompt(episode_seed=_qa_seed)
+        final = _load_scene_final_prompt(episode_seed=_qa_seed, spoken_beat=beat)
         need = ("topknot", "snow-white", "mala", "gold", "eyebrow", "beard")
-        outdoor = (
-            "mountain", "cliff", "ridge", "alpine", "cloud", "shrine",
-            "courtyard", "precipice", "temple",
-        )
         dna_hits = sum(1 for k in need if k in repaired.lower())
-        outdoor_hits = sum(1 for k in outdoor if k in repaired.lower())
+        outdoor_hits = sum(1 for k in MEI_OUTDOOR_TOKENS if k in repaired.lower())
         indoor_default = bool(
             re.search(r"(?i)\btemple\s+hall\b|\binside\b.*\btemple\b|\bindoor\b", repaired)
         )
@@ -1323,7 +1443,7 @@ def build_role_prompt(
     negative = negative_for_role(role)
 
     if beat == BEAT_INTRO or (role == ROLE_MASTER and beat == BEAT_INTRO):
-        # Scene 1 — DNA lock + dynamic high-altitude / open-air shrine environment
+        # Scene 1 — identity lock + unique pose / camera / environment
         positive = _load_scene_01_prompt(
             hook_env=hook_env,
             spoken_beat=chunk,
@@ -1335,10 +1455,11 @@ def build_role_prompt(
             f"{GLOBAL_FIREARM_BAN}, cybernetics on Master Mei, neon city, "
             "graphite, pencil drawing, charcoal sketch, illustration, "
             "generic indoor temple hall, dark robes only, "
-            "black silk kimono without white inner robe"
+            "black silk kimono without white inner robe, "
+            "copied reference pose, identical lotus lock, same static avatar background"
         )
     elif beat == BEAT_OUTRO:
-        # Final Hook — same DNA + dynamic outdoor setting, eyes on camera
+        # Last frame — identity lock + unique pose / camera / environment
         positive = _load_scene_final_prompt(
             hook_env=hook_env,
             spoken_beat=chunk,
@@ -1350,7 +1471,9 @@ def build_role_prompt(
             f"{GLOBAL_FIREARM_BAN}, "
             "bionic implants, cybernetics, VR headset, glowing wires, "
             "neon city fused onto Master Mei, deformed hands, extra limbs, blurry face, "
-            "graphite, pencil drawing, charcoal sketch, generic indoor temple hall"
+            "graphite, pencil drawing, charcoal sketch, generic indoor temple hall, "
+            "tight headshot, cropped skull, cut-off topknot, extreme close-up, "
+            "copied reference pose, same static avatar background"
         )
     elif beat == BEAT_TRAINING or (
         role == ROLE_MASTER
@@ -1371,18 +1494,18 @@ def build_role_prompt(
             f"{SCENE_03_NEGATIVE}, graphite, pencil drawing, charcoal sketch, illustration, "
             "Master Mei, temple, meditation"
         )
-    elif act_index == 7 and beat != BEAT_OUTRO:
-        # Scene 8 — samurai slicing matrix illusion
-        positive = _load_scene_08_prompt(seed=_seed)
-        negative = SCENE_08_NEGATIVE
     elif beat == BEAT_BREAKFREE:
-        # Penultimate — Infinite Matrix pod escape (when not Scene 8 slot)
+        # Penultimate — shinobi-samurai breaks system chains; Mei watches training
         positive = _load_penultimate_prompt(seed=_seed)
         negative = (
             f"{PENULTIMATE_LIBERATION_NEGATIVE}, {_IDLE_MONK_BAN}, "
             "graphite, pencil drawing, charcoal sketch, illustration, "
             "close-up, tight shot, face zoom, macro, cropped head"
         )
+    elif act_index == 7 and beat != BEAT_OUTRO:
+        # Scene 8 — samurai matrix-slice (10-frame pressure slot, not penultimate)
+        positive = _load_scene_08_prompt(seed=_seed)
+        negative = SCENE_08_NEGATIVE
     elif act_index == 6 and beat == BEAT_DOPAMINE:
         # Scene 7 — computing apparatus captive
         positive = _load_scene_07_prompt(seed=_seed)

@@ -183,9 +183,19 @@ def generate_scene_image_dev(
     """
     from agents.media.providers.together_image import TogetherImageGenerator
 
-    model = str(getattr(lofi_cfg, "LOFI_DEV_IMAGE_MODEL", "") or "black-forest-labs/FLUX.1-dev")
-    steps = int(getattr(lofi_cfg, "LOFI_DEV_IMAGE_STEPS", 20) or 20)
-    guidance = float(getattr(lofi_cfg, "LOFI_DEV_GUIDANCE_SCALE", 4.0) or 4.0)
+    if bool(getattr(lofi_cfg, "uses_flux2_dev", lambda: False)()):
+        model = str(
+            getattr(lofi_cfg, "LOFI_FLUX2_DEV_MODEL", "")
+            or "black-forest-labs/FLUX-2-dev"
+        )
+        steps = int(getattr(lofi_cfg, "LOFI_FLUX2_DEV_STEPS", 28) or 28)
+        guidance = float(
+            getattr(lofi_cfg, "LOFI_FLUX2_DEV_GUIDANCE_SCALE", 2.5) or 2.5
+        )
+    else:
+        model = str(getattr(lofi_cfg, "LOFI_DEV_IMAGE_MODEL", "") or "black-forest-labs/FLUX.1-dev")
+        steps = int(getattr(lofi_cfg, "LOFI_DEV_IMAGE_STEPS", 20) or 20)
+        guidance = float(getattr(lofi_cfg, "LOFI_DEV_GUIDANCE_SCALE", 4.0) or 4.0)
     licensed = ""
     not_in: list[str] = []
     if isinstance(mood, dict):
@@ -224,7 +234,7 @@ def generate_scene_image_dev(
         f"model={model} | via=TogetherImageGenerator | "
         f"steps={steps} | guidance_scale={guidance} | lora=OFF | "
         "skip_mandatory_negative=1 | "
-        "DeepInfra FLUX-1-dev if Together serverless is unavailable"
+        "DeepInfra FLUX-2-dev if uses_flux2_dev else FLUX-1-dev fallback"
     )
     print(
         f"[LOFI image_gen_dev] verbatim={bool(lofi_cfg.USE_RISO_PROMPT_LIBRARY if verbatim is None else verbatim)} | "

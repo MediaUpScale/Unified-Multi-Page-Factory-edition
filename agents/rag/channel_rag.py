@@ -75,13 +75,28 @@ def _flag_gap(channel_name: str, section: str) -> None:
     if key in _GAP_LOGGED:
         return
     _GAP_LOGGED.add(key)
-    _LOG.warning(
+    debug = False
+    try:
+        import config as app_config
+
+        debug = bool(getattr(app_config, "ENGINE_DEBUG", False))
+    except Exception:  # noqa: BLE001
+        pass
+    import os as _os
+
+    if not debug:
+        debug = (_os.getenv("ENGINE_DEBUG") or "").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+    msg = (
         "CHANNEL_RAG_GAP | channel=%s | section=%s missing -- agent falling "
         "back to hardcoded defaults. Add this section to CHANNEL_DNA_SEED "
-        "in quality/VisualQA_Agent/channel_rag.py to eliminate the gap.",
-        channel_name or "-",
-        section,
+        "in quality/VisualQA_Agent/channel_rag.py to eliminate the gap."
     )
+    if debug:
+        _LOG.warning(msg, channel_name or "-", section)
+    else:
+        _LOG.debug(msg, channel_name or "-", section)
 
 
 def _render_list(items: "list[Any] | None", *, bullet: str = "- ") -> str:

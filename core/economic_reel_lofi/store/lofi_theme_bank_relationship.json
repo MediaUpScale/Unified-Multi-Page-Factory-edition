@@ -3,7 +3,7 @@
     "theme": "trust",
     "subtheme": "consistency_over_promises",
     "status": "used",
-    "last_used_date": "2026-08-22",
+    "last_used_date": "2026-09-07",
     "performance_score": null,
     "preferred_mood_palette": "amber_teal",
     "sample_scene": "couple walking hand-in-hand down a quiet street, mid shot, solid streetlamp",
@@ -14,7 +14,8 @@
       },
       {
         "setting": "sofa in evening light",
-        "key_object": "folded blanket"
+        "key_object": "folded blanket",
+        "last_used_date": "2026-09-07"
       },
       {
         "setting": "small table by a window",
@@ -53,17 +54,17 @@
       {
         "detail": "an unmade bed left empty",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "a closed suitcase resting on the floor",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "the same scuffed shoes on the stoop after work",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "an unopened envelope left on the windowsill",
@@ -95,12 +96,12 @@
     "hooks": [
       {
         "text": "Trust is not a feeling.",
-        "last_used_date": "2026-08-23",
+        "last_used_date": "2026-09-07",
         "performance_score": null
       },
       {
         "text": "It is a pattern you notice later.",
-        "last_used_date": "2026-08-23",
+        "last_used_date": "2026-09-07",
         "performance_score": null
       },
       {
@@ -110,8 +111,9 @@
       }
     ],
     "arc_template_dates": {
-      "thematic_arc": "2026-08-22"
-    }
+      "thematic_arc": "2026-09-07"
+    },
+    "last_anchor_object": "folded blanket"
   },
   {
     "theme": "secure_love",
@@ -339,7 +341,7 @@
     "theme": "attachment",
     "subtheme": "anxious_pursuit_cycles",
     "status": "used",
-    "last_used_date": "2026-08-21",
+    "last_used_date": "2026-09-07",
     "performance_score": null,
     "preferred_mood_palette": "indigo_violet_night",
     "sample_scene": "couple holding hands on a sofa, solid amber table lamp, close mid shot",
@@ -350,7 +352,8 @@
       },
       {
         "setting": "window overlooking the street",
-        "key_object": "empty sidewalk"
+        "key_object": "empty sidewalk",
+        "last_used_date": "2026-09-07"
       },
       {
         "setting": "hallway",
@@ -385,12 +388,12 @@
       {
         "detail": "an empty passenger seat watched from the curb",
         "sensory_type": "gesture",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "read receipts checked on a dark screen",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "shoes left on in the hallway, ready to go back",
@@ -400,50 +403,51 @@
       {
         "detail": "the same street corner waited under a streetlamp",
         "sensory_type": "place",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "a doorbell pressed once, then again",
         "sensory_type": "gesture",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "an empty passenger seat watched from the curb",
         "sensory_type": "object",
-        "last_used_date": "2026-08-25"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "a jacket grabbed, then hung back on the hook",
         "sensory_type": "object",
-        "last_used_date": "2026-08-23"
+        "last_used_date": "2026-09-07"
       },
       {
         "detail": "a streetlamp on a quiet corner",
         "sensory_type": "gesture",
-        "last_used_date": "2026-08-23",
+        "last_used_date": "2026-09-07",
         "performance_score": null
       }
     ],
     "hooks": [
       {
         "text": "Chasing them will not make them stay.",
-        "last_used_date": "2026-08-25",
+        "last_used_date": "2026-09-07",
         "performance_score": null
       },
       {
         "text": "The more you reach, the further they stand.",
-        "last_used_date": "2026-08-25",
+        "last_used_date": "2026-09-07",
         "performance_score": null
       },
       {
         "text": "Anxiety is not a proof of love.",
-        "last_used_date": "2026-08-23",
+        "last_used_date": "2026-09-07",
         "performance_score": null
       }
     ],
     "arc_template_dates": {
-      "thematic_arc": "2026-08-20"
-    }
+      "thematic_arc": "2026-09-07"
+    },
+    "last_anchor_object": "empty sidewalk"
   },
   {
     "theme": "communication",

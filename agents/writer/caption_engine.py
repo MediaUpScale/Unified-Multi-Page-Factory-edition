@@ -1914,6 +1914,17 @@ class CaptionEngine:
             _max_words = int(_mei_prof.get("words_max", _max_words_gate))
             _accept_chars_lo = max(700, _min_words * 5)
             _accept_chars_hi = max(_accept_chars_lo + 200, _max_words * 8)
+            if _min_words <= 115:
+                _aim_lo, _aim_hi, _aim_target = 120, min(135, _max_words), 128
+            else:
+                _aim_lo = min(_max_words, max(_min_words + 5, int(_mei_prof.get("words_target", _min_words + 10))))
+                _aim_hi = _max_words
+                _aim_target = int(_mei_prof.get("words_target", (_aim_lo + _aim_hi) // 2))
+            _sys_base += (
+                f" LENGTH LOCK: Write {_aim_lo}–{_aim_hi} spoken words "
+                f"(exclude [ACT N] markers). Aim {_aim_target}. "
+                f"A draft under {_aim_lo} words FAILS. Never write fewer than {_aim_lo}."
+            )
         elif _warrior:
             _min_words = _target_words_gate
             _max_words = _max_words_gate
@@ -2059,7 +2070,7 @@ class CaptionEngine:
         )
         if _warrior and not _first_pass:
             # Warrior/Master-Mei only: strict length gate + one deficit retry.
-            logger.warning(
+            logger.info(
                 "generate_sequence_voiceover | WARRIOR draft below word floor "
                 "(%d words; need ≥%d) — one retry with deficit.",
                 _first_wc, _min_words,

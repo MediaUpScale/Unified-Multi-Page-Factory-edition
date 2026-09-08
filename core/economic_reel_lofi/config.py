@@ -44,6 +44,10 @@ MAX_CAPTION_WORDS: int = 7
 # Hard per-beat spoken cap. Direct 9-line compose must satisfy this itself.
 THEMATIC_MAX_CAPTION_CHARS: int = 56
 THEMATIC_MAX_CAPTION_WORDS: int = 9
+# Writer target for beat 1 only — not a still-duration override. The still
+# holds whatever the rendered hook VO actually lasts.
+HOOK_LINE_TARGET_WORDS: int = 7
+HOOK_LINE_TARGET_S: float = 3.0
 THEMATIC_ARC_ID: str = "thematic_arc"
 # Measured 2026-08-23 from shipped caption_timing at LOFI_VOICE_SPEED=0.80:
 # loneliness 60w / 19.40s = 3.09; evening five-script mean ≈ 3.01 w/s.
@@ -232,6 +236,25 @@ def narration_wpm() -> float:
 
 def narration_wps() -> float:
     return float(NARRATION_WPM) / 60.0
+
+
+def hook_line_brevity_clause(*, paraphrase: bool = False) -> str:
+    """Shared writer constraint: short hook line, not a fixed still hold."""
+    words = int(HOOK_LINE_TARGET_WORDS)
+    secs = float(HOOK_LINE_TARGET_S)
+    base = (
+        f"HOOK LINE (beat 1): target under ~{words} words / ~{secs:.0f}s of "
+        "natural spoken pace. Attention is highest in the opening seconds — "
+        "open short and concrete. This is a spoken-line target only; still "
+        "duration follows the rendered VO, not this estimate."
+    )
+    if paraphrase:
+        return (
+            base
+            + " Prefer a shorter first spoken sentence when that does not "
+            "break a protected anaphora/refrain or the light-reword contract."
+        )
+    return base
 
 
 def beat_word_budget(duration_s: float | None = None) -> int:
@@ -466,13 +489,33 @@ LOFI_DEV_IMAGE_MODEL: str = _ACTIVE_STYLE.model
 LOFI_DEV_IMAGE_STEPS: int = int(_ACTIVE_STYLE.steps)
 LOFI_DEV_GUIDANCE_SCALE: float = float(_ACTIVE_STYLE.guidance_scale)
 DEFAULT_VISUAL_IDENTITY_PROFILE: str = _ACTIVE_STYLE.profile_name
-# Live ECONOMIC_REEL_LOFI stays Schnell unless this is "dev".
-# Override: set env LOFI_FLUX_BACKEND=dev for a Flux Dev episode.
+# Live ECONOMIC_REEL_LOFI stays Schnell unless this is "dev" or "flux2-dev".
+# Override: LOFI_FLUX_BACKEND=dev | flux2-dev | flux2. Read live so CLI flags
+# set after import still apply.
 LOFI_FLUX_BACKEND: str = str(os.environ.get("LOFI_FLUX_BACKEND") or "schnell").strip()
+LOFI_FLUX2_DEV_MODEL: str = "black-forest-labs/FLUX-2-dev"
+LOFI_FLUX2_DEV_STEPS: int = 28
+LOFI_FLUX2_DEV_GUIDANCE_SCALE: float = 2.5
+
+
+def flux_backend() -> str:
+    return str(os.environ.get("LOFI_FLUX_BACKEND") or LOFI_FLUX_BACKEND or "schnell").strip().lower()
+
+
+def uses_flux2_dev() -> bool:
+    return flux_backend() in {
+        "flux2",
+        "flux2-dev",
+        "flux.2-dev",
+        "flux2dev",
+        "deepinfra_flux2dev",
+    }
 
 
 def uses_flux_dev() -> bool:
-    return LOFI_FLUX_BACKEND.lower() in {"dev", "flux_dev", "flux.1-dev"}
+    if uses_flux2_dev():
+        return True
+    return flux_backend() in {"dev", "flux_dev", "flux.1-dev"}
 
 
 # Exact 9:16 (0.5625), both axes ÷16, 0.92 MP — under Flux Dev's ~1 MP native
@@ -492,6 +535,8 @@ STILL_STYLE_VERSION: str = _ACTIVE_STYLE.still_style_version
 
 def current_still_style_tag() -> str:
     """Identity stamped on every still this process writes."""
+    if uses_flux2_dev():
+        return f"{DEFAULT_VISUAL_IDENTITY_PROFILE}/flux2-dev/{STILL_STYLE_VERSION}"
     if uses_flux_dev():
         return (
             f"{DEFAULT_VISUAL_IDENTITY_PROFILE}/dev/{STILL_STYLE_VERSION}"
@@ -516,7 +561,9 @@ def write_still_style_sidecar(
         "visual_identity_profile": (
             DEFAULT_VISUAL_IDENTITY_PROFILE if uses_flux_dev() else "schnell_live"
         ),
-        "flux_backend": "dev" if uses_flux_dev() else "schnell",
+        "flux_backend": (
+            "flux2-dev" if uses_flux2_dev() else ("dev" if uses_flux_dev() else "schnell")
+        ),
         "style_version": STILL_STYLE_VERSION,
         "pipeline_run": run_id or Path(image_path).parent.name,
         "reused": bool(reused),
@@ -583,6 +630,7 @@ def lofi_image_cost_per_call_usd(
     """
     from agents.media.providers.together_image import (
         estimate_deepinfra_dev_cost_usd,
+        estimate_deepinfra_flux2_cost_usd,
         estimate_deepinfra_schnell_cost_usd,
         estimate_together_image_cost,
     )
@@ -590,6 +638,21 @@ def lofi_image_cost_per_call_usd(
     width = int(width if width is not None else LOFI_IMAGE_WIDTH)
     height = int(height if height is not None else LOFI_IMAGE_HEIGHT)
 
+    if uses_flux2_dev():
+        steps = int(LOFI_FLUX2_DEV_STEPS)
+        usd = estimate_deepinfra_flux2_cost_usd(width, height, steps)
+        return usd, {
+            "backend": "flux2-dev",
+            "provider": "deepinfra",
+            "model": LOFI_FLUX2_DEV_MODEL,
+            "steps": steps,
+            "guidance_scale": LOFI_FLUX2_DEV_GUIDANCE_SCALE,
+            "allow_lora": False,
+            "usd_per_image": usd,
+            "formula": "0.01*(w/1024)*(h/1024)*(steps/28)",
+            "together_flat_usd": estimate_together_image_cost("black-forest-labs/FLUX.2-dev"),
+            "note": "DeepInfra FLUX-2-dev quoted formula.",
+        }
     if uses_flux_dev():
         steps = int(LOFI_DEV_IMAGE_STEPS)
         usd = estimate_deepinfra_dev_cost_usd(width, height, steps)
@@ -1004,20 +1067,20 @@ def slot_duration_for_vo(
     base_s: float | None = None,
     trailing_silence_s: float | None = None,
 ) -> tuple[float, bool]:
-    """Return (slot_s, extended).
+    """Return (slot_s, audio_driven).
 
-    Slot is at least ``base_s`` (default SCENE_DURATION_S=3.0). It grows when
-    VO + trailing inter-line silence exceeds the base — never shrinks below
-    base when LOCK_FIXED_BEAT_DURATION is the contract (9×3s = 27s).
+    After TTS, the still slot is the measured VO length plus the inter-line
+    hush (or a last-beat pad). Pre-TTS ``duration_s`` estimates are writer
+    targets only — they must not floor or stretch a still past the speech.
     """
     vo = max(0.0, float(vo_dur or 0.0))
     trail = float(
         VO_INTERLINE_SILENCE_S if trailing_silence_s is None else trailing_silence_s
     )
-    needed = vo + trail
+    if vo > 0.05:
+        return round(vo + trail, 3), True
     base = float(base_s if base_s is not None else SCENE_DURATION_S)
-    slot = max(base, needed)
-    return round(slot, 3), needed > base + 0.02
+    return round(base, 3), False
 
 
 def duration_for_beat_count(n_beats: int) -> float:

@@ -117,10 +117,10 @@ CAMERA_MOTIONS: tuple[str, ...] = (
 CANONICAL_PROMPTS: dict[str, str] = {
     "hook": (
         f"{ILLUSTRATION_STYLE_GOLDEN}. "
-        "HOOK FRAME 1 — STRICT CHARACTER LOCK + REFERENCE LIKENESS. "
-        "Master Mei SEATED in meditation in ancestral samurai temple / misty mountain "
-        "sacred ground — spine erect, absolute stillness, long white topknot and beard, "
-        "dark/gold robes. {_CINEMATIC_FINISH}."
+        "HOOK FRAME 1 — STRICT CHARACTER LOCK + LIKENESS ONLY. "
+        "Master Mei identity lock (snow-white topknot, extra-long eyebrows, mid-chest "
+        "beard, white robe + black vest) in a UNIQUE pose, camera, and outdoor setting "
+        "— never copy the default avatar pose or background. {_CINEMATIC_FINISH}."
     ),
     "dopamine": (
         f"{ILLUSTRATION_STYLE_GOLDEN}. "
@@ -377,19 +377,26 @@ def compile_theme_prompt(
             "temples, mid-chest snow-white beard, white robe + black vest gold embroidery "
             "— NO cybernetics, NO VR, NO neon wires"
         )
-        env = env_hint or (
-            "towering jagged mountain cliff above a sea of clouds "
-            "(or open-air mountain shrine in rain/fog)"
-        )
+        try:
+            from agents.media.visual_roles import pick_mei_frame1_setup
+
+            action, camera, env = pick_mei_frame1_setup(
+                episode_seed=subject or chunk,
+                spoken_beat=chunk,
+                hook_env=env_hint,
+            )
+        except Exception:
+            action = "standing in deep contemplation at the edge of the scene"
+            camera = "cinematic wide dynamic shot, full body in frame"
+            env = env_hint or "mist-covered peak cliff above a sea of clouds"
         return strip_banned_terms(
             f"{style}. "
             f"MEDIUM: Ultra-realistic cinematic 4K photography — NOT illustration, NOT CGI polish. "
-            f"HOOK FRAME 1 — FIRST APPEARANCE — STRICT CHARACTER LOCK + REFERENCE LIKENESS. "
-            f"{mei}. POSE MANDATE: Master Mei meditating in lotus on a high-altitude cliff "
-            f"or misty ridge — spine erect, absolute stillness. "
-            f"ENVIRONMENT: {env}. Templates are references — match script philosophy via "
-            f"weather/lighting. Never generic indoor temples. Traditional organic world ONLY. "
-            f"THEME CONTEXT: {subject or chunk}. Spoken beat: {chunk}. "
+            f"HOOK FRAME 1 — FIRST APPEARANCE — IDENTITY LOCK ONLY, UNIQUE SCENE. "
+            f"{mei}. ACTION: {action}. CAMERA: {camera}. "
+            f"ENVIRONMENT: {env}. Never copy a reference-image pose or background. "
+            f"Never generic indoor temples. Traditional organic world ONLY. "
+            f"THEME CONTEXT: {subject or chunk}. "
             f"[Camera Motion]: {cam}. {_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
         )
 
@@ -399,12 +406,26 @@ def compile_theme_prompt(
             "two long white chest locks, extra-long snow-white eyebrows past temples, "
             "mid-chest snow-white beard, white robe + black vest gold embroidery — NO cybernetics"
         )
+        try:
+            from agents.media.visual_roles import pick_mei_frame_final_setup, MEI_FINAL_HEADROOM
+
+            action, camera, env = pick_mei_frame_final_setup(
+                episode_seed=subject or chunk,
+                spoken_beat=chunk,
+            )
+        except Exception:
+            action = "standing in deep contemplation"
+            camera = "cinematic wide full-body shot with generous empty sky above the topknot"
+            env = "mist-covered peak cliff above a sea of clouds"
+            MEI_FINAL_HEADROOM = (
+                "Full-body composition with generous headroom above the topknot."
+            )
         return strip_banned_terms(
             f"{style}. "
-            f"[SUBJECT & ACTION]: {mei}, standing on a misty high-altitude mountain ridge "
-            f"or open-air shrine after hard training — sovereign stillness, REFERENCE LIKENESS. "
-            f"Traditional organic world ONLY. Spoken beat: {chunk}. [Camera Motion]: {cam}. "
-            f"{_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
+            f"[SUBJECT & ACTION]: {mei}. ACTION: {action}. CAMERA: {camera}. "
+            f"ENVIRONMENT: {env}. {MEI_FINAL_HEADROOM} "
+            f"Traditional organic world ONLY. "
+            f"[Camera Motion]: {cam}. {_ANTI_DISTORTION}. {_NO_CJK}. {_CINEMATIC_FINISH}."
         )
 
     if t in ("training", "forge", "discipline"):

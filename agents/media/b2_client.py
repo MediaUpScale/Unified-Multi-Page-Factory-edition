@@ -34,11 +34,37 @@ class B2StorageCapError(RuntimeError):
     """Raised when B2 rejects an upload due to storage/cap AccessDenied."""
 
 
-# Public URL base is derived at import time from the bucket name + endpoint.
-# Format: https://<bucket>.s3.<region>.backblazeb2.com
-_B2_ENDPOINT_URL  = "https://s3.us-east-005.backblazeb2.com"
-_B2_BUCKET_NAME   = "MediaupscaleStorage"
-_B2_PUBLIC_BASE   = f"https://{_B2_BUCKET_NAME}.s3.us-east-005.backblazeb2.com"
+_B2_ENDPOINT_URL = "https://s3.us-east-005.backblazeb2.com"
+_B2_BUCKET_FALLBACK = "MediaupscaleStorage"
+
+
+def _reload_dotenv_if_needed() -> None:
+    """Bind project .env into os.environ without clobbering live CLI overrides."""
+    if (os.getenv("B2_BUCKET_NAME") or "").strip() and (
+        os.getenv("B2_KEY_ID") or ""
+    ).strip():
+        return
+    try:
+        from dotenv import load_dotenv
+        from pathlib import Path
+
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+        if env_path.is_file():
+            load_dotenv(env_path, override=False, encoding="utf-8-sig")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def resolve_b2_bucket_name() -> str:
+    """Read ``B2_BUCKET_NAME`` at call time — never cache it at import."""
+    _reload_dotenv_if_needed()
+    bucket_name = (os.getenv("B2_BUCKET_NAME") or "").strip()
+    if not bucket_name:
+        raise ValueError(
+            "CRITICAL: B2_BUCKET_NAME is unresolved or empty at execution time. "
+            "Check .env loading sequence."
+        )
+    return bucket_name
 
 
 def _is_storage_cap_error(exc: BaseException) -> bool:
@@ -85,7 +111,8 @@ def _get_b2_resource():
             "boto3 is required for B2 uploads.  Run: pip install boto3"
         ) from exc
 
-    key_id  = (os.getenv("B2_KEY_ID") or "").strip()
+    _reload_dotenv_if_needed()
+    key_id = (os.getenv("B2_KEY_ID") or "").strip()
     app_key = (os.getenv("B2_APPLICATION_KEY") or "").strip()
     if not key_id or not app_key:
         raise RuntimeError(
@@ -122,11 +149,20 @@ class B2VideoUploader:
     """
 
     def __init__(self, bucket_name: str | None = None) -> None:
-        self.bucket_name = (
-            bucket_name
-            or (os.getenv("B2_BUCKET_NAME") or _B2_BUCKET_NAME).strip()
-        )
-        self._b2 = _get_b2_resource()
+        # Do not resolve credentials or bucket at construction — ``.env`` may
+        # not be bound yet if this module was imported during Phase 0.
+        self._bucket_override = (bucket_name or "").strip() or None
+        self._b2 = None
+
+    def _resource(self):
+        if self._b2 is None:
+            self._b2 = _get_b2_resource()
+        return self._b2
+
+    def _bucket(self) -> str:
+        if self._bucket_override:
+            return self._bucket_override
+        return resolve_b2_bucket_name()
 
     # ------------------------------------------------------------------
     # Public interface
@@ -148,18 +184,19 @@ class B2VideoUploader:
             raise FileNotFoundError(f"B2 upload source not found: {path}")
 
         key = path.name
+        bucket_name = self._bucket()
 
         if self._object_exists(key):
             logger.info("[B2] Already uploaded: %s — skipping re-upload.", key)
         else:
             size_mb = path.stat().st_size / (1024 * 1024)
-            print(f"[B2] Uploading {key} ({size_mb:.1f} MB) -> {self.bucket_name} ...")
-            logger.info("[B2] Uploading %s (%.1f MB)", key, size_mb)
+            print(f"[B2] Uploading {key} ({size_mb:.1f} MB) -> {bucket_name} ...")
+            logger.info("[B2] Uploading %s (%.1f MB) -> %s", key, size_mb, bucket_name)
 
             last_exc: Exception | None = None
             for attempt in range(1, _B2_MAX_ATTEMPTS + 1):
                 try:
-                    self._b2.Object(self.bucket_name, key).upload_file(
+                    self._resource().Object(bucket_name, key).upload_file(
                         str(path),
                         ExtraArgs={"ContentType": content_type},
                     )
@@ -204,7 +241,10 @@ class B2VideoUploader:
     @staticmethod
     def public_url(filename: str) -> str:
         """Return the public HTTPS URL for a bare filename (no path prefix)."""
-        bucket = (os.getenv("B2_BUCKET_NAME") or _B2_BUCKET_NAME).strip()
+        try:
+            bucket = resolve_b2_bucket_name()
+        except ValueError:
+            bucket = _B2_BUCKET_FALLBACK
         return f"https://{bucket}.s3.us-east-005.backblazeb2.com/{Path(filename).name}"
 
     # ------------------------------------------------------------------
@@ -224,7 +264,7 @@ class B2VideoUploader:
             return False
 
         try:
-            self._b2.Object(self.bucket_name, key).load()
+            self._resource().Object(self._bucket(), key).load()
             return True
         except Exception as exc:  # noqa: BLE001
             try:

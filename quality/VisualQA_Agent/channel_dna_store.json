@@ -23,7 +23,7 @@
       "assault rifle"
     ],
     "mandatory_elements": [
-      "8–10 FRAME LORE (90–120s): F1 Master Mei base anchor + meditation (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate matrix pod facility breakout (RAG override); final Master Mei base anchor + temple eyes-on-camera",
+      "8–10 FRAME LORE (90–120s): F1 Master Mei identity lock + unique pose/camera/env (≤8s); F3 agonizing human slaves / cybernetic implants (RAG override); F7 extreme close-up human cyborg (9–10 frame lore); penultimate shinobi-samurai breaking system chains, Mei watching training (RAG override); final Master Mei base anchor + temple eyes-on-camera",
       "Master Mei DNA: snow-white topknot + two long white chest locks, extra-long ultra-thick snow-white eyebrows past temples, mid-chest snow-white beard + flowing mustache, white inner robe + black vest gold lapels + mala beads",
       "Mei environments: ~70% high-altitude nature (cliffs/ridges/sea of clouds), ~30% open-air mountain shrines; templates are references — match script philosophy",
       "FLUX dystopia: 120–180 words, mandatory prefix 'Cyberpunk dystopian Earth, attention monopoly era:', no tag spam",
@@ -32,14 +32,46 @@
       "NO firearms / handguns / rifles / modern action-movie tropes"
     ],
     "lighting_style": "moody cinematic lighting, dark atmospheric — cold moonlight / storm lightning / dawn rim light / warm torchfire, dystopian red neon reflections against deep dramatic shadows",
-    "target_audience_rules": "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. Scene 1 ≤8s meditation landscapes. Scenes 2+ ≈10–12s. Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens.",
+    "target_audience_rules": "Western/US men seeking self-mastery. STRICT 8–10 frame lore for 90–120s. Scene 1 ≤8s unique outdoor identity lock. Scenes 2+ ≈10–12s. Frame 1 + final MUST show Master Mei. NEVER firearms, Gossip Goblin, gore, gym, teens.",
     "visual_concepts": {
       "dopamine": "Scene 7 close-up: agonizing human cyborg face with brass cybernetic visors + temple wires",
       "training": "Master Mei instructing martial monks carrying stone blocks in harsh cold rain — high physical intensity",
       "system": "Scene 3 RAG: pale agonizing human slaves, cybernetic goggles, wires in skin",
       "maya": "Biomechanical Maya goddess/entity holding glowing digital chains around human necks",
-      "focus": "Penultimate RAG: warrior smashing out of liquid-filled matrix pod",
+      "focus": "Penultimate RAG: ninja/samurai breaking system chains, Mei observing training",
       "outro": "Master Mei base anchor on mountain ridge / open-air shrine, eyes locked on camera"
+    },
+    "script_rules": {
+      "voice": "First-person Master Mei only — humble, measured, ancestral. You ARE the master. Never address the audience as disciples, students, or followers. Never aggressive commands, never 'I studied X', never third-person 'Master Mei'. Prefer 'Consider how…', 'The ancients observed that…', 'When the mind ceases to fight…'.",
+      "tone": "Deep humility, respect, ancestral tranquility. Cinematic allegory and metaphor only — no checklists, no Step 1, no wellness fluff, no hustle-bro clichés.",
+      "pacing": "Humble cinematic delivery at 0.86× TTS. After 2–4 key philosophical impacts insert exactly <break time=\"1.5s\"/> — no other SSML or emotion tags.",
+      "word_budget": "When the acceptance floor is 115 spoken words, WRITE 120–135 words (aim 128). Hard fail under 120. Longer 105s/120s profiles use their own min/target/max from MEI_DURATION_PROFILES. Count spoken words only — exclude [ACT N] markers and break tags.",
+      "structure": "ONE central idea per episode. Invariant flow: (1) philosophical hook / ancestral grounding; (2) focused unconscious trap; (3) spiritual and financial liberation; (4) one humble practical discipline; (5) seamless reflective close. CTA is stitched separately — never write Follow/Subscribe in the narration.",
+      "visual_consistency": "Frame 1 and the last frame must show Master Mei (snow-white topknot, extra-long white eyebrows, mid-chest beard, white robe + black vest gold lapels). Middle frames are dystopian allegory (slaves, gears, pods) — never fuse cybernetics onto Mei. No firearms, gore, gym, Gossip Goblin, or lifestyle soft-focus. 8–10 frames for a 90–120s reel; Scene 1 ≤8s.",
+      "forbidden_phrases": [
+        "my disciples",
+        "students",
+        "followers",
+        "I studied",
+        "Step 1",
+        "Follow Master Mei",
+        "Subscribe"
+      ]
+    },
+    "motion_rules": {
+      "motion_cadence": "Cycle act_index % 4: Rapid Push-In, Wide Pull-Out, Sweeping Lateral Parallax, Overhead Crane Sweep. No static slow-zooms.",
+      "parallax_depth_directive": "Every still needs a foreground (dust, stone arch, observer) and a background (temple, starfield, horizon) for parallax.",
+      "shot_variety_rule": "No two consecutive acts repeat the same shot type. Frame 1 + last = Mei; middle = dystopian variety."
+    },
+    "music_rules": {
+      "mood": "Industrial cyberpunk percussion under a solemn warrior narration — dark, slow, never pop or lofi chillhop.",
+      "mix_levels": "BGM ~0.24, atmosphere SFX ~0.35, voice 1.0. Music starts at 0.5s. Narration 0.86×.",
+      "forbidden": [
+        "upbeat pop",
+        "chillhop lofi",
+        "wellness flute bed",
+        "EDM drop"
+      ]
     }
   },
   "lofi_economic": {

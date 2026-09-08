@@ -36,11 +36,15 @@ SDXL_DEFAULT_STEPS: int = 20
 DEEPINFRA_OPENAI_BASE_URL: str = "https://api.deepinfra.com/v1/openai"
 DEEPINFRA_FLUX_SCHNELL_MODEL: str = "black-forest-labs/FLUX-1-schnell"
 DEEPINFRA_FLUX_DEV_MODEL: str = "black-forest-labs/FLUX-1-dev"
+DEEPINFRA_FLUX2_DEV_MODEL: str = "black-forest-labs/FLUX-2-dev"
 DEEPINFRA_INFERENCE_URL: str = (
     f"https://api.deepinfra.com/v1/inference/{DEEPINFRA_FLUX_SCHNELL_MODEL}"
 )
 DEEPINFRA_DEV_INFERENCE_URL: str = (
     f"https://api.deepinfra.com/v1/inference/{DEEPINFRA_FLUX_DEV_MODEL}"
+)
+DEEPINFRA_FLUX2_DEV_INFERENCE_URL: str = (
+    f"https://api.deepinfra.com/v1/inference/{DEEPINFRA_FLUX2_DEV_MODEL}"
 )
 DEEPINFRA_OPENAI_IMAGES_URL: str = (
     "https://api.deepinfra.com/v1/openai/images/generations"
@@ -50,6 +54,11 @@ DEEPINFRA_SCHNELL_USD_PER_MEGAPIXEL_STEP: float = 0.0005
 # DeepInfra published FLUX-1-dev: $0.009 × (w/1024) × (h/1024) × (iters/25)
 DEEPINFRA_DEV_USD_PER_MEGAPIXEL: float = 0.009
 DEEPINFRA_DEV_ITERS_REF: float = 25.0
+# DeepInfra published FLUX-2-dev: $0.01 × (w/1024) × (h/1024) × (iters/28)
+DEEPINFRA_FLUX2_USD_PER_MEGAPIXEL: float = 0.01
+DEEPINFRA_FLUX2_ITERS_REF: float = 28.0
+FLUX2_DEV_DEFAULT_STEPS: int = 28
+FLUX2_DEV_DEFAULT_GUIDANCE: float = 2.5
 # Native playground default if num_inference_steps is omitted: 1 (NOT 4).
 DEEPINFRA_SCHNELL_DEFAULT_STEPS_IF_OMITTED: int = 1
 
@@ -188,8 +197,10 @@ def normalize_together_model_id(raw: str | None) -> str:
         "together_juggernaut": JUGGERNAUT_LIGHTNING_FLUX_MODEL,
         "flux2dev": FLUX_2_DEV_MODEL,
         "flux2-dev": FLUX_2_DEV_MODEL,
+        "flux-2-dev": DEEPINFRA_FLUX2_DEV_MODEL,
         "flux.2-dev": FLUX_2_DEV_MODEL,
         "together_flux2dev": FLUX_2_DEV_MODEL,
+        "deepinfra_flux2dev": DEEPINFRA_FLUX2_DEV_MODEL,
     }
     if low in aliases:
         return aliases[low]
@@ -209,9 +220,14 @@ def _is_juggernaut_model(model_id: str | None) -> bool:
 
 
 def _is_flux2_dev_model(model_id: str | None) -> bool:
-    """True when the active image model is Together FLUX.2-dev."""
-    low = (model_id or "").strip().lower()
-    return "flux.2-dev" in low or "flux2-dev" in low or "flux2dev" in low
+    """True for Together FLUX.2-dev or DeepInfra FLUX-2-dev."""
+    low = (model_id or "").strip().lower().replace("_", "-")
+    return (
+        "flux.2-dev" in low
+        or "flux-2-dev" in low
+        or "flux2-dev" in low
+        or "flux2dev" in low
+    )
 
 
 def default_together_image_model() -> str:
@@ -249,8 +265,8 @@ def cost_key_for_together_model(model_id: str | None) -> str:
         return "image_flux_schnell"
     if "juggernaut" in low:
         return "image_together_juggernaut"
-    if "flux.2-dev" in low or "flux2-dev" in low or "flux2dev" in low:
-        return "image_together_flux2dev"
+    if "flux-2-dev" in low or "flux.2-dev" in low or "flux2-dev" in low or "flux2dev" in low:
+        return "image_deepinfra_flux2dev" if "flux-2-dev" in low else "image_together_flux2dev"
     if "flux.1-dev" in low or "flux-dev" in low or "/flux.1-dev" in low:
         return "image_flux_dev"
     if "flux.1-pro" in low or "flux-pro" in low:
@@ -284,6 +300,19 @@ def estimate_deepinfra_dev_cost_usd(
         * (float(width) / 1024.0)
         * (float(height) / 1024.0)
         * (float(max(1, int(steps))) / DEEPINFRA_DEV_ITERS_REF),
+        6,
+    )
+
+
+def estimate_deepinfra_flux2_cost_usd(
+    width: int, height: int, steps: int
+) -> float:
+    """DeepInfra FLUX-2-dev: $0.01 × (w/1024) × (h/1024) × (iters/28)."""
+    return round(
+        DEEPINFRA_FLUX2_USD_PER_MEGAPIXEL
+        * (float(width) / 1024.0)
+        * (float(height) / 1024.0)
+        * (float(max(1, int(steps))) / DEEPINFRA_FLUX2_ITERS_REF),
         6,
     )
 
@@ -498,6 +527,56 @@ def post_deepinfra_flux_dev(
     return {"data": [{"b64_json": b64}]}
 
 
+def post_deepinfra_flux2_dev(
+    *,
+    prompt: str,
+    width: int,
+    height: int,
+    steps: int = 28,
+    guidance_scale: float = 2.5,
+    negative_prompt: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """POST DeepInfra FLUX-2-dev. Quoted formula uses iters/28."""
+    import requests as _req
+
+    steps_i = max(1, int(steps))
+    width_i = int(width)
+    height_i = int(height)
+    cfg = float(guidance_scale)
+    key = _deepinfra_api_key(api_key)
+    payload: dict[str, Any] = {
+        "prompt": prompt,
+        "width": width_i,
+        "height": height_i,
+        "num_inference_steps": steps_i,
+        "num_images": 1,
+        "guidance_scale": cfg,
+    }
+    neg = (negative_prompt or "").strip()
+    if neg:
+        payload["negative_prompt"] = neg
+    sent = {k: v for k, v in payload.items() if k not in {"prompt", "negative_prompt"}}
+    print(
+        f"[DeepInfra Flux2] POST {DEEPINFRA_FLUX2_DEV_INFERENCE_URL} | "
+        f"payload={sent} | negative_in_body={int('negative_prompt' in payload)} | "
+        f"negative_len={len(neg)}"
+    )
+    resp = _req.post(
+        DEEPINFRA_FLUX2_DEV_INFERENCE_URL,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=180,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(
+            f"DeepInfra Flux2-dev failed HTTP {resp.status_code}: {resp.text[:800]}"
+        )
+    data = resp.json()
+    b64 = _b64_from_deepinfra_inference(data)
+    return {"data": [{"b64_json": b64}]}
+
+
 def default_steps_for_model(model_id: str | None) -> int:
     """Cost-efficient default step count for the active Together model."""
     low = normalize_together_model_id(model_id).lower()
@@ -598,7 +677,8 @@ def _infer_visual_role(text: str) -> str:
     ):
         return "master"
     if re.search(
-        r"\b(?:disciple|waterfall\s+train|carrying\s+heavy\s+stones|martial\s+arts\s+disciple)\b",
+        r"\b(?:disciple|waterfall\s+train|carrying\s+heavy\s+stones|"
+        r"martial\s+arts\s+disciple|shinobi|ninja|samurai|katana)\b",
         lo,
     ):
         return "disciple"
@@ -1103,6 +1183,8 @@ class TogetherImageGenerator:
 
         if _is_flux_schnell_model(active_model):
             est_cost = estimate_deepinfra_schnell_cost_usd(int(width), int(height), int(steps))
+        elif _is_flux2_dev_model(active_model):
+            est_cost = estimate_deepinfra_flux2_cost_usd(int(width), int(height), int(steps))
         else:
             est_cost = estimate_together_image_cost(active_model)
         # Quiet by default — batch loops must not spam console; summary prints once.
@@ -1200,6 +1282,23 @@ class TogetherImageGenerator:
                             negative_prompt=negative_prompt,
                         )
                         logged_model = DEEPINFRA_FLUX_SCHNELL_MODEL
+                    elif _is_flux2_dev_model(active_model) and skip_mandatory_negative:
+                        # LOFI / DeepInfra FLUX-2-dev — not Together's $0.0154 flat.
+                        cfg = float(
+                            guidance_scale
+                            if guidance_scale is not None
+                            else FLUX2_DEV_DEFAULT_GUIDANCE
+                        )
+                        response = post_deepinfra_flux2_dev(
+                            prompt=gen_kwargs["prompt"],
+                            width=int(width),
+                            height=int(height),
+                            steps=int(steps),
+                            guidance_scale=cfg,
+                            negative_prompt=(negative_prompt or "").strip(),
+                            api_key=self._deepinfra_api_key,
+                        )
+                        logged_model = DEEPINFRA_FLUX2_DEV_MODEL
                     else:
                         # Together.ai FLUX.1-dev / LoRA (unchanged request structure)
                         if skip_mandatory_negative:
@@ -1220,10 +1319,9 @@ class TogetherImageGenerator:
                             )
                             logged_model = DEEPINFRA_FLUX_DEV_MODEL
                         else:
-                            if "flux.1" in active_model.lower() or "flux-dev" in active_model.lower():
-                                gen_kwargs["negative_prompt"] = merge_negative_prompt(
-                                    negative_prompt
-                                )
+                            gen_kwargs["negative_prompt"] = merge_negative_prompt(
+                                negative_prompt
+                            )
                             if guidance_scale is not None:
                                 gen_kwargs["guidance_scale"] = float(guidance_scale)
                             try:

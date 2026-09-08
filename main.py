@@ -147,6 +147,8 @@ _PRELOADED_PAGE = _preparse_active_page()
 from dotenv import load_dotenv as _load_dotenv  # noqa: E402
 
 _load_dotenv(Path(__file__).resolve().parent / ".env", override=True, encoding="utf-8-sig")
+# .env must not clobber the Phase-0 CLI channel (``--channel`` / ``--page``).
+_PRELOADED_PAGE = _preparse_active_page()
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +167,14 @@ from typing import Any, Optional
 
 import config as app_config
 from utils.pipeline_paths import outputs_root, page_outputs_dir, pipeline_logs_dir
+
+if (app_config.ACTIVE_PAGE or "").lower() != (_PRELOADED_PAGE or "").lower():
+    app_config.bind_active_page(_PRELOADED_PAGE)
+    print(
+        f"[bootstrap] ACTIVE_PAGE rebound | cli={_PRELOADED_PAGE} "
+        f"outputs={app_config.PAGE_OUTPUTS_DIR}",
+        flush=True,
+    )
 from agents.writer.caption_engine import (
     CaptionEngine,
     build_gemini_researcher_instruction,
@@ -495,6 +505,180 @@ def _ensure_sequence_image(
         if fb is not None and fb.is_file():
             return fb.resolve()
         raise RuntimeError(f"Unable to guarantee sequence act image at {dest}") from exc
+
+
+_MIN_CACHED_STILL_BYTES = 2048
+
+
+def _is_valid_cached_still(path: Path) -> bool:
+    """True when *path* looks like a real generated PNG/JPEG, not an empty stub."""
+    try:
+        p = Path(path)
+        if not p.is_file():
+            return False
+        if p.stat().st_size < _MIN_CACHED_STILL_BYTES:
+            return False
+        return p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+    except OSError:
+        return False
+
+
+def _sequence_cache_search_roots(
+    *,
+    work_dir: "Path | None" = None,
+    extra_dirs: "list[Path] | None" = None,
+) -> list[Path]:
+    """Only the current work dir, its episode folder, and explicit extras.
+
+    Never crawl sibling ``ep_*`` folders — those belong to other topics.
+    """
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(candidate: "Path | None") -> None:
+        if candidate is None:
+            return
+        try:
+            resolved = Path(candidate).resolve()
+            key = str(resolved)
+        except OSError:
+            resolved = Path(candidate)
+            key = str(resolved)
+        if key in seen or not resolved.is_dir():
+            return
+        seen.add(key)
+        roots.append(resolved)
+
+    _add(work_dir)
+    if work_dir is not None:
+        _add(Path(work_dir).parent)
+    for extra in extra_dirs or []:
+        _add(extra)
+    return roots
+
+
+def _score_cached_still(path: Path) -> tuple:
+    name = path.name.lower()
+    fallback_pen = 1 if "fallback" in name or "placeholder" in name else 0
+    regen_pen = 1 if "regen" in name else 0
+    try:
+        mtime = -float(path.stat().st_mtime)
+    except OSError:
+        mtime = 0.0
+    return (fallback_pen, regen_pen, mtime)
+
+
+def _stem_act_globs(stem: str, act_num: int) -> list[str]:
+    """Filename globs that belong to *this* reel stem only."""
+    s = (stem or "").strip()
+    if not s or act_num < 1:
+        return []
+    nn = f"{act_num:02d}"
+    return [f"{s}_act{nn}*.png", f"{s}_act{nn}*.jpg", f"{s}_act{nn}*.webp"]
+
+
+def _find_cached_sequence_still(
+    act_num: int,
+    *,
+    work_dir: "Path | None" = None,
+    stem: str = "",
+    extra_dirs: "list[Path] | None" = None,
+) -> "Path | None":
+    """Return a still for 1-based *act_num* that belongs to *stem*, or None.
+
+    Refuses generic ``scene_XX.png`` / ``*_actNN*`` from other episodes so a
+    new topic cannot inherit another reel's frames.
+    """
+    patterns = _stem_act_globs(stem, act_num)
+    if not patterns:
+        return None
+    hits: list[Path] = []
+    for root in _sequence_cache_search_roots(
+        work_dir=work_dir, extra_dirs=extra_dirs,
+    ):
+        for pat in patterns:
+            try:
+                hits.extend(p for p in root.glob(pat) if _is_valid_cached_still(p))
+            except OSError:
+                continue
+    if not hits:
+        return None
+    uniq: dict[str, Path] = {}
+    for p in hits:
+        try:
+            uniq[str(p.resolve())] = p.resolve()
+        except OSError:
+            uniq[str(p)] = p
+    return sorted(uniq.values(), key=_score_cached_still)[0]
+
+
+def _collect_cached_act_stills(
+    n_acts: int,
+    *,
+    start: int = 0,
+    work_dir: "Path | None" = None,
+    stem: str = "",
+    extra_dirs: "list[Path] | None" = None,
+) -> dict[int, Path]:
+    """Map 0-based act index → existing still for this stem. Partial hits OK."""
+    found: dict[int, Path] = {}
+    for act_i in range(start, max(0, int(n_acts))):
+        hit = _find_cached_sequence_still(
+            act_i + 1,
+            work_dir=work_dir,
+            stem=stem,
+            extra_dirs=extra_dirs,
+        )
+        if hit is not None:
+            found[act_i] = hit
+    return found
+
+
+def _materialize_cached_still(src: Path, dest: Path) -> Path:
+    dest = Path(dest)
+    src = Path(src)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if dest.resolve() != src.resolve():
+            shutil.copy2(src, dest)
+        return dest.resolve()
+    except OSError:
+        return src.resolve()
+
+
+def _apply_still_cache_to_jobs(
+    *,
+    jobs: dict[int, Any],
+    meta: dict[int, dict[str, Any]],
+    n_acts: int,
+    start: int,
+    work_dir: Path,
+    stem: str,
+    extra_dirs: "list[Path] | None" = None,
+) -> int:
+    """Drop cached acts from *jobs* and stash materialized paths on *meta*."""
+    cached = _collect_cached_act_stills(
+        n_acts,
+        start=start,
+        work_dir=work_dir,
+        stem=stem,
+        extra_dirs=extra_dirs,
+    )
+    reused = 0
+    for act_i, src in cached.items():
+        dest = Path(work_dir) / f"{stem}_act{act_i + 1:02d}.png"
+        materialized = _materialize_cached_still(src, dest)
+        meta.setdefault(act_i, {})["cached_path"] = materialized
+        jobs.pop(act_i, None)
+        reused += 1
+    if reused:
+        _LOG.info(
+            "IMAGE CACHE HIT | reused %d/%d stills — skipped image API for cached acts",
+            reused, n_acts,
+        )
+    else:
+        _LOG.info("IMAGE CACHE MISS | generating %d stills", max(0, n_acts - start))
+    return reused
 
 
 def _color(text: str, code: str) -> str:
@@ -1181,6 +1365,10 @@ def _synthesize_sequence_voice_track(
 
     page_id = (page_ctx.page_id if page_ctx else "").lower()
     is_ak = page_id == "ancient_knowledge"
+    is_mei = page_id == "master_mei"
+    _expressive = bool(
+        getattr(page_ctx, "tts_expressive_mode", False) or is_mei
+    )
     _reel_dur = float(page_ctx.reel_duration if page_ctx else 85.0)
     words_max = int(
         page_ctx.reel_narration_max_words if page_ctx
@@ -1193,6 +1381,9 @@ def _synthesize_sequence_voice_track(
     voice_id = page_ctx.elevenlabs_voice_id if page_ctx else None
     model_id = page_ctx.elevenlabs_model if page_ctx else "eleven_multilingual_v2"
     cta_text = (page_ctx.reel_cta_text if page_ctx else "") or ""
+    if is_mei:
+        from agents.media.mei_narrative import approved_cta_text
+        cta_text = approved_cta_text()
     if page_ctx is None or page_ctx.strip_audio_tags_before_tts:
         cta_text = _strip_audio_behavior_tags(cta_text)
     from agents.media.mei_narrative import fix_cta_typos
@@ -1215,7 +1406,7 @@ def _synthesize_sequence_voice_track(
                 speed=speed,
                 voice_settings=vs or None,
                 enable_ssml=bool(page_ctx.tts_enable_ssml) if page_ctx else False,
-                expressive_mode=False,
+                expressive_mode=_expressive,
             )
             _wts = _filter_audio_tag_timings(_wts)
         except Exception as exc:  # noqa: BLE001
@@ -1239,7 +1430,7 @@ def _synthesize_sequence_voice_track(
                 model_id=model_id,
                 speed=speed,
                 voice_settings=vs or None,
-                expressive_mode=False,
+                expressive_mode=_expressive,
             )
         except Exception as exc:  # noqa: BLE001
             _LOG.warning("Pre-image CTA TTS failed: %s", exc)
@@ -2414,9 +2605,9 @@ def _produce_variant_worker(
                 "snow-white hair in a topknot, two long white locks framing his chest, "
                 "extra-long bushy white eyebrows extending past temples, and a long "
                 "white beard reaching his mid-chest. White robe and black vest with "
-                "gold embroidery. Meditating in lotus posture atop a towering jagged "
-                "mountain cliff above a sea of clouds. Serene sunrise light, vast "
-                "alpine vista, dramatic cinematic framing."
+                "gold embroidery. Standing in deep contemplation on a mist-covered "
+                "peak cliff, side-profile cinematic wide shot, sea of clouds at "
+                "sunrise, mist rising."
             )
         # ROLE A only — traditional Master Mei; never fuse neon city / cybernetics onto him
         _mm_dna_clean = (page_ctx.master_mei_visual_dna or _MEI_DNA_FALLBACK)
@@ -2440,6 +2631,7 @@ def _produce_variant_worker(
     _carousel_image_paths: list[str] = []
     _carousel_imgbb: list[dict[str, str]] = []
     _images_generated_this_variant: int = 0
+    _reused_cover = False
     # IMAGE_BACKGROUND / IMAGE_QUOTE / IMAGE_AVATAR: call Gemini as normal.
     # ------------------------------------------------------------------
     _is_text_quote = (post_format == "TEXT_QUOTE") and not skip_image
@@ -2689,19 +2881,45 @@ def _produce_variant_worker(
                 )
                 _act1_role = ROLE_MASTER
                 _act1_neg = ROLE_A_NEGATIVE
-            img_path_display = adapter.generate(
-                image_prompt,
-                reference_image_path=_gen_ref,
-                style_reference_path=_style_ref_path,
-                style_reference_paths=_style_ref_paths or None,
-                style_reference_weight=_style_ref_weight,
-                output_stem=stem,
-                output_directory=subject_assets,
-                avatar_mode=image_avatar_mode,
-                reference_image_weight=_gen_weight,
-                visual_role=_act1_role,
-                negative_prompt=_act1_neg,
-            )
+            if post_type in _SEQUENCE_VIDEO_POST_TYPES:
+                _cover_hit = _find_cached_sequence_still(
+                    1,
+                    work_dir=subject_assets,
+                    stem=stem,
+                )
+                if _cover_hit is not None:
+                    img_path_display = _cover_hit
+                    _reused_cover = True
+                    _LOG.info(
+                        "IMAGE CACHE HIT | skipping cover generate — reusing %s",
+                        _cover_hit,
+                    )
+            # Audio-first: never spend an image call before TTS timestamps exist.
+            if (
+                page_ctx
+                and page_ctx.enable_sequence_reel
+                and post_type in _SEQUENCE_VIDEO_POST_TYPES
+                and not _reused_cover
+            ):
+                _LOG.info(
+                    "AUDIO-FIRST | deferring stills until TTS word timestamps are ready"
+                )
+                img_path_display = None
+                _reused_cover = True
+            if not _reused_cover:
+                img_path_display = adapter.generate(
+                    image_prompt,
+                    reference_image_path=_gen_ref,
+                    style_reference_path=_style_ref_path,
+                    style_reference_paths=_style_ref_paths or None,
+                    style_reference_weight=_style_ref_weight,
+                    output_stem=stem,
+                    output_directory=subject_assets,
+                    avatar_mode=image_avatar_mode,
+                    reference_image_weight=_gen_weight,
+                    visual_role=_act1_role,
+                    negative_prompt=_act1_neg,
+                )
             img_used = adapter.last_gemini_image_model_used or bm.image_primary_id
             logging.info(
                 "Variant %s | IMAGE_OK | model_used=%s | path=%s",
@@ -2753,11 +2971,13 @@ def _produce_variant_worker(
     # For CAROUSEL the first generate() call above is Slide 01.
     # The Slide 02 and 03 generation loop below tracks each separately.
     # Charge real API hits (retries / chain advances), not just successful frames.
-    if not skip_image:
+    if not skip_image and not _reused_cover:
         _n_hits = _track_adapter_image(cost_tracker, adapter) if adapter is not None else 1
         _images_generated_this_variant = _n_hits
         if cost_tracker is None:
             _images_generated_this_variant = 1
+    elif _reused_cover:
+        _LOG.info("IMAGE CACHE | cover billed as $0 (reused still, no API this run)")
 
     # ── CAROUSEL: generate slides 2..N with distinct viewpoint directives ─
     # Slide 1 is the image already generated above (image_prompt).
@@ -2842,7 +3062,6 @@ def _produce_variant_worker(
         page_ctx
         and page_ctx.enable_sequence_reel
         and post_type in ("ECONOMIC_REEL", "WAN_REEL")
-        and raw_bg_path is not None
         and adapter is not None
     ):
         _ak_base_style = (
@@ -3109,8 +3328,9 @@ def _produce_variant_worker(
             _seq_n,
         )
 
-        # Ancient Knowledge: TTS first so image prompts bind to real word timestamps.
-        if (not _is_mm) and (page_ctx.page_id or "").lower() == "ancient_knowledge":
+        _audio_first_scenes: list[dict] = []
+        # Audio-first: TTS + timestamps before ANY act stills (all sequence pages).
+        if post_type in ("ECONOMIC_REEL", "WAN_REEL"):
             _clips_dir = Path(app_config.PAGE_OUTPUTS_DIR) / "clips"
             _clips_dir.mkdir(parents=True, exist_ok=True)
             (
@@ -3186,28 +3406,99 @@ def _produce_variant_worker(
                         _seq_n, _unit, _unit * _seq_n,
                     )
                 else:
-                    # Two-tier body split: tell the bucket planner where Tier 2
-                    # begins so acts beyond the first ~90 s of narration use
-                    # the wider 8-12 s clamp band instead of the tight 2.5-9 s
-                    # Tier-1 band. Falls through to single-tier behaviour when
-                    # the channel does not opt in (page_ctx.use_two_tier_pacing).
-                    _bucket_kwargs: dict = {}
-                    _t1_body_local = locals().get("_tier1_body_target", None)
-                    if (
-                        getattr(page_ctx, "use_two_tier_pacing", False)
-                        and _t1_body_local is not None
-                        and int(_t1_body_local) > 0
-                    ):
-                        _bucket_kwargs["tier2_body_start"] = int(_t1_body_local)
-                    _ak_act_durs, _spoken_snippets, _ak_keep_map = (
-                        _plan_bucket_act_durations(
-                            _pre_snippets,
-                            narration_s=float(_narr_dur),
-                            cta_audio_s=float(_cta_audio_dur or 0.0),
-                            silence_before_cta_s=float(_cta_silence_s or 1.0),
-                            **_bucket_kwargs,
+                    # ECONOMIC_REEL non-Mei: 3–5 s semantic chunks from TTS
+                    # alignment, then JSON scene prompts. Mei keeps frame lore.
+                    if (not _is_mm) and _narr_word_timings:
+                        try:
+                            from core.audio_chunker import chunk_word_timings
+                            from agents.media.scene_prompt_generator import (
+                                generate_scene_prompts,
+                            )
+
+                            _chunks = chunk_word_timings(_narr_word_timings)
+                            if _chunks:
+                                try:
+                                    from quality.VisualQA_Agent.channel_rag import (
+                                        get_channel_rules as _qa_rules,
+                                        seed_default_channels as _qa_seed,
+                                    )
+
+                                    _qa_seed(force=False)
+                                    _dna = _qa_rules(page_ctx.page_id or "")
+                                except Exception:
+                                    _dna = {}
+                                _dna = dict(_dna or {})
+                                _dna.setdefault("topic", resolved_subject)
+                                _audio_first_scenes = generate_scene_prompts(
+                                    _early_seq_script or resolved_subject,
+                                    _chunks,
+                                    _dna,
+                                    channel_id=page_ctx.page_id or "",
+                                    atmosphere=_ak_base_style,
+                                )
+                                _raw_durs = [c.duration_s for c in _chunks]
+                                _sum_d = sum(_raw_durs) or 1.0
+                                _scale = float(_narr_dur) / _sum_d
+                                _ak_act_durs = [d * _scale for d in _raw_durs]
+                                _cta_hold = float(_cta_audio_dur or 0.0) + float(
+                                    _cta_silence_s or 1.0
+                                )
+                                if _ak_act_durs:
+                                    _ak_act_durs[-1] += _cta_hold
+                                _spoken_snippets = [
+                                    str(s.get("spoken_text") or resolved_subject)
+                                    for s in _audio_first_scenes
+                                ]
+                                _seq_n = len(_audio_first_scenes)
+                                _ak_keep_map = list(range(_seq_n))
+                                _LOG.info(
+                                    "AUDIO-FIRST CHUNKS | n=%d window=3-5s durs=%s",
+                                    _seq_n,
+                                    ",".join(f"{d:.2f}" for d in _ak_act_durs[:8]),
+                                )
+                                print(
+                                    f"\n[AUDIO-FIRST] {_seq_n} spoken windows (3–5s)",
+                                    flush=True,
+                                )
+                                for _sc in _audio_first_scenes:
+                                    print(
+                                        f"  chunk {_sc.get('scene_index', '?')} "
+                                        f"[{_sc.get('start_time', 0):.1f}–{_sc.get('end_time', 0):.1f}s] "
+                                        f"spoken={_sc.get('spoken_text', '')!r}",
+                                        flush=True,
+                                    )
+                                    print(
+                                        f"    prompt={str(_sc.get('image_generation_prompt') or '')[:220]}",
+                                        flush=True,
+                                    )
+                                    print(
+                                        f"    negative={str(_sc.get('negative_prompt') or '')[:180]}",
+                                        flush=True,
+                                    )
+                        except Exception as _chunk_exc:  # noqa: BLE001
+                            _LOG.warning(
+                                "AUDIO-FIRST chunker failed (%s) — bucket planner",
+                                _chunk_exc,
+                            )
+                            _audio_first_scenes = []
+                    if not _audio_first_scenes:
+                        _bucket_kwargs: dict = {}
+                        _t1_body_local = locals().get("_tier1_body_target", None)
+                        if (
+                            getattr(page_ctx, "use_two_tier_pacing", False)
+                            and _t1_body_local is not None
+                            and int(_t1_body_local) > 0
+                        ):
+                            _bucket_kwargs["tier2_body_start"] = int(_t1_body_local)
+                        _ak_act_durs, _spoken_snippets, _ak_keep_map = (
+                            _plan_bucket_act_durations(
+                                _pre_snippets,
+                                narration_s=float(_narr_dur),
+                                cta_audio_s=float(_cta_audio_dur or 0.0),
+                                silence_before_cta_s=float(_cta_silence_s or 1.0),
+                                **_bucket_kwargs,
+                            )
                         )
-                    )
                 _ak_bucket_snippets = list(_spoken_snippets)
                 _spoken_snippets = [
                     s or resolved_subject for s in _spoken_snippets
@@ -3241,6 +3532,7 @@ def _produce_variant_worker(
             try:
                 from agents.media.visual_roles import (
                     pick_mei_meditation_environment as _mei_pick_env_prod,
+                    select_style_references_for_mei_frame as _mei_select_srefs,
                 )
                 _hook_env = _mei_pick_env_prod(
                     episode_seed=resolved_subject or "",
@@ -3249,7 +3541,10 @@ def _produce_variant_worker(
                     ),
                 )
             except Exception:
-                _hook_env = "towering jagged mountain cliff above a sea of clouds"
+                _hook_env = "mist-covered peak cliff above a sea of clouds"
+
+                def _mei_select_srefs(refs, *, act_index, episode_seed=""):  # type: ignore[misc]
+                    return [] if int(act_index) == 0 else list(refs or [])
             from agents.media.avatar_engine.mei_visual import (
                 MASTER_STYLE_ANCHOR_DEFAULT as _MM_STYLE_DEFAULT_PROD,
             )
@@ -3316,7 +3611,7 @@ def _produce_variant_worker(
             # HTTP calls, so this only removes orchestration/IO wait time.
             _mm_act_meta: dict[int, dict[str, Any]] = {}
             _mm_act_jobs: dict[int, Any] = {}
-            # Include Act 1 (index 0) — FLUX Scene1 meditation lock; never graphite base
+            # Include Act 1 (index 0) — identity lock + unique Frame 1 scene; never graphite base
             for _act_i in range(0, _seq_n):
                 _snippet = (
                     _spoken_snippets[_act_i]
@@ -3373,7 +3668,12 @@ def _produce_variant_worker(
                     reference_image_weight=_mm_avatar_w if _use_avatar else None,
                     # Style refs OFF for Scene 3 / penultimate — avoid graphite ref bleed
                     style_reference_paths=(
-                        _mm_style_refs
+                        _mei_select_srefs(
+                            _mm_style_refs,
+                            act_index=_act_i,
+                            episode_seed=resolved_subject or "",
+                            n_acts=_seq_n,
+                        )
                         if _use_avatar and _act_i not in (2, _seq_n - 2)
                         else None
                     ) or None,
@@ -3400,6 +3700,16 @@ def _produce_variant_worker(
             except Exception:
                 _mm_gpu_baseline = 0.0
 
+            _apply_still_cache_to_jobs(
+                jobs=_mm_act_jobs,
+                meta=_mm_act_meta,
+                n_acts=_seq_n,
+                start=0,
+                work_dir=_reel_img_dir,
+                stem=stem,
+                extra_dirs=[subject_assets] if subject_assets else None,
+            )
+
             _mm_act_results = _run_acts_parallel(_mm_act_jobs)
 
             _mm_ok = 0
@@ -3409,6 +3719,20 @@ def _produce_variant_worker(
                 _act_theme = _meta["theme"]
                 _use_avatar = _meta["use_avatar"]
                 _fallback_dest = _meta["fallback_dest"]
+                _cached_still = _meta.get("cached_path")
+                if _cached_still is not None:
+                    _act_img = _ensure_sequence_image(
+                        _cached_still, fallback=_cached_still, target_path=_fallback_dest,
+                    )
+                    _sequence_image_paths.append(_act_img)
+                    if _act_i == 0:
+                        _act1_base = _act_img
+                    _LOG.info(
+                        "MASTER_MEI sequence | act %d/%d CACHED | avatar=%s theme=%s | beat=%.40s…",
+                        _act_i + 1, _seq_n,
+                        "ON" if _use_avatar else "OFF", _act_theme, _snippet,
+                    )
+                    continue
                 _result = _mm_act_results.get(_act_i)
                 if isinstance(_result, Exception):
                     _LOG.warning(
@@ -3556,6 +3880,15 @@ def _produce_variant_worker(
                     shot_override=_shot_pair,
                     lighting_override=_light_pair,
                 )
+                _act_neg = None
+                _scene_row = (
+                    _audio_first_scenes[_act_i]
+                    if _act_i < len(_audio_first_scenes)
+                    else None
+                )
+                if _scene_row:
+                    _snippet = str(_scene_row.get("spoken_text") or _snippet)
+                    _act_neg = str(_scene_row.get("negative_prompt") or "") or None
                 # Per-episode subject-type directive leads the prompt so FLUX
                 # weights the pool item's "what to draw" instruction ABOVE the
                 # topic prefix (which historically pushed every image toward a
@@ -3568,15 +3901,36 @@ def _produce_variant_worker(
                     if _ak_rag_image_block
                     else ""
                 )
-                _act_prompt = (
-                    f"{_act_desc} "
-                    f"{_topic_entity_prefix}"
-                    f"{_ak_base_style}. "
-                    f"{_align} "
-                    f"{_parallax_directive}"
-                    f"{_lighting_tail}"
-                    f"{_rag_tail}"
-                )
+                _act_banned = list((_scene_row or {}).get("banned_subjects") or [])
+                _act_anchors = str((_scene_row or {}).get("domain_anchors") or "")
+                if _scene_row and _scene_row.get("image_generation_prompt"):
+                    # Spoken-window prompt is the source of truth (anti-slop).
+                    # Strip inherited AK style landmarks (e.g. "Pyramid") that
+                    # are not named in this spoken window — that list was the
+                    # first-pass slop injector on Antikythera.
+                    from agents.media.scene_prompt_generator import (
+                        sanitize_channel_style as _sanitize_style,
+                    )
+
+                    _safe_style = _sanitize_style(
+                        _ak_base_style, _snippet, _act_banned,
+                    )
+                    _act_prompt = (
+                        f"{_scene_row['image_generation_prompt']} "
+                        f"{_safe_style}. "
+                        f"{_parallax_directive}"
+                        f"{_lighting_tail}"
+                    )
+                else:
+                    _act_prompt = (
+                        f"{_act_desc} "
+                        f"{_topic_entity_prefix}"
+                        f"{_ak_base_style}. "
+                        f"{_align} "
+                        f"{_parallax_directive}"
+                        f"{_lighting_tail}"
+                        f"{_rag_tail}"
+                    )
                 # Log per-act plan for verifiability — this is the anti-monotony
                 # signal that ends up in the compiled prompt.
                 try:
@@ -3600,13 +3954,36 @@ def _produce_variant_worker(
                     "prompt": _act_prompt,
                     "stem": f"{stem}_act{_act_i + 1:02d}",
                 }
-                _sr_act_jobs[_act_i] = functools.partial(
-                    adapter.generate,
-                    _act_prompt,
-                    output_stem=_act_stem,
-                    output_directory=_reel_img_dir,
-                    avatar_mode="OFF",
-                )
+                if post_type == "ECONOMIC_REEL":
+                    from modules.reel_visual_qa import generate_and_gate as _qwen_gate
+
+                    _sr_act_jobs[_act_i] = functools.partial(
+                        _qwen_gate,
+                        adapter.generate,
+                        prompt=_act_prompt,
+                        chunk_text=_snippet,
+                        output_stem=_act_stem,
+                        output_directory=_reel_img_dir,
+                        channel=(page_ctx.page_id or "ancient_knowledge"),
+                        search_dirs=[
+                            _reel_img_dir,
+                            *([subject_assets] if subject_assets else []),
+                        ],
+                        generate_kwargs={
+                            "avatar_mode": "OFF",
+                            "negative_prompt": locals().get("_act_neg") or None,
+                        },
+                        banned_subjects=locals().get("_act_banned") or None,
+                        domain_anchors=str(locals().get("_act_anchors") or ""),
+                    )
+                else:
+                    _sr_act_jobs[_act_i] = functools.partial(
+                        adapter.generate,
+                        _act_prompt,
+                        output_stem=_act_stem,
+                        output_directory=_reel_img_dir,
+                        avatar_mode="OFF",
+                    )
 
             _gpu_baseline = 0.0
             try:
@@ -3622,6 +3999,16 @@ def _produce_variant_worker(
             except Exception:
                 _gpu_baseline = 0.0
 
+            _apply_still_cache_to_jobs(
+                jobs=_sr_act_jobs,
+                meta=_sr_act_meta,
+                n_acts=_seq_n,
+                start=_sr_act_start,
+                work_dir=_reel_img_dir,
+                stem=stem,
+                extra_dirs=[subject_assets] if subject_assets else None,
+            )
+
             _sr_act_results = _run_acts_parallel(_sr_act_jobs)
 
             _ok_acts = 0
@@ -3629,6 +4016,17 @@ def _produce_variant_worker(
                 _meta = _sr_act_meta[_act_i]
                 _snippet = _meta["snippet"]
                 _fallback_dest = _meta["fallback_dest"]
+                _cached_still = _meta.get("cached_path")
+                if _cached_still is not None:
+                    _act_img = _ensure_sequence_image(
+                        _cached_still, fallback=_cached_still, target_path=_fallback_dest,
+                    )
+                    _sequence_image_paths.append(_act_img)
+                    _LOG.info(
+                        "Sequence reel | act %d/%d CACHED | beat=%.48s…",
+                        _act_i + 1, _seq_n, _snippet,
+                    )
+                    continue
                 _result = _sr_act_results.get(_act_i)
                 if isinstance(_result, Exception):
                     _LOG.warning(
@@ -3641,6 +4039,11 @@ def _produce_variant_worker(
                         )
                     )
                     continue
+                if isinstance(_result, tuple) and _result:
+                    _qa_extra = int(_result[1] or 0) if len(_result) > 1 else 0
+                    if _qa_extra:
+                        _images_generated_this_variant += _qa_extra
+                    _result = _result[0]
                 _act_img = _ensure_sequence_image(
                     _result, fallback=_act1_base, target_path=_fallback_dest,
                 )
@@ -3659,49 +4062,14 @@ def _produce_variant_worker(
                     cost_tracker.track_image(model_key="image_flux_schnell", count=_ok_acts)
                 _images_generated_this_variant += _ok_acts
 
-            _ak_qa_page = (page_ctx.page_id or "").lower() if page_ctx else ""
-            if (
-                post_type == "ECONOMIC_REEL"
-                and _ak_qa_page == "ancient_knowledge"
-                and adapter is not None
-                and _sequence_image_paths
-            ):
-                try:
-                    from modules.reel_visual_qa import apply_act_vision_qa
-
-                    _qa_acts: list[dict[str, Any]] = []
-                    _path_i = 0
-                    for _act_i in range(_seq_n):
-                        _meta = _sr_act_meta.get(_act_i) or {}
-                        _qa_acts.append({
-                            "path": (
-                                _sequence_image_paths[_path_i]
-                                if _path_i < len(_sequence_image_paths)
-                                else None
-                            ),
-                            "prompt": _meta.get("prompt") or "",
-                            "stem": _meta.get("stem") or f"{stem}_act{_act_i + 1:02d}",
-                        })
-                        _path_i += 1
-                    _qa_paths, _qa_extra = apply_act_vision_qa(
-                        acts=_qa_acts,
-                        generate_fn=adapter.generate,
-                        channel=_ak_qa_page,
-                        output_directory=_reel_img_dir,
-                        cost_tracker=cost_tracker,
-                    )
-                    if _qa_paths:
-                        _sequence_image_paths = list(_qa_paths)
-                    if _qa_extra:
-                        if cost_tracker is not None:
-                            cost_tracker.track_image(
-                                model_key="image_flux_schnell", count=_qa_extra,
-                            )
-                        _images_generated_this_variant += _qa_extra
-                except Exception as _qa_exc:  # noqa: BLE001
-                    _LOG.warning("REEL VisualQA skipped (%s) — compiling r01 stills.", _qa_exc)
+            if post_type == "ECONOMIC_REEL" and _sequence_image_paths:
+                _LOG.info(
+                    "REEL VisualQA | per-still Qwen gate already applied during generate"
+                )
 
         if _sequence_image_paths:
+            if not img_path_display:
+                img_path_display = _sequence_image_paths[0]
             _LOG.info(
                 "Sequence reel | frames=%d | api_image_units=%d",
                 len(_sequence_image_paths),
@@ -3732,15 +4100,45 @@ def _produce_variant_worker(
                     build_role_prompt,
                 )
 
-                _insp = inspect_sequence_images(_sequence_image_paths, use_vlm=True)
-                _LOG.info(
-                    "VISUAL_INSPECTOR | passed=%s regen_frames=%s | %s",
-                    _insp.passed,
-                    [i + 1 for i in _insp.regenerate_indices],
-                    "; ".join(_insp.notes[:4]) if _insp.notes else "ok",
+                _qa_timeout = float(
+                    getattr(app_config, "VISUAL_EVAL_TIMEOUT_S", 10) or 10
                 )
+                # Inner VLM already hard-caps at VISUAL_EVAL_TIMEOUT_S; give
+                # phash a couple of extra seconds so fail-open notes propagate.
+                _insp_wall = max(12.0, _qa_timeout + 2.0)
+                _insp_pool = ThreadPoolExecutor(max_workers=1)
+                try:
+                    _insp = _insp_pool.submit(
+                        inspect_sequence_images,
+                        _sequence_image_paths,
+                        use_vlm=True,
+                    ).result(timeout=_insp_wall)
+                except Exception as _insp_to:  # noqa: BLE001
+                    _why = str(_insp_to).strip() or type(_insp_to).__name__
+                    _LOG.warning(
+                        "Visual Inspector non-blocking: timed out/failed (%s) — proceeding to render",
+                        _why,
+                    )
+                    _insp = None
+                finally:
+                    _insp_pool.shutdown(wait=False, cancel_futures=True)
+                if _insp is None:
+                    _LOG.info("VISUAL_INSPECTOR | skipped (fail-open) — compiling as-is")
+                    _insp_notes = []
+                    _insp_regen: list[int] = []
+                else:
+                    _insp_notes = list(_insp.notes or [])
+                    _insp_regen = list(_insp.regenerate_indices or [])
+                    _LOG.info(
+                        "VISUAL_INSPECTOR | passed=%s regen_frames=%s | %s",
+                        _insp.passed,
+                        [i + 1 for i in _insp_regen],
+                        "; ".join(_insp_notes[:4]) if _insp_notes else "ok",
+                    )
+                if any("visual qa skipped" in (n or "").lower() for n in _insp_notes):
+                    _insp_regen = []
                 _beats_insp = assign_frame_beats(len(_sequence_image_paths))
-                for _ri in _insp.regenerate_indices[:5]:  # cap regen attempts
+                for _ri in _insp_regen[:5]:  # cap regen attempts
                     if _ri < 0 or _ri >= len(_sequence_image_paths):
                         continue
                     _beat = _beats_insp[_ri] if _ri < len(_beats_insp) else ""
@@ -4066,7 +4464,10 @@ def _produce_variant_worker(
                         variant + 1, _episode_id,
                     )
 
-    if _is_economic_reel and img_path_display and Path(img_path_display).is_file():
+    if _is_economic_reel and (
+        (img_path_display and Path(img_path_display).is_file())
+        or bool(_sequence_image_paths)
+    ):
         _LOG.info("ECONOMIC_REEL | Launching video compilation pipeline (variant %s)…", variant + 1)
         if not locals().get("_ak_voice_ready"):
             _voice_path = None
@@ -4586,22 +4987,14 @@ def _produce_variant_worker(
                     "SEQUENCE_REEL | %d images → %s",
                     len(_sequence_image_paths), _reel_target.name,
                 )
-                _styled_subs = False
-                if page_ctx and (page_ctx.page_id or "").lower() == "master_mei":
-                    try:
-                        from channels_config.master_mei.system_config import (
-                            is_cinematic_yellow_subtitles_enabled as _yel_on,
-                            is_cyber_samurai_subtitles_enabled as _cyber_on,
-                        )
-                        _styled_subs = bool(_yel_on() or _cyber_on())
-                    except Exception:
-                        _styled_subs = True
-                _wpp = page_ctx.subtitle_words_per_phrase if page_ctx and _styled_subs else 4
-                _sub_fill = (
-                    page_ctx.subtitle_fill if page_ctx and _styled_subs else (255, 230, 0)
-                )
-                _sub_sw = page_ctx.subtitle_stroke_width if page_ctx and _styled_subs else 0
-                _sub_sf = page_ctx.subtitle_stroke_fill if page_ctx and _styled_subs else None
+                # Page subtitle chrome (size/fill/stroke) applies to every
+                # sequence channel. master_mei used to be the only page that
+                # received stroke; AK then burned 56px yellow with no outline
+                # and looked tiny on Shorts.
+                _wpp = page_ctx.subtitle_words_per_phrase if page_ctx else 4
+                _sub_fill = page_ctx.subtitle_fill if page_ctx else (255, 230, 0)
+                _sub_sw = page_ctx.subtitle_stroke_width if page_ctx else 0
+                _sub_sf = page_ctx.subtitle_stroke_fill if page_ctx else None
                 # Master Mei: VO +15% (VOICE_VOLUME_GAIN=1.15). Ambient bed 0.38.
                 _voice_gain = (
                     float(page_ctx.voice_volume_gain)
@@ -5022,9 +5415,10 @@ def _produce_variant_worker(
                     )
                 else:
                     _LOG.warning(
-                        "B2 upload failed for %s (%s) — postplanner will use local path.",
+                        "B2 upload failed for %s (%s: %s) — postplanner will use local path.",
                         reel_path.name,
                         type(_b2_exc).__name__,
+                        _b2_exc,
                     )
                 _b2_video_url = ""
         except Exception as reel_exc:  # noqa: BLE001
@@ -6735,6 +7129,13 @@ def cli() -> None:
         help="Dry-run: print scaffold prompts/inventory without calling Gemini or Anthropic APIs.",
     )
     parser.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        default=False,
+        help="Verbose diagnostics: keep non-actionable WARNING traces (RAG gaps, VLM fallbacks, TTS wire).",
+    )
+    parser.add_argument(
         "--cta",
         dest="cta",
         default="ON",
@@ -7161,7 +7562,19 @@ def cli() -> None:
         help=(
             "Together AI image model override: "
             "black-forest-labs/FLUX.2-dev ($0.0154/img). "
-            "Wins over --together_Juggernaut when both are set."
+            "Wins over --together_Juggernaut when both are set. "
+            "ECONOMIC_REEL_LOFI ignores this — use --deepinfra_flux2dev."
+        ),
+    )
+    parser.add_argument(
+        "--deepinfra_flux2dev",
+        dest="deepinfra_flux2dev",
+        action="store_true",
+        default=False,
+        help=(
+            "ECONOMIC_REEL_LOFI: generate stills on DeepInfra FLUX-2-dev "
+            "($0.01 × w/1024 × h/1024 × steps/28; 720×1280 @ 28 ≈ $0.0088/img). "
+            "Sets LOFI_FLUX_BACKEND=flux2-dev."
         ),
     )
     parser.add_argument(
@@ -7240,8 +7653,13 @@ def cli() -> None:
         ),
     )
     args = parser.parse_args()
+    if getattr(args, "deepinfra_flux2dev", False):
+        os.environ["LOFI_FLUX_BACKEND"] = "flux2-dev"
     # True CLI value before page locks (master_mei/anna) mutate args.avatar.
     _avatar_from_cli: str | None = args.avatar
+    if getattr(args, "debug", False):
+        os.environ["ENGINE_DEBUG"] = "true"
+        app_config.ENGINE_DEBUG = True
 
     # Together CLI flags pin the image SKU before flow resolution so
     # remote_gpu env defaults cannot steal the image provider.
@@ -7367,6 +7785,8 @@ def cli() -> None:
     # avatar and format fall back to page-level defaults if not specified.
     # ------------------------------------------------------------------
     page_id: str = args.page
+    if (page_id or "").strip() and (app_config.ACTIVE_PAGE or "").lower() != page_id.lower():
+        app_config.bind_active_page(page_id)
 
     # Load page config to read per-page defaults.
     _tmp_page_cfg: dict = {}
@@ -7576,11 +7996,25 @@ def cli() -> None:
                 f"[bootstrap] MODEL_API_FLOW (global env preset, NOT used for "
                 f"ECONOMIC_REEL_LOFI images) | {_flow_for_log.summary_line()}"
             )
-            print(
-                "[bootstrap] ECONOMIC_REEL_LOFI image provider FORCED | "
-                "together.ai / black-forest-labs/FLUX.1-schnell / lora=OFF "
-                "(ignores ENABLE_REMOTE_GPU_WORKFLOWS / MODEL_API_FLOW)"
-            )
+            _lofi_flux = str(os.environ.get("LOFI_FLUX_BACKEND") or "schnell").strip()
+            if _lofi_flux.lower() in {
+                "flux2",
+                "flux2-dev",
+                "flux.2-dev",
+                "flux2dev",
+                "deepinfra_flux2dev",
+            }:
+                print(
+                    "[bootstrap] ECONOMIC_REEL_LOFI image provider FORCED | "
+                    "deepinfra / black-forest-labs/FLUX-2-dev / lora=OFF "
+                    "(--deepinfra_flux2dev; ignores Together / MODEL_API_FLOW)"
+                )
+            else:
+                print(
+                    "[bootstrap] ECONOMIC_REEL_LOFI image provider FORCED | "
+                    "together.ai / black-forest-labs/FLUX.1-schnell / lora=OFF "
+                    "(ignores ENABLE_REMOTE_GPU_WORKFLOWS / MODEL_API_FLOW)"
+                )
         else:
             print(f"[bootstrap] MODEL_API_FLOW | {_flow_for_log.summary_line()}")
 

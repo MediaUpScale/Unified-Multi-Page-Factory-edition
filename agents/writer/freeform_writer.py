@@ -271,8 +271,9 @@ not silently longer beats.
 Each beat is spoken in {beat_s:.1f}s. Target about {budget} words. HARD MAX \
 {ceiling} words. Short, direct clauses like the reference corpus — not one \
 long literary sentence per beat. One word is allowed. A 30-word sentence is \
-not. Use as many of those {max_beats} beats as the idea needs (at least \
-{MIN_LINES}). Do not pad. Do not overrun the word ceiling."""
+not. {lofi_cfg.hook_line_brevity_clause()} Use as many of those {max_beats} \
+beats as the idea needs (at least {MIN_LINES}). Do not pad. Do not overrun \
+the word ceiling."""
 
 
 def build_prompt(brief: WriterBrief, *, reference_seed: int | None = None) -> str:

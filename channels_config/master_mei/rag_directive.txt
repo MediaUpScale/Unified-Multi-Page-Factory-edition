@@ -2,10 +2,10 @@ SYSTEM DIRECTIVE: MASTER MEI NARRATIVE ENGINE
 
 STRICT LENGTH & DURATION CONSTRAINTS:
 - TARGET REEL DURATION: 90 to 120 seconds.
-- SCENE STRUCTURE: 8–10 scenes. Scene 1 (hook) MAXIMUM 8 seconds — Master Mei meditating
-  in dynamic high-altitude nature (~70%) or open-air mountain shrine (~30%).
-  NEVER generic indoor temples. Act visual templates are REFERENCES only — vary
-  backdrop / weather / lighting to mirror each episode's philosophical concept.
+- SCENE STRUCTURE: 8–10 scenes. Scene 1 (hook) MAXIMUM 8 seconds — Master Mei identity
+  lock with a UNIQUE pose, camera, and outdoor setting each episode (meditation,
+  martial stance, tea ceremony, walking nature, reading scrolls, contemplation).
+  NEVER reuse the default avatar pose or background. NEVER generic indoor temples.
   Scenes 2 through final: 10 to 12 seconds each.
 - WORD COUNT: Match the active duration profile (≈115–175 spoken words @ 0.86× + pauses).
 - DELIVERY STYLE: Slow, humble, measured, ancestral tranquility — deep pauses between concepts.

@@ -59,7 +59,8 @@ def compose_instruction(
     return (
         f"Write exactly {n} spoken lines for a short vertical reel. Each line has "
         f"{slot:.1f}s: target {target_w} words, hard maximum "
-        f"{min(max_w, spoken_ceiling)} words and {max_c} characters.\n\n"
+        f"{min(max_w, spoken_ceiling)} words and {max_c} characters.\n"
+        f"{lofi_cfg.hook_line_brevity_clause()}\n\n"
         "Only three writing priorities:\n"
         "1. Open with an immediate, concrete hook from a recognisable human moment.\n"
         "2. Develop one clear thesis naturally from beginning to end.\n"
@@ -273,6 +274,7 @@ def format_compose_user(
         f"OUTPUT: exactly {n} spoken lines for {float(duration_s or n * slot):.0f}s "
         f"total. Each {slot:.1f}s line TARGETS {target_w} words and has a HARD MAX "
         f"of {hard_words} words and {max_c} characters. "
+        f"{lofi_cfg.hook_line_brevity_clause()} "
         "Satisfy the limits directly; do not output a paragraph for later slicing.\n"
         f"{extra}"
     )

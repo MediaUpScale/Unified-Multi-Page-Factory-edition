@@ -1531,23 +1531,32 @@ def assemble_lofi_reel(
         vo_pcm.append(pcm)
         caption_timings.append(timings_i)
         declared_s = float(preset if preset is not None else scene_duration_s)
-        if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
-            raise ValueError(
-                f"scene {i + 1} VO {vo_dur:.2f}s exceeds declared "
-                f"{declared_s:.1f}s +{int(float(lofi_cfg.TTS_DURATION_TOLERANCE) * 100)}% "
-                f"— rewrite the spoken line; assembler will not stretch the still"
+        trail = (
+            float(getattr(lofi_cfg, "VO_SLOT_PAD_S", 0.12))
+            if i >= n_scenes - 1
+            else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
+        )
+        if vo_dur > 0.05:
+            dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
+                vo_dur, base_s=0.0, trailing_silence_s=trail
             )
-        if lock_beat:
-            trail = (
-                0.0
-                if i >= n_scenes - 1
-                else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
+            dur_meta = {
+                "vo_dur": round(vo_dur, 3),
+                "last_word_end": 0.0,
+                "needed_s": dur_i,
+                "duration_s": dur_i,
+                "speech_start": round(lead_s, 3),
+                "speech_end": round(lead_s + vo_dur, 3),
+            }
+            print(
+                f"[LOFI assemble] scene {i + 1} audio-driven "
+                f"vo={vo_dur:.3f}s slot={dur_i:.3f}s "
+                f"ignored_estimate={declared_s:.3f}s"
             )
+        elif lock_beat:
             dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
                 vo_dur, base_s=declared_s, trailing_silence_s=trail
             )
-            if preset is not None:
-                dur_i = max(float(preset), dur_i)
             dur_meta = {
                 "vo_dur": round(vo_dur, 3),
                 "last_word_end": 0.0,
@@ -1562,8 +1571,6 @@ def assemble_lofi_reel(
                 Path(vp) if vp else None,
                 base_s=scene_duration_s,
             )
-            if preset is not None:
-                dur_i = max(dur_i, preset)
         scene_durs.append(dur_i)
         cap_preview = str(captions[i] if i < len(captions) else "")
         flag = ""
