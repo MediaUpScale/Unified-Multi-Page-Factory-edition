@@ -232,7 +232,14 @@ class AncientKnowledgeAdapter(BaseChannelConfig):
         opener = random.choice(_CAMERA_OPENERS).format(subject=clean)
         body = _PHOTOREAL_BODY.format(subject=clean, doorway_ban=_DOORWAY_BAN)
         style_bit = f"{style}. " if style else ""
-        return f"{opener} {style_bit}{body}"
+        raw = f"{opener} {style_bit}{body}"
+        try:
+            from agents.media.scene_prompt_generator import apply_topic_visual_lock
+
+            locked = apply_topic_visual_lock(raw, topic=clean, caption=clean, style=style)
+            return str(locked.get("image_generation_prompt") or raw)
+        except Exception:
+            return raw
 
     def get_niche_topics(self) -> list[str]:
         pool = [str(t).strip() for t in (self._page_cfg.get("TOPIC_POOL") or []) if str(t).strip()]

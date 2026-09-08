@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agents.media.scene_prompt_generator import (
+    apply_topic_visual_lock,
     cosine_similarity,
     domain_banned_subjects,
     generate_scene_prompts,
@@ -211,6 +212,46 @@ def test_hard_reject_skips_when_spoken_names_pyramid():
     )
     assert verdict["is_relevant"] is True
     assert not verdict.get("hard_reject")
+
+
+def test_topic_lock_applies_to_long_caption_and_carousel_prompts():
+    topic = "The Antikythera Mechanism — a 2,000-year-old analogue computer"
+    raw = (
+        "Iconic real-world monument (Pyramid, Baalbek megalith) anchoring the frame. "
+        "Ultra-realistic cinematic still of the corroded bronze artifact."
+    )
+    locked = apply_topic_visual_lock(raw, topic=topic, caption=topic, style=raw)
+    prompt = locked["image_generation_prompt"].lower()
+    assert locked["domain_id"] == "hellenistic_greece"
+    assert "ancient greece" in prompt or "hellenistic" in prompt
+    assert "pyramid" not in prompt
+    assert "pyramid" in locked["negative_prompt"].lower()
+    assert "pyramid" in locked["banned_subjects"]
+
+    from agents.media.avatar_engine.visual_architect import build_carousel_slide_prompt
+
+    slide = build_carousel_slide_prompt(
+        topic=topic,
+        visual_subject="bronze gears recovered from a Greek shipwreck",
+        facet="Macro of the real material — corroded bronze cogs fill the frame.",
+        slide_num=2,
+        total=3,
+        page_id="ancient_knowledge",
+        atmosphere_style="Ultra-realistic cinematic documentary photograph. Pyramid landmark.",
+    ).lower()
+    assert "pyramid" not in slide
+    assert "greece" in slide or "hellenistic" in slide or "bronze" in slide
+
+
+def test_ak_compose_image_prompt_strips_pyramid_on_greek_topic():
+    from channels_config.ancient_knowledge.channel_adapter import AncientKnowledgeAdapter
+
+    adapter = AncientKnowledgeAdapter()
+    prompt = adapter.compose_image_prompt(
+        "The Antikythera Mechanism from a Hellenistic shipwreck"
+    ).lower()
+    assert "pyramid" not in prompt
+    assert "greece" in prompt or "hellenistic" in prompt or "bronze" in prompt
 
 
 def test_b2_bucket_resolves_at_call_time(monkeypatch=None):

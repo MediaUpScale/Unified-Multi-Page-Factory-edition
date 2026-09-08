@@ -173,7 +173,7 @@ def build_carousel_slide_prompt(
             "No text, no letters, no numbers, no slide labels, no captions, "
             "no watermarks, no typography on the image."
         )
-    return (
+    raw = (
         f"{style} "
         f"CONCRETE PHOTOGRAPHIC SCENE: {grounded}. "
         f"THIS FRAME'S ORIGINAL ANGLE: {facet} "
@@ -182,6 +182,15 @@ def build_carousel_slide_prompt(
         f"{ban} "
         f"Photoreal photograph only. Never render words or UI."
     )
+    try:
+        from agents.media.scene_prompt_generator import apply_topic_visual_lock
+
+        locked = apply_topic_visual_lock(
+            raw, topic=topic, caption=f"{grounded} {facet}", style=style,
+        )
+        return str(locked.get("image_generation_prompt") or raw)
+    except Exception:
+        return raw
 
 
 class VisualArchitect:

@@ -2632,6 +2632,8 @@ def _produce_variant_worker(
     _carousel_imgbb: list[dict[str, str]] = []
     _images_generated_this_variant: int = 0
     _reused_cover = False
+    _topic_lock: dict[str, Any] | None = None
+    _topic_gate_extra: int = 0
     # IMAGE_BACKGROUND / IMAGE_QUOTE / IMAGE_AVATAR: call Gemini as normal.
     # ------------------------------------------------------------------
     _is_text_quote = (post_format == "TEXT_QUOTE") and not skip_image
@@ -2747,6 +2749,31 @@ def _produce_variant_worker(
             _LOG.info(
                 "master_mei IMAGE PROMPT LOCK | hard-override applied: %s",
                 image_prompt[:180],
+            )
+        if post_type in ("LONG_CAPTION_IMAGE", "CAROUSEL") and not _mm_image_prompt_override:
+            from agents.media.scene_prompt_generator import (
+                apply_topic_visual_lock as _tvl,
+            )
+
+            _topic_lock = _tvl(
+                image_prompt,
+                topic=resolved_subject or "",
+                caption=f"{visual_subject or ''} {caption or overlay_text or ''}",
+                style=effective_atmosphere or "",
+            )
+            image_prompt = str(_topic_lock.get("image_generation_prompt") or image_prompt)
+            _LOG.info(
+                "%s TOPIC LOCK | domain=%s banned=%s | prompt=%s",
+                post_type,
+                _topic_lock.get("domain_id") or "(none)",
+                _topic_lock.get("banned_subjects"),
+                image_prompt[:160],
+            )
+            print(
+                f"[TOPIC-LOCK] {post_type} domain={_topic_lock.get('domain_id') or '(none)'} "
+                f"banned={_topic_lock.get('banned_subjects')} "
+                f"prompt={image_prompt[:180]}",
+                flush=True,
             )
         img_model_id = None
         _page_cost = page_ctx.cost_tier if page_ctx is not None else None
@@ -2907,19 +2934,49 @@ def _produce_variant_worker(
                 img_path_display = None
                 _reused_cover = True
             if not _reused_cover:
-                img_path_display = adapter.generate(
-                    image_prompt,
-                    reference_image_path=_gen_ref,
-                    style_reference_path=_style_ref_path,
-                    style_reference_paths=_style_ref_paths or None,
-                    style_reference_weight=_style_ref_weight,
-                    output_stem=stem,
-                    output_directory=subject_assets,
-                    avatar_mode=image_avatar_mode,
-                    reference_image_weight=_gen_weight,
-                    visual_role=_act1_role,
-                    negative_prompt=_act1_neg,
-                )
+                _still_neg = _act1_neg
+                if _topic_lock and _topic_lock.get("negative_prompt"):
+                    _still_neg = (
+                        f"{_act1_neg}, {_topic_lock['negative_prompt']}"
+                        if _act1_neg
+                        else str(_topic_lock["negative_prompt"])
+                    )
+                _gen_kwargs = {
+                    "reference_image_path": _gen_ref,
+                    "style_reference_path": _style_ref_path,
+                    "style_reference_paths": _style_ref_paths or None,
+                    "style_reference_weight": _style_ref_weight,
+                    "output_directory": subject_assets,
+                    "avatar_mode": image_avatar_mode,
+                    "reference_image_weight": _gen_weight,
+                    "visual_role": _act1_role,
+                    "negative_prompt": _still_neg,
+                }
+                if post_type in ("LONG_CAPTION_IMAGE", "CAROUSEL"):
+                    from modules.reel_visual_qa import generate_and_gate as _still_gate
+
+                    img_path_display, _topic_gate_extra = _still_gate(
+                        adapter.generate,
+                        prompt=image_prompt,
+                        chunk_text=resolved_subject or visual_subject or "",
+                        output_stem=stem,
+                        output_directory=subject_assets,
+                        channel=(page_ctx.page_id if page_ctx else "ancient_knowledge"),
+                        search_dirs=[subject_assets] if subject_assets else [],
+                        generate_kwargs=_gen_kwargs,
+                        banned_subjects=list(_topic_lock.get("banned_subjects") or [])
+                        if _topic_lock
+                        else None,
+                        domain_anchors=str(
+                            (_topic_lock or {}).get("domain_anchors") or ""
+                        ),
+                    )
+                else:
+                    img_path_display = adapter.generate(
+                        image_prompt,
+                        output_stem=stem,
+                        **_gen_kwargs,
+                    )
             img_used = adapter.last_gemini_image_model_used or bm.image_primary_id
             logging.info(
                 "Variant %s | IMAGE_OK | model_used=%s | path=%s",
@@ -2976,6 +3033,7 @@ def _produce_variant_worker(
         _images_generated_this_variant = _n_hits
         if cost_tracker is None:
             _images_generated_this_variant = 1
+        _images_generated_this_variant += max(0, int(_topic_gate_extra or 0))
     elif _reused_cover:
         _LOG.info("IMAGE CACHE | cover billed as $0 (reused still, no API this run)")
 
@@ -3020,19 +3078,64 @@ def _produce_variant_worker(
                 page_id=_pid,
                 atmosphere_style=effective_atmosphere or atmosphere_style or "",
             )
+            _slide_lock = None
             try:
-                _slide_img = adapter.generate(
+                from agents.media.scene_prompt_generator import (
+                    apply_topic_visual_lock as _slide_tvl,
+                )
+
+                _slide_lock = _slide_tvl(
                     _slide_prompt,
-                    reference_image_path=effective_ref_path if image_avatar_mode == "ON" else None,
+                    topic=resolved_subject or "",
+                    caption=f"{visual_subject or ''} {_facet}",
+                    style=effective_atmosphere or "",
+                )
+                _slide_prompt = str(
+                    _slide_lock.get("image_generation_prompt") or _slide_prompt
+                )
+            except Exception:
+                _slide_lock = None
+            try:
+                from modules.reel_visual_qa import generate_and_gate as _slide_gate
+
+                _slide_img, _slide_extra = _slide_gate(
+                    adapter.generate,
+                    prompt=_slide_prompt,
+                    chunk_text=f"{resolved_subject} {_facet}",
                     output_stem=f"{stem}_slide_{_slide_num:02d}",
                     output_directory=subject_assets,
-                    avatar_mode=image_avatar_mode,
+                    channel=_pid or "ancient_knowledge",
+                    search_dirs=[subject_assets] if subject_assets else [],
+                    generate_kwargs={
+                        "reference_image_path": (
+                            effective_ref_path if image_avatar_mode == "ON" else None
+                        ),
+                        "avatar_mode": image_avatar_mode,
+                        "negative_prompt": (
+                            str(_slide_lock.get("negative_prompt") or "")
+                            if _slide_lock
+                            else None
+                        ),
+                    },
+                    banned_subjects=list(_slide_lock.get("banned_subjects") or [])
+                    if _slide_lock
+                    else None,
+                    domain_anchors=str(
+                        (_slide_lock or {}).get("domain_anchors") or ""
+                    ),
                 )
                 _carousel_image_paths.append(str(_slide_img))
                 _images_generated_this_variant += _track_adapter_image(cost_tracker, adapter)
+                _images_generated_this_variant += max(0, int(_slide_extra or 0))
                 _LOG.info(
                     "CAROUSEL slide %d/%d generated → %s",
                     _slide_num, _carousel_quantity, Path(_slide_img).name,
+                )
+                print(
+                    f"[TOPIC-LOCK] CAROUSEL slide {_slide_num}/{_carousel_quantity} "
+                    f"domain={(_slide_lock or {}).get('domain_id') or '(none)'} "
+                    f"banned={(_slide_lock or {}).get('banned_subjects')}",
+                    flush=True,
                 )
             except Exception as _ce:  # noqa: BLE001
                 _LOG.warning("CAROUSEL slide %d generation failed: %s — skipping.", _slide_num, _ce)

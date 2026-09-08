@@ -193,6 +193,40 @@ def _anti_slop_negative(chunk_text: str, tropes: Iterable[str]) -> str:
     return f"{_NEG_BASE}{', ' + extra if extra else ''}"
 
 
+def apply_topic_visual_lock(
+    prompt: str,
+    *,
+    topic: str = "",
+    caption: str = "",
+    style: str = "",
+) -> dict[str, Any]:
+    """
+    Topic-specific anchors + negatives for stills (LONG_CAPTION, carousel).
+
+    Same lock as ECONOMIC_REEL scene prompts: infer domain from the topic,
+    strip inherited slop (e.g. Pyramid in AK style) unless the topic names it,
+    front-load geographic anchors, and return a VLM banned-subject list.
+    """
+    blob = f"{topic or ''} {caption or ''} {prompt or ''}"
+    domain_id = infer_visual_domain(blob, topic)
+    anchors = domain_anchors(domain_id)
+    allow = f"{topic or ''} {caption or ''}"
+    banned = domain_banned_subjects(domain_id, spoken_text=allow)
+    locked = sanitize_channel_style(prompt or "", allow, banned)
+    if style:
+        locked = sanitize_channel_style(
+            f"{locked} {style}".strip(), allow, banned,
+        )
+    locked = front_load_domain_anchors(locked, anchors)
+    return {
+        "image_generation_prompt": locked,
+        "negative_prompt": _anti_slop_negative(allow, banned),
+        "banned_subjects": banned,
+        "domain_id": domain_id,
+        "domain_anchors": anchors,
+    }
+
+
 def _heuristic_scene(
     chunk: AudioChunk,
     *,
