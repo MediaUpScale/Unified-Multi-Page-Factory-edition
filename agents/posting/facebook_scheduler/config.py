@@ -55,8 +55,8 @@ SCHEDULE_COLUMN_FILL_START: str = "now"  # "now" = start from current time
 REELS_FIRST_OFFSET_MIN_MINUTES: int = 25  # Meta requires ≥20 min lead
 REELS_FIRST_OFFSET_MAX_MINUTES: int = 60
 REELS_BASE_INTERVAL_HOURS: int = 4
-REELS_JITTER_MIN_MINUTES: int = 0
-REELS_JITTER_MAX_MINUTES: int = 60
+REELS_JITTER_MIN_MINUTES: int = 10
+REELS_JITTER_MAX_MINUTES: int = 30
 REELS_MIN_LEAD_MINUTES: int = 25
 
 # ---------------------------------------------------------------------------

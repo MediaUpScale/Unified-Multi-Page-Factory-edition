@@ -71,8 +71,8 @@ def is_video_file(path: str | Path) -> bool:
 FIRST_OFFSET_MIN_MINUTES = getattr(config, "REELS_FIRST_OFFSET_MIN_MINUTES", 25)
 FIRST_OFFSET_MAX_MINUTES = getattr(config, "REELS_FIRST_OFFSET_MAX_MINUTES", 60)
 BASE_INTERVAL_HOURS = getattr(config, "REELS_BASE_INTERVAL_HOURS", 4)
-JITTER_MIN_MINUTES = getattr(config, "REELS_JITTER_MIN_MINUTES", 0)
-JITTER_MAX_MINUTES = getattr(config, "REELS_JITTER_MAX_MINUTES", 60)
+JITTER_MIN_MINUTES = getattr(config, "REELS_JITTER_MIN_MINUTES", 10)
+JITTER_MAX_MINUTES = getattr(config, "REELS_JITTER_MAX_MINUTES", 30)
 
 # Never schedule closer than this to "now" (Meta requires ≥20 min)
 MIN_LEAD_MINUTES = getattr(config, "REELS_MIN_LEAD_MINUTES", 25)
@@ -211,54 +211,118 @@ class MediaItem:
 
 class LocalMediaQueue:
     """
-    Channel-scoped local queue for Facebook media scheduling.
+    Local queue for Facebook media scheduling.
 
-    Layout
-    ------
+    Channel layout
+    --------------
     ``outputs/<channel_name>/clips/*.mp4``          — pending queue
     ``outputs/<channel_name>/clips/posted_facebook/`` — completed (moved)
     ``outputs/<channel_name>/facebook_history.json`` — durable state
     ``outputs/<channel_name>/content_library.json``  — network captions
     ``outputs/<channel_name>/library/post_*.json``   — per-post metadata
+
+    Folder layout (``from_folder`` / ``media_dir=``)
+    -----------------------------------------------
+    ``<folder>/*.mp4``                 — pending queue
+    ``<folder>/posted_facebook/``      — completed (moved)
+    ``<folder>/facebook_history.json`` — durable state
+    ``<folder>/asset_library.json``    — captions / descriptions
     """
 
     def __init__(
         self,
-        channel_name: str,
+        channel_name: str = "",
         *,
         media_subdir: str = "clips",
         extensions: tuple[str, ...] = (".mp4",),
         outputs_base: Path | None = None,
         move_on_success: bool = True,
+        media_dir: Path | str | None = None,
+        allow_stem_fallback: bool | None = None,
+        interval_hours: float | None = None,
     ) -> None:
-        self.channel_name = channel_name
         self.media_subdir = media_subdir
         self.extensions = tuple(e.lower() for e in extensions)
         self.outputs_base = Path(outputs_base) if outputs_base else OUTPUTS_BASE_DIR
         self.move_on_success = move_on_success
+        self.interval_hours = float(
+            BASE_INTERVAL_HOURS if interval_hours is None else interval_hours
+        )
+        if self.interval_hours <= 0:
+            raise ValueError("interval_hours must be > 0.")
+        self._caption_pool: list[str] = []
+        self._library_present = False
 
-        self.channel_dir = self.outputs_base / channel_name
-        self.media_dir = self.channel_dir / media_subdir
-        self.posted_dir = self.media_dir / POSTED_SUBDIR
-        self.history_path = self.channel_dir / HISTORY_FILENAME
-        self.content_library_path = self.channel_dir / "content_library.json"
-        self.posts_library_dir = self.channel_dir / "library"
+        if media_dir is not None:
+            folder = Path(media_dir)
+            if not folder.is_dir():
+                raise NotADirectoryError(folder)
+            self.folder_mode = True
+            self.channel_name = channel_name or folder.name
+            self.channel_dir = folder
+            self.media_dir = folder
+            self.posted_dir = folder / POSTED_SUBDIR
+            self.history_path = folder / HISTORY_FILENAME
+            self.content_library_path = folder / "content_library.json"
+            self.asset_library_path = folder / "asset_library.json"
+            self.posts_library_dir = folder / "library"
+            self.allow_stem_fallback = (
+                False if allow_stem_fallback is None else allow_stem_fallback
+            )
+            self.posted_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            if not channel_name:
+                raise ValueError("channel_name is required unless media_dir is set.")
+            self.folder_mode = False
+            self.channel_name = channel_name
+            self.channel_dir = self.outputs_base / channel_name
+            self.media_dir = self.channel_dir / media_subdir
+            self.posted_dir = self.media_dir / POSTED_SUBDIR
+            self.history_path = self.channel_dir / HISTORY_FILENAME
+            self.content_library_path = self.channel_dir / "content_library.json"
+            self.asset_library_path = self.channel_dir / "asset_library.json"
+            self.posts_library_dir = self.channel_dir / "library"
+            self.allow_stem_fallback = (
+                True if allow_stem_fallback is None else allow_stem_fallback
+            )
+            self.media_dir.mkdir(parents=True, exist_ok=True)
+            self.posted_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                from modules.durable_store import hydrate_state_file, restore_channel_state
+                from utils.pipeline_paths import channel_store_dir
 
-        self.media_dir.mkdir(parents=True, exist_ok=True)
-        self.posted_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            from modules.durable_store import hydrate_state_file, restore_channel_state
-            from utils.pipeline_paths import channel_store_dir
-
-            restore_channel_state(channel_name)
-            store = channel_store_dir(channel_name, create=True)
-            self.history_path = hydrate_state_file(store / HISTORY_FILENAME)
-            self.content_library_path = hydrate_state_file(store / "content_library.json")
-        except Exception:
-            pass
+                restore_channel_state(channel_name)
+                store = channel_store_dir(channel_name, create=True)
+                self.history_path = hydrate_state_file(store / HISTORY_FILENAME)
+                self.content_library_path = hydrate_state_file(
+                    store / "content_library.json"
+                )
+            except Exception:
+                pass
 
         self._history: dict[str, Any] = self._load_history()
         self._metadata_by_filename: dict[str, dict[str, Any]] | None = None
+
+    @classmethod
+    def from_folder(
+        cls,
+        folder: str | Path,
+        *,
+        extensions: tuple[str, ...] = (".mp4",),
+        move_on_success: bool = True,
+        allow_stem_fallback: bool = False,
+        interval_hours: float | None = None,
+    ) -> "LocalMediaQueue":
+        """Queue any directory of videos; captions come from that folder's JSON."""
+        path = Path(folder)
+        return cls(
+            path.name,
+            extensions=extensions,
+            move_on_success=move_on_success,
+            media_dir=path,
+            allow_stem_fallback=allow_stem_fallback,
+            interval_hours=interval_hours,
+        )
 
     # ------------------------------------------------------------------
     # History I/O
@@ -326,7 +390,7 @@ class LocalMediaQueue:
     def next_schedule_datetime(self, *, now: datetime | None = None) -> datetime:
         """
         First post (or last in the past): ``now + random(25..60) minutes``.
-        Subsequent: ``last_scheduled + 4 hours + random(0..60) minutes``.
+        Subsequent: ``last_scheduled + interval_hours + random(10..30) minutes``.
         """
         now = now or datetime.now()
         last = self.last_scheduled_at()
@@ -344,11 +408,11 @@ class LocalMediaQueue:
         else:
             random_minutes = random.randint(JITTER_MIN_MINUTES, JITTER_MAX_MINUTES)
             next_time = last + timedelta(
-                hours=BASE_INTERVAL_HOURS, minutes=random_minutes
+                hours=self.interval_hours, minutes=random_minutes
             )
             _log.info(
-                "Subsequent post. Scheduling %dh and %dm after the previous post.",
-                BASE_INTERVAL_HOURS,
+                "Subsequent post. Scheduling %.2fh and %dm after the previous post.",
+                self.interval_hours,
                 random_minutes,
             )
 
@@ -446,6 +510,7 @@ class LocalMediaQueue:
                 or row.get("clip_path")
                 or row.get("local_video")
                 or row.get("media_path")
+                or row.get("local_path")
                 or ""
             )
             meta = dict(row)
@@ -483,25 +548,61 @@ class LocalMediaQueue:
                 if topic_key:
                     index.setdefault(f"__topic__:{topic_key}", meta)
 
-        # 1) Lean content library
-        if self.content_library_path.is_file():
-            try:
-                data = json.loads(
-                    self.content_library_path.read_text(encoding="utf-8")
-                )
-                if isinstance(data, list):
-                    for row in data:
-                        _ingest(row)
-                _log.info(
-                    "Loaded content_library.json (%d video row(s)).",
-                    len(data) if isinstance(data, list) else 0,
-                )
-            except Exception as exc:
-                _log.warning("Could not read %s: %s", self.content_library_path, exc)
+        self._caption_pool = []
+        self._library_present = False
 
-        # 2) Per-post snapshots (overwrite with richer / newer fields)
+        def _ingest_payload(data: Any) -> int:
+            rows: list[Any] = []
+            if isinstance(data, list):
+                rows = data
+            elif isinstance(data, dict):
+                pool = data.get("captions") or data.get("caption_pool") or []
+                if isinstance(pool, list):
+                    for item in pool:
+                        text = str(item or "").strip()
+                        if text:
+                            self._caption_pool.append(text)
+                default = str(
+                    data.get("default_caption") or data.get("caption") or ""
+                ).strip()
+                if default:
+                    self._caption_pool.append(default)
+                rows = (
+                    data.get("assets")
+                    or data.get("items")
+                    or data.get("posts")
+                    or []
+                )
+                if isinstance(rows, dict):
+                    rows = list(rows.values())
+            count = 0
+            if isinstance(rows, list):
+                for row in rows:
+                    if isinstance(row, dict):
+                        _ingest(row)
+                        count += 1
+            return count
+
+        library_files = [
+            getattr(self, "asset_library_path", None),
+            self.content_library_path,
+        ]
+        for lib_path in library_files:
+            if lib_path is None or not Path(lib_path).is_file():
+                continue
+            try:
+                data = json.loads(Path(lib_path).read_text(encoding="utf-8"))
+                self._library_present = True
+                n = _ingest_payload(data)
+                _log.info("Loaded %s (%d row(s)).", Path(lib_path).name, n)
+            except Exception as exc:
+                _log.warning("Could not read %s: %s", lib_path, exc)
+
+        # Per-post snapshots (overwrite with richer / newer fields)
         if self.posts_library_dir.is_dir():
             post_files = sorted(self.posts_library_dir.glob("post_*.json"))
+            if post_files:
+                self._library_present = True
             for post_path in post_files:
                 try:
                     row = json.loads(post_path.read_text(encoding="utf-8"))
@@ -513,6 +614,15 @@ class LocalMediaQueue:
                 len(post_files),
                 self.posts_library_dir.name,
             )
+
+        # Deduplicate caption pool while preserving order
+        seen_caps: set[str] = set()
+        unique_pool: list[str] = []
+        for cap in self._caption_pool:
+            if cap not in seen_caps:
+                seen_caps.add(cap)
+                unique_pool.append(cap)
+        self._caption_pool = unique_pool
 
         return index
 
@@ -746,6 +856,8 @@ class LocalMediaQueue:
         cls,
         media_path: Path,
         metadata: dict[str, Any] | None = None,
+        *,
+        allow_fallback: bool = True,
     ) -> tuple[str, str]:
         """
         Resolve description/caption with network-first priority.
@@ -756,10 +868,10 @@ class LocalMediaQueue:
         --------
         ``facebook_caption`` → ``caption`` → ``final_caption`` →
         ``humanized_caption`` → ``caption_body`` → ``description`` →
-        sidecar ``.txt`` → filename stem fallback.
+        sidecar ``.txt`` → filename stem fallback (channel mode only).
 
-        Network captions are returned **verbatim** (no truncation) so
-        hashtags / post body stay intact.
+        When *allow_fallback* is False and no library/sidecar text exists,
+        returns an empty caption so the composer posts without description.
         """
         meta = metadata or {}
         for key in cls._CAPTION_PRIORITY:
@@ -773,6 +885,8 @@ class LocalMediaQueue:
             if text:
                 return text, "sidecar_txt"
 
+        if not allow_fallback:
+            return "", "none"
         return cls.caption_from_sidecar_or_stem(media_path), "fallback"
 
     @staticmethod
@@ -909,9 +1023,31 @@ class LocalMediaQueue:
 
         for entry in pending:
             path = entry["path"]
+            sidecar_json = path.with_suffix(".json")
+            if sidecar_json.is_file():
+                try:
+                    extra = json.loads(sidecar_json.read_text(encoding="utf-8"))
+                    if isinstance(extra, dict):
+                        self._library_present = True
+                        name = path.name.lower()
+                        self._metadata_by_filename[name] = {
+                            **(self._metadata_by_filename.get(name) or {}),
+                            **extra,
+                        }
+                except Exception:
+                    pass
             meta = self.metadata_for(path)
-            caption, source = self.resolve_caption(path, meta)
-            if source != "fallback":
+            caption, source = self.resolve_caption(
+                path,
+                meta,
+                allow_fallback=self.allow_stem_fallback,
+            )
+            if not caption and self._caption_pool:
+                caption = self._caption_pool[len(items) % len(self._caption_pool)]
+                source = "asset_library_pool"
+            if not caption and not self._library_present:
+                caption, source = "", "none"
+            if source not in ("fallback", "none"):
                 meta_hits += 1
             items.append(
                 MediaItem(
@@ -928,7 +1064,7 @@ class LocalMediaQueue:
             "%d still rendering/locked among top-5, %d with library captions, "
             "newest first).",
             self.channel_name,
-            self.media_subdir,
+            self.media_dir.name if self.folder_mode else self.media_subdir,
             len(items),
             len(posted),
             skipped_rendering,
@@ -956,12 +1092,14 @@ class UniversalComposerScheduler(ABC):
     def __init__(
         self,
         page: "Page",
-        channel_name: str,
+        channel_name: str = "",
         *,
         dry_run: bool = False,
         outputs_base: Path | None = None,
         move_on_success: bool = True,
         max_items: int | None = None,
+        media_dir: Path | str | None = None,
+        interval_hours: float | None = None,
     ) -> None:
         self.page = page
         self.channel_name = channel_name
@@ -974,6 +1112,8 @@ class UniversalComposerScheduler(ABC):
             extensions=self.media_extensions,
             outputs_base=outputs_base,
             move_on_success=move_on_success,
+            media_dir=media_dir,
+            interval_hours=interval_hours,
         )
 
     # ---- subclass knobs -------------------------------------------------

@@ -5,9 +5,14 @@ Re-encodes a video so container + bitstream hashes change while the picture
 stays visually identical: metadata strip, 2 px crop, micro color jitter,
 0.5% presentation-timestamp shift, and a matching audio rate nudge.
 
+Any folder (or file) is accepted. Signed outputs always land in a ``processes``
+sibling folder next to the source.
+
 CLI
 ---
-    python core/utils/fingerprint_engine.py --input path/to/video.mp4 --output path/to/signed.mp4
+    python core/utils/fingerprint_engine.py "path/to/folder"
+    python core/utils/fingerprint_engine.py "path/to/video.mp4"
+    python core/utils/fingerprint_engine.py --input "path/to/folder"
 """
 from __future__ import annotations
 
@@ -18,6 +23,11 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+SIGNED_SUFFIX = "_signed"
+PROCESSES_DIRNAME = "processes"
+_RESERVED_OUTPUT_DIRS = frozenset({PROCESSES_DIRNAME, "Processed"})
 
 _LOG = logging.getLogger(__name__)
 
@@ -61,6 +71,18 @@ def resolve_ffmpeg() -> str:
     raise RuntimeError(
         "ffmpeg not found on PATH, imageio_ffmpeg, or common install paths."
     )
+
+
+def resolve_processes_dir(source_dir: str | Path) -> Path:
+    """Create ``<source_dir>/processes`` and return it."""
+    dest = Path(source_dir) / PROCESSES_DIRNAME
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
+def signed_output_name(src: Path) -> str:
+    stem = src.stem.rstrip("_")
+    return f"{stem}{SIGNED_SUFFIX}.mp4"
 
 
 def _merged_options(options: Optional[dict[str, Any]]) -> dict[str, Any]:
@@ -162,7 +184,7 @@ def apply_video_uniqueness(
     ffmpeg = resolve_ffmpeg()
     use_hwaccel = bool(opts.get("hwaccel", True))
 
-    _LOG.info("Uniqueness pass | %s → %s", src.name, dest)
+    _LOG.info("Uniqueness pass | %s -> %s", src.name, dest)
     result = subprocess.run(
         _build_cmd(ffmpeg, src, dest, opts, use_hwaccel=use_hwaccel),
         stdout=subprocess.DEVNULL,
@@ -186,16 +208,153 @@ def apply_video_uniqueness(
     return str(dest)
 
 
+def _is_video(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
+
+
+def _inside_reserved_output(path: Path, root: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return any(part in _RESERVED_OUTPUT_DIRS for part in relative.parts)
+
+
+def iter_source_videos(
+    folder: Path,
+    *,
+    recursive: bool = False,
+    skip_dir: Optional[Path] = None,
+) -> list[Path]:
+    """Return source videos in *folder*, ignoring signed copies and output dirs."""
+    skip_resolved = skip_dir.resolve() if skip_dir else None
+    iterator = folder.rglob("*") if recursive else folder.iterdir()
+    found: list[Path] = []
+    for path in iterator:
+        if not _is_video(path):
+            continue
+        if path.stem.endswith(SIGNED_SUFFIX):
+            continue
+        if _inside_reserved_output(path, folder):
+            continue
+        if skip_resolved is not None:
+            try:
+                path.resolve().relative_to(skip_resolved)
+                continue
+            except ValueError:
+                pass
+        found.append(path)
+    return sorted(found)
+
+
+def apply_folder_uniqueness(
+    input_dir: str,
+    output_dir: Optional[str] = None,
+    options: dict | None = None,
+    *,
+    skip_existing: bool = True,
+    recursive: bool = False,
+) -> list[str]:
+    """Sign every video in *input_dir* into ``<input_dir>/processes``."""
+    src_dir = Path(input_dir)
+    if not src_dir.is_dir():
+        raise NotADirectoryError(src_dir)
+    dest_dir = Path(output_dir) if output_dir else resolve_processes_dir(src_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    videos = iter_source_videos(src_dir, recursive=recursive, skip_dir=dest_dir)
+    if not videos:
+        _LOG.warning("No source videos found in %s", src_dir)
+        print(f"[fingerprint] No source videos in {src_dir}")
+        return []
+
+    signed: list[str] = []
+    total = len(videos)
+    for i, src in enumerate(videos, start=1):
+        dest = dest_dir / signed_output_name(src)
+        if skip_existing and dest.is_file() and dest.stat().st_size > 0:
+            print(f"[fingerprint] Skip existing {i}/{total}: {dest.name}")
+            signed.append(str(dest))
+            continue
+        print(f"[fingerprint] {i}/{total} {src.name}")
+        try:
+            signed.append(apply_video_uniqueness(str(src), str(dest), options))
+        except Exception as exc:  # noqa: BLE001
+            _LOG.error("Failed %s: %s", src.name, exc)
+            print(f"[fingerprint] FAILED {src.name}: {exc}")
+            continue
+        print(f"[fingerprint] Signed -> {dest}")
+    return signed
+
+
+def sign_path(
+    input_path: str | Path,
+    output_path: Optional[str | Path] = None,
+    options: dict | None = None,
+    *,
+    skip_existing: bool = True,
+    recursive: bool = False,
+) -> list[str]:
+    """Sign a file or a folder. Folder/file outputs go under ``processes/``."""
+    src = Path(input_path)
+    if src.is_dir():
+        return apply_folder_uniqueness(
+            str(src),
+            str(output_path) if output_path else None,
+            options,
+            skip_existing=skip_existing,
+            recursive=recursive,
+        )
+    if not src.is_file():
+        raise FileNotFoundError(src)
+    dest = (
+        Path(output_path)
+        if output_path
+        else resolve_processes_dir(src.parent) / signed_output_name(src)
+    )
+    if dest.is_dir():
+        dest = dest / signed_output_name(src)
+    return [apply_video_uniqueness(str(src), str(dest), options)]
+
+
 def _parse_cli(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="fingerprint_engine.py",
         description=(
-            "Channel-agnostic FFmpeg uniqueness pass: strip metadata, "
-            "nudge audio rate, apply micro color jitter and a slight speed shift."
+            "Channel-agnostic FFmpeg uniqueness pass. Pass any folder or video; "
+            f"signed copies are written to a '{PROCESSES_DIRNAME}/' folder "
+            "in the same directory."
         ),
     )
-    parser.add_argument("--input", required=True, help="Source video path.")
-    parser.add_argument("--output", required=True, help="Signed output MP4 path.")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help="Source video file, or a folder of videos.",
+    )
+    parser.add_argument(
+        "--input",
+        dest="input_flag",
+        default=None,
+        help="Same as the positional path. Overrides the positional value.",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Optional override. Folder mode: destination folder. "
+            f"File mode: signed MP4 path. Default: <source>/{PROCESSES_DIRNAME}."
+        ),
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="In folder mode, also process videos in subfolders.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="In folder mode, re-sign even when the output already exists.",
+    )
     parser.add_argument("--no-hwaccel", action="store_true")
     parser.add_argument(
         "--hw-encode",
@@ -216,6 +375,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         format="%(asctime)s  %(levelname)-8s  %(message)s",
         datefmt="%H:%M:%S",
     )
+    source = args.input_flag or args.path
+    if not source:
+        raise SystemExit("Pass a folder or file: fingerprint_engine.py <path>")
     options = {
         "hwaccel": not args.no_hwaccel,
         "hw_encode": args.hw_encode,
@@ -223,8 +385,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         "preset": args.preset,
         "color_jitter": not args.no_color_jitter,
     }
-    dest = apply_video_uniqueness(args.input, args.output, options)
-    print(f"[fingerprint] Signed → {dest}")
+    signed = sign_path(
+        source,
+        args.output,
+        options,
+        skip_existing=not args.force,
+        recursive=args.recursive,
+    )
+    if len(signed) == 1 and not Path(source).is_dir():
+        print(f"[fingerprint] Signed -> {signed[0]}")
     return 0
 
 

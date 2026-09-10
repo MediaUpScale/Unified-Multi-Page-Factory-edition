@@ -15,12 +15,16 @@ Built on ``media_scheduler_base.UniversalComposerScheduler``:
   (never the Universal photo Create-post flow)
 * Photo schedulers (future) → Universal ``/latest/`` Create post
 * CDP ``DOM.setFileInputFiles`` for large uploads (no OS focus steal)
-* Dynamic interval — first: ``now + random(25–60) min``; later: ``last + 4h + random(0–60) min``
+* Dynamic interval — first: ``now + random(25–60) min``; later: ``last + interval + random(10–30) min``
 
 Usage
 -----
     # Dry-run (scan queue, print plan — no browser clicks)
     python -m facebook_scheduler.reels_scheduler --channel master_mei --dry-run
+
+    # Any folder of MP4s (captions from <folder>/asset_library.json)
+    python -m facebook_scheduler.reels_scheduler --folder "D:/clips" --dry-run
+    python -m facebook_scheduler.reels_scheduler --folder "D:/clips"
 
     # Live schedule (attach to Dolphin CDP / running Business Suite tab)
     python -m facebook_scheduler.reels_scheduler --channel master_mei
@@ -146,15 +150,24 @@ class ReelsScheduler(UniversalComposerScheduler):
         Network-first caption routing (no truncation for library captions).
 
         ``facebook_caption`` → ``caption`` → ``final_caption`` /
-        ``humanized_caption`` → sidecar → shortened stem fallback.
+        ``humanized_caption`` → sidecar → pool. Missing library → empty
+        caption (post without title/description).
         """
         from agents.posting.facebook_scheduler.media_scheduler_base import LocalMediaQueue
 
         meta = item.metadata or {}
-        text, source = LocalMediaQueue.resolve_caption(item.path, meta)
+        allow_fallback = getattr(self.queue, "allow_stem_fallback", True)
+        text = (item.caption or "").strip()
+        source = getattr(item, "caption_source", "") or ""
+        if not text:
+            text, source = LocalMediaQueue.resolve_caption(
+                item.path,
+                meta,
+                allow_fallback=allow_fallback,
+            )
         item.caption = text
         item.caption_source = source
-        if source == "fallback":
+        if source == "fallback" and text:
             text = LocalMediaQueue.shorten_caption(text)
         _log.info(
             "Caption source=%s (%d chars): %r",
@@ -184,14 +197,19 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="reels_scheduler",
         description=(
-            "Schedule local channel Reels (.mp4) on Meta Business Suite "
-            "using the dedicated reels_composer endpoint."
+            "Schedule local Reels (.mp4) on Meta Business Suite "
+            "using the dedicated reels_composer endpoint. "
+            "Pass --folder for any directory, or --channel for outputs/<channel>/clips."
         ),
     )
-    ap.add_argument(
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument(
         "--channel",
-        required=True,
         help='Channel folder name under outputs/ (e.g. "master_mei").',
+    )
+    src.add_argument(
+        "--folder",
+        help="Any folder of .mp4 files. Captions from <folder>/asset_library.json.",
     )
     ap.add_argument(
         "--dry-run",
@@ -207,6 +225,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Schedule at most N reels in this run.",
     )
     ap.add_argument(
+        "--interval",
+        type=float,
+        default=4.0,
+        metavar="HOURS",
+        help="Hours between scheduled reels (default: 4). Example: --interval 6",
+    )
+    ap.add_argument(
         "--cdp",
         default="",
         help="CDP endpoint or port (default: auto-detect Dolphin / config).",
@@ -215,35 +240,50 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-move",
         action="store_true",
         default=False,
-        help="Keep files in clips/ after success (still write facebook_history.json).",
+        help="Keep files in place after success (still write facebook_history.json).",
     )
     return ap
+
+
+def _build_queue(args: argparse.Namespace):
+    from agents.posting.facebook_scheduler.media_scheduler_base import LocalMediaQueue
+
+    if args.folder:
+        return LocalMediaQueue.from_folder(
+            args.folder,
+            extensions=(".mp4",),
+            move_on_success=not args.no_move,
+            interval_hours=args.interval,
+        )
+    return LocalMediaQueue(
+        args.channel,
+        media_subdir="clips",
+        extensions=(".mp4",),
+        move_on_success=not args.no_move,
+        interval_hours=args.interval,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    from agents.posting.facebook_scheduler.media_scheduler_base import LocalMediaQueue
-
-    queue = LocalMediaQueue(
-        args.channel,
-        media_subdir="clips",
-        extensions=(".mp4",),
-        move_on_success=not args.no_move,
-    )
+    queue = _build_queue(args)
     pending = queue.scan_pending(format_type="reel")
     if args.max is not None:
         pending = pending[: max(0, args.max)]
 
+    source_label = args.folder or args.channel
     print(
-        f"[reels_scheduler] channel={args.channel!r} pending={len(pending)} "
-        f"composer={REELS_COMPOSER_URL}"
+        f"[reels_scheduler] source={source_label!r} pending={len(pending)} "
+        f"interval={args.interval:g}h composer={REELS_COMPOSER_URL}"
     )
     if args.dry_run:
         cursor = queue.next_schedule_datetime()
         print(f"[dry-run] first slot ≈ {cursor.strftime('%Y-%m-%d %H:%M')}")
         for i, item in enumerate(pending, 1):
-            print(f"  {i:>3}  {item.filename}")
+            cap = (item.caption or "").replace("\n", " ")
+            preview = f"  caption={cap!r}" if cap else "  caption=<empty>"
+            print(f"  {i:>3}  {item.filename}{preview}")
         return 0
 
     from playwright.sync_api import sync_playwright
@@ -259,10 +299,12 @@ def main(argv: list[str] | None = None) -> int:
         _ctx, page = attach_to_dolphin_profile(pw, port=cdp_port)
         scheduler = ReelsScheduler(
             page,
-            args.channel,
+            queue.channel_name,
             dry_run=False,
             move_on_success=not args.no_move,
             max_items=args.max,
+            media_dir=args.folder or None,
+            interval_hours=args.interval,
         )
         stats = scheduler.run()
         print(
