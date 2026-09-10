@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Human review gates: Gate 1 after Stage 1 (script), Gate 2 after Stage 3 (assembled prompts).
+"""Human review gates for the emotional-first LOFI pipeline.
 
 When review_required=true, the pipeline writes a hold artifact and returns
-without image or TTS calls. Resume with --lofi-resume-from PATH
---lofi-approve-gate 1|2. Locked --lofi-script auto-clears Gate 1 only.
+before Gate 1 approval. Approved narration is rendered to TTS before atmospheric
+concepts and Gate 2; images remain blocked until Gate 2 approval. Resume with
+--lofi-resume-from PATH --lofi-approve-gate 1|2.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-PIPELINE_VERSION = "four_stage_v1"
+PIPELINE_VERSION = "emotional_tts_first_v2"
 
 
 def _utc() -> str:

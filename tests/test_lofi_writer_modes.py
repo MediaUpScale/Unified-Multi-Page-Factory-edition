@@ -45,12 +45,12 @@ def test_theme_compose_prompt_is_duration_aware() -> None:
         beat_s=3,
     )
     assert "exactly 15 spoken lines" in instruction
-    assert "Each line has 3.0s" in instruction
+    assert "Each line has roughly 3.0s" in instruction
     assert "exactly 15 spoken lines for 45s" in user
     assert "TARGETS 7 words" in user
     assert "HOOK LINE (beat 1)" in instruction
     assert "HOOK LINE (beat 1)" in user
-    assert "under ~7 words" in instruction
+    assert "target 7" in instruction and "12 words" in instruction
     assert "Only three writing priorities" in instruction
     assert "ANCHOR OBJECT" not in user
     assert "ASSIGNED PATTERN" not in user
@@ -68,7 +68,7 @@ def test_quote_brief_requires_four_part_parable_arc() -> None:
     assert "PARABLE ARC" in block
     assert "workable equilibrium" in block
     assert "HOOK LINE (beat 1)" in block
-    assert "under ~7 words" in block
+    assert "target 7" in block and "12 words" in block
 
 
 def test_paraphrase_bank_and_brief() -> None:
@@ -99,9 +99,9 @@ def test_paraphrase_picks_random_bank_entry_without_id() -> None:
     assert set(ids) <= {row["id"] for row in entries()}
 
 
-def test_paraphrase_is_pipeline_default() -> None:
+def test_emotional_is_pipeline_default() -> None:
     default = signature(run_economic_reel_lofi).parameters["writer_mode"].default
-    assert default == "paraphrase"
+    assert default == "emotional"
 
 
 def test_anaphora_profile_survives_internal_clause_reorder() -> None:
@@ -419,16 +419,16 @@ def test_critic_model_remaps_retired_flash_lite() -> None:
     assert resolve_critic_model("gemini-2.5-flash-lite") == CURRENT_CRITIC_MODEL
 
 
-def test_deepinfra_flux2_backend_and_cost() -> None:
+def test_together_flux2_backend_and_cost() -> None:
     import os
 
     from agents.media.providers.together_image import (
-        DEEPINFRA_FLUX2_DEV_MODEL,
-        estimate_deepinfra_flux2_cost_usd,
+        FLUX_2_DEV_MODEL,
+        estimate_together_image_cost,
     )
 
-    usd = estimate_deepinfra_flux2_cost_usd(720, 1280, 28)
-    assert abs(usd - 0.008789) < 0.00001
+    usd = estimate_together_image_cost(FLUX_2_DEV_MODEL)
+    assert abs(usd - 0.0154) < 0.00001
     from agents.media.providers.together_image import _is_flux2_dev_model
 
     assert _is_flux2_dev_model("black-forest-labs/FLUX-2-dev")
@@ -440,9 +440,11 @@ def test_deepinfra_flux2_backend_and_cost() -> None:
         assert lofi_cfg.uses_flux_dev() is True
         cost, meta = lofi_cfg.lofi_image_cost_per_call_usd()
         assert meta["backend"] == "flux2-dev"
-        assert meta["provider"] == "deepinfra"
-        assert meta["model"] == DEEPINFRA_FLUX2_DEV_MODEL
-        assert abs(cost - 0.008789) < 0.00001
+        assert meta["provider"] == "together"
+        assert meta["model"] == FLUX_2_DEV_MODEL
+        assert meta["steps"] == 24
+        assert meta["guidance_scale"] == 5.5
+        assert abs(cost - 0.0154) < 0.00001
     finally:
         if prev is None:
             os.environ.pop("LOFI_FLUX_BACKEND", None)
@@ -455,15 +457,15 @@ def test_hook_line_brevity_is_writer_target_not_still_hold() -> None:
     from agents.writer.writer_brief import WriterBrief
 
     clause = lofi_cfg.hook_line_brevity_clause()
-    assert "under ~7 words" in clause
-    assert "~3s" in clause
+    assert "target 7" in clause and "12 words" in clause
+    assert "roughly 3s" in clause
     assert "still duration follows the rendered VO" in clause
     theme = WriterBrief.from_theme(theme="healing").assignment_block()
     assert "HOOK LINE (beat 1)" in theme
     contract = _output_contract(
         WriterBrief.from_theme(theme="healing", meta={"duration_s": 27})
     )
-    assert "HOOK LINE (beat 1)" in contract
+    assert "Scene 1 MUST contain 5–7" in contract
 
 
 def test_slot_duration_follows_measured_vo_not_estimate() -> None:

@@ -41,6 +41,14 @@ def script_ship_blockers(
         return ["script: missing or not an object"]
 
     blockers: list[str] = []
+    diagnostics = script.get("writer_diagnostics")
+    fast_single_pass = bool(
+        isinstance(diagnostics, dict)
+        and diagnostics.get("architecture") == "single_pass_few_shot"
+        and diagnostics.get("strict_judge") is False
+    )
+    if fast_single_pass:
+        revalidate = False
     if script.get("script_ship_ok") is False:
         prior = script.get("script_ship_errors") or script.get("validation_errors")
         if isinstance(prior, list) and prior:

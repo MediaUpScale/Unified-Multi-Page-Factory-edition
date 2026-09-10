@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Script brain — brief in, judged script out.
+"""Archived strict script brain — brief in, judged script out.
 
     WriterBrief  ->  freeform writer  ->  spoken-duration budget  ->  five-criterion judge  ->  approved draft
+
+The production default bypasses this module's compose loop. Set
+``LOFI_ENABLE_STRICT_JUDGE=1`` on a non-review, non-script-only run to restore it.
 
 A rejected draft is not patched. Over-budget beats are rewritten in place
 (same line, tighter phrasing) before the judge sees the draft. Judge failures
@@ -428,24 +431,35 @@ def draft_to_script(
     units = draft.image_units()
     beat_s = float(lofi_cfg.beat_duration_s())
     lines = []
+    visuals = list(draft.visual_concepts or [])
     for i, (written, captions) in enumerate(units):
         row_duration = beat_s * max(1, len(captions))
-        lines.append(
-            {
-                "scene": i + 1,
-                "text": written,
-                "beat_text": written,
-                "caption_beats": captions,
-                "duration_s": row_duration,
-                "spoken_words": len(str(written).split()),
-                "spoken_word_ceiling": lofi_cfg.beat_word_ceiling(row_duration),
-                "arc_position": act_for_index(i, len(units)),
-            }
-        )
+        concept = " ".join(str(visuals[i] if i < len(visuals) else "").split())
+        row = {
+            "scene": i + 1,
+            "text": written,
+            "beat_text": written,
+            "caption_beats": captions,
+            "duration_s": row_duration,
+            "spoken_words": len(str(written).split()),
+            "spoken_word_ceiling": lofi_cfg.beat_word_ceiling(row_duration),
+            "arc_position": act_for_index(i, len(units)),
+        }
+        if concept:
+            row["visual_concept"] = concept
+            row["visual_source"] = "writer_single_pass"
+        lines.append(row)
+    niche = str(
+        (draft.meta or {}).get("niche")
+        or (brief.module if brief else "")
+        or "relationship"
+    ).strip().lower() or "relationship"
     script: dict[str, Any] = {
         "theme": (brief.theme if brief else "") or "",
         "subtheme": (brief.subtheme if brief else "") or "",
         "module": (brief.module if brief else "relationship"),
+        "niche": niche,
+        "location_anchor": draft.location_anchor,
         "hook_type": hook_type,
         "arc_template": lofi_cfg.THEMATIC_ARC_ID,
         "monologue": " ".join(draft.lines),

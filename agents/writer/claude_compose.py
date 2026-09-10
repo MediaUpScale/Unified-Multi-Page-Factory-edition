@@ -58,15 +58,16 @@ def compose_instruction(
     )
     return (
         f"Write exactly {n} spoken lines for a short vertical reel. Each line has "
-        f"{slot:.1f}s: target {target_w} words, hard maximum "
+        f"roughly {slot:.1f}s: target {target_w}–{min(max_w, spoken_ceiling)} words, hard maximum "
         f"{min(max_w, spoken_ceiling)} words and {max_c} characters.\n"
         f"{lofi_cfg.hook_line_brevity_clause()}\n\n"
         "Only three writing priorities:\n"
-        "1. Open with an immediate, concrete hook from a recognisable human moment.\n"
-        "2. Develop one clear thesis naturally from beginning to end.\n"
-        "3. Sound like a person speaking plainly. Do not invent or sustain a "
-        "metaphor, symbolic object, or literary conceit merely to carry the theme. "
-        "Use an object only when it genuinely belongs in the human situation.\n\n"
+        "1. Open with immediate emotional tension from a recognisable human truth.\n"
+        "2. Develop one clear emotional contradiction naturally from beginning to end.\n"
+        "3. Write lucid micro-philosophical prose with psychological depth. "
+        "Silence or an unspoken boundary can be the event. Do not force an object "
+        "or literal scene merely to make the words illustratable. Avoid therapy "
+        "slogans, purple prose, and imitation of any named author.\n\n"
         "Do not write a title, stage direction, hashtag, attribution, or commentary. "
         f'Return STRICT JSON only with exactly {n} strings: '
         '{"lines":["<line 1>","<line 2>","..."]}.'

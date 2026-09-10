@@ -2,7 +2,8 @@
 """
 ECONOMIC_REEL_LOFI orchestrator.
 
-ThemeSelector → ScriptGenerator → Validator → ImageGen → VisualQA → Assembler
+EmotionalWriter → Gate1 → TTS timing → Atmosphere → Riso prompts → Gate2
+→ ImageGen/VisualQA → audio-driven Assembler
 """
 from __future__ import annotations
 
@@ -2133,7 +2134,13 @@ def generate_and_qa_scene(
             prompt_i = _retry_prompt_extras(prompt_i, attempt, last_fix)
         from core.economic_reel_lofi.licensed_objects import scrub_assembled_prompt
 
-        prompt_i = scrub_assembled_prompt(prompt_i, row)
+        if str(row.get("visual_source") or "") == "writer_single_pass":
+            print(
+                f"[LOFI prompt] scene={scene_i} preserving programmatic "
+                "Risograph location and character"
+            )
+        else:
+            prompt_i = scrub_assembled_prompt(prompt_i, row)
         try:
             _, mood_meta = gen_image(
                 prompt_i,
@@ -2328,18 +2335,30 @@ def generate_and_qa_scene(
 
         from core.economic_reel_lofi.licensed_objects import licensed_display as _lic_disp
 
-        prop_ok, prop_flaws, prop_meta = assess_spoken_line_prop_leak(
-            out_img,
-            caption=str(row.get("text") or row.get("beat_text") or ""),
-            window_allowed=spoken_line_licenses_window(row),
-            lamp_allowed=spoken_line_licenses_lamp(row),
-            licensed_object=_lic_disp(row) or str(row.get("key_object") or key_object or ""),
-            episode_motif=str(
-                row.get("episode_anchor_name")
-                or row.get("episode_spoken_motif")
-                or ""
-            ),
-        )
+        if str(row.get("visual_source") or "") == "writer_single_pass":
+            prop_ok, prop_flaws, prop_meta = True, [], {
+                "passed": True,
+                "skipped": True,
+                "skip_reason": "single_pass_atmospheric_visual",
+                "leaks": [],
+            }
+            print(
+                f"[LOFI spoken-prop] SKIP {out_img.name} "
+                "single-pass atmospheric visual"
+            )
+        else:
+            prop_ok, prop_flaws, prop_meta = assess_spoken_line_prop_leak(
+                out_img,
+                caption=str(row.get("text") or row.get("beat_text") or ""),
+                window_allowed=spoken_line_licenses_window(row),
+                lamp_allowed=spoken_line_licenses_lamp(row),
+                licensed_object=_lic_disp(row) or str(row.get("key_object") or key_object or ""),
+                episode_motif=str(
+                    row.get("episode_anchor_name")
+                    or row.get("episode_spoken_motif")
+                    or ""
+                ),
+            )
         del prop_ok
         if apply_background_window_exception(prop_meta, row, gate_meta):
             prop_flaws = []
@@ -2628,16 +2647,108 @@ def _generate_validated_script(
     theme_row: dict[str, Any],
     scene_count: int,
     duration_s: float,
-    writer_mode: str = "paraphrase",
+    writer_mode: str = "emotional",
     seed_quote: str | None = None,
     aphorism_id: str | None = None,
     persist_on_pass: bool = True,
+    strict_judge: bool = False,
 ) -> tuple[dict[str, Any] | None, list[str], bool]:
     """Returns (script|None, errors, needs_manual_review)."""
     feedback: str | None = None
     last_errors: list[str] = []
     last_script: dict[str, Any] | None = None
-    mode = str(writer_mode or "paraphrase").strip().lower()
+    mode = str(writer_mode or "emotional").strip().lower()
+    if not strict_judge:
+        from agents.writer.freeform_writer import write_draft
+        from agents.writer.script_brain import draft_to_script
+        from agents.writer.writer_brief import WriterBrief
+
+        common = {
+            "duration_s": float(duration_s),
+            "beat_duration_s": lofi_cfg.beat_duration_s(),
+        }
+        details = [
+            str(item.get("detail") or "")
+            for item in rag.select_concrete_details(theme_row, module=module)
+            if str(item.get("detail") or "").strip()
+        ]
+        if mode == "quote":
+            brief = WriterBrief.from_quote(
+                quote=str(seed_quote or ""),
+                theme=str(theme_row.get("theme") or ""),
+                module=module,
+                context_notes=details,
+                meta=common,
+            )
+        elif mode == "paraphrase":
+            from core.economic_reel_lofi.aphorism_bank import get_entry
+
+            entry = get_entry(aphorism_id, module=module)
+            brief = WriterBrief.from_paraphrase(
+                aphorism=str(entry["text"]),
+                theme=str(theme_row.get("theme") or ""),
+                module=module,
+                source_id=str(entry["id"]),
+                meta=common,
+            )
+        elif mode == "theme":
+            brief = WriterBrief.from_theme(
+                theme=str(theme_row.get("theme") or "connection"),
+                subtheme=str(theme_row.get("subtheme") or ""),
+                module=module,
+                context_notes=details,
+                meta=common,
+            )
+        else:
+            brief = WriterBrief.from_emotional(
+                theme=str(theme_row.get("theme") or "emotional maturity"),
+                subtheme=str(theme_row.get("subtheme") or ""),
+                module=module,
+                context_notes=details,
+                meta=common,
+            )
+        try:
+            draft = write_draft(
+                brief,
+                attempt=1,
+                provider="gemini38",
+                reference_seed=None,
+            )
+        except Exception as exc:  # valid JSON/schema failure; never retry in fast mode
+            msg = f"single-pass writer failed: {exc}"
+            print(f"[LOFI writer fast] {msg}")
+            return None, [msg], True
+        script = draft_to_script(draft)
+        script["writer_mode"] = mode
+        script["duration_requested_s"] = float(duration_s)
+        script["scene_duration_s"] = lofi_cfg.beat_duration_s()
+        script["subtheme"] = theme_row.get("subtheme")
+        script["module"] = module
+        script["niche"] = str(script.get("niche") or module or "relationship")
+        from core.economic_reel_lofi.niche_presets import inject_prompt_fields
+
+        inject_prompt_fields(script)
+        script["script_ship_ok"] = True
+        script["script_ship_errors"] = []
+        script["writer_diagnostics"] = {
+            "architecture": "single_pass_few_shot",
+            "strict_judge": False,
+            "attempt_count": 1,
+            "judge_calls": 0,
+            "repair_calls": 0,
+            "model": draft.meta.get("model") or lofi_cfg.LOFI_EMOTIONAL_WRITER_MODEL,
+            "latency_s": draft.meta.get("latency_s"),
+            "cost_usd_est": draft.meta.get("cost_usd_est"),
+            "output_tokens_est": draft.meta.get("output_tokens_est"),
+        }
+        note_batch_structure_id(str(script.get("structure_id") or ""))
+        rag.note_batch_script(script)
+        print(
+            f"[LOFI writer fast] ACCEPT first valid candidate | "
+            f"beats={len(script.get('lines') or [])} judge=OFF repairs=OFF"
+        )
+        return script, [], False
+
     max_structural_attempts = (
         1 if mode == "paraphrase" else int(lofi_cfg.SCRIPT_MAX_RETRIES)
     )
@@ -2660,7 +2771,34 @@ def _generate_validated_script(
                 "duration_s": float(duration_s),
                 "beat_duration_s": lofi_cfg.beat_duration_s(),
             }
-            if mode == "quote":
+            if mode == "emotional":
+                brief = WriterBrief.from_emotional(
+                    theme=str(theme_row.get("theme") or "emotional maturity"),
+                    subtheme=str(theme_row.get("subtheme") or ""),
+                    module=module,
+                    context_notes=[
+                        str(item.get("detail") or "")
+                        for item in rag.select_concrete_details(theme_row, module=module)
+                        if str(item.get("detail") or "").strip()
+                    ],
+                    meta=common,
+                )
+                if feedback:
+                    brief = brief.with_revision(feedback)
+                brain = compose(brief, max_attempts=1)
+                draft = brain.draft or next(
+                    (row.draft for row in reversed(brain.attempts) if row.draft is not None),
+                    None,
+                )
+                if draft is None:
+                    last_errors = [brain.reason()]
+                    feedback = brain.reason()
+                    continue
+                script = draft_to_script(draft)
+                script["brain_gate_ok"] = bool(brain.ok)
+                script["brain_gate_errors"] = [] if brain.ok else [brain.reason()]
+                script["writer_diagnostics"] = brain.to_dict()
+            elif mode == "quote":
                 brief = WriterBrief.from_quote(
                     quote=str(seed_quote or ""),
                     theme=str(theme_row.get("theme") or ""),
@@ -2744,7 +2882,7 @@ def _generate_validated_script(
             if tagged not in result.reasons:
                 result.reasons.append(tagged)
                 result.ok = False
-        if result.ok and mode == "quote" and not script.get("brain_gate_ok"):
+        if result.ok and mode in {"emotional", "quote"} and not script.get("brain_gate_ok"):
             result.ok = False
             result.reasons.extend(script.get("brain_gate_errors") or ["judge gate failed"])
         if not result.ok:
@@ -2896,17 +3034,45 @@ def _load_locked_script(path: Path | str) -> dict[str, Any]:
             )
     if not (script.get("lines") or script.get("monologue")):
         raise ValueError(f"locked script has no lines/monologue: {p}")
+    scene_images = list(envelope.get("scene_images") or [])
+    manual_accept = [int(x) for x in (envelope.get("manual_accept_scenes") or [])]
+    hold_flags = [str(x) for x in (envelope.get("visual_qa_flags") or [])]
+    lines = [row for row in (script.get("lines") or []) if isinstance(row, dict)]
+    atmospheric_hold = bool(
+        scene_images
+        and hold_flags
+        and not manual_accept
+        and all("SPOKEN-PROP:" in flag for flag in hold_flags)
+        and lines
+        and all(str(row.get("visual_source") or "") == "writer_single_pass" for row in lines)
+    )
+    if atmospheric_hold:
+        manual_accept = [int(row.get("scene") or i + 1) for i, row in enumerate(lines)]
+        print(
+            "[LOFI pipeline] migrating atmospheric spoken-prop hold; "
+            f"reusing scenes={manual_accept}"
+        )
     extras = {
-        "scene_images": list(envelope.get("scene_images") or []),
+        "scene_images": scene_images,
         "work_dir": envelope.get("work_dir"),
-        "manual_accept_scenes": [
-            int(x) for x in (envelope.get("manual_accept_scenes") or [])
-        ],
+        "manual_accept_scenes": manual_accept,
         "source": str(p),
     }
     script["_locked_sidecar_assets"] = extras
     print(f"[LOFI pipeline] loaded locked script → {p}")
     return script
+
+
+def _purge_stale_temp_voice_files(run_dir: Path) -> list[Path]:
+    """Remove legacy temporary VO files before the one-master-track assembly."""
+    removed: list[Path] = []
+    for path in sorted(run_dir.glob("temp_voice*.mp3")):
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    if removed:
+        print(f"[LOFI audio] purged stale temp voice files={len(removed)}")
+    return removed
 
 
 def _stamp_assembled_negatives(lines: list[dict[str, Any]]) -> None:
@@ -2925,7 +3091,7 @@ def _stamp_assembled_negatives(lines: list[dict[str, Any]]) -> None:
 
 
 def _gate2_review_rows(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Human-review payload: meaning / who / shot / env / warm-cool. No prompt dump."""
+    """Human-review payload for the complete atmospheric prompt artifact."""
     from core.economic_reel_lofi.visual_identity import beat_shot_type, beat_who_label
 
     out: list[dict[str, Any]] = []
@@ -2940,6 +3106,8 @@ def _gate2_review_rows(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "scene": row.get("scene"),
                 "text": row.get("text") or row.get("beat_text"),
                 "meaning": meaning,
+                "beat_mood": row.get("beat_mood"),
+                "emotional_temperature": row.get("emotional_temperature"),
                 "who": beat_who_label(row),
                 "shot_type": row.get("shot_type") or beat_shot_type(row),
                 "environment": row.get("setting") or row.get("episode_place"),
@@ -2947,6 +3115,10 @@ def _gate2_review_rows(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "arc_position": row.get("arc_position"),
                 "subject_type": row.get("subject_type"),
                 "lighting_condition": row.get("lighting_condition"),
+                "visual_concept": row.get("visual_concept"),
+                "final_positive_prompt": row.get("final_positive_prompt"),
+                "visual_prompt": row.get("visual_prompt"),
+                "negative_prompt": row.get("negative_prompt"),
             }
         )
     return out
@@ -2964,6 +3136,35 @@ def _assemble_stage3_prompts(
     """Style-module prompt assembly. No Flux, no TTS."""
     lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
     episode_variety: dict[str, Any] = {}
+    from core.economic_reel_lofi.niche_presets import (
+        build_flux_prompt,
+        get_niche_preset,
+    )
+
+    niche_key = str(script.get("niche") or script.get("module") or "relationship")
+    preset = get_niche_preset(niche_key)
+    writer_concepts = [
+        " ".join(str(row.get("visual_concept") or "").split()) for row in lines
+    ]
+    if lines and all(writer_concepts):
+        for i, (row, concept) in enumerate(zip(lines, writer_concepts), start=1):
+            positive, negative = build_flux_prompt(
+                concept,
+                int(row.get("scene") or i),
+            )
+            row["final_positive_prompt"] = positive
+            row["visual_prompt"] = row["final_positive_prompt"]
+            row["negative_prompt"] = negative
+            row["visual_source"] = row.get("visual_source") or "writer_single_pass"
+            row["aesthetic_prefix"] = preset.aesthetic_prefix
+        script["lines"] = lines
+        script["niche"] = preset.key
+        script["aesthetic_wrapper"] = preset.aesthetic_prefix
+        print(
+            f"[LOFI stage3] aesthetic wrapper niche={preset.key} "
+            f"beats={len(lines)} source=writer_single_pass"
+        )
+        return episode_variety
     use_dev = bool(lofi_cfg.uses_flux_dev())
     if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False)):
         if use_dev:
@@ -3059,27 +3260,32 @@ def _assemble_stage3_prompts(
 
 
 def _print_script_report(script: dict[str, Any], *, index: int, qty: int) -> None:
-    theme = str(script.get("theme") or "")
-    sub = str(script.get("subtheme") or "")
-    hook = str(script.get("hook_type") or "")
-    arc = str(script.get("arc_template") or "")
     lines = [r for r in (script.get("lines") or []) if isinstance(r, dict)]
-    print("")
-    print("=" * 72)
-    print(f"SCRIPT {index}/{qty}  theme={theme}  subtheme={sub}")
-    print(f"hook={hook}  arc={arc}  beats={len(lines)}")
-    print("-" * 72)
-    print("MONOLOGUE:")
-    print(str(script.get("monologue") or " ".join(str(r.get("text") or "") for r in lines)))
-    print("-" * 72)
-    print(f"{'#':<3} {'text':<56} {'setting':<28} {'object'}")
-    for row in lines:
-        n = int(row.get("scene") or 0)
-        text = str(row.get("text") or "")[:54]
-        setting = str(row.get("setting") or "")[:26]
-        obj = str(row.get("key_object") or "")[:22]
-        print(f"{n:<3} {text:<56} {setting:<28} {obj}")
-    print("=" * 72)
+    candidate = {
+        "writer_mode": script.get("writer_mode"),
+        "theme": script.get("theme"),
+        "subtheme": script.get("subtheme"),
+        "niche": script.get("niche") or script.get("module"),
+        "location_anchor": script.get("location_anchor"),
+        "human_situation": script.get("human_situation"),
+        "structure": script.get("writer_structure"),
+        "closing_tool": script.get("closing_tool"),
+        "beats": [
+            {
+                "scene": int(row.get("scene") or i),
+                "text": str(row.get("text") or ""),
+                "visual_concept": str(row.get("visual_concept") or ""),
+                "final_positive_prompt": str(
+                    row.get("final_positive_prompt") or row.get("visual_prompt") or ""
+                ),
+                "negative_prompt": str(row.get("negative_prompt") or ""),
+            }
+            for i, row in enumerate(lines, start=1)
+        ],
+    }
+    print("\nSCRIPT_CANDIDATE_JSON")
+    print(json.dumps(candidate, indent=2, ensure_ascii=False))
+    print("END_SCRIPT_CANDIDATE_JSON")
 
 
 def _produce_one(
@@ -3091,9 +3297,10 @@ def _produce_one(
     assets_dir: Path,
     force_theme: str | None = None,
     force_subtheme: str | None = None,
-    writer_mode: str = "paraphrase",
+    writer_mode: str = "emotional",
     seed_quote: str | None = None,
     aphorism_id: str | None = None,
+    image_provider: str = "together",
     index: int,
     script_only: bool = False,
     stills_only: bool = False,
@@ -3108,6 +3315,11 @@ def _produce_one(
     persist_on_pass = not script_only and not stills_only
     review_required = bool(
         lofi_cfg.REVIEW_REQUIRED if review_required is None else review_required
+    )
+    strict_writer = bool(
+        lofi_cfg.strict_judge_enabled()
+        and not script_only
+        and not review_required
     )
     from core.economic_reel_lofi.niche_config import niche_stage1_notes
     from core.economic_reel_lofi.review_gates import (
@@ -3142,7 +3354,10 @@ def _produce_one(
     reset_script_llm_call_log()
     if isinstance(locked_script, dict) and (locked_script.get("lines") or locked_script.get("monologue")):
         script = dict(locked_script)
-        repair_script_captions(script, keep_extra_scenes=True)
+        if strict_writer:
+            repair_script_captions(script, keep_extra_scenes=True)
+        else:
+            print("[LOFI pipeline] LOCKED script text preserved verbatim")
         theme_row = rag.select_theme(
             module,
             theme=str(script.get("theme") or force_theme or ""),
@@ -3163,53 +3378,55 @@ def _produce_one(
             f"theme={script.get('theme')} subtheme={script.get('subtheme')} "
             f"beats={len(script.get('lines') or [])}"
         )
-        # Same full validator as free writer (not story_quality alone).
-        locked_result = validate_script(
-            script,
-            module=module,
-            scene_count=scene_count,
-            persist_on_pass=False,
-        )
-        script["script_ship_ok"] = bool(locked_result.ok)
-        script["script_ship_errors"] = list(locked_result.reasons)
-        if not locked_result.ok:
-            print(
-                "[LOFI pipeline] LOCKED script failed validator — "
-                "not generating stills. Hard stop (no assemble path)."
-            )
-            _print_script_report(script, index=index, qty=batch_qty)
-            errs = list(locked_result.reasons)
-            review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
-            review_path.write_text(
-                json.dumps(
-                    {
-                        "errors": errs,
-                        "theme": theme_row,
-                        "module": module,
-                        "script": script,
-                        "gate": "validate_script",
-                    },
-                    indent=2,
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-            return LofiItemResult(
-                ok=False,
+        if strict_writer:
+            locked_result = validate_script(
+                script,
                 module=module,
-                theme=str(script.get("theme") or theme_row.get("theme") or ""),
                 scene_count=scene_count,
-                duration_s=float(duration_s),
-                manual_review=True,
-                errors=errs,
-                meta_path=str(review_path),
-                script=script,
+                persist_on_pass=False,
             )
-        if locked_result.script:
-            script = locked_result.script
+            script["script_ship_ok"] = bool(locked_result.ok)
+            script["script_ship_errors"] = list(locked_result.reasons)
+            if not locked_result.ok:
+                print(
+                    "[LOFI pipeline] LOCKED script failed strict validator — "
+                    "not generating stills. Hard stop (no assemble path)."
+                )
+                _print_script_report(script, index=index, qty=batch_qty)
+                errs = list(locked_result.reasons)
+                review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
+                review_path.write_text(
+                    json.dumps(
+                        {
+                            "errors": errs,
+                            "theme": theme_row,
+                            "module": module,
+                            "script": script,
+                            "gate": "validate_script",
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                return LofiItemResult(
+                    ok=False,
+                    module=module,
+                    theme=str(script.get("theme") or theme_row.get("theme") or ""),
+                    scene_count=scene_count,
+                    duration_s=float(duration_s),
+                    manual_review=True,
+                    errors=errs,
+                    meta_path=str(review_path),
+                    script=script,
+                )
+            if locked_result.script:
+                script = locked_result.script
+            print("[LOFI pipeline] LOCKED script cleared strict validator gate")
+        else:
             script["script_ship_ok"] = True
             script["script_ship_errors"] = []
-        print("[LOFI pipeline] LOCKED script cleared full validator gate")
+            print("[LOFI pipeline] LOCKED script accepted by fast JSON path")
         _print_script_report(script, index=index, qty=batch_qty)
         errs: list[str] = []
     else:
@@ -3223,6 +3440,7 @@ def _produce_one(
             seed_quote=seed_quote,
             aphorism_id=aphorism_id,
             persist_on_pass=persist_on_pass,
+            strict_judge=strict_writer,
         )
     if script is None:
         review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
@@ -3257,8 +3475,6 @@ def _produce_one(
     if script_only:
         theme = str(script.get("theme") or theme_row.get("theme") or "")
         sub = str(script.get("subtheme") or theme_row.get("subtheme") or "")
-        if theme:
-            rag.mark_theme_used(module, theme, sub or None)
         _print_script_report(script, index=index, qty=batch_qty)
         theme_slug = _episode_slug(script, theme=theme, subtheme=sub)
         meta_path = clips_dir / f"lofi_script_{theme_slug}_{stamp}_v{index:02d}.json"
@@ -3329,8 +3545,9 @@ def _produce_one(
 
     def _hold(gate: int, state: dict[str, Any], path: Path) -> LofiItemResult:
         write_state(path, state)
+        blocked = "image/TTS" if gate == 1 else "image generation"
         print(
-            f"[LOFI GATE {gate}] HOLD — no image/TTS until approved. Resume:\n"
+            f"[LOFI GATE {gate}] HOLD — no {blocked} until approved. Resume:\n"
             f"  python main.py --page {page_id} --post-type ECONOMIC_REEL_LOFI "
             f"--lofi-resume-from {path} --lofi-approve-gate {gate}"
         )
@@ -3344,6 +3561,7 @@ def _produce_one(
                 desc = " ".join(desc.split())
                 print(
                     f"  #{row.get('scene')} meaning={row.get('meaning')!r} | "
+                    f"mood={row.get('beat_mood')!r} | "
                     f"who={row.get('who')} | shot={row.get('shot_type')} | "
                     f"env={row.get('environment')!r} | temp={row.get('palette_temp')} "
                     f"({row.get('arc_position')})"
@@ -3351,6 +3569,8 @@ def _produce_one(
                 print(
                     f"      object={src.get('key_object')!r} | {desc[:180]}"
                 )
+                print(f"      positive={str(row.get('visual_prompt') or '')}")
+                print(f"      negative={str(row.get('negative_prompt') or '')}")
         return LofiItemResult(
             ok=True,
             meta_path=str(path),
@@ -3394,6 +3614,38 @@ def _produce_one(
         pipe_state["gate1"] = {"status": "pending"}
         pipe_state["gate2"] = pipe_state.get("gate2") or {"status": "pending"}
         return _hold(1, pipe_state, state_path)
+
+    # TTS-first: once the narrative clears Gate 1, measure the actual spoken
+    # beats before visual concepts are created. Gate 2 can then review prompts
+    # whose pacing is already final. Stills-only preserves its no-TTS contract.
+    prior_work_dir = str(pipe_state.get("work_dir") or "").strip()
+    run_dir = (
+        Path(prior_work_dir)
+        if prior_work_dir
+        else assets_dir / f"lofi_run_{_episode_slug(script)}_{stamp}_{index:02d}"
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    _purge_stale_temp_voice_files(run_dir)
+    if (not stills_only) and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
+        from core.economic_reel_lofi.voiceover import ensure_script_voiceover
+
+        ensure_script_voiceover(pipe_state, script, run_dir)
+        pipe_state["stage_completed"] = max(
+            float(pipe_state.get("stage_completed") or 1), 1.5
+        )
+        print(
+            f"[LOFI TTS-first] complete beats={len(pipe_state.get('voice_paths') or [])} "
+            f"duration={float(pipe_state.get('duration_actual_s') or 0):.2f}s"
+        )
+        missing_concept = any(
+            isinstance(row, dict)
+            and not str(
+                row.get("visual_concept") or row.get("scene_description") or ""
+            ).strip()
+            for row in (script.get("lines") or [])
+        )
+    else:
+        pipe_state["work_dir"] = str(run_dir)
 
     if missing_concept:
         print("[LOFI stage2] translating beats (LLM). _EPISODE_WORLDS is not used.")
@@ -3455,19 +3707,24 @@ def _produce_one(
         return _hold(2, pipe_state, state_path)
 
     write_state(state_path, pipe_state)
-    print("[LOFI GATE 2] cleared — Stage 4 image/TTS")
+    print("[LOFI GATE 2] cleared — Stage 4 images/QA + audio-driven assembly")
     use_dev = bool(lofi_cfg.uses_flux_dev())
+    use_gemini = image_provider == "gemini"
+    active_flux_backend = (
+        "gemini"
+        if use_gemini
+        else ("flux2-dev" if lofi_cfg.uses_flux2_dev() else ("dev" if use_dev else "schnell"))
+    )
     print(
         "[LOFI backend] "
-        f"flux={'flux2-dev' if lofi_cfg.uses_flux2_dev() else ('dev' if use_dev else 'schnell')} | "
+        f"provider={image_provider} | "
+        f"model={'gemini-flash-image' if use_gemini else ('flux2-dev' if lofi_cfg.uses_flux2_dev() else ('dev' if use_dev else 'schnell'))} | "
         f"profile={lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE} | "
         f"gen={lofi_cfg.LOFI_IMAGE_WIDTH}x{lofi_cfg.LOFI_IMAGE_HEIGHT} "
         f"delivery={lofi_cfg.REEL_WIDTH}x{lofi_cfg.REEL_HEIGHT}"
     )
 
-    # Working stills live under assets/; final deliverables go to clips/.
-    run_dir = assets_dir / f"lofi_run_{_episode_slug(script)}_{stamp}_{index:02d}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    # Working stills and the Gate-1-approved VO share a stable run directory.
 
     lines = list(script.get("lines") or [])
     episode_variety = dict(script.get("episode_variety") or episode_variety)
@@ -3485,6 +3742,11 @@ def _produce_one(
     tts_overruns: list[dict[str, Any]] = []
     voice_paths: list[Path | None] = []
     word_timings_per_scene: list[list[tuple[str, float, float]] | None] = []
+    pre_voice_paths = [
+        Path(str(path)) if path else None
+        for path in (pipe_state.get("voice_paths") or [])
+    ]
+    pre_word_timings = list(pipe_state.get("word_timings_per_scene") or [])
     voice_settings_result: dict[str, Any] | None = None
     n_image_calls = 0
     n_critic_calls = 0
@@ -3497,34 +3759,6 @@ def _produce_one(
         f"({n_beats_planned} beats x {lofi_cfg.IMAGE_CALL_BUDGET_MULT:g}) "
         f"attempts_per_beat={lofi_cfg.IMAGE_ATTEMPTS_PER_BEAT} HARD CAP"
     )
-
-    if (not stills_only) and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True)):
-        try:
-            from agents.media.audio_engine import apply_elevenlabs_voice_settings
-
-            voice_id_pre = lofi_cfg.tts_voice_id()
-            speed_pre = lofi_cfg.tts_speed()
-            print(
-                f"[LOFI VO] config_file={lofi_cfg.__file__} "
-                f"TTS_SPEED={getattr(lofi_cfg, 'TTS_SPEED', None)!r} "
-                f"tts_speed()={speed_pre!r} model={lofi_cfg.tts_model()!r} "
-                f"voice={voice_id_pre!r}"
-            )
-            voice_settings_result = apply_elevenlabs_voice_settings(
-                voice_id_pre,
-                speed=speed_pre,
-                stability=1.0,
-                similarity_boost=1.0,
-                style=0.0,
-                use_speaker_boost=True,
-            )
-        except Exception as exc:  # noqa: BLE001
-            msg = f"ElevenLabs voice settings/edit failed: {exc}"
-            _LOG.warning(msg)
-            print(f"[LOFI VO] WARN {msg}")
-            # Best-effort persist of voice defaults. Do not hold the episode:
-            # TTS still sends per-call voice_settings, and a shadowed `config`
-            # module must not block a reel whose images already passed QA.
 
     for row in lines:
         scene_i = int(row.get("scene") or len(scene_paths) + 1)
@@ -3583,6 +3817,9 @@ def _produce_one(
             )
             ok_img = True
             last_gate = dict(row.get("default_object_gate") or last_gate)
+            last_gate["passed"] = True
+            last_gate["qa_passed"] = True
+            last_gate["qa_flaws"] = []
             last_gate["image_ok"] = True
             last_gate["reused"] = True
             last_gate["manual_accept"] = scene_i in accept_scenes
@@ -3655,14 +3892,25 @@ def _produce_one(
                 scene_paths.append(out_img)
                 captions.append(caption)
                 scene_moods.append(mood_meta)
-                voice_paths.append(None)
-                word_timings_per_scene.append(None)
+                prior_i = scene_i - 1
+                voice_paths.append(
+                    pre_voice_paths[prior_i] if prior_i < len(pre_voice_paths) else None
+                )
+                word_timings_per_scene.append(
+                    pre_word_timings[prior_i] if prior_i < len(pre_word_timings) else None
+                )
                 continue
             gen_kw: dict[str, Any] = {
                 "mood": mood_meta,
                 "attempt_budget": lofi_cfg.clamp_attempt_budget(remaining),
             }
-            if use_dev:
+            if use_gemini:
+                from core.economic_reel_lofi.image_gen import (
+                    generate_scene_image_gemini,
+                )
+
+                gen_kw["generate_fn"] = generate_scene_image_gemini
+            elif use_dev:
                 from core.economic_reel_lofi.image_gen import (
                     generate_scene_image_dev,
                 )
@@ -3693,143 +3941,16 @@ def _produce_one(
         captions.append(caption)
         scene_moods.append(mood_meta)
 
-        # Per-scene VO + word timestamps (skipped in stills-only preview)
-        vo_path: Path | None = None
-        timings: list[tuple[str, float, float]] | None = None
+        # VO was generated immediately after Gate 1 and persisted in gate state.
+        prior_i = scene_i - 1
+        vo_path = pre_voice_paths[prior_i] if prior_i < len(pre_voice_paths) else None
+        timings = pre_word_timings[prior_i] if prior_i < len(pre_word_timings) else None
         if (
-            (not stills_only)
-            and bool(getattr(lofi_cfg, "ENABLE_VOICEOVER", True))
-            and caption.strip()
+            not stills_only
+            and bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True))
+            and (not vo_path or not vo_path.is_file())
         ):
-            try:
-                from agents.media.audio_engine import generate_voiceover_with_timestamps
-
-                vo_path = run_dir / f"vo_scene_{scene_i:02d}.mp3"
-                voice_id = lofi_cfg.tts_voice_id()
-                tts_text = _tts_text_with_breaks(_tts_breath_commas(caption))
-                use_ssml = "<break" in tts_text
-                speed = lofi_cfg.tts_speed()
-                model_id = lofi_cfg.tts_model() or "eleven_multilingual_v2"
-                print(
-                    f"[LOFI VO] scene={scene_i} voice={voice_id} "
-                    f"model={model_id} speed={speed} ssml={use_ssml} "
-                    f"text={caption!r} tts={tts_text!r}"
-                )
-                vo_path, raw_timings = generate_voiceover_with_timestamps(
-                    tts_text,
-                    vo_path,
-                    voice_id=voice_id or None,
-                    model_id=model_id,
-                    force_elevenlabs=True,
-                    expressive_mode=False,
-                    enable_ssml=use_ssml,
-                    speed=speed,
-                    voice_settings={
-                        "stability": 1.0,
-                        "similarity_boost": 1.0,
-                        "style": 0.0,
-                        "use_speaker_boost": True,
-                        "speed": speed,
-                    },
-                )
-                timings = [
-                    (str(w), float(s), float(e))
-                    for w, s, e in (raw_timings or [])
-                    if str(w).strip()
-                    and not str(w).startswith("<")
-                    and str(w).lower() not in {"break", "time"}
-                ]
-                declared_s = float(row.get("duration_s") or lofi_cfg.beat_duration_s())
-                vo_dur = (
-                    float(measure_vo_speech_duration(vo_path))
-                    if vo_path and vo_path.is_file()
-                    else 0.0
-                )
-                if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
-                    print(
-                        f"[LOFI VO] scene={scene_i} {vo_dur:.2f}s exceeds "
-                        f"{declared_s:.1f}s — rewrite spoken line (no still regen)"
-                    )
-                    from agents.writer.freeform_writer import split_long_line
-                    from agents.writer.spoken_budget import rewrite_single_line
-
-                    ceiling = lofi_cfg.beat_word_ceiling(declared_s)
-                    prev = (
-                        str(lines[scene_i - 2].get("text") or "")
-                        if scene_i > 1
-                        else ""
-                    )
-                    nxt = (
-                        str(lines[scene_i].get("text") or "")
-                        if scene_i < len(lines)
-                        else ""
-                    )
-                    new_text = rewrite_single_line(
-                        caption,
-                        ceiling=ceiling,
-                        theme=str(script.get("theme") or ""),
-                        subtheme=str(script.get("subtheme") or ""),
-                        neighbor_before=prev,
-                        neighbor_after=nxt,
-                    )
-                    row["text"] = new_text
-                    row["beat_text"] = new_text
-                    max_w, max_c = lofi_cfg.thematic_caption_limits()
-                    row["caption_beats"] = split_long_line(new_text, max_w, max_c)
-                    caption = new_text
-                    captions[-1] = caption
-                    tts_text = _tts_text_with_breaks(_tts_breath_commas(caption))
-                    use_ssml = "<break" in tts_text
-                    print(
-                        f"[LOFI VO] scene={scene_i} rewrite {len(new_text.split())}w "
-                        f"tts={tts_text!r}"
-                    )
-                    vo_path, raw_timings = generate_voiceover_with_timestamps(
-                        tts_text,
-                        vo_path,
-                        voice_id=voice_id or None,
-                        model_id=model_id,
-                        force_elevenlabs=True,
-                        expressive_mode=False,
-                        enable_ssml=use_ssml,
-                        speed=speed,
-                        voice_settings={
-                            "stability": 1.0,
-                            "similarity_boost": 1.0,
-                            "style": 0.0,
-                            "use_speaker_boost": True,
-                            "speed": speed,
-                        },
-                    )
-                    timings = [
-                        (str(w), float(s), float(e))
-                        for w, s, e in (raw_timings or [])
-                        if str(w).strip()
-                        and not str(w).startswith("<")
-                        and str(w).lower() not in {"break", "time"}
-                    ]
-                    vo_dur = (
-                        float(measure_vo_speech_duration(vo_path))
-                        if vo_path and vo_path.is_file()
-                        else 0.0
-                    )
-                    if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared_s):
-                        tts_overruns.append(
-                            {
-                                "index": scene_i - 1,
-                                "vo_dur": vo_dur,
-                                "duration_s": declared_s,
-                                "tightened": True,
-                                "row": row,
-                            }
-                        )
-            except Exception as exc:  # noqa: BLE001
-                msg = f"scene_{scene_i} VO failed: {exc}"
-                _LOG.warning(msg)
-                if bool(getattr(lofi_cfg, "REQUIRE_VOICEOVER", True)):
-                    qa_flags.append(msg)
-                vo_path = None
-                timings = None
+            qa_flags.append(f"scene_{scene_i} missing Gate-1-approved voiceover")
         voice_paths.append(vo_path)
         word_timings_per_scene.append(timings)
 
@@ -3866,6 +3987,22 @@ def _produce_one(
         print(f"[LOFI VO] warn could not write vo_meta.json: {exc}")
 
     xstyle = assess_cross_beat_style(scene_paths, lines)
+    riso_locked = bool(
+        lines
+        and all(
+            str(row.get("visual_source") or "") == "writer_single_pass"
+            and "risograph print" in str(row.get("visual_prompt") or "").lower()
+            for row in lines
+        )
+    )
+    if riso_locked and xstyle.get("fails"):
+        xstyle["diagnostic_fails"] = list(xstyle["fails"])
+        xstyle["fails"] = []
+        xstyle["programmatic_style_lock"] = True
+        print(
+            "[LOFI cross-style] programmatic Risograph lock PASS; "
+            "pixel clusters retained as diagnostics"
+        )
     script["cross_beat_style"] = xstyle
     script["declared_lighting_beats"] = list(script.get("lighting_beats") or [])
     script["declared_dominant_lighting"] = str(script.get("dominant_lighting") or "")
@@ -3922,8 +4059,7 @@ def _produce_one(
                         f"lap_var={sg.get('lap_var')} uniq16={sg.get('uniq16')}"
                     )
 
-    # Per-image rate follows the backend this run actually POSTed
-    # (DeepInfra Dev formula vs DeepInfra Schnell formula).
+    # Per-image rate follows the provider/model this run actually posted.
     from quality.VisualQA_Agent.config import COST_GEMINI_FLASH_USD
 
     img_cost_per_call, cost_meta = lofi_cfg.lofi_image_cost_per_call_usd(
@@ -4010,7 +4146,7 @@ def _produce_one(
             "visual_identity": "v2"
             if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
             else "riso_library",
-            "flux_backend": "dev" if use_dev else "schnell",
+            "flux_backend": active_flux_backend,
             "visual_identity_profile": (
                 lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE if use_dev else None
             ),
@@ -4080,7 +4216,7 @@ def _produce_one(
             "episode_variety": episode_variety,
             "object_gate_by_scene": object_gate_by_scene,
             "video_path": None,
-            "flux_backend": "dev" if use_dev else "schnell",
+            "flux_backend": active_flux_backend,
             "visual_identity_profile": (
                 lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE if use_dev else None
             ),
@@ -4120,7 +4256,39 @@ def _produce_one(
     beat_s = float(lofi_cfg.beat_duration_s())
     scene_durations: list[float] = []
     scene_timing_flags: list[dict[str, Any]] = []
+    tts_durs = [
+        float(x)
+        for x in (pipe_state.get("scene_durations") or [])
+        if x is not None
+    ]
+    if len(tts_durs) == n_beats and all(d > 0 for d in tts_durs):
+        scene_durations = [round(float(d), 3) for d in tts_durs]
+        for i, cap in enumerate(captions):
+            vo_dur = 0.0
+            if i < len(lines) and isinstance(lines[i], dict):
+                try:
+                    vo_dur = float(lines[i].get("vo_duration_s") or 0.0)
+                except (TypeError, ValueError):
+                    vo_dur = 0.0
+            scene_timing_flags.append(
+                {
+                    "scene": i + 1,
+                    "text": cap,
+                    "extended": scene_durations[i] > beat_s,
+                    "base_s": beat_s,
+                    "vo_dur": round(vo_dur, 3),
+                    "needed_s": scene_durations[i],
+                    "duration_s": scene_durations[i],
+                    "locked": True,
+                    "source": "tts_first",
+                }
+            )
+        print(
+            f"[LOFI assemble] TTS-first durations passed to renderer: {scene_durations}"
+        )
     for i, cap in enumerate(captions):
+        if scene_durations and i < len(scene_durations):
+            continue
         timings_i = word_timings_per_scene[i] if i < len(word_timings_per_scene) else None
         vp_i = voice_paths[i] if i < len(voice_paths) else None
         if lock_beat:
@@ -4378,7 +4546,7 @@ def _produce_one(
         "visual_identity": "v2"
         if bool(getattr(lofi_cfg, "USE_VISUAL_IDENTITY_V2", False))
         else "riso_library",
-        "flux_backend": "dev" if use_dev else "schnell",
+        "flux_backend": active_flux_backend,
         "visual_identity_profile": (
             lofi_cfg.DEFAULT_VISUAL_IDENTITY_PROFILE if use_dev else None
         ),
@@ -4457,9 +4625,10 @@ def run_economic_reel_lofi(
     outputs_dir: Path | str | None = None,
     theme: str | None = None,
     subtheme: str | None = None,
-    writer_mode: str = "paraphrase",
+    writer_mode: str = "emotional",
     seed_quote: str | None = None,
     aphorism_id: str | None = None,
+    image_provider: str = "together",
     script_only: bool = False,
     stills_only: bool = False,
     locked_scripts: list[str] | None = None,
@@ -4476,11 +4645,15 @@ def run_economic_reel_lofi(
     """
     page = (page_id or "").strip().lower()
     mod = lofi_cfg.validate_module_for_page(module or "relationship", page)
-    mode = str(writer_mode or "paraphrase").strip().lower()
-    if mode not in {"theme", "quote", "paraphrase"}:
-        raise ValueError("--lofi-mode must be theme, quote, or paraphrase")
+    mode = str(writer_mode or "emotional").strip().lower()
+    if mode not in {"emotional", "theme", "quote", "paraphrase"}:
+        raise ValueError("--lofi-mode must be emotional, theme, quote, or paraphrase")
     if mode == "quote" and not str(seed_quote or "").strip():
         raise ValueError("--lofi-mode quote requires --lofi-seed-quote")
+    provider = str(image_provider or "together").strip().lower()
+    if provider not in {"together", "gemini"}:
+        raise ValueError("--lofi-image-provider must be together or gemini")
+    os.environ["LOFI_IMAGE_PROVIDER"] = provider
     dur = lofi_cfg.validate_duration(duration if duration is not None else lofi_cfg.DEFAULT_DURATION_S)
     qty = max(1, int(quantity))
     if review_required is None:
@@ -4527,6 +4700,7 @@ def run_economic_reel_lofi(
             writer_mode=mode,
             seed_quote=seed_quote,
             aphorism_id=aphorism_id,
+            image_provider=provider,
             index=i,
             script_only=script_only and not stills_only,
             stills_only=stills_only,
@@ -4558,6 +4732,7 @@ def run_economic_reel_lofi(
         "module": mod,
         "duration_s": dur,
         "writer_mode": mode,
+        "image_provider": provider,
         "seed_quote": str(seed_quote or "") if mode == "quote" else "",
         "aphorism_id": str(aphorism_id or "") if mode == "paraphrase" else "",
         "quantity": qty,

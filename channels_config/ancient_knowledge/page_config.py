@@ -56,8 +56,9 @@ ECONOMIC_BRAIN_MODE: bool = True   # page-level override; respected by main.py b
 # Hyper-realistic, cinematic historical photography — NOT stylised/illustrated.
 # ---------------------------------------------------------------------------
 ATMOSPHERE_STYLE: str = (
-    "Ultra-realistic cinematic photography of iconic ancient monuments — Great Pyramids, Baalbek, "
-    "Göbekli Tepe, Puma Punku, Sacsayhuamán, Easter Island, Stonehenge. "
+    "Ultra-realistic cinematic photography of the specific ancient site named "
+    "in the spoken topic — megaliths, earthworks, temples, or artefacts of that "
+    "place only. Do not invent a default landmark. "
     "Dramatic single-source lighting: warm amber torchlight or cold blue-white ethereal glow. "
     "Volumetric light shafts cutting through atmospheric haze and dust particles. "
     "Strong directional RIM LIGHTING tracing the edges of megalithic stone blocks. "
@@ -70,8 +71,8 @@ ATMOSPHERE_STYLE: str = (
 
 ILLUSTRATION_STYLE: str = (
     "Ultra-realistic, high-contrast cinematic documentary photograph. "
-    "Iconic real-world monument (Pyramid, Baalbek megalith, Göbekli Tepe pillar, Puma Punku block) "
-    "anchoring the frame — instantly recognisable global landmark. "
+    "Show only the real-world site, earthwork, artefact, or landscape named "
+    "in the spoken topic — no substitute landmark. "
     "Single dramatic light source: warm amber fire or cold ethereal moonlight. "
     "Volumetric dust-haze beams, strong rim lighting on carved stone edges, deep shadow contrast. "
     "Impossible anomalous detail woven into the scene naturally: precision tool marks, "

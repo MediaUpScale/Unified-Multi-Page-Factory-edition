@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-BriefMode = Literal["theme", "quote", "paraphrase"]
+BriefMode = Literal["emotional", "theme", "quote", "paraphrase"]
 
 
 @dataclass(frozen=True)
@@ -87,6 +87,29 @@ class WriterBrief:
             theme=str(theme or "").strip(),
             seed_quote=q,
             seed_attribution=str(attribution or "").strip(),
+            context_notes=tuple(str(x).strip() for x in (context_notes or ()) if str(x).strip()),
+            avoid=tuple(str(x).strip() for x in (avoid or ()) if str(x).strip()),
+            meta=dict(meta or {}),
+        )
+
+    @classmethod
+    def from_emotional(
+        cls,
+        *,
+        theme: str,
+        subtheme: str = "",
+        module: str = "relationship",
+        context_notes: list[str] | tuple[str, ...] | None = None,
+        avoid: list[str] | tuple[str, ...] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> WriterBrief:
+        """Request an original emotional reflection, unconstrained by literal visuals."""
+        t = str(theme or "").strip() or "emotional maturity"
+        return cls(
+            mode="emotional",
+            module=str(module or "relationship").strip() or "relationship",
+            theme=t,
+            subtheme=str(subtheme or "").strip(),
             context_notes=tuple(str(x).strip() for x in (context_notes or ()) if str(x).strip()),
             avoid=tuple(str(x).strip() for x in (avoid or ()) if str(x).strip()),
             meta=dict(meta or {}),
@@ -197,6 +220,59 @@ class WriterBrief:
                 "Do not expand "
                 "it into a story, add an arc, add examples, explain it, or improve "
                 "its argument. Return a genuine variation, not a new composition."
+            )
+        elif self.mode == "emotional":
+            parts.append(lofi_cfg.hook_line_brevity_clause())
+            parts.append(
+                "SCENE 1 RETENTION HOOK: strictly 5–7 punchy, high-retention "
+                "words, fewer than 45 characters, written to finish speaking "
+                "under 2.8 seconds."
+            )
+            niche = str(self.module or "relationship").strip().lower()
+            if niche == "parenting":
+                reflection = (
+                    "Write intimate micro-philosophical prose about presence, "
+                    "childhood time slipping away, quiet love, and the ordinary "
+                    "moments a parent only recognizes as sacred later. Use "
+                    "psychological depth without lectures, shame, or productivity "
+                    "advice. Let each beat feel discovered, not announced. "
+                    "Concrete details may ground the reflection, but do not force "
+                    "an object merely to supply an image. Beat 1 may use a verified "
+                    "public literary quote anchor or a striking behavioral truth; "
+                    "never invent an attribution. Move toward a mature truth the "
+                    "listener can carry, without reducing the ending to advice."
+                )
+            else:
+                reflection = (
+                    "Write intimate micro-philosophical prose about what remains "
+                    "unspoken: silence, boundaries, heartbreak, detachment, longing, "
+                    "or emotional maturity. Use psychological depth, moral tension, "
+                    "and lucid existential observation. Let each beat feel discovered, "
+                    "not announced. Concrete details may ground the reflection, but "
+                    "do not force an object, room, or action merely to supply an image. "
+                    "Avoid therapy slogans, motivational certainty, melodrama, ornate "
+                    "purple prose, and imitation of any named author. Beat 1 may use "
+                    "a verified public literary quote anchor or a striking behavioral "
+                    "truth; never invent an attribution. "
+                    "Move from wound or contradiction toward a mature truth the "
+                    "listener can carry, without reducing the ending to advice. "
+                    "Visual beats follow the vintage risograph formula: intimate "
+                    "golden-hour interior, doorway silhouette against a massive "
+                    "sunset disc, one graphic isolated object, ink-hatched profile, "
+                    "warm hallway, rain through amber lamplight, dusk street or "
+                    "tracks, then a couple walking a narrow alley or a figure "
+                    "stepping into morning sun."
+                )
+            parts.append(
+                "EMOTIONAL REFLECTION:\n"
+                f"  Niche: {niche}\n"
+                f"  Theme: {self.theme.replace('_', ' ')}\n"
+                + (
+                    f"  Angle: {self.subtheme.replace('_', ' ')}\n"
+                    if self.subtheme
+                    else ""
+                )
+                + reflection
             )
         else:
             parts.append(lofi_cfg.hook_line_brevity_clause())

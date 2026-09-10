@@ -59,59 +59,59 @@ STYLE = StyleConfig(
     lora_trigger="",
     width=720,
     height=1280,
-    # Belonging 20260824_064214_v02 envelope. Rich gouache + vintage poster
-    # is the approved look; unsigned/blank-corners stay out (those pull marks).
-    open=(
-        "A risograph print close up illustration in vintage poster style."
-    ),
+    open="A risograph print close up illustration in vintage poster style.",
     technique=(
         "Bold flat gouache color blocks, fine hand-inked linework, and "
         "paper-grain halftone with hard-edged color shading. Paper grain. "
-        "Visible canvas grain and heavy brush texture."
+        "Visible canvas grain and heavy brush texture. Matte finish."
     ),
-    mood="Evoking a quiet, sorrowful mood.",
-    format="Illustration, vertical 9:16 composition.",
+    mood="Evoking a quiet, sorrowful mood and poetic longing.",
+    format="Illustration, vertical 9:16 full-bleed composition, edge-to-edge frame.",
     linework_guard=(
-        "fine black ink outlines, paper grain, hard-edged color planes"
+        "fine black ink outlines, textured paper grain, hard-edged color "
+        "planes, gouache texture"
     ),
-    exposure_guard="even midtone exposure, hard-edged color planes",
+    exposure_guard=(
+        "even midtone exposure, hard-edged color planes, warm luminous ambient light"
+    ),
     style_negative=(
-        "deformed hands, extra fingers, fused fingers, bad anatomy, "
-        "photorealistic, 3d render, cgi, dslr, bokeh, depth of field, "
-        "nsfw, explicit, text, watermark, logo, letters, cursive, "
-        "signage, signature, autograph, readable text"
+        "border, white border, frame, picture frame, margin, matting, paper edge, "
+        "letterbox, neon, cyberpunk, searchlights, 3d render, photorealistic, cgi, "
+        "dslr, deformed hands, extra fingers, bad anatomy, text, watermark, logo, "
+        "glossy, shiny"
     ),
     palettes={
         "WARM": (
-            "Nostalgic warm color palette dominated by dusty rose, "
-            "warm amber highlights, and soft olive green shadows."
+            "Nostalgic warm color palette dominated by dusty rose, warm amber "
+            "highlights, terracotta, soft cream paper tones, and golden hour "
+            "sunset hues."
         ),
         "COLD": (
-            "Cold, desaturated color palette dominated by pale silver, "
-            "moody charcoal grey, and soft ash white."
+            "Atmospheric twilight palette dominated by deep muted cobalt blue, "
+            "pale slate grey, and soft amber lamplight contrast."
         ),
         "CONTRAST": (
-            "Contrasting color palette dominated by warm amber highlights "
-            "against cold indigo-violet shadows."
+            "Contrasting color palette dominated by warm glowing orange-amber "
+            "sun disc and lantern light against deep indigo shadows."
         ),
     },
     palette_by_arc={"act1": "WARM", "act2": "COLD", "act3": "CONTRAST"},
     characters={
         "woman": (
-            "a beautiful, sad woman with dark hair and a [expression] "
-            "expression on her face"
+            "a beautiful melancholic woman with dark hair, quiet expression, "
+            "fine ink contours, vintage gouache illustration"
         ),
         "man": (
-            "a quiet, sad man with dark hair and a [expression] "
-            "expression on his face"
+            "a quiet thoughtful man in a coat, dark hair, subtle melancholy, "
+            "vintage illustration"
         ),
         "couple": (
-            "a man and a woman, both dark-haired, standing apart, "
-            "small in the room, [expression] postures, not a close couple portrait"
+            "a man and a woman walking together down a narrow warm alley or "
+            "standing quietly, not a close portrait"
         ),
         "silhouette": (
-            "a lone silhouetted figure, featureless against the light, "
-            "in a [expression] posture"
+            "a lone silhouetted figure, featureless against a massive glowing "
+            "sunset sun disc or warm open doorway"
         ),
     },
     warm_sunset_doorway=0.10,

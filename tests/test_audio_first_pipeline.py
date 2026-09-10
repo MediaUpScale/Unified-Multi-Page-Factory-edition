@@ -289,9 +289,13 @@ def test_egypt_topic_does_not_ban_pyramid():
     assert "pyramid" not in scenes[0]["banned_subjects"]
 
 
-def test_unmatched_topic_has_no_global_landmark_ban():
-    banned = domain_banned_subjects("", spoken_text="Cave walls show disc shaped craft")
-    assert banned == []
+def test_non_egypt_topic_bans_egyptian_slop():
+    banned = domain_banned_subjects(
+        "", spoken_text="Cave walls show disc shaped craft",
+        topic="What if the first UFO sightings happened thousands of years ago?",
+    )
+    assert "pyramid" in banned
+    assert "egyptian" in banned
     verdict = apply_banned_subject_gate(
         {
             "is_relevant": True,
@@ -302,8 +306,51 @@ def test_unmatched_topic_has_no_global_landmark_ban():
         spoken_text="Cave walls show disc shaped craft",
         banned_subjects=banned,
     )
-    assert verdict["is_relevant"] is True
-    assert not verdict.get("hard_reject")
+    assert verdict["is_relevant"] is False
+    assert verdict.get("hard_reject") is True
+
+
+def test_nazca_domain_anchors_and_bans_pyramids():
+    topic = "The Nazca Lines — vast geoglyphs only visible from 1,500 feet"
+    assert infer_visual_domain(topic, topic) == "nazca_geoglyphs"
+    chunks = [AudioChunk(0, 0.0, 4.0, "Colossal drawings scar miles of desert.")]
+    scenes = generate_scene_prompts(
+        topic, chunks, {"topic": topic},
+        channel_id="ancient_knowledge",
+        atmosphere="Iconic monument (Pyramid, Baalbek megalith) anchoring the frame",
+        use_llm=False,
+    )
+    prompt = scenes[0]["image_generation_prompt"].lower()
+    assert "nazca" in prompt or "geoglyph" in prompt or "peru" in prompt
+    assert "pyramid" not in prompt
+    assert "pyramid" in scenes[0]["banned_subjects"]
+    locked = apply_topic_visual_lock(
+        "Iconic real-world monument (Pyramid) in a desert",
+        topic=topic, caption=topic,
+        style="Ultra-realistic photograph. Pyramid landmark.",
+    )
+    assert locked["domain_id"] == "nazca_geoglyphs"
+    assert "pyramid" not in locked["image_generation_prompt"].lower()
+    assert "pyramid" in locked["banned_subjects"]
+
+
+def test_fallback_refuses_other_topic_stills(tmp_path: Path):
+    foreign = tmp_path / "dwarka_india_s_sunken_city_act01.png"
+    foreign.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 4096)
+    dest = tmp_path / "nazca_act07_fallback.png"
+    out = resolve_cached_channel_background(
+        channel="ancient_knowledge",
+        dest=dest,
+        search_dirs=[tmp_path],
+        prefer_stem="the_nazca_lines_vast_c86fe8",
+    )
+    assert out.is_file()
+    # Must be a placeholder, not the Dwarka still.
+    assert out.stat().st_size != foreign.stat().st_size or out.read_bytes()[:8] != foreign.read_bytes()[:8]
+    from PIL import Image
+
+    img = Image.open(out)
+    assert img.size == (1080, 1920)
 
 
 def test_bind_active_page_rebins_output_paths():

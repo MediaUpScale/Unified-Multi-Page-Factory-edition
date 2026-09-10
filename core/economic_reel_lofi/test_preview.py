@@ -23,7 +23,10 @@ from core.economic_reel_lofi.caption_style_lofi import (
     render_lofi_caption_layer,
     render_lofi_watermark_layer,
 )
-from core.economic_reel_lofi.image_gen import generate_scene_image
+from core.economic_reel_lofi.image_gen import (
+    generate_scene_image,
+    generate_scene_image_gemini,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -73,6 +76,7 @@ def run_lofi_test_preview(
     caption: str | None = None,
     mood_id: str | None = None,
     caption_style: str | None = None,
+    image_provider: str = "together",
 ) -> dict[str, Any]:
     """
     Generate one graded PNG with LOFI caption + watermark.
@@ -111,7 +115,12 @@ def run_lofi_test_preview(
     print(f"[LOFI test-preview] typography={font_name} (style={style_key})")
 
     # 1) Flux Schnell via mood-swapped style prefix
-    _, mood = generate_scene_image(visual, raw_path, mood_id=mood_id)
+    generate = (
+        generate_scene_image_gemini
+        if str(image_provider).strip().lower() == "gemini"
+        else generate_scene_image
+    )
+    _, mood = generate(visual, raw_path, mood_id=mood_id)
     prefix = lofi_cfg.build_style_prefix(mood)
 
     # 2) Exact production grading — duotone pair matches the lighting mood

@@ -419,10 +419,17 @@ def resolve_cached_channel_background(
     channel: str,
     dest: Path,
     search_dirs: list[Path] | None = None,
+    prefer_stem: str = "",
 ) -> Path:
-    """Copy a prior channel still, or write a solid cinematic placeholder."""
+    """Copy a prior *same-topic* still, or write a solid cinematic placeholder.
+
+    Never reuse another subject's still from a shared episode folder — that
+    is how a Nazca reel inherited a Dwarka underwater frame.
+    """
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    prefix = (prefer_stem or "").strip().lower()
+    dest_name = dest.name.lower()
     for folder in search_dirs or []:
         try:
             hits = sorted(
@@ -432,11 +439,17 @@ def resolve_cached_channel_background(
                     if p.is_file()
                     and p.suffix.lower() in {".png", ".jpg", ".jpeg"}
                     and p.stat().st_size > 2048
+                    and "fallback" not in p.name.lower()
+                    and p.name.lower() != dest_name
                 ],
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
         except OSError:
+            hits = []
+        if prefix:
+            hits = [p for p in hits if prefix in p.name.lower()]
+        else:
             hits = []
         for hit in hits[:20]:
             try:
@@ -472,6 +485,7 @@ def generate_and_gate(
     generate_kwargs: dict[str, Any] | None = None,
     banned_subjects: list[str] | None = None,
     domain_anchors: str = "",
+    prefer_stem: str = "",
 ) -> tuple[Path, int]:
     """
     Generate → VLM relevance + banned-subject gate → one re-anchored retry
@@ -557,6 +571,14 @@ def generate_and_gate(
         )
 
     dest = Path(output_directory or ".") / f"{output_stem}_fallback.png"
+    stem_lock = (prefer_stem or output_stem or "").strip()
+    if "_act" in stem_lock:
+        stem_lock = stem_lock.split("_act", 1)[0]
+    if re.search(r"_v\d+$", stem_lock):
+        stem_lock = re.sub(r"_v\d+$", "", stem_lock)
     return resolve_cached_channel_background(
-        channel=channel, dest=dest, search_dirs=search_dirs,
+        channel=channel,
+        dest=dest,
+        search_dirs=search_dirs,
+        prefer_stem=stem_lock,
     ), extra

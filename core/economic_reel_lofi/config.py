@@ -13,7 +13,7 @@ from typing import Any
 SCENE_DURATION_S: float = 3.0
 # Thematic default: 9 beats × 3.0s = 27.0s (loss baseline). Writer may emit 8–9;
 # anything above 9 is clamped unless --duration is explicitly longer than 27s.
-LOCK_FIXED_BEAT_DURATION: bool = True
+LOCK_FIXED_BEAT_DURATION: bool = False
 # Never hard-trim finished VO. If a beat's VO would crowd the 3.0s slot,
 # extend instead of compressing speech. Inter-line breath is real silence
 # in the VO concat (not MoviePy slot padding that BGM fills).
@@ -21,6 +21,8 @@ NEVER_TRIM_VOICEOVER: bool = True
 VO_SLOT_PAD_S: float = 0.12
 VO_SLOT_BREATH_S: float = 0.35  # retired as the gap mechanism; kept for logs
 VO_INTERLINE_SILENCE_S: float = 0.30  # manufactured hush between full TTS files
+MIN_SCENE_SLOT_S: float = 2.5
+MAX_SCENE_SLOT_S: float = 4.0
 # Keep encoder pad on each TTS file so the timeline segment equals file
 # duration (speed=0.80 line 1 ≈ 2.93s). Trimming edges was collapsing that
 # to ~2.62s and hiding the 0.80 take behind a "speech-only" slot.
@@ -34,19 +36,35 @@ MIN_SCENES: int = 8
 MAX_SCENES: int = 30
 THEMATIC_DEFAULT_SCENES: int = 9
 THEMATIC_MAX_SCENES: int = 9
-# Human hold after Stage 1 and Stage 2. False auto-passes both gates
-# (target end-state once trusted). Default True — no image/TTS before Gate 2.
+# Human hold after Stage 1 and Stage 3. False auto-passes both gates.
+# Gate 1 protects TTS spend; Gate 2 protects image spend.
 REVIEW_REQUIRED: bool = True
 
 # ── Script / validation ─────────────────────────────────────────────────────
-MAX_CAPTION_CHARS: int = 42  # object-arc one-liner
-MAX_CAPTION_WORDS: int = 7
+# Fast production writer: one Gemini call, no LLM judge or repair loop.
+LOFI_EMOTIONAL_WRITER_MODEL: str = str(
+    os.environ.get("LOFI_EMOTIONAL_WRITER_MODEL") or "models/gemini-3.8-flash"
+).strip()
+LOFI_ENABLE_STRICT_JUDGE: bool = False
+
+
+def strict_judge_enabled() -> bool:
+    """Read the strict legacy writer switch at call time for CLI/env tests."""
+    raw = str(os.environ.get("LOFI_ENABLE_STRICT_JUDGE") or "").strip().lower()
+    if raw:
+        return raw in {"1", "true", "yes", "on"}
+    return bool(LOFI_ENABLE_STRICT_JUDGE)
+
+
+MAX_CAPTION_CHARS: int = 84  # room for natural micro-philosophical prose
+MAX_CAPTION_WORDS: int = 12
 # Hard per-beat spoken cap. Direct 9-line compose must satisfy this itself.
-THEMATIC_MAX_CAPTION_CHARS: int = 56
-THEMATIC_MAX_CAPTION_WORDS: int = 9
+THEMATIC_MAX_CAPTION_CHARS: int = 84
+THEMATIC_MAX_CAPTION_WORDS: int = 12
 # Writer target for beat 1 only — not a still-duration override. The still
 # holds whatever the rendered hook VO actually lasts.
 HOOK_LINE_TARGET_WORDS: int = 7
+BEAT_TARGET_MAX_WORDS: int = 12
 HOOK_LINE_TARGET_S: float = 3.0
 THEMATIC_ARC_ID: str = "thematic_arc"
 # Measured 2026-08-23 from shipped caption_timing at LOFI_VOICE_SPEED=0.80:
@@ -58,7 +76,7 @@ MONOLOGUE_DURATION_SAFETY: float = 0.90
 # (162–186 wpm) on long literary beats. 150 wpm is slightly conservative so
 # TTS has headroom inside the declared beat window.
 NARRATION_WPM: float = 150.0
-BEAT_WORD_BUDGET_SLACK: int = 2  # punchy-clause ceiling on top of floor(dur×wpm)
+BEAT_WORD_BUDGET_SLACK: int = 5  # 3s target band: 7–12 words
 TTS_DURATION_TOLERANCE: float = 0.15  # post-TTS vs declared duration_s
 LINE_REWRITE_MAX_PASSES: int = 2
 # Per-beat validator repair budget. These attempts do not consume
@@ -239,14 +257,15 @@ def narration_wps() -> float:
 
 
 def hook_line_brevity_clause(*, paraphrase: bool = False) -> str:
-    """Shared writer constraint: short hook line, not a fixed still hold."""
+    """Shared writer constraint: compact opening, not a fixed still hold."""
     words = int(HOOK_LINE_TARGET_WORDS)
+    max_words = int(BEAT_TARGET_MAX_WORDS)
     secs = float(HOOK_LINE_TARGET_S)
     base = (
-        f"HOOK LINE (beat 1): target under ~{words} words / ~{secs:.0f}s of "
-        "natural spoken pace. Attention is highest in the opening seconds — "
-        "open short and concrete. This is a spoken-line target only; still "
-        "duration follows the rendered VO, not this estimate."
+        f"HOOK LINE (beat 1): target {words}–{max_words} words / roughly "
+        f"{secs:.0f}s of natural spoken pace. Open with emotional tension, "
+        "clarity, and a recognisable human truth. This is a spoken-line target "
+        "only; still duration follows the rendered VO, not this estimate."
     )
     if paraphrase:
         return (
@@ -382,7 +401,7 @@ def thematic_caption_limits(
     duration_s: int | float | None = None,
     scene_count: int | None = None,
 ) -> tuple[int, int]:
-    """Hard per-beat spoken cap: 9 words / 56 characters."""
+    """Hard per-beat spoken cap: 12 words / 84 characters."""
     _ = (duration_s, scene_count)
     return THEMATIC_MAX_CAPTION_WORDS, THEMATIC_MAX_CAPTION_CHARS
 
@@ -402,7 +421,7 @@ def max_sentence_words(
 VALID_MODULES: frozenset[str] = frozenset({"relationship", "parenting"})
 MODULE_PAGE_GATES: dict[str, frozenset[str]] = {
     "relationship": frozenset({"momma_circle", "wonder_feed"}),
-    "parenting": frozenset({"momma_circle"}),
+    "parenting": frozenset({"momma_circle", "wonder_feed"}),
 }
 VALID_PAGES: frozenset[str] = frozenset({"momma_circle", "wonder_feed"})
 
@@ -482,24 +501,27 @@ _ACTIVE_STYLE = _get_active_style()
 LOFI_PROMPT_EXPOSURE_GUARD: str = _ACTIVE_STYLE.exposure_guard
 LOFI_PROMPT_LINEWORK_GUARD: str = _ACTIVE_STYLE.linework_guard
 
-# ── FLUX.1-dev (ECONOMIC_REEL_LOFI_FLUXDEV) ────────────────────────────────
-# Schnell constants above are unchanged. CFG=0 is inherent to Schnell; do not
-# try to make LOFI_NEGATIVE_PROMPT steer that path.
+# ── Active FLUX Dev backend ─────────────────────────────────────────────────
 LOFI_DEV_IMAGE_MODEL: str = _ACTIVE_STYLE.model
 LOFI_DEV_IMAGE_STEPS: int = int(_ACTIVE_STYLE.steps)
 LOFI_DEV_GUIDANCE_SCALE: float = float(_ACTIVE_STYLE.guidance_scale)
 DEFAULT_VISUAL_IDENTITY_PROFILE: str = _ACTIVE_STYLE.profile_name
-# Live ECONOMIC_REEL_LOFI stays Schnell unless this is "dev" or "flux2-dev".
-# Override: LOFI_FLUX_BACKEND=dev | flux2-dev | flux2. Read live so CLI flags
-# set after import still apply.
-LOFI_FLUX_BACKEND: str = str(os.environ.get("LOFI_FLUX_BACKEND") or "schnell").strip()
-LOFI_FLUX2_DEV_MODEL: str = "black-forest-labs/FLUX-2-dev"
-LOFI_FLUX2_DEV_STEPS: int = 28
-LOFI_FLUX2_DEV_GUIDANCE_SCALE: float = 2.5
+# FLUX.1-dev is the production default. flux2-dev remains an explicit override.
+LOFI_FLUX_BACKEND: str = str(os.environ.get("LOFI_FLUX_BACKEND") or "dev").strip()
+LOFI_FLUX2_DEV_MODEL: str = "black-forest-labs/FLUX.2-dev"
+LOFI_FLUX2_DEV_STEPS: int = 24
+LOFI_FLUX2_DEV_GUIDANCE_SCALE: float = 5.5
 
 
 def flux_backend() -> str:
-    return str(os.environ.get("LOFI_FLUX_BACKEND") or LOFI_FLUX_BACKEND or "schnell").strip().lower()
+    return str(
+        os.environ.get("LOFI_FLUX_BACKEND") or LOFI_FLUX_BACKEND or "dev"
+    ).strip().lower()
+
+
+def image_provider() -> str:
+    provider = str(os.environ.get("LOFI_IMAGE_PROVIDER") or "together").strip().lower()
+    return provider if provider in {"together", "gemini"} else "together"
 
 
 def uses_flux2_dev() -> bool:
@@ -535,6 +557,8 @@ STILL_STYLE_VERSION: str = _ACTIVE_STYLE.still_style_version
 
 def current_still_style_tag() -> str:
     """Identity stamped on every still this process writes."""
+    if image_provider() == "gemini":
+        return f"gemini_flash/gemini/{STILL_STYLE_VERSION}"
     if uses_flux2_dev():
         return f"{DEFAULT_VISUAL_IDENTITY_PROFILE}/flux2-dev/{STILL_STYLE_VERSION}"
     if uses_flux_dev():
@@ -630,7 +654,6 @@ def lofi_image_cost_per_call_usd(
     """
     from agents.media.providers.together_image import (
         estimate_deepinfra_dev_cost_usd,
-        estimate_deepinfra_flux2_cost_usd,
         estimate_deepinfra_schnell_cost_usd,
         estimate_together_image_cost,
     )
@@ -638,20 +661,37 @@ def lofi_image_cost_per_call_usd(
     width = int(width if width is not None else LOFI_IMAGE_WIDTH)
     height = int(height if height is not None else LOFI_IMAGE_HEIGHT)
 
+    if image_provider() == "gemini":
+        try:
+            import app_config
+
+            model = "models/gemini-3.1-flash-image"
+            usd = float(app_config.estimate_gemini_image_usd(model))
+        except Exception:
+            model = "models/gemini-3.1-flash-image"
+            usd = 0.005
+        return usd, {
+            "backend": "flash-image",
+            "provider": "google",
+            "model": model,
+            "steps": None,
+            "usd_per_image": usd,
+            "formula": "configured Gemini Flash image estimate",
+        }
+
     if uses_flux2_dev():
         steps = int(LOFI_FLUX2_DEV_STEPS)
-        usd = estimate_deepinfra_flux2_cost_usd(width, height, steps)
+        usd = estimate_together_image_cost(LOFI_FLUX2_DEV_MODEL)
         return usd, {
             "backend": "flux2-dev",
-            "provider": "deepinfra",
+            "provider": "together",
             "model": LOFI_FLUX2_DEV_MODEL,
             "steps": steps,
             "guidance_scale": LOFI_FLUX2_DEV_GUIDANCE_SCALE,
             "allow_lora": False,
             "usd_per_image": usd,
-            "formula": "0.01*(w/1024)*(h/1024)*(steps/28)",
-            "together_flat_usd": estimate_together_image_cost("black-forest-labs/FLUX.2-dev"),
-            "note": "DeepInfra FLUX-2-dev quoted formula.",
+            "formula": "Together serverless flat per-image price",
+            "note": "Together.ai FLUX.2-dev direct request.",
         }
     if uses_flux_dev():
         steps = int(LOFI_DEV_IMAGE_STEPS)
@@ -1078,7 +1118,12 @@ def slot_duration_for_vo(
         VO_INTERLINE_SILENCE_S if trailing_silence_s is None else trailing_silence_s
     )
     if vo > 0.05:
-        return round(vo + trail, 3), True
+        raw = vo + trail
+        # Keep a calm minimum hold. The upper target is 4s, but narration is
+        # never cut: callers must rewrite an overlong beat before assembly.
+        if raw <= float(MAX_SCENE_SLOT_S):
+            raw = max(float(MIN_SCENE_SLOT_S), raw)
+        return round(raw, 3), True
     base = float(base_s if base_s is not None else SCENE_DURATION_S)
     return round(base, 3), False
 

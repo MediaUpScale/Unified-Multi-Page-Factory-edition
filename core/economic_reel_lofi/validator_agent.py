@@ -12,7 +12,6 @@ from core.economic_reel_lofi import lofi_collections as rag
 from core.economic_reel_lofi.reference_guard import reference_overlap_hit
 from core.economic_reel_lofi.visual_identity import (
     beat_lacks_noun_and_action,
-    visual_tied_to_caption,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -193,7 +192,11 @@ def validate_script(
                 str(row.get("setting") or "").strip()
                 and str(row.get("subject_type") or "").strip()
             )
-            if use_v2 and (not freeform or visuals_ready):
+            # Stage 1 is a narrative gate. Visual concepts do not exist yet and
+            # atmospheric scenes are intentionally allowed to be non-literal.
+            # Validate visual structure only when a caller supplies completed
+            # concept fields (for example a locked post-Stage-2 script).
+            if use_v2 and visuals_ready:
                 st = str(row.get("subject_type") or "").strip().lower()
                 if st not in {
                     "woman",
@@ -222,21 +225,8 @@ def validate_script(
                             "id": row.get("episode_world_id"),
                             "place": row.get("atmosphere_place"),
                         }
-                # Visual callback motifs may be silent production metadata.
-                # Requiring their noun in narration recreates forced metaphors.
-                silent_visual_anchor = bool(
-                    str(row.get("anchor_beat") or "").strip()
-                )
-                if thematic and not silent_visual_anchor and not visual_tied_to_caption(
-                    text,
-                    str(row.get("setting") or ""),
-                    str(row.get("key_object") or ""),
-                    episode_world=world,
-                ):
-                    reasons.append(
-                        f"scene {i} setting/object not tied to caption "
-                        f"({text!r} vs {row.get('key_object')!r})"
-                    )
+                # Mood-matched visuals need not repeat narration nouns. Object
+                # licensing and prompt integrity are enforced in Stages 2–4.
             elif not use_v2:
                 if not visual:
                     reasons.append(f"scene {i} missing visual_prompt")

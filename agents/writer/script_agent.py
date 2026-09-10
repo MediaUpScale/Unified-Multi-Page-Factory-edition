@@ -1249,8 +1249,12 @@ These {scene_count} lines are ONE continuous spoken argument delivered as
 {scene_count} short breaths — not {scene_count} independent image-captions.
 Hold you or I across all nine lines. Do not write a repeating indefinite someone.
 Put at least two load-bearing connectives (because/so/but/although/when-then)
-in the set. The last line is a realization about this person and this object,
-not a general inspirational statement.
+in the set. The last line is a mature realization earned by this person's
+emotional movement, not a generic inspirational statement.
+Write emotionally precise micro-philosophical prose. Silence, distance, or an
+unspoken boundary may carry the event; do not force a literal object merely to
+make the narration illustratable. Avoid therapy slogans, melodrama, purple
+prose, and imitation or quotation of named writers.
 Each line HARD MAX {lofi_cfg.THEMATIC_MAX_CAPTION_WORDS} words and
 {lofi_cfg.THEMATIC_MAX_CAPTION_CHARS} characters.
 Develop the locked thesis around the locked anchor. Follow the assigned

@@ -33,6 +33,19 @@ _NEG_BASE = (
     "modern clothing, smartphone, CGI, cartoon, illustration"
 )
 
+# Egyptian landmark slop Flux injects on any "ancient" prompt.
+# Applied only when the active topic is not Egypt — never a permanent
+# global ban on Egypt stories.
+_EGYPT_SLOP: tuple[str, ...] = (
+    "pyramid", "pyramids", "egyptian", "egypt", "pharaoh", "pharaohs",
+    "sphinx", "giza",
+)
+_EGYPT_HINTS: tuple[str, ...] = (
+    "egypt", "egyptian", "pyramid", "pyramids", "giza", "sphinx",
+    "pharaoh", "nile", "karnak", "luxor", "saqqara", "dendera",
+    "khufu", "old kingdom",
+)
+
 # Topic-aware visual domains. First-pass Flux stills collapse to cliché
 # landmarks unless the prompt is geographically anchored up front.
 _DOMAIN_PROFILES: dict[str, dict[str, Any]] = {
@@ -46,14 +59,57 @@ _DOMAIN_PROFILES: dict[str, dict[str, Any]] = {
             "Ancient Greece, Hellenistic aesthetics, Mediterranean setting, "
             "marble architecture, bronze patina, clockwork gears"
         ),
-        "banned": (
-            "pyramid", "pyramids", "egyptian", "egypt", "pharaoh", "pharaohs",
+        "banned": _EGYPT_SLOP,
+    },
+    "nazca_geoglyphs": {
+        "match": (
+            "nazca", "nazca lines", "geoglyph", "geoglyphs",
+            "nazca plains", "nazca desert", "ica desert",
         ),
+        "anchors": (
+            "Nazca Lines geoglyphs on the pale Nazca desert pampa in Peru, "
+            "flat aerial earth drawings of hummingbird spider monkey and "
+            "trapezoid lines, no standing monuments"
+        ),
+        "banned": _EGYPT_SLOP,
+    },
+    "andean_peru": {
+        "match": (
+            "paracas", "puma punku", "pumapunku", "sacsayhuaman",
+            "sacsayhuamán", "tiwanaku", "tiahuanaco", "andean", "inca",
+        ),
+        "anchors": (
+            "Andean highland Peru and Bolivia, pale desert or megalithic "
+            "stonework named in the spoken beat, no Egyptian monuments"
+        ),
+        "banned": _EGYPT_SLOP,
+    },
+    "mesopotamia": {
+        "match": (
+            "sumer", "sumerian", "anunnaki", "baghdad battery",
+            "mesopotamia", "mesopotamian", "cuneiform", "uruk",
+        ),
+        "anchors": (
+            "Ancient Mesopotamia, Sumerian clay tablets, mud-brick ziggurat "
+            "cities of the Tigris-Euphrates, cuneiform artefacts"
+        ),
+        "banned": _EGYPT_SLOP,
+    },
+    "indian_subcontinent": {
+        "match": (
+            "dwarka", "vimana", "sanskrit", "khambhat", "indus",
+            "mahabharata", "vedic",
+        ),
+        "anchors": (
+            "Ancient India, submerged or Vedic sites named in the spoken "
+            "beat, Indian coastal or temple architecture"
+        ),
+        "banned": _EGYPT_SLOP,
     },
     "ancient_egypt": {
         "match": (
             "giza", "great pyramid", "khufu", "sphinx", "pharaoh",
-            "nile", "karnak", "luxor", "saqqara", "egyptian",
+            "nile", "karnak", "luxor", "saqqara", "egyptian", "dendera",
         ),
         "anchors": (
             "Ancient Egypt, Nile valley, limestone masonry, "
@@ -133,18 +189,34 @@ def domain_anchors(domain_id: str) -> str:
     return str(spec.get("anchors") or "").strip()
 
 
+def _topic_names_egypt(text: str) -> bool:
+    blob = (text or "").lower()
+    return any(hint in blob for hint in _EGYPT_HINTS)
+
+
 def domain_banned_subjects(
     domain_id: str,
     *,
     channel_id: str = "",
     dna: dict[str, Any] | None = None,
     spoken_text: str = "",
+    topic: str = "",
 ) -> list[str]:
-    """Tropes forbidden in this frame unless the spoken window names them."""
+    """Tropes forbidden in this frame unless the spoken window names them.
+
+    Non-Egypt topics always inherit Egyptian landmark slop in the ban list
+    so Flux cannot default to Giza when the domain profile is missing.
+    Egypt stories keep an empty landmark ban.
+    """
     spoken = (spoken_text or "").lower()
+    allow_egypt = (domain_id == "ancient_egypt") or _topic_names_egypt(
+        f"{topic or ''} {spoken_text or ''}"
+    )
     banned: list[str] = []
     spec = _DOMAIN_PROFILES.get(domain_id) or {}
     raw = list(spec.get("banned") or ())
+    if not allow_egypt:
+        raw.extend(_EGYPT_SLOP)
     seen: set[str] = set()
     for token in raw:
         key = str(token).strip().lower()
@@ -211,7 +283,9 @@ def apply_topic_visual_lock(
     domain_id = infer_visual_domain(blob, topic)
     anchors = domain_anchors(domain_id)
     allow = f"{topic or ''} {caption or ''}"
-    banned = domain_banned_subjects(domain_id, spoken_text=allow)
+    banned = domain_banned_subjects(
+        domain_id, spoken_text=allow, topic=topic,
+    )
     locked = sanitize_channel_style(prompt or "", allow, banned)
     if style:
         locked = sanitize_channel_style(
@@ -237,8 +311,10 @@ def _heuristic_scene(
     domain_id: str = "",
 ) -> dict[str, Any]:
     spoken = (chunk.text or "").strip()
+    topic = str((dna or {}).get("topic") or "")
     banned = domain_banned_subjects(
-        domain_id, channel_id=channel_id, dna=dna, spoken_text=spoken,
+        domain_id, channel_id=channel_id, dna=dna,
+        spoken_text=spoken, topic=topic,
     )
     anchors = domain_anchors(domain_id)
     lighting = str((dna or {}).get("lighting_style") or "").strip()
@@ -398,8 +474,10 @@ def generate_scene_prompts(
     }
 
     for chunk in chunks:
+        topic = str(dna.get("topic") or "")
         banned = domain_banned_subjects(
-            domain_id, channel_id=cid, dna=dna, spoken_text=chunk.text,
+            domain_id, channel_id=cid, dna=dna,
+            spoken_text=chunk.text, topic=topic,
         )
         row = by_idx.get(chunk.index)
         if row:
@@ -410,7 +488,11 @@ def generate_scene_prompts(
                 "spoken_text": chunk.text,
                 "visual_subject": str(row.get("visual_subject") or chunk.text)[:180],
                 "image_generation_prompt": front_load_domain_anchors(
-                    str(row.get("image_generation_prompt") or "").strip(),
+                    sanitize_channel_style(
+                        str(row.get("image_generation_prompt") or "").strip(),
+                        chunk.text,
+                        banned,
+                    ),
                     anchors,
                 ),
                 "negative_prompt": str(row.get("negative_prompt") or "")

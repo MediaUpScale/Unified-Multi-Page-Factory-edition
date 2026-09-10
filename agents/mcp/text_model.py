@@ -4,8 +4,8 @@
 Writers call :func:`complete_script` (or a :class:`TextModel` implementation).
 They do not instantiate Anthropic / Gemini / DeepSeek clients themselves.
 
-Default chain matches the previous LOFI writer: DeepSeek, then Gemini.
-Override with env ``LOFI_SCRIPT_MODEL=deepseek|gemini|claude``.
+The emotional LOFI writer uses one ``models/gemini-3.8-flash`` call.
+The older provider chain remains available to the strict archived writer.
 """
 from __future__ import annotations
 
@@ -143,21 +143,33 @@ def _complete_claude(prompt: str, *, system: str | None = None) -> TextResult:
     return log_text_call(provider="claude", model=model, prompt=prompt, output=text)
 
 
-def _complete_gemini(prompt: str, *, system: str | None = None) -> TextResult:
+def _complete_gemini(
+    prompt: str,
+    *,
+    system: str | None = None,
+    model_chain: list[str] | None = None,
+    generation_config: Any | None = None,
+) -> TextResult:
     import config as app_config
     from agents.media.providers.gemini_utils import (
         generate_content_with_model_fallback,
         make_gemini_client_with_fallback,
     )
     from agents.media.providers.model_router import CHEAP_TEXT_CHAIN, CHEAP_TEXT_PRIMARY
+    from google_guardrail import extract_usage_tokens
 
     api_key = getattr(app_config, "GEMINI_API_KEY", None)
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY missing — cannot fall back for ScriptGeneratorAgent")
     client = make_gemini_client_with_fallback(str(api_key))
-    chain = [CHEAP_TEXT_PRIMARY, *CHEAP_TEXT_CHAIN]
+    chain = list(model_chain or [CHEAP_TEXT_PRIMARY, *CHEAP_TEXT_CHAIN])
     blob = prompt if not system else f"{system}\n\n{prompt}"
-    response = generate_content_with_model_fallback(client, chain, contents=[blob])
+    response = generate_content_with_model_fallback(
+        client,
+        chain,
+        contents=[blob],
+        config=generation_config,
+    )
     text = getattr(response, "text", None) or ""
     if not text and getattr(response, "candidates", None):
         try:
@@ -165,12 +177,94 @@ def _complete_gemini(prompt: str, *, system: str | None = None) -> TextResult:
         except Exception:  # noqa: BLE001
             text = ""
     text = str(text or "")
+    in_tokens, out_tokens = extract_usage_tokens(
+        response,
+        fallback_input=estimate_tokens(blob),
+    )
     return log_text_call(
         provider="gemini",
         model=(chain[0] if chain else "gemini"),
         prompt=blob,
         output=text,
+        input_tokens_est=in_tokens,
+        output_tokens_est=out_tokens,
     )
+
+
+def _complete_gemini_flash(prompt: str, *, system: str | None = None) -> TextResult:
+    """LOFI emotional writer: one requested model, one application-level call."""
+    from core.economic_reel_lofi import config as lofi_cfg
+
+    model = str(
+        os.environ.get("LOFI_EMOTIONAL_WRITER_MODEL")
+        or lofi_cfg.LOFI_EMOTIONAL_WRITER_MODEL
+        or "models/gemini-3.8-flash"
+    ).strip()
+    generation_config = None
+    try:
+        from google.genai import types
+
+        kwargs: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "temperature": 0.35,
+            "top_p": 0.85,
+            "max_output_tokens": 768,
+            "response_json_schema": {
+                "type": "object",
+                "propertyOrdering": [
+                    "location_anchor",
+                    "human_situation",
+                    "structure",
+                    "closing_tool",
+                    "beats",
+                ],
+                "properties": {
+                    "location_anchor": {"type": "string", "maxLength": 56},
+                    "human_situation": {"type": "string", "maxLength": 32},
+                    "structure": {"type": "string", "maxLength": 32},
+                    "closing_tool": {"type": "string", "maxLength": 32},
+                    "beats": {
+                        "type": "array",
+                        "minItems": 8,
+                        "maxItems": 8,
+                        "items": {
+                            "type": "object",
+                            "propertyOrdering": ["scene", "text", "visual_concept"],
+                            "properties": {
+                                "scene": {"type": "integer"},
+                                "text": {"type": "string", "maxLength": 64},
+                                "visual_concept": {"type": "string", "maxLength": 36},
+                            },
+                            "required": ["scene", "text", "visual_concept"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": [
+                    "location_anchor",
+                    "human_situation",
+                    "structure",
+                    "closing_tool",
+                    "beats",
+                ],
+                "additionalProperties": False,
+            },
+        }
+        thinking = getattr(types, "ThinkingConfig", None)
+        if thinking is not None:
+            kwargs["thinking_config"] = thinking(thinking_budget=0)
+        generation_config = types.GenerateContentConfig(**kwargs)
+    except Exception:  # SDK compatibility: strict JSON remains prompt-enforced
+        generation_config = None
+    return _complete_gemini(
+        prompt,
+        system=system,
+        model_chain=[model],
+        generation_config=generation_config,
+    )
+
+
+_complete_gemini37 = _complete_gemini_flash
 
 
 def _complete_deepseek(prompt: str, *, system: str | None = None) -> TextResult:
@@ -220,6 +314,12 @@ def _complete_deepseek(prompt: str, *, system: str | None = None) -> TextResult:
 _PROVIDERS = {
     "claude": _complete_claude,
     "gemini": _complete_gemini,
+    "gemini37": _complete_gemini_flash,
+    "gemini38": _complete_gemini_flash,
+    "gemini-3.7-flash": _complete_gemini_flash,
+    "models/gemini-3.7-flash": _complete_gemini_flash,
+    "gemini-3.8-flash": _complete_gemini_flash,
+    "models/gemini-3.8-flash": _complete_gemini_flash,
     "deepseek": _complete_deepseek,
 }
 

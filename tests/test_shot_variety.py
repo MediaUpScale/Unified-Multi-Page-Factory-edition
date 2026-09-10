@@ -31,7 +31,6 @@ from agents.media.providers.image_provider import get_image_adapter  # noqa: E40
 STAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 STEM_ROOT = f"shot_variety_test_{STAMP}"
 OUT_DIR = _ROOT / "output" / "shot_variety_test" / STAMP
-OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TOPIC = "Gobekli Tepe temple complex, 11,500 year old megalithic pillars"
 SPOKEN_SNIPPET = (
@@ -57,65 +56,74 @@ LIGHTING_TAIL = (
     "no borders, no frames, no captions, no watermarks."
 )
 
-plan = plan_episode_visual_sequence(
-    n_acts=15,
-    topic=TOPIC,
-    seed=f"{STEM_ROOT}_gobekli_tepe",
-    channel_name="ancient_knowledge",
-)
-# Pick 3 non-adjacent slots so the diversity is obvious
-picks = [(0, plan[0]), (2, plan[2]), (5, plan[5])]
+def test_get_image_adapter_accepts_page_id() -> None:
+    """Factory used by this smoke script must absorb page_id without TypeError."""
+    adapter = get_image_adapter(page_id="ancient_knowledge")
+    assert adapter is not None
+    assert getattr(adapter, "page_id", None) == "ancient_knowledge"
 
-os.environ.setdefault("ACTIVE_PAGE", "ancient_knowledge")
-adapter = get_image_adapter(page_id="ancient_knowledge")
-print(f"Adapter class: {type(adapter).__name__}")
-print(f"Output dir   : {OUT_DIR}")
-print("=" * 80)
 
-results = []
-for i, (act_i, entry) in enumerate(picks, start=1):
-    subject = entry["subject"]
-    shot = entry["shot"]
-    light = entry["lighting"]
-    align = build_aligned_visual_block(
-        spoken_snippet=SPOKEN_SNIPPET,
-        act_index=act_i,
-        total_acts=15,
-        main_subject="Gobekli Tepe",
-        prev_snippet="",
-        shot_override=shot,
-        lighting_override=light,
+if __name__ == "__main__":
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    plan = plan_episode_visual_sequence(
+        n_acts=15,
+        topic=TOPIC,
+        seed=f"{STEM_ROOT}_gobekli_tepe",
+        channel_name="ancient_knowledge",
     )
-    # subject[1] is the ready-to-inject scene concept text (drives WHAT the
-    # image is about) -- replaces the legacy _act_descriptors[_act_i] string.
-    act_desc = subject[1]
-    prompt = (
-        f"{act_desc} {TOPIC_PREFIX}{BASE_STYLE}. {align} {PARALLAX}{LIGHTING_TAIL}"
-    )
-    print(f"\n----- TEST IMAGE {i} (episode act #{act_i + 1}) -----")
-    print(f"  SUBJECT   : {subject[0]}")
-    print(f"  SHOT      : {shot[0]}")
-    print(f"  LIGHTING  : {light[0]}")
-    print(f"  PROMPT    : {prompt[:400]}...")
-    print(f"  (prompt length: {len(prompt)} chars)")
+    # Pick 3 non-adjacent slots so the diversity is obvious
+    picks = [(0, plan[0]), (2, plan[2]), (5, plan[5])]
 
-    stem_bits = (subject[0] + "_" + shot[0] + "_" + light[0]).replace(" ", "_")
-    stem_bits = "".join(c for c in stem_bits if c.isalnum() or c in "-_")
-    try:
-        out_path = adapter.generate(
-            prompt,
-            output_stem=f"{STEM_ROOT}_img{i:02d}_{stem_bits[:60]}",
-            output_directory=OUT_DIR,
+    os.environ.setdefault("ACTIVE_PAGE", "ancient_knowledge")
+    adapter = get_image_adapter(page_id="ancient_knowledge")
+    print(f"Adapter class: {type(adapter).__name__}")
+    print(f"Output dir   : {OUT_DIR}")
+    print("=" * 80)
+
+    results = []
+    for i, (act_i, entry) in enumerate(picks, start=1):
+        subject = entry["subject"]
+        shot = entry["shot"]
+        light = entry["lighting"]
+        align = build_aligned_visual_block(
+            spoken_snippet=SPOKEN_SNIPPET,
+            act_index=act_i,
+            total_acts=15,
+            main_subject="Gobekli Tepe",
+            prev_snippet="",
+            shot_override=shot,
+            lighting_override=light,
         )
-        print(f"  RESULT    : {out_path}")
-        results.append((i, subject[0], shot[0], light[0], str(out_path), prompt))
-    except Exception as exc:  # noqa: BLE001
-        print(f"  FAILED    : {exc!r}")
-        results.append((i, subject[0], shot[0], light[0], f"FAILED: {exc}", prompt))
+        # subject[1] is the ready-to-inject scene concept text (drives WHAT the
+        # image is about) -- replaces the legacy _act_descriptors[_act_i] string.
+        act_desc = subject[1]
+        prompt = (
+            f"{act_desc} {TOPIC_PREFIX}{BASE_STYLE}. {align} {PARALLAX}{LIGHTING_TAIL}"
+        )
+        print(f"\n----- TEST IMAGE {i} (episode act #{act_i + 1}) -----")
+        print(f"  SUBJECT   : {subject[0]}")
+        print(f"  SHOT      : {shot[0]}")
+        print(f"  LIGHTING  : {light[0]}")
+        print(f"  PROMPT    : {prompt[:400]}...")
+        print(f"  (prompt length: {len(prompt)} chars)")
 
-print("\n" + "=" * 80)
-print("SUMMARY")
-print("=" * 80)
-for i, s, sh, l, p, _ in results:
-    print(f"  Image {i}: subject={s!r:34s} shot={sh!r:34s} lighting={l!r:34s} | {p}")
-print("\nDone.")
+        stem_bits = (subject[0] + "_" + shot[0] + "_" + light[0]).replace(" ", "_")
+        stem_bits = "".join(c for c in stem_bits if c.isalnum() or c in "-_")
+        try:
+            out_path = adapter.generate(
+                prompt,
+                output_stem=f"{STEM_ROOT}_img{i:02d}_{stem_bits[:60]}",
+                output_directory=OUT_DIR,
+            )
+            print(f"  RESULT    : {out_path}")
+            results.append((i, subject[0], shot[0], light[0], str(out_path), prompt))
+        except Exception as exc:  # noqa: BLE001
+            print(f"  FAILED    : {exc!r}")
+            results.append((i, subject[0], shot[0], light[0], f"FAILED: {exc}", prompt))
+
+    print("\n" + "=" * 80)
+    print("SUMMARY")
+    print("=" * 80)
+    for i, s, sh, l, p, _ in results:
+        print(f"  Image {i}: subject={s!r:34s} shot={sh!r:34s} lighting={l!r:34s} | {p}")
+    print("\nDone.")

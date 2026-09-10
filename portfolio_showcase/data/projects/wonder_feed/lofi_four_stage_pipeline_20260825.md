@@ -3,7 +3,7 @@
 **Canvas:** `lofi-four-stage-pipeline.canvas.tsx`  
 **Live path:** `core/economic_reel_lofi`  
 **Style module:** `core/economic_reel_lofi/style_modules/riso_retro_flat_v4.py`  
-**Default:** `review_required=true` — no Flux or TTS before Gate 2.
+**Default:** `review_required=true` — no TTS before Gate 1 approval and no image spend before Gate 2.
 
 This map replaces the `_EPISODE_WORLDS` audit (`riso_retro_flat_v4_pipeline_20260825.md`). It documents the rebuild, not another patch on the kitchen zone table.
 
@@ -11,7 +11,7 @@ This map replaces the `_EPISODE_WORLDS` audit (`riso_retro_flat_v4_pipeline_2026
 
 | | |
 |--|--|
-| 4 stages | Script → concept → prompt → image+VO |
+| 4 stages | Emotional script → TTS-timed atmosphere → riso prompt → image+QA |
 | 2 gates | Human hold; `--lofi-no-review` auto-passes both |
 | Retired | `_EPISODE_WORLDS` is no longer the source of setting/object |
 | One module | Swapping riso / model / LoRA = zero Stage 1–2 or QA-logic edits |
@@ -19,20 +19,22 @@ This map replaces the `_EPISODE_WORLDS` audit (`riso_retro_flat_v4_pipeline_2026
 ## Pipeline (what feeds what)
 
 ```
-Stage 1  Script generation          (LLM writer; text + timing only)
+Stage 1  Emotional script generation (LLM writer; 7–12-word spoken beats)
     → Gate 1  human approval        (locked --lofi-script auto-clears)
-Stage 2  Narrative → visual concept (LLM per beat; place locked after beat 1)
-Stage 3  Prompt assembly            (style module + episode_anchor_stem; no Flux/TTS)
+    → TTS  ElevenLabs per beat       (actual audio fixes slide timing)
+Stage 2  Narrative → atmosphere     (LLM mood match; not literal illustration)
+Stage 3  Prompt assembly            (style module + episode_anchor_stem; no image call)
     → Gate 2  human approval        (assembled positive + negative)
-Stage 4  Image generation + QA + VO (VO only here, after Gate 2)
+Stage 4  Image generation + QA      (Together Schnell or Gemini Flash)
 ```
 
-1. **Stage 1** accepts `duration_s`. Default 27 → 9 × 3s. Larger values add beats at 3s (45s → 15, 90s → 30). Output has visual fields stripped.
+1. **Stage 1** defaults to the `emotional` writer: intimate micro-philosophical prose with a 7–12-word target. `--script-only` prints/saves candidate JSON and exits before every downstream API.
 2. **Gate 1** writes `lofi_pipeline_*.json` and returns if `review_required`. Resume: `--lofi-resume-from PATH --lofi-approve-gate 1`. Locked `--lofi-script` auto-clears Gate 1 only.
-3. **Stage 2** asks an LLM what each beat looks like from the spoken line. Character RAG supplies appearance only. Episode place from beat 1 is carried into beats 2–9. `_EPISODE_WORLDS` is not read.
-4. **Stage 3** builds one scene paragraph from the concept, injects `episode_anchor_stem`, and derives the negative from style + `not_in_frame`. No Flux or TTS.
-5. **Gate 2** holds until `--lofi-approve-gate 2`. The reviewed artifact is the assembled `visual_prompt` + `negative_prompt`, not Stage 2 concept text. No image or TTS cost before this clears.
-6. **Stage 4** generates stills, runs QA, then ElevenLabs (skipped in `--stills-only`). Attempt 1 uses the Gate-2-approved prompt.
+3. **After Gate 1**, ElevenLabs renders each beat. Measured VO plus breathing room produces flexible 2.5–4.0s slide timing; overlong narration is rewritten before visuals. Audio paths, fingerprints, timestamps, and durations persist in the pipeline state.
+4. **Stage 2** asks an LLM for an evocative atmospheric scene that emotionally rhymes with the whole episode and current beat. Abstract narration falls back to melancholic coffee/window, autumn-distance, streetlight, or dim-room compositions. `_EPISODE_WORLDS` is not read.
+5. **Stage 3** builds one scene paragraph from the concept, injects `episode_anchor_stem`, and derives the negative from style + `not_in_frame`. No image generation.
+6. **Gate 2** holds until `--lofi-approve-gate 2`. Review rows include mood, concept, full positive prompt, and negative prompt.
+7. **Stage 4** generates stills through `--lofi-image-provider together|gemini`, runs QA, and assembles against the persisted audio timing. `--stills-only` remains no-TTS.
 
 ## Audit finding → change
 

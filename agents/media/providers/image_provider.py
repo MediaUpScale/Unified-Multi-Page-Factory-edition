@@ -491,6 +491,7 @@ class GeminiImageAdapter(ImageProvider):
         tier: str | None = None,
         use_premium: bool | None = None,
         page_cost_tier: str | None = None,
+        **kwargs: Any,
     ) -> None:
         requested = app_config.normalize_image_model_id(model_id) if model_id else None
         self._gemini_mode = _is_gemini_image_sku(requested)
@@ -498,6 +499,8 @@ class GeminiImageAdapter(ImageProvider):
         self._gemini_client: genai.Client | None = None
         self.last_gemini_image_failure_model_id = None
         self.last_api_call_count = 0
+        self.page_id = kwargs.get("page_id")
+        self._extra_kwargs = dict(kwargs)
 
         if self._gemini_mode:
             self._model_id = requested or "models/gemini-3-pro-image-preview"

@@ -125,121 +125,12 @@ def assemble_video_from_episode(
 
 
 def ensure_episode_voiceover(episode: dict[str, Any]) -> list[Path | None]:
-    """Generate missing per-beat VO files. ElevenLabs only — no Claude."""
-    from core.economic_reel_lofi.assembler import measure_vo_speech_duration
-    from core.economic_reel_lofi.pipeline import (
-        _sanitize_caption_typos,
-        _tts_breath_commas,
-        _tts_text_with_breaks,
-    )
-    from agents.media.audio_engine import generate_voiceover_with_timestamps
+    """Generate/reuse per-beat VO with the production TTS-first contract."""
+    from core.economic_reel_lofi.voiceover import ensure_script_voiceover
 
     script = episode.get("script") if isinstance(episode.get("script"), dict) else {}
-    lines = list((script or {}).get("lines") or [])
     work_dir = Path(str(episode.get("work_dir") or "."))
-    work_dir.mkdir(parents=True, exist_ok=True)
-    existing = list(episode.get("voice_paths") or [])
-    timings_all = list(episode.get("word_timings_per_scene") or [])
-    voice_paths: list[Path | None] = []
-    word_timings: list[Any] = []
-    durations: list[float] = []
-    vo_durs: list[float] = []
-    beat_s = float(episode.get("scene_duration_s") or lofi_cfg.beat_duration_s())
-    n = len(lines)
-    tts_overruns: list[dict[str, Any]] = []
-    for i, ln in enumerate(lines):
-        caption = _sanitize_caption_typos(str((ln or {}).get("text") or ""))
-        prior = Path(str(existing[i])) if i < len(existing) and existing[i] else None
-        vo_path = prior if prior and prior.is_file() else work_dir / f"vo_scene_{i + 1:02d}.mp3"
-        timings = timings_all[i] if i < len(timings_all) else None
-        if not vo_path.is_file() and caption.strip():
-            tts_text = _tts_text_with_breaks(_tts_breath_commas(caption))
-            use_ssml = "<break" in tts_text
-            speed = lofi_cfg.tts_speed()
-            model_id = lofi_cfg.tts_model() or "eleven_multilingual_v2"
-            voice_id = lofi_cfg.tts_voice_id()
-            print(
-                f"[LOFI VO] scene={i + 1} voice={voice_id} "
-                f"model={model_id} speed={speed} ssml={use_ssml}"
-            )
-            vo_path, raw_timings = generate_voiceover_with_timestamps(
-                tts_text,
-                vo_path,
-                voice_id=voice_id or None,
-                model_id=model_id,
-                force_elevenlabs=True,
-                expressive_mode=False,
-                enable_ssml=use_ssml,
-                speed=speed,
-                voice_settings={
-                    "stability": 1.0,
-                    "similarity_boost": 1.0,
-                    "style": 0.0,
-                    "use_speaker_boost": True,
-                    "speed": speed,
-                },
-            )
-            timings = [
-                (str(w), float(s), float(e))
-                for w, s, e in (raw_timings or [])
-                if str(w).strip()
-                and not str(w).startswith("<")
-                and str(w).lower() not in {"break", "time"}
-            ]
-        voice_paths.append(vo_path if vo_path and vo_path.is_file() else None)
-        word_timings.append(timings)
-        vo_dur = 0.0
-        if voice_paths[-1]:
-            try:
-                vo_dur = float(measure_vo_speech_duration(voice_paths[-1]))
-            except Exception:  # noqa: BLE001
-                vo_dur = 0.0
-        vo_durs.append(vo_dur)
-        declared = float((ln or {}).get("duration_s") or beat_s)
-        ceiling = lofi_cfg.beat_word_ceiling(declared)
-        tightened = len(caption.split()) <= ceiling
-        if lofi_cfg.vo_duration_overrun(vo_dur, duration_s=declared):
-            tts_overruns.append(
-                {
-                    "index": i,
-                    "vo_dur": vo_dur,
-                    "duration_s": declared,
-                    "tightened": tightened,
-                    "row": ln,
-                }
-            )
-        trail = 0.0 if i >= n - 1 else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
-        dur_i, _ext = lofi_cfg.slot_duration_for_vo(
-            vo_dur, base_s=declared, trailing_silence_s=trail
-        )
-        durations.append(dur_i)
-    if tts_overruns:
-        requested = float(
-            episode.get("duration_requested_s")
-            or episode.get("duration_expected_s")
-            or (n * beat_s)
-        )
-        applied, stop = lofi_cfg.apply_isolated_tts_duration_bumps(
-            tts_overruns, requested_total_s=requested, n_beats=n
-        )
-        if stop:
-            raise ValueError(stop)
-        episode["duration_auto_bumps"] = applied
-        for rec in tts_overruns:
-            row = rec.get("row")
-            bumped = rec.get("bumped_s")
-            if not isinstance(row, dict) or bumped is None:
-                continue
-            row["duration_s"] = float(bumped)
-            i = int(rec["index"])
-            trail = 0.0 if i >= n - 1 else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
-            durations[i], _ = lofi_cfg.slot_duration_for_vo(
-                vo_durs[i], base_s=float(bumped), trailing_silence_s=trail
-            )
-    episode["voice_paths"] = [str(p) if p else None for p in voice_paths]
-    episode["word_timings_per_scene"] = word_timings
-    episode["scene_durations"] = durations
-    return voice_paths
+    return ensure_script_voiceover(episode, script, work_dir)
 
 
 def regen_cycle_count(episode: dict[str, Any], scene_number: int) -> int:

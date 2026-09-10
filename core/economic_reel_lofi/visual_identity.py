@@ -2424,7 +2424,11 @@ def assign_palette_arc(lines: list[dict[str, Any]]) -> None:
             row["palette_temp"] = _PALETTE_TEMP_LABEL.get(
                 str(row.get("palette_key") or key), "warm"
             )
-        if concept_is_locked(row):
+        source = str(row.get("visual_source") or "").strip().lower()
+        mood_lighting = str(row.get("lighting_condition") or "").strip()
+        if concept_is_locked(row) or (
+            source in {"llm", "atmospheric_fallback"} and mood_lighting
+        ):
             prev = str(row.get("lighting_condition") or prev)
             assigned.append(str(row.get("lighting_condition") or ""))
             temps.append(str(row.get("palette_temp") or ""))
@@ -5165,6 +5169,12 @@ def assemble_v2_prompt(
     open_b = str(blocks.get("open") or "").strip()
     tech_b = str(blocks.get("technique") or "").strip()
     mood_b = str(blocks.get("mood") or "").strip()
+    beat_mood = str(beat.get("beat_mood") or beat.get("meaning") or "").strip()
+    narrative_mood = (
+        f"Emotional atmosphere for this beat: {beat_mood}."
+        if beat_mood
+        else ""
+    )
     fmt_b = str(blocks.get("format") or "").strip()
     st = str(beat.get("subject_type") or "woman")
     expr = str(beat.get("subject_expression") or "sad")
@@ -5205,6 +5215,7 @@ def assemble_v2_prompt(
             _SATURATION_GUARD,
             _TEXT_LEGIBILITY_GUARD,
             mood_b,
+            narrative_mood,
             fmt_b,
         ]
         prompt = " ".join(p for p in parts if p)
@@ -5292,6 +5303,14 @@ def assemble_v2_prompt(
         beat["object_focus_step"] = max(0, min(int(focus_step), 2))
         beat["object_focus_framing"] = framing_kind
 
+    from core.economic_reel_lofi.visual_concept import _sanitize_scene_text
+
+    concept_scene = _sanitize_scene_text(
+        str(beat.get("scene_description") or beat.get("visual_concept") or "")
+    )
+    if concept_scene:
+        scene = concept_scene
+
     parts = [
         open_b,
         scene,
@@ -5303,6 +5322,7 @@ def assemble_v2_prompt(
         _TEXT_LEGIBILITY_GUARD,
         garment_coverage_clause(st, str(beat.get("close_variant") or "")),
         mood_b,
+        narrative_mood,
         fmt_b,
     ]
     prompt = " ".join(p for p in parts if p)
@@ -6038,6 +6058,18 @@ def assemble_v2_prompt_dev(
     open_b = str(ident.get("open") or style.open or "").strip()
     tech_b = str(ident.get("technique") or style.technique or "").strip()
     mood_b = str(ident.get("mood") or style.mood or "").strip()
+    beat_mood = str(beat.get("beat_mood") or beat.get("meaning") or "").strip()
+    emotional_temperature = str(beat.get("emotional_temperature") or "").strip()
+    narrative_mood = ""
+    if beat_mood:
+        narrative_mood = (
+            f"Emotional atmosphere for this beat: {beat_mood}. "
+            + (
+                f"The emotional color temperature feels {emotional_temperature}."
+                if emotional_temperature
+                else ""
+            )
+        ).strip()
     fmt_b = str(ident.get("format") or style.format or "Illustration, vertical 9:16 composition.")
     sat_g = _SATURATION_GUARD
     text_g = _TEXT_LEGIBILITY_GUARD
@@ -6371,6 +6403,7 @@ def assemble_v2_prompt_dev(
         open_b,
         tech_b,
         mood_b,
+        narrative_mood,
         scene,
         expand,
         world,

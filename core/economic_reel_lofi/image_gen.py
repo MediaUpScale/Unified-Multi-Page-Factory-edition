@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""LOFI image generation — Schnell live path + Flux Dev sibling. No LoRA."""
+"""LOFI image generation through the active style's Together.ai model."""
 from __future__ import annotations
 
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,30 @@ from typing import Any
 from core.economic_reel_lofi import config as lofi_cfg
 
 _LOG = logging.getLogger(__name__)
+FULL_BLEED_TRIM_FRAC: float = 0.05
+
+
+def enforce_full_bleed(
+    image_path: Path,
+    *,
+    trim_frac: float = FULL_BLEED_TRIM_FRAC,
+) -> Path:
+    """Crop the generated outer edge so model-invented paper margins cannot ship."""
+    from PIL import Image
+
+    path = Path(image_path)
+    with Image.open(path) as source:
+        image = source.convert("RGB")
+        width, height = image.size
+        dx = max(1, round(width * max(0.0, min(float(trim_frac), 0.15))))
+        dy = max(1, round(height * max(0.0, min(float(trim_frac), 0.15))))
+        cropped = image.crop((dx, dy, width - dx, height - dy))
+        cropped.resize((width, height), Image.Resampling.LANCZOS).save(path)
+    print(
+        f"[LOFI full-bleed] cropped outer {float(trim_frac) * 100:.1f}% "
+        f"and restored {width}x{height} → {path.name}"
+    )
+    return path
 
 
 def _stamp_gen_meta(
@@ -29,10 +54,11 @@ def _stamp_gen_meta(
     rec["gen_seed"] = seed
     return rec
 
-# Hard-locked provider identity for ECONOMIC_REEL_LOFI (never inherit env flow).
+# Active style identity for ECONOMIC_REEL_LOFI (never inherit global env model).
 LOFI_IMAGE_PROVIDER: str = "together.ai"
-LOFI_IMAGE_MODEL: str = "black-forest-labs/FLUX.1-schnell"
-LOFI_IMAGE_STEPS: int = 4
+LOFI_IMAGE_MODEL: str = lofi_cfg.LOFI_DEV_IMAGE_MODEL
+LOFI_IMAGE_STEPS: int = int(lofi_cfg.LOFI_DEV_IMAGE_STEPS)
+LOFI_IMAGE_GUIDANCE_SCALE: float = float(lofi_cfg.LOFI_DEV_GUIDANCE_SCALE)
 # Actual per-call resolution — aliases of config so cost accounting and
 # generation always request the same size (720×1280 exact 9:16).
 LOFI_IMAGE_WIDTH: int = int(lofi_cfg.LOFI_IMAGE_WIDTH)
@@ -95,7 +121,7 @@ def generate_scene_image(
     verbatim: bool | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """
-    Generate one vertical still via Together.ai FLUX.1-schnell (base model, no LoRA).
+    Generate one vertical still via the active Together.ai model, without LoRA.
 
     Returns (output_path, resolved_mood_meta).
     """
@@ -114,7 +140,8 @@ def generate_scene_image(
     print(
         "[LOFI image_gen] PROVIDER FORCED | "
         f"provider={LOFI_IMAGE_PROVIDER} | model={LOFI_IMAGE_MODEL} | "
-        f"steps={LOFI_IMAGE_STEPS} | lora=OFF | "
+        f"steps={LOFI_IMAGE_STEPS} | guidance_scale={LOFI_IMAGE_GUIDANCE_SCALE} | "
+        "lora=OFF | "
         "bypasses MODEL_API_FLOW / remote_gpu / ComfyUI"
     )
     print(
@@ -124,7 +151,7 @@ def generate_scene_image(
     print(f"[LOFI image_gen] full_prompt_len={len(prompt)}")
     print(f"[LOFI image_gen] full_prompt={prompt!r}")
     _LOG.info(
-        "LOFI image FORCED together/schnell | lora=OFF | verbatim | id=%s",
+        "LOFI image FORCED together/active-style | lora=OFF | verbatim | id=%s",
         resolved.get("id"),
     )
 
@@ -140,14 +167,17 @@ def generate_scene_image(
         orientation="vertical",
         width=width,
         height=height,
-        negative_prompt=lofi_cfg.LOFI_NEGATIVE_PROMPT,
+        negative_prompt=lofi_cfg.LOFI_DEV_NEGATIVE_PROMPT,
         model_name=LOFI_IMAGE_MODEL,
         steps=LOFI_IMAGE_STEPS,
         allow_lora=False,
+        skip_mandatory_negative=True,
+        guidance_scale=LOFI_IMAGE_GUIDANCE_SCALE,
     )
     elapsed = time.perf_counter() - t0
     if not output_path.is_file():
-        raise FileNotFoundError(f"Flux Schnell did not write image: {output_path}")
+        raise FileNotFoundError(f"Active Flux model did not write image: {output_path}")
+    enforce_full_bleed(output_path)
     print(
         f"[LOFI image_gen] OK | file={output_path.name} | "
         f"confirmed_model={LOFI_IMAGE_MODEL} | lora=OFF | id={resolved.get('id')} "
@@ -157,8 +187,68 @@ def generate_scene_image(
     return output_path, _stamp_gen_meta(
         resolved,
         prompt=prompt,
-        negative=str(lofi_cfg.LOFI_NEGATIVE_PROMPT or ""),
+        negative=str(lofi_cfg.LOFI_DEV_NEGATIVE_PROMPT or ""),
         model=LOFI_IMAGE_MODEL,
+        guidance_scale=LOFI_IMAGE_GUIDANCE_SCALE,
+        seed=None,
+    )
+
+
+def generate_scene_image_gemini(
+    visual_prompt: str,
+    output_path: Path,
+    *,
+    width: int = LOFI_IMAGE_WIDTH,
+    height: int = LOFI_IMAGE_HEIGHT,
+    mood: dict[str, Any] | None = None,
+    mood_id: str | None = None,
+    mood_key: str | int | None = None,
+    verbatim: bool | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    """Generate a LOFI still through Google's Flash Image-only model chain."""
+    from PIL import Image, ImageOps
+    from agents.media.providers.image_provider import GeminiImageAdapter
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt, resolved = build_scene_prompt(
+        visual_prompt,
+        mood=mood,
+        mood_id=mood_id,
+        mood_key=mood_key,
+        verbatim=verbatim,
+    )
+    model = "models/gemini-3.1-flash-image"
+    print(
+        "[LOFI image_gen] provider=google | model=Gemini Flash Image chain | "
+        f"request_aspect=9:16 target={width}x{height}"
+    )
+    t0 = time.perf_counter()
+    adapter = GeminiImageAdapter(model_id=model, tier="cheap")
+    generated = adapter.generate(
+        prompt,
+        output_stem=output_path.stem,
+        output_directory=output_path.parent,
+        aspect_ratio="9:16",
+        avatar_mode="OFF",
+    )
+    generated = Path(generated)
+    if generated.resolve() != output_path.resolve():
+        shutil.copy2(generated, output_path)
+    with Image.open(output_path) as image:
+        if image.size != (width, height):
+            fitted = ImageOps.fit(image.convert("RGB"), (width, height))
+            fitted.save(output_path)
+    if not output_path.is_file():
+        raise FileNotFoundError(f"Gemini Flash did not write image: {output_path}")
+    used_model = str(getattr(adapter, "last_gemini_image_model_used", model) or model)
+    elapsed = time.perf_counter() - t0
+    print(f"[LOFI image_gen] Gemini OK | model={used_model} elapsed_s={elapsed:.2f}")
+    return output_path, _stamp_gen_meta(
+        resolved,
+        prompt=prompt,
+        negative="",
+        model=used_model,
         guidance_scale=None,
         seed=None,
     )
@@ -176,7 +266,7 @@ def generate_scene_image_dev(
     verbatim: bool | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """
-    Generate one vertical still via Together.ai FLUX.1-dev (no LoRA).
+    Generate one vertical still via the active Together.ai Flux Dev model.
 
     Same contract as generate_scene_image so generate_and_qa_scene can swap.
     Does not call generate_scene_image or the Schnell DeepInfra branch.
@@ -186,11 +276,11 @@ def generate_scene_image_dev(
     if bool(getattr(lofi_cfg, "uses_flux2_dev", lambda: False)()):
         model = str(
             getattr(lofi_cfg, "LOFI_FLUX2_DEV_MODEL", "")
-            or "black-forest-labs/FLUX-2-dev"
+            or "black-forest-labs/FLUX.2-dev"
         )
-        steps = int(getattr(lofi_cfg, "LOFI_FLUX2_DEV_STEPS", 28) or 28)
+        steps = int(getattr(lofi_cfg, "LOFI_FLUX2_DEV_STEPS", 24) or 24)
         guidance = float(
-            getattr(lofi_cfg, "LOFI_FLUX2_DEV_GUIDANCE_SCALE", 2.5) or 2.5
+            getattr(lofi_cfg, "LOFI_FLUX2_DEV_GUIDANCE_SCALE", 5.5) or 5.5
         )
     else:
         model = str(getattr(lofi_cfg, "LOFI_DEV_IMAGE_MODEL", "") or "black-forest-labs/FLUX.1-dev")
@@ -234,7 +324,7 @@ def generate_scene_image_dev(
         f"model={model} | via=TogetherImageGenerator | "
         f"steps={steps} | guidance_scale={guidance} | lora=OFF | "
         "skip_mandatory_negative=1 | "
-        "DeepInfra FLUX-2-dev if uses_flux2_dev else FLUX-1-dev fallback"
+        "Together.ai direct active-style request"
     )
     print(
         f"[LOFI image_gen_dev] verbatim={bool(lofi_cfg.USE_RISO_PROMPT_LIBRARY if verbatim is None else verbatim)} | "
@@ -273,6 +363,7 @@ def generate_scene_image_dev(
     elapsed = time.perf_counter() - t0
     if not output_path.is_file():
         raise FileNotFoundError(f"Flux Dev did not write image: {output_path}")
+    enforce_full_bleed(output_path)
     print(
         f"[LOFI image_gen_dev] OK | file={output_path.name} | "
         f"confirmed_model={model} | lora=OFF | id={resolved.get('id')} "

@@ -6,7 +6,7 @@ Ready-to-copy CLI commands scanned from `main.py`, scheduler modules, and genera
 >
 > **Layout.** Run every command from the factory root. `main.py` stays at root. Writer: `agents/writer/`. RAG: `agents/rag/`. Posting CLIs: `agents/posting/` (`pinterest_main.py`, `pinterest_oauth.py`, `publish_existing.py`). Orchestrator: `agents/orchestrator/`. Media: `agents/media/`. Quality: `quality/VisualQA_Agent/`. Core pipelines: `core/`. Ancient Knowledge env/token: `channels_config/ancient_knowledge/`. Principles of Wealth CLI: `channels_config/principles_of_wealth_finance_economics/wealth_main.py`.
 >
-> **LOFI_SCRIPT_MODEL.** Optional env override (not written into `.env` by default): `deepseek` | `gemini` | `claude`. Default chain is DeepSeek, then Gemini. Lookups print `[LOFI rag] lookup` / `[LOFI rag] why:`; LLM calls print `[script cost]`.
+> **LOFI Stage 1 writer.** Default is one Few-Shot call to `models/gemini-3.8-flash` that returns spoken beats **and** a `visual_concept` per beat. Niche presets (`relationship`, `parenting`) supply golden examples and the Aesthetic Master prefix. Stage 3 wraps `visual_concept` as `{aesthetic_prefix}, {concept}, shot on 35mm lens, moody depth of field` and sends that verbatim to Flux/Together. TTS-first durations drive Stage 4. Set `LOFI_ENABLE_STRICT_JUDGE=1` to restore the archived judge/repair path.
 >
 > ElevenLabs TTS speed / `voice_settings`: see `docs/elevenlabs_tts.md`. Speed always lives inside `voice_settings`, never as a standalone client kwarg. LOFI production knobs are `TTS_VOICE_ID`, `TTS_MODEL`, `TTS_SPEED` (valid speed **0.7–1.2**) in `core/economic_reel_lofi/config.py`.
 
@@ -211,18 +211,18 @@ Text brain (captions/research, not image gen): `--economic` (Gemini-only) or `--
 `python main.py --page ancient_knowledge --post-type ECONOMIC_REEL --quantity 1 --economic --model-api-flow remote_gpu_pod --img-production together/black-forest-labs/FLUX.1-schnell --audio-production elevenlabs --video-production moviepy`  
 *// Mixed stack: named remote-GPU preset, then per-media overrides force Together Schnell stills, ElevenLabs VO, and MoviePy compile.*
 
-### ECONOMIC_REEL_LOFI — Together Flux Schnell only (hard-locked)
+### ECONOMIC_REEL_LOFI — emotional-first, TTS-timed riso reels
 
-Image gen **always** uses Together `FLUX.1-schnell` with LoRA off. `--model-api-flow` does not change LOFI stills. Valid pages: `wonder_feed`, `momma_circle`. Duration 30–38 s (default 34). Modules: `relationship` (both pages), `parenting` (`momma_circle` only).
+Default writer mode is `emotional`: original micro-philosophical storytelling in 7–12-word spoken beats. Gate 1 approves the narrative, then ElevenLabs fixes actual beat timing; Gate 2 approves atmospheric riso prompts before image spend. Image provider is selected with `--lofi-image-provider together|gemini` (default `together`). `--model-api-flow` does not change LOFI stills. Valid pages: `wonder_feed`, `momma_circle`.
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --quantity 3 --duration 34 --module relationship`  
-*// Generates 3 LOFI ink/graphic-novel reels (~34 s, ~8 scenes) for wonder_feed. Relationship RAG namespace. Flux Schnell + duotone grade + Ken Burns + watermark.*
+*// Generates 3 emotional riso reels for wonder_feed. Relationship RAG namespace, TTS-first slide timing, atmospheric stills, captions, and watermark.*
 
 `python main.py --page momma_circle --post-type ECONOMIC_REEL_LOFI --quantity 2 --duration 38 --module parenting`  
 *// Generates 2 LOFI parenting-theme reels for momma_circle (explicit escape hatch; otherwise this page is forced to REFERENCE_BASED_REELS).*
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --stills-only --module relationship --lofi-no-review`  
-*// Four-stage pipeline with gates auto-passed. Default (no `--lofi-no-review`) holds at Gate 1 after the script and Gate 2 after Stage 3 assembled prompts — no image/TTS until `--lofi-approve-gate 1|2` with `--lofi-resume-from`.*
+*// Pipeline with gates auto-passed. Default holds at Gate 1 before TTS and at Gate 2 before image generation.*
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --stills-only --lofi-script PATH.json`  
 *// Locked script auto-clears Gate 1 only; run still holds at Gate 2 (assembled positive + negative prompts) unless `--lofi-no-review`.*
@@ -230,10 +230,16 @@ Image gen **always** uses Together `FLUX.1-schnell` with LoRA off. `--model-api-
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --lofi-resume-from outputs/wonder_feed/clips/lofi_pipeline_….json --lofi-approve-gate 2`  
 *// Resume a held run after reviewing Stage 3 assembled prompts; Stage 4 (stills, VO) runs.*
 
-Duration: default 27s / 9 beats × 3s. Larger `--duration` adds beats at 3s (max 90s). Visual style is `riso_retro_flat_v4` in `core/economic_reel_lofi/style_modules/` (swap via `LOFI_STYLE_MODULE`).
+Duration: default 27s / 9 nominal beats. Actual slides follow measured VO, normally 2.5–4.0s; narration is never cut. Larger `--duration` adds beats (max 90s). Visual style is `riso_retro_flat_v4` in `core/economic_reel_lofi/style_modules/`.
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --module relationship --lofi-theme hope`  
-*// Writer + validator + RAG only (no images). Default writer mode is paraphrase.*
+*// One Gemini 3.8 Flash Few-Shot writer call + RAG only. Immediately prints and saves strict SCRIPT_CANDIDATE_JSON with spoken text and visual_concept per beat; no judge, repair, TTS, image, or render APIs.*
+
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --module parenting`
+*// Same single-pass writer using the parenting niche preset (golden examples + warm golden-hour aesthetic wrapper).*
+
+`python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --lofi-image-provider gemini`
+*// Uses Google Gemini Flash Image for Stage 4 while retaining the same riso prompt and QA pipeline.*
 
 `python main.py --page wonder_feed --post-type ECONOMIC_REEL_LOFI --script-only --lofi-mode theme --module relationship --lofi-theme hope`
 *// Explicitly selects the slower duration-aware theme composer.*

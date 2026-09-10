@@ -1536,7 +1536,22 @@ def assemble_lofi_reel(
             if i >= n_scenes - 1
             else float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
         )
-        if vo_dur > 0.05:
+        if preset is not None and preset > 0:
+            dur_i = round(declared_s, 3)
+            extended_i = dur_i > float(scene_duration_s) + 0.04
+            dur_meta = {
+                "vo_dur": round(vo_dur, 3),
+                "last_word_end": 0.0,
+                "needed_s": dur_i,
+                "duration_s": dur_i,
+                "speech_start": round(lead_s, 3),
+                "speech_end": round(lead_s + vo_dur, 3),
+            }
+            print(
+                f"[LOFI assemble] scene {i + 1} elastic preset "
+                f"vo={vo_dur:.3f}s slot={dur_i:.3f}s"
+            )
+        elif vo_dur > 0.05:
             dur_i, extended_i = lofi_cfg.slot_duration_for_vo(
                 vo_dur, base_s=0.0, trailing_silence_s=trail
             )
@@ -1805,10 +1820,12 @@ def assemble_lofi_reel(
             return np.array(rgba.convert("RGB"))
 
         clip = VideoClip(frame_function=_make_frame, duration=float(this_dur))
-        clip = clip.with_fps(lofi_cfg.REEL_FPS)
+        # Scene clips are visual-only. Narration is attached exactly once as
+        # the master VO mix after concatenation.
+        clip = clip.without_audio().with_fps(lofi_cfg.REEL_FPS)
         clips.append(clip)
 
-    final = concatenate_videoclips(clips, method="compose")
+    final = concatenate_videoclips(clips, method="compose").without_audio()
     total_dur = float(final.duration or sum(scene_durs))
 
     # ── Audio: per-scene VO (padded to scene_duration) + library BGM ─────────
@@ -1816,7 +1833,6 @@ def assemble_lofi_reel(
     mixed = None
     vo_parts: list[Any] = []
     gap_windows: list[tuple[float, float]] = []
-    gap_s = float(getattr(lofi_cfg, "VO_INTERLINE_SILENCE_S", 0.30))
     if voice_paths:
         present = [
             i for i, vp in enumerate(voice_paths) if vp is not None and Path(vp).is_file()
@@ -1856,7 +1872,11 @@ def assemble_lofi_reel(
             )
             vo_parts.append(vac)
             t_cursor += vdur
-            if idx < last_present and gap_s >= 0.15:
+            visual_slot = float(
+                scene_durs[idx] if idx < len(scene_durs) else scene_duration_s
+            )
+            gap_s = max(0.0, visual_slot - vdur)
+            if idx < last_present and gap_s > 0.001:
                 silence = _silence_audio_clip(gap_s)
                 vo_parts.append(silence)
                 audio_clips_to_close.append(silence)
@@ -2010,8 +2030,9 @@ def assemble_lofi_reel(
             final = final.with_audio(mixed)
             audio_attached = True
             print(
-                f"[LOFI assemble] VO files={len(present) if voice_paths else 0} "
-                f"+ {len(gap_windows)} interline silences + BGM mixed"
+                f"[LOFI assemble] single master VO files="
+                f"{len(present) if voice_paths else 0} "
+                f"+ {len(gap_windows)} interline silences + BGM mixed once"
             )
         elif bac is not None:
             final = final.with_audio(bac)

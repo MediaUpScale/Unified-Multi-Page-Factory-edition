@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Image generation — Together AI (FLUX.1-dev / LoRA) + DeepInfra (FLUX.1-schnell).
+Image generation — Together AI (FLUX Dev / LoRA) + DeepInfra (FLUX.1-schnell).
 
 Schnell default is served via DeepInfra's OpenAI-compatible API
 (``black-forest-labs/FLUX-1-schnell``). Together.ai remains the backend for
@@ -57,8 +57,8 @@ DEEPINFRA_DEV_ITERS_REF: float = 25.0
 # DeepInfra published FLUX-2-dev: $0.01 × (w/1024) × (h/1024) × (iters/28)
 DEEPINFRA_FLUX2_USD_PER_MEGAPIXEL: float = 0.01
 DEEPINFRA_FLUX2_ITERS_REF: float = 28.0
-FLUX2_DEV_DEFAULT_STEPS: int = 28
-FLUX2_DEV_DEFAULT_GUIDANCE: float = 2.5
+FLUX2_DEV_DEFAULT_STEPS: int = 24
+FLUX2_DEV_DEFAULT_GUIDANCE: float = 5.5
 # Native playground default if num_inference_steps is omitted: 1 (NOT 4).
 DEEPINFRA_SCHNELL_DEFAULT_STEPS_IF_OMITTED: int = 1
 
@@ -582,7 +582,9 @@ def default_steps_for_model(model_id: str | None) -> int:
     low = normalize_together_model_id(model_id).lower()
     if "schnell" in low or _is_juggernaut_model(low):
         return FLUX_DEFAULT_STEPS
-    if _is_flux2_dev_model(low) or "flux.1-dev" in low or "flux-dev" in low:
+    if _is_flux2_dev_model(low):
+        return FLUX2_DEV_DEFAULT_STEPS
+    if "flux.1-dev" in low or "flux-dev" in low:
         return FLUX_DEV_DEFAULT_STEPS
     if "sdxl" in low or "stable-diffusion" in low:
         return SDXL_DEFAULT_STEPS
@@ -1048,7 +1050,7 @@ class TogetherImageGenerator:
     Image generator with dynamic model selection.
 
     FLUX Schnell → DeepInfra OpenAI-compatible API.
-    FLUX Dev / LoRA → Together.ai SDK (original structure preserved).
+    FLUX.2-dev and FLUX.1-dev / LoRA → Together.ai SDK.
     Per-call override: ``generate_image(..., model_name=...)``.
     """
 
@@ -1282,23 +1284,24 @@ class TogetherImageGenerator:
                             negative_prompt=negative_prompt,
                         )
                         logged_model = DEEPINFRA_FLUX_SCHNELL_MODEL
-                    elif _is_flux2_dev_model(active_model) and skip_mandatory_negative:
-                        # LOFI / DeepInfra FLUX-2-dev — not Together's $0.0154 flat.
-                        cfg = float(
-                            guidance_scale
-                            if guidance_scale is not None
-                            else FLUX2_DEV_DEFAULT_GUIDANCE
-                        )
-                        response = post_deepinfra_flux2_dev(
-                            prompt=gen_kwargs["prompt"],
-                            width=int(width),
-                            height=int(height),
-                            steps=int(steps),
-                            guidance_scale=cfg,
-                            negative_prompt=(negative_prompt or "").strip(),
-                            api_key=self._deepinfra_api_key,
-                        )
-                        logged_model = DEEPINFRA_FLUX2_DEV_MODEL
+                    elif _is_flux2_dev_model(active_model):
+                        # Production LOFI path: Together.ai FLUX.2-dev directly.
+                        neg = (negative_prompt or "").strip()
+                        if neg:
+                            gen_kwargs["negative_prompt"] = neg
+                        if guidance_scale is not None:
+                            gen_kwargs["guidance_scale"] = float(guidance_scale)
+                        try:
+                            response = self._ensure_together_client().images.generate(
+                                **gen_kwargs
+                            )
+                        except TypeError:
+                            gen_kwargs.pop("negative_prompt", None)
+                            gen_kwargs.pop("guidance_scale", None)
+                            response = self._ensure_together_client().images.generate(
+                                **gen_kwargs
+                            )
+                        logged_model = active_model
                     else:
                         # Together.ai FLUX.1-dev / LoRA (unchanged request structure)
                         if skip_mandatory_negative:

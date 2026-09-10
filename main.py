@@ -2970,6 +2970,7 @@ def _produce_variant_worker(
                         domain_anchors=str(
                             (_topic_lock or {}).get("domain_anchors") or ""
                         ),
+                        prefer_stem=stem,
                     )
                 else:
                     img_path_display = adapter.generate(
@@ -3123,6 +3124,7 @@ def _produce_variant_worker(
                     domain_anchors=str(
                         (_slide_lock or {}).get("domain_anchors") or ""
                     ),
+                    prefer_stem=stem,
                 )
                 _carousel_image_paths.append(str(_slide_img))
                 _images_generated_this_variant += _track_adapter_image(cost_tracker, adapter)
@@ -4078,6 +4080,7 @@ def _produce_variant_worker(
                         },
                         banned_subjects=locals().get("_act_banned") or None,
                         domain_anchors=str(locals().get("_act_anchors") or ""),
+                        prefer_stem=stem,
                     )
                 else:
                     _sr_act_jobs[_act_i] = functools.partial(
@@ -7312,8 +7315,7 @@ def cli() -> None:
         metavar="MODULE",
         help=(
             "ECONOMIC_REEL_LOFI only: RAG theme namespace. "
-            "relationship (default) for wonder_feed + momma_circle; "
-            "parenting only for momma_circle."
+            "relationship (default) or parenting for wonder_feed + momma_circle."
         ),
     )
     parser.add_argument(
@@ -7333,10 +7335,11 @@ def cli() -> None:
     parser.add_argument(
         "--lofi-mode",
         dest="lofi_mode",
-        choices=["theme", "quote", "paraphrase"],
-        default="paraphrase",
+        choices=["emotional", "theme", "quote", "paraphrase"],
+        default="emotional",
         help=(
-            "ECONOMIC_REEL_LOFI writer mode (default: paraphrase). "
+            "ECONOMIC_REEL_LOFI writer mode (default: emotional). "
+            "emotional creates original micro-philosophical storytelling; "
             "theme explicitly selects the slower current composer; "
             "quote develops --lofi-seed-quote as a parable; paraphrase lightly "
             "rewords one aphorism-bank entry."
@@ -7348,6 +7351,16 @@ def cli() -> None:
         default=None,
         metavar="TEXT",
         help="ECONOMIC_REEL_LOFI --lofi-mode quote: concept to develop.",
+    )
+    parser.add_argument(
+        "--lofi-image-provider",
+        dest="lofi_image_provider",
+        choices=["together", "gemini"],
+        default="together",
+        help=(
+            "ECONOMIC_REEL_LOFI image provider (default: together). "
+            "gemini uses the Google Gemini Flash Image fallback chain."
+        ),
     )
     parser.add_argument(
         "--lofi-aphorism-id",
@@ -7410,8 +7423,8 @@ def cli() -> None:
         default=False,
         help=(
             "ECONOMIC_REEL_LOFI: auto-pass Gate 1 (script) and Gate 2 "
-            "(assembled prompts after Stage 3). Default is "
-            "review_required=true — the run holds before any image or TTS cost."
+            "(assembled prompts after Stage 3). Default is review_required=true: "
+            "Gate 1 holds before TTS; Gate 2 holds before image generation."
         ),
     )
     parser.add_argument(
@@ -8051,14 +8064,18 @@ def cli() -> None:
         # caption/image chains, especially on --script-only where no image
         # provider is used at all.
         planned_models = PlannedModels(
-            image_primary_id="black-forest-labs/FLUX.1-schnell",
+            image_primary_id=(
+                "models/gemini-3.1-flash-image"
+                if getattr(args, "lofi_image_provider", "together") == "gemini"
+                else "black-forest-labs/FLUX.1-schnell"
+            ),
             research_primary_id=(
                 "lofi-writer-runtime"
                 if not getattr(args, "script_only", False)
                 else "lofi-script-only"
             ),
             humanizer_summary=(
-                f"LOFI writer mode `{getattr(args, 'lofi_mode', 'paraphrase')}`"
+                f"LOFI writer mode `{getattr(args, 'lofi_mode', 'emotional')}`"
             ),
         )
     else:
@@ -8099,8 +8116,14 @@ def cli() -> None:
                 f"[bootstrap] MODEL_API_FLOW (global env preset, NOT used for "
                 f"ECONOMIC_REEL_LOFI images) | {_flow_for_log.summary_line()}"
             )
+            _lofi_provider = getattr(args, "lofi_image_provider", "together")
             _lofi_flux = str(os.environ.get("LOFI_FLUX_BACKEND") or "schnell").strip()
-            if _lofi_flux.lower() in {
+            if _lofi_provider == "gemini":
+                print(
+                    "[bootstrap] ECONOMIC_REEL_LOFI image provider | "
+                    "google / Gemini Flash Image chain / no reference image"
+                )
+            elif _lofi_flux.lower() in {
                 "flux2",
                 "flux2-dev",
                 "flux.2-dev",
@@ -8151,6 +8174,7 @@ def cli() -> None:
                 _preview = run_lofi_test_preview(
                     page_id=page_id,
                     prompt=getattr(args, "prompt", None),
+                    image_provider=getattr(args, "lofi_image_provider", "together"),
                 )
                 print(f"\n[ECONOMIC_REEL_LOFI test-preview] {_preview.get('output_png')}")
             except Exception as prev_exc:  # noqa: BLE001
@@ -8184,9 +8208,10 @@ def cli() -> None:
                 module=_lofi_module,
                 theme=getattr(args, "lofi_theme", None),
                 subtheme=getattr(args, "lofi_subtheme", None),
-                writer_mode=getattr(args, "lofi_mode", "paraphrase"),
+                writer_mode=getattr(args, "lofi_mode", "emotional"),
                 seed_quote=getattr(args, "lofi_seed_quote", None),
                 aphorism_id=getattr(args, "lofi_aphorism_id", None),
+                image_provider=getattr(args, "lofi_image_provider", "together"),
                 script_only=bool(getattr(args, "script_only", False)),
                 stills_only=bool(getattr(args, "stills_only", False)),
                 locked_scripts=getattr(args, "lofi_scripts", None),

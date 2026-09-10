@@ -113,6 +113,7 @@ _VISUAL_STRIP_KEYS = (
     "setting",
     "key_object",
     "visual_prompt",
+    "final_positive_prompt",
     "visual_anchor_hint",
     "atmosphere_place",
     "atmosphere_mood",
@@ -447,30 +448,74 @@ def _fallback_concept(
     index: int,
 ) -> dict[str, Any]:
     text = str(row.get("text") or row.get("beat_text") or "").strip()
-    noun = preferred_concrete_noun(text) or str(episode_state.get("motif") or "").strip()
-    place = str(episode_state.get("place") or "").strip() or "a quiet indoor room at night"
-    if index == 0 and noun:
-        # First beat may name the place implicitly; keep it generic, not a world table.
-        place = place
-    framing = "full_scene"
-    subject = "silhouette"
-    setting = place
-    concept = (
-        f"One clear subject: {noun or 'a quiet figure'} in {place}."
+    motif = str(episode_state.get("motif") or "").strip()
+    vibe = str(episode_state.get("mood") or "melancholic reflection").strip()
+    scenes = (
+        {
+            "setting": "a small table beside a rain-softened window at blue hour",
+            "key_object": "untouched coffee cup",
+            "subject_type": "object_focus",
+            "framing": "macro_no_setting",
+            "time_of_day": "blue hour",
+            "lighting_condition": "rainy_grey",
+            "scene": "An untouched coffee cup rests on a small table beside rain-softened glass. Blue-grey evening light and generous negative space hold the quiet.",
+            "licensed": ["coffee cup", "window", "rain"],
+        },
+        {
+            "setting": "an autumn park path at dusk",
+            "key_object": "fallen leaves",
+            "subject_type": "couple",
+            "framing": "full_scene",
+            "time_of_day": "dusk",
+            "lighting_condition": "overcast_daylight",
+            "scene": "Two distant figures walk apart along an autumn park path. Fallen leaves and muted air make their emotional distance visible.",
+            "licensed": ["fallen leaves"],
+        },
+        {
+            "setting": "an empty street beneath one streetlight",
+            "key_object": "streetlight",
+            "subject_type": "silhouette",
+            "framing": "full_scene",
+            "time_of_day": "night",
+            "lighting_condition": "blue_hour_streetlight",
+            "scene": "A lone silhouette pauses beneath one streetlight on an empty street. The surrounding darkness feels spacious rather than threatening.",
+            "licensed": ["streetlight"],
+        },
+        {
+            "setting": "a dim, quiet room in late evening",
+            "key_object": "empty chair",
+            "subject_type": "silhouette",
+            "framing": "full_scene",
+            "time_of_day": "late evening",
+            "lighting_condition": "indoor_lamp_glow",
+            "scene": "A quiet figure sits near an empty chair in a dim room. Warm low light meets deep shadow with restrained tenderness.",
+            "licensed": ["empty chair"],
+        },
     )
+    picked = dict(scenes[index % len(scenes)])
+    if motif and line_requires_spoken_motif(text, motif):
+        picked["key_object"] = motif
+        picked["licensed"] = [motif]
+        picked["scene"] = (
+            f"A quiet figure holds the recognizable {motif} in lowered hands. "
+            "Muted light and open negative space carry the unresolved feeling."
+        )
     return {
-        "visual_concept": concept,
-        "scene_description": concept,
-        "setting": setting,
-        "key_object": noun or "blank wall",
-        "subject_type": subject,
-        "framing": framing,
-        "time_of_day": str(episode_state.get("time") or "night"),
-        "lighting_condition": str(episode_state.get("light") or "indoor_lamp_glow"),
-        "episode_place": place,
+        "meaning": vibe,
+        "beat_mood": vibe,
+        "emotional_temperature": "cool_melancholic",
+        "visual_concept": picked["scene"],
+        "scene_description": picked["scene"],
+        "setting": picked["setting"],
+        "key_object": picked["key_object"],
+        "subject_type": picked["subject_type"],
+        "framing": picked["framing"],
+        "time_of_day": picked["time_of_day"],
+        "lighting_condition": picked["lighting_condition"],
+        "episode_place": picked["setting"],
         "not_in_frame": [],
-        "licensed_objects": [noun] if noun else [],
-        "source": "fallback",
+        "licensed_objects": picked["licensed"],
+        "source": "atmospheric_fallback",
     }
 
 
@@ -511,6 +556,11 @@ def _apply_concept(row: dict[str, Any], concept: dict[str, Any]) -> None:
     if not meaning:
         meaning = str(row.get("visual_concept") or spoken[:80]).strip()
     row["meaning"] = meaning
+    row["beat_mood"] = str(concept.get("beat_mood") or meaning).strip()
+    row["emotional_temperature"] = str(
+        concept.get("emotional_temperature") or "melancholic"
+    ).strip()
+    row["visual_source"] = str(concept.get("source") or "").strip()
     row["shot_type"] = beat_shot_type(row)
     dissolve = str(concept.get("dissolve_element") or "").strip()
     if dissolve:
@@ -538,11 +588,18 @@ def translate_episode_visuals(
     if lines:
         lines[0]["episode_theme"] = str(script.get("theme") or "")
         lines[0]["episode_thesis"] = str(script.get("thesis") or "")
+    episode_vibe = " / ".join(
+        p for p in (
+            str(script.get("theme") or "").replace("_", " "),
+            str(script.get("subtheme") or "").replace("_", " "),
+            str(script.get("human_situation") or ""),
+        ) if p
+    ) or "melancholic emotional reflection"
     episode_state: dict[str, Any] = {
         "place": "",
         "time": "night",
         "light": "indoor_lamp_glow",
-        "mood": "",
+        "mood": episode_vibe,
         "motif": "",
         "figure": "",
     }
@@ -596,7 +653,9 @@ def translate_episode_visuals(
                 )
         prompt = (
             "Return STRICT JSON only with keys: meaning (one short clause: "
-            "what this image represents), visual_concept (plain-English "
+            "what this image emotionally represents), beat_mood (a concise "
+            "atmospheric feeling), emotional_temperature (warm|cool|mixed), "
+            "visual_concept (plain-English "
             "one or two complete sentences), scene_description "
             "(one coherent complete-sentence paragraph), setting, key_object, "
             "subject_type (woman|man|couple|silhouette|object_focus), "
@@ -606,6 +665,8 @@ def translate_episode_visuals(
             "morning_cool|rainy_grey|sunset_doorway), episode_place, "
             "licensed_objects (array of nouns this beat may show).\n"
             f"{prior}\n"
+            f"Episode emotional spine: {episode_vibe!r}\n"
+            f"Full narration for tonal context: {str(script.get('monologue') or '')!r}\n"
             f"Spoken beat {i + 1}/{len(lines)}: {text!r}\n"
             "SETTING FIRST: choose setting, then write scene_description "
             "entirely in that place. Never write a scene for one room and "
@@ -629,8 +690,13 @@ def translate_episode_visuals(
             "Do not compose any text-bearing object: no posters, signs, "
             "letters, newspapers, book pages, captions, or cursive. Wall "
             "frames are blank abstract color. Objects are unmarked.\n"
-            "NARRATIVE FIRST: represent THIS line's meaning — literally or "
-            "metaphorically. One clear subject per beat. Stay in flat "
+            "MOOD FIRST: do not illustrate the spoken sentence word-for-word. "
+            "Choose an evocative scene whose atmosphere, distance, light, and "
+            "gesture emotionally rhyme with this beat and the episode as a whole. "
+            "Useful vocabulary includes an untouched coffee cup near rainy glass, "
+            "distant figures in an autumn park, a lone silhouette beneath a "
+            "streetlight, or a dim quiet room; vary these rather than copying them. "
+            "One clear subject per beat. Stay in flat "
             "illustration language: no photoreal camera wording. Complete "
             "affirmative sentences only — never write 'no', 'not', 'never', "
             "or fragments like 'He does, but…'. "
@@ -651,8 +717,9 @@ def translate_episode_visuals(
             result = complete_script(
                 prompt,
                 system=(
-                    "You translate spoken reel beats into visual concepts. "
-                    "Output STRICT JSON only. Prefer metaphor when it fits. "
+                    "You are an atmospheric visual director. Translate emotional "
+                    "movement into evocative mood, not literal text-to-image nouns. "
+                    "Output STRICT JSON only. Prefer visual resonance over illustration. "
                     "No photoreal camera language."
                 ),
                 provider="gemini",
