@@ -15,7 +15,7 @@ import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -3063,16 +3063,71 @@ def _load_locked_script(path: Path | str) -> dict[str, Any]:
     return script
 
 
-def _purge_stale_temp_voice_files(run_dir: Path) -> list[Path]:
-    """Remove legacy temporary VO files before the one-master-track assembly."""
+_RUN_AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".ogg"}
+
+
+def _purge_stale_temp_voice_files(
+    run_dir: Path,
+    *,
+    keep_names: set[str] | None = None,
+) -> list[Path]:
+    """Remove leftover VO/cache audio so only this run's scene files can mix.
+
+    Never used to *discover* mix inputs. Assembly reads
+    ``vo_scene_01.mp3`` … ``vo_scene_NN.mp3`` explicitly.
+    """
+    target = Path(run_dir)
+    if not target.is_dir():
+        return []
     removed: list[Path] = []
-    for path in sorted(run_dir.glob("temp_voice*.mp3")):
-        if path.is_file():
-            path.unlink()
-            removed.append(path)
+    keep = {str(name) for name in (keep_names or set())}
+    for path in sorted(target.iterdir()):
+        if not path.is_file():
+            continue
+        name = path.name
+        low = name.lower()
+        stale = (
+            low.startswith("temp_voice")
+            or low.startswith("temp_audio")
+            or "temp_mpy" in low
+        )
+        is_vo_scene = bool(re.fullmatch(r"vo_scene_\d{2}\.mp3", name, flags=re.I))
+        leftover = path.suffix.lower() in _RUN_AUDIO_SUFFIXES and not is_vo_scene
+        extra_scene = bool(keep) and is_vo_scene and name not in keep
+        if not (stale or leftover or extra_scene):
+            continue
+        path.unlink()
+        removed.append(path)
     if removed:
         print(f"[LOFI audio] purged stale temp voice files={len(removed)}")
     return removed
+
+
+def _current_run_scene_audio_paths(
+    run_dir: Path,
+    n_beats: int,
+    voice_paths: Sequence[Path | None] | None = None,
+) -> list[Path | None]:
+    """Return this run's ``vo_scene_01..N`` paths only. Never glob ``*.mp3``."""
+    resolved: list[Path | None] = []
+    root = Path(run_dir)
+    declared = list(voice_paths or [])
+    for i in range(max(0, int(n_beats))):
+        canonical = root / f"vo_scene_{i + 1:02d}.mp3"
+        prior = declared[i] if i < len(declared) and declared[i] else None
+        prior_path = Path(prior) if prior else None
+        if canonical.is_file():
+            resolved.append(canonical)
+            continue
+        if (
+            prior_path is not None
+            and prior_path.is_file()
+            and prior_path.name == canonical.name
+        ):
+            resolved.append(prior_path)
+            continue
+        resolved.append(None)
+    return resolved
 
 
 def _stamp_assembled_negatives(lines: list[dict[str, Any]]) -> None:
@@ -3630,6 +3685,15 @@ def _produce_one(
         from core.economic_reel_lofi.voiceover import ensure_script_voiceover
 
         ensure_script_voiceover(pipe_state, script, run_dir)
+        n_vo = len([r for r in (script.get("lines") or []) if isinstance(r, dict)])
+        canon_vo = _current_run_scene_audio_paths(
+            run_dir, n_vo, pipe_state.get("voice_paths")
+        )
+        pipe_state["voice_paths"] = [str(p) if p else None for p in canon_vo]
+        _purge_stale_temp_voice_files(
+            run_dir,
+            keep_names={p.name for p in canon_vo if p is not None},
+        )
         pipe_state["stage_completed"] = max(
             float(pipe_state.get("stage_completed") or 1), 1.5
         )
@@ -4448,6 +4512,11 @@ def _produce_one(
         )
         if _integrity:
             raise ShipGateError("; ".join(_integrity))
+        voice_paths = _current_run_scene_audio_paths(run_dir, n_beats, voice_paths)
+        _purge_stale_temp_voice_files(
+            run_dir,
+            keep_names={p.name for p in voice_paths if p is not None},
+        )
         assemble_audit: dict[str, Any] = {}
         assemble_lofi_reel(
             scene_paths,

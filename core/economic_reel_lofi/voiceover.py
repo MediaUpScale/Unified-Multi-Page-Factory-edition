@@ -33,6 +33,10 @@ def ensure_script_voiceover(
     lines = [row for row in (script.get("lines") or []) if isinstance(row, dict)]
     target = Path(work_dir)
     target.mkdir(parents=True, exist_ok=True)
+    from core.economic_reel_lofi.pipeline import _purge_stale_temp_voice_files
+
+    keep_names = {f"vo_scene_{i + 1:02d}.mp3" for i in range(len(lines))}
+    _purge_stale_temp_voice_files(target, keep_names=keep_names)
     old_paths = list(state.get("voice_paths") or [])
     old_timings = list(state.get("word_timings_per_scene") or [])
     old_fingerprints = list(state.get("voice_fingerprints") or [])
@@ -50,14 +54,15 @@ def ensure_script_voiceover(
         caption = str(row.get("text") or "")
         scene_speed = max(0.95, normal_speed) if i == 0 else normal_speed
         fp = _fingerprint(caption, speed=scene_speed)
+        out = target / f"vo_scene_{i + 1:02d}.mp3"
         prior = Path(str(old_paths[i])) if i < len(old_paths) and old_paths[i] else None
         reusable = bool(
-            prior
-            and prior.is_file()
+            out.is_file()
+            and prior is not None
+            and prior.resolve() == out.resolve()
             and i < len(old_fingerprints)
             and str(old_fingerprints[i]) == fp
         )
-        out = prior if reusable else target / f"vo_scene_{i + 1:02d}.mp3"
         timing = old_timings[i] if reusable and i < len(old_timings) else None
 
         def generate(text: str) -> tuple[Path, list[tuple[str, float, float]]]:

@@ -29,6 +29,43 @@ _LOG = logging.getLogger(__name__)
 _CAPTION_WORD_RE = re.compile(r"[A-Za-z0-9']+")
 
 
+def _visual_only(clip: Any):
+    """Strip every audio handle from a visual clip. Echo-safe."""
+    silent = clip.without_audio() if hasattr(clip, "without_audio") else clip
+    try:
+        silent.audio = None
+    except Exception:  # noqa: BLE001
+        pass
+    return silent
+
+
+def _purge_moviepy_temp_audio() -> list[Path]:
+    """Drop leftover MoviePy mux files so a prior encode cannot be remixed."""
+    root = Path(moviepy_temp_audio_dir())
+    if not root.is_dir():
+        return []
+    removed: list[Path] = []
+    for path in sorted(root.iterdir()):
+        if not path.is_file():
+            continue
+        low = path.name.lower()
+        if "temp_mpy" not in low and path.suffix.lower() not in {
+            ".mp3",
+            ".m4a",
+            ".aac",
+            ".wav",
+        }:
+            continue
+        try:
+            path.unlink()
+            removed.append(path)
+        except OSError:
+            continue
+    if removed:
+        print(f"[LOFI audio] purged moviepy temp audio files={len(removed)}")
+    return removed
+
+
 def _caption_words(text: str) -> list[str]:
     return _CAPTION_WORD_RE.findall(text or "")
 
@@ -706,22 +743,51 @@ def apply_dust_overlay_screen(
     return np.clip(out * 255.0, 0, 255).astype(np.uint8)
 
 
+_BGM_DUMP_NAME_RE = re.compile(
+    str(getattr(lofi_cfg, "BGM_DENY_NAME_RE", r"^\d{3,8}(\(\d+\))?$")),
+    re.I,
+)
+
+
+def is_verified_instrumental_bgm(path: Path | str) -> bool:
+    """True only for pure instrumental library beds — never reference-reel rips."""
+    p = Path(path)
+    if p.suffix.lower() != ".mp3":
+        return False
+    parts_l = {part.lower() for part in p.parts}
+    quarantine = str(
+        getattr(lofi_cfg, "BGM_QUARANTINE_DIRNAME", "_quarantine_vocals")
+    ).lower()
+    if quarantine in parts_l:
+        return False
+    stem = p.stem
+    if _BGM_DUMP_NAME_RE.match(stem):
+        return False
+    low = p.name.lower()
+    exclude = tuple(getattr(lofi_cfg, "BGM_EXCLUDE_PREFIXES", ("lofi_bed",)))
+    if any(low.startswith(pref.lower()) for pref in exclude):
+        return False
+    denied = tuple(getattr(lofi_cfg, "BGM_DENY_SUBSTRINGS", ()))
+    if any(token in low for token in denied):
+        return False
+    return True
+
+
 def list_library_bgm_tracks(engine_root: Path) -> list[Path]:
-    """Library BGM from wonder_feed/audio/bgm — excludes generated lofi_bed* files."""
+    """Library BGM from wonder_feed/audio/bgm — instrumentals only."""
     bgm_dir = Path(engine_root) / str(
         getattr(lofi_cfg, "BGM_DIR_REL", "channels_config/wonder_feed/audio/bgm")
     )
     if not bgm_dir.is_dir():
         return []
-    exclude = tuple(
-        getattr(lofi_cfg, "BGM_EXCLUDE_PREFIXES", ("lofi_bed",))
-    )
     out: list[Path] = []
     for p in sorted(bgm_dir.glob("*.mp3")):
-        if not p.is_file() or p.stat().st_size < 1000:
+        if not is_verified_instrumental_bgm(p):
             continue
-        name = p.name.lower()
-        if any(name.startswith(pref.lower()) for pref in exclude):
+        try:
+            if not p.is_file() or p.stat().st_size < 1000:
+                continue
+        except OSError:
             continue
         out.append(p)
     return out
@@ -1658,7 +1724,7 @@ def assemble_lofi_reel(
 
             ov_path = ensure_dust_overlay_asset(Path(engine_root))
             overlay_source_path = str(ov_path)
-            overlay_clip = _VFC(str(ov_path))
+            overlay_clip = _VFC(str(ov_path), audio=False)
             ov_dur = float(overlay_clip.duration or 1.0)
             overlay_fps = float(overlay_clip.fps or lofi_cfg.REEL_FPS)
             overlay_start = 0.0
@@ -1822,24 +1888,29 @@ def assemble_lofi_reel(
         clip = VideoClip(frame_function=_make_frame, duration=float(this_dur))
         # Scene clips are visual-only. Narration is attached exactly once as
         # the master VO mix after concatenation.
-        clip = clip.without_audio().with_fps(lofi_cfg.REEL_FPS)
+        clip = _visual_only(clip.with_fps(lofi_cfg.REEL_FPS))
         clips.append(clip)
 
-    final = concatenate_videoclips(clips, method="compose").without_audio()
+    processed_image_clips = [_visual_only(clip) for clip in clips]
+    clips = processed_image_clips
+    final = _visual_only(concatenate_videoclips(processed_image_clips, method="compose"))
     total_dur = float(final.duration or sum(scene_durs))
 
-    # ── Audio: per-scene VO (padded to scene_duration) + library BGM ─────────
+    # ── Audio: current-run scene VO only + one BGM layer, mixed once ─────────
+    # Never glob *.mp3 — only the ordered voice_paths from this run.
     audio_clips_to_close: list[Any] = []
     mixed = None
     vo_parts: list[Any] = []
     gap_windows: list[tuple[float, float]] = []
-    if voice_paths:
-        present = [
-            i for i, vp in enumerate(voice_paths) if vp is not None and Path(vp).is_file()
-        ]
+    scene_voice_paths = [
+        Path(vp) if vp is not None and Path(vp).is_file() else None
+        for vp in (voice_paths or [])
+    ]
+    if any(vp is not None for vp in scene_voice_paths):
+        present = [i for i, vp in enumerate(scene_voice_paths) if vp is not None]
         last_present = present[-1] if present else -1
         t_cursor = 0.0
-        for idx, vp in enumerate(voice_paths):
+        for idx, vp in enumerate(scene_voice_paths):
             if vp is None or not Path(vp).is_file():
                 slot = float(
                     scene_durs[idx] if idx < len(scene_durs) else scene_duration_s
@@ -1896,6 +1967,16 @@ def assemble_lofi_reel(
         engine_root,
         seed=int(hashlib.md5(str(output_mp4).encode("utf-8")).hexdigest()[:8], 16),
     )
+    if bgm is not None and not is_verified_instrumental_bgm(bgm):
+        print(
+            f"[LOFI assemble] REJECT contaminated BGM {Path(bgm).name} "
+            "— picking verified instrumental"
+        )
+        bgm = pick_library_bgm(
+            engine_root,
+            seed=int(hashlib.md5(str(output_mp4).encode("utf-8")).hexdigest()[:8], 16)
+            ^ 0xA5A5,
+        )
     bac = None
     vo_full = None
     if vo_parts:
@@ -2049,6 +2130,7 @@ def assemble_lofi_reel(
 
     output_mp4 = Path(output_mp4)
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
+    _purge_moviepy_temp_audio()
     try:
         final.write_videofile(
             str(output_mp4),

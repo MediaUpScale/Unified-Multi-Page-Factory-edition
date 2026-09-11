@@ -230,15 +230,18 @@
     "concrete_details": [
       {
         "detail": "a folded blanket on the sofa",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-10"
       },
       {
         "detail": "an open doorway with no one in it",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-10"
       },
       {
         "detail": "a child's drawing held up to the lamp",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-10"
       },
       {
         "detail": "the sofa cushion pulled close",

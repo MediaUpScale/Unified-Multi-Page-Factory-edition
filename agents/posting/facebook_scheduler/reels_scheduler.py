@@ -24,7 +24,7 @@ Usage
 
     # Any folder of MP4s (captions from <folder>/asset_library.json)
     python -m facebook_scheduler.reels_scheduler --folder "D:/clips" --dry-run
-    python -m facebook_scheduler.reels_scheduler --folder "D:/clips"
+    python -m facebook_scheduler.reels_scheduler --folder "D:/clips" --modelCTA
 
     # Live schedule (attach to Dolphin CDP / running Business Suite tab)
     python -m facebook_scheduler.reels_scheduler --channel master_mei
@@ -193,6 +193,15 @@ class ReelsScheduler(UniversalComposerScheduler):
 # CLI
 # ===========================================================================
 
+def _parse_bool(value: str) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"expected true/false, got {value!r}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="reels_scheduler",
@@ -242,6 +251,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Keep files in place after success (still write facebook_history.json).",
     )
+    ap.add_argument(
+        "--modelCTA",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_parse_bool,
+        metavar="TRUE",
+        dest="model_cta",
+        help=(
+            "If <folder>/asset_library.json is missing, create one with the "
+            "LADA model CTA pool. Example: --modelCTA or --modelCTA true"
+        ),
+    )
     return ap
 
 
@@ -268,6 +290,20 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     queue = _build_queue(args)
+    if args.model_cta:
+        if not args.folder:
+            _log.warning("--modelCTA only applies with --folder; ignoring.")
+        else:
+            created = queue.ensure_model_cta_library()
+            if created:
+                print(f"[reels_scheduler] wrote model CTA library -> {created}")
+            else:
+                print(
+                    "[reels_scheduler] --modelCTA: existing library kept "
+                    f"({queue.asset_library_path})"
+                    if queue.asset_library_path.is_file()
+                    else "[reels_scheduler] --modelCTA: no library written"
+                )
     pending = queue.scan_pending(format_type="reel")
     if args.max is not None:
         pending = pending[: max(0, args.max)]

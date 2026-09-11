@@ -951,7 +951,17 @@ DUST_PARTICLE_COUNT: int = 48
 DUST_PARTICLE_OPACITY: float = 0.12
 # Library BGM — random pick, trimmed to clip length (no generated beds)
 BGM_DIR_REL: str = "channels_config/wonder_feed/audio/bgm"
-BGM_VOLUME: float = 0.38  # fader while VO is playing (the under-dialogue bed)
+BGM_QUARANTINE_DIRNAME: str = "_quarantine_vocals"
+# Dump-named reference rips (0816.MP3) and leftover beds stay out of the pool.
+BGM_DENY_NAME_RE: str = r"^\d{3,8}(\(\d+\))?$"
+BGM_DENY_SUBSTRINGS: tuple[str, ...] = (
+    "reference",
+    "voiceover",
+    "narration",
+    "reel_full",
+    "let_them",
+)
+BGM_VOLUME: float = 0.12  # instrumental bed only; never a second voice layer
 # Gap gain is measured from that live bed vs mid-speech mix RMS — not from
 # this fader. Target: gap mix sits ~10 dB below mid-speech mix (band 8–12).
 BGM_GAP_VS_SPEECH_DB: float = 10.0

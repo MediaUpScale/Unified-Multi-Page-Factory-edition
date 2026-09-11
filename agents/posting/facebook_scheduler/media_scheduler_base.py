@@ -30,7 +30,7 @@ import time
 import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -323,6 +323,75 @@ class LocalMediaQueue:
             allow_stem_fallback=allow_stem_fallback,
             interval_hours=interval_hours,
         )
+
+    def ensure_model_cta_library(self) -> Path | None:
+        """
+        Write a LADA-style ``asset_library.json`` when the folder has none.
+
+        Rotates ``config.MODEL_CTA_CAPTIONS`` across every pending ``.mp4``.
+        Existing libraries are never overwritten. Returns the path written,
+        or ``None`` when the file already existed / no videos were found.
+        """
+        dest = Path(self.asset_library_path)
+        if dest.is_file():
+            _log.info(
+                "asset_library.json already present — --modelCTA left it untouched: %s",
+                dest,
+            )
+            return None
+
+        videos = sorted(
+            p
+            for p in self.media_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in self.extensions
+        )
+        captions = list(getattr(config, "MODEL_CTA_CAPTIONS", []) or [])
+        default = str(
+            getattr(config, "MODEL_CTA_DEFAULT", "") or (captions[0] if captions else "")
+        ).strip()
+        if not captions and default:
+            captions = [default]
+        if not captions:
+            _log.warning("MODEL_CTA_CAPTIONS empty — skipped library write.")
+            return None
+        if not videos:
+            _log.warning("No videos in %s — skipped model CTA library.", self.media_dir)
+            return None
+
+        assets: list[dict[str, str]] = []
+        for i, video in enumerate(videos):
+            caption = captions[i % len(captions)]
+            assets.append(
+                {
+                    "video_path": video.name,
+                    "local_path": video.name,
+                    "facebook_caption": caption,
+                    "caption": caption,
+                    "description": caption,
+                    "post_type": "REEL",
+                    "asset_kind": "video",
+                }
+            )
+        payload = {
+            "schema_version": "1.0",
+            "folder": str(self.media_dir),
+            "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "default_caption": default or captions[0],
+            "captions": captions,
+            "assets": assets,
+        }
+        dest.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self._metadata_by_filename = None
+        _log.info(
+            "Wrote model CTA library (%d video(s), %d caption variant(s)) -> %s",
+            len(assets),
+            len(captions),
+            dest,
+        )
+        return dest
 
     # ------------------------------------------------------------------
     # History I/O

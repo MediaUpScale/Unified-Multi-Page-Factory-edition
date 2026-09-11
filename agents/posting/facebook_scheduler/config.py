@@ -59,6 +59,24 @@ REELS_JITTER_MIN_MINUTES: int = 10
 REELS_JITTER_MAX_MINUTES: int = 30
 REELS_MIN_LEAD_MINUTES: int = 25
 
+# Loose-folder model CTAs (--modelCTA). Same pool used for LADA Processed.
+# Written into <folder>/asset_library.json only when that file is missing.
+MODEL_CTA_DEFAULT: str = "link in bio for more fun 😋"
+MODEL_CTA_CAPTIONS: list[str] = [
+    "link in bio for more fun 😋",
+    "link in bio for more fun 😉",
+    "link in the bio for more fun 😋",
+    "link in bio for more fun 😘",
+    "more fun waiting in the bio 😋",
+    "link in bio if you want more fun 😋",
+    "fun’s in the bio 😋",
+    "link in bio for more fun",
+    "link in bio — more fun 😋",
+    "link in bio for more fun 😋✨",
+    "the fun’s in the bio 😋",
+    "link in bio for more fun 😋",
+]
+
 # ---------------------------------------------------------------------------
 # Playwright / browser connection
 # ---------------------------------------------------------------------------

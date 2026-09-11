@@ -59,60 +59,32 @@ STYLE = StyleConfig(
     lora_trigger="",
     width=720,
     height=1280,
-    open="A risograph print close up illustration in vintage poster style.",
+    open="A rich risograph print illustration in vintage graphic novel poster style.",
     technique=(
-        "Bold flat gouache color blocks, fine hand-inked linework, and "
-        "paper-grain halftone with hard-edged color shading. Paper grain. "
-        "Visible canvas grain and heavy brush texture. Matte finish."
+        "Atmospheric painterly gouache, fine ink linework, visible paper tooth, "
+        "and screenprint halftone. Deep chiaroscuro shadows and glowing golden rim light. Full-bleed edge-to-edge."
     ),
-    mood="Evoking a quiet, sorrowful mood and poetic longing.",
-    format="Illustration, vertical 9:16 full-bleed composition, edge-to-edge frame.",
-    linework_guard=(
-        "fine black ink outlines, textured paper grain, hard-edged color "
-        "planes, gouache texture"
-    ),
-    exposure_guard=(
-        "even midtone exposure, hard-edged color planes, warm luminous ambient light"
-    ),
+    mood="Evoking deep poetic melancholy and cinematic stillness.",
+    format="Vertical 9:16 full-bleed composition, no borders, no margins.",
+    linework_guard="expressive ink contours, paper grain texture, rim-lit silhouettes, painterly shading",
+    exposure_guard="deep atmospheric shadows, luminous warm lanterns and sunset backlight",
     style_negative=(
-        "border, white border, frame, picture frame, margin, matting, paper edge, "
-        "letterbox, neon, cyberpunk, searchlights, 3d render, photorealistic, cgi, "
-        "dslr, deformed hands, extra fingers, bad anatomy, text, watermark, logo, "
-        "glossy, shiny"
+        "photorealistic, photograph, 3d render, cgi, dslr, realistic skin, smooth digital airbrush, "
+        "barefoot, bare feet, deformed feet, extra toes, deformed hands, extra fingers, "
+        "flat vector, corporate clipart, sticker, 2d flash, "
+        "border, white border, frame, margin, text, watermark, logo"
     ),
     palettes={
-        "WARM": (
-            "Nostalgic warm color palette dominated by dusty rose, warm amber "
-            "highlights, terracotta, soft cream paper tones, and golden hour "
-            "sunset hues."
-        ),
-        "COLD": (
-            "Atmospheric twilight palette dominated by deep muted cobalt blue, "
-            "pale slate grey, and soft amber lamplight contrast."
-        ),
-        "CONTRAST": (
-            "Contrasting color palette dominated by warm glowing orange-amber "
-            "sun disc and lantern light against deep indigo shadows."
-        ),
+        "WARM": "Nostalgic warm palette: dusty rose, burnt orange, golden hour sunset, rich amber.",
+        "COLD": "Atmospheric twilight palette: deep cobalt blue, pale slate grey, warm tungsten accents.",
+        "CONTRAST": "High-contrast palette: blazing orange-amber sun against deep indigo shadows.",
     },
     palette_by_arc={"act1": "WARM", "act2": "COLD", "act3": "CONTRAST"},
     characters={
-        "woman": (
-            "a beautiful melancholic woman with dark hair, quiet expression, "
-            "fine ink contours, vintage gouache illustration"
-        ),
-        "man": (
-            "a quiet thoughtful man in a coat, dark hair, subtle melancholy, "
-            "vintage illustration"
-        ),
-        "couple": (
-            "a man and a woman walking together down a narrow warm alley or "
-            "standing quietly, not a close portrait"
-        ),
-        "silhouette": (
-            "a lone silhouetted figure, featureless against a massive glowing "
-            "sunset sun disc or warm open doorway"
-        ),
+        "woman": "melancholic woman, dark hair, vintage boots, fine ink lines, rim-lit silhouette",
+        "man": "thoughtful man in long coat, dark hair, dramatic silhouette",
+        "couple": "a man and woman walking down a warm alley or standing apart, rim-lit silhouettes",
+        "silhouette": "striking graphic silhouette with golden rim lighting against open glowing doorway or sun disc",
     },
     warm_sunset_doorway=0.10,
     warm_indoor_lamp=0.04,
@@ -136,11 +108,11 @@ def as_profile_dict(style: StyleConfig | None = None) -> dict[str, Any]:
         "guards": {
             "saturation": "Keep colors saturated and printed.",
             "text_legibility": (
-                "Every mark anywhere in this image is ink linework, "
-                "halftone texture, or flat printed color. This includes "
-                "skin, clothing, hair, background, paper, signs, screens, and "
-                "all four corners of the frame. The illustration fills the "
-                "frame edge to edge with scene content."
+                "Printed illustration only — not a photograph, not CGI, not "
+                "flat vector clipart. Every mark is ink linework, painterly "
+                "gouache, or screenprint halftone. This includes skin, clothing, "
+                "hair, background, paper, signs, screens, and all four corners. "
+                "The illustration fills the frame edge to edge with scene content."
             ),
             "exposure": s.exposure_guard,
         },

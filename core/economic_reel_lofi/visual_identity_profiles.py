@@ -166,11 +166,11 @@ VISUAL_IDENTITY_PROFILES["style-riso_painting_retro_vintage"] = copy.deepcopy(
     VISUAL_IDENTITY_PROFILES["lofi_risograph_v1"]
 )
 VISUAL_IDENTITY_PROFILES["style-riso_painting_retro_vintage"]["technique"] = (
-    "Bold flat gouache color blocks, fine hand-inked linework, and paper-grain "
-    "halftone with hard-edged color shading. Paper grain."
+    "Atmospheric painterly gouache, fine ink linework, visible paper tooth, "
+    "and screenprint halftone. Deep chiaroscuro shadows and glowing golden rim light."
 )
 VISUAL_IDENTITY_PROFILES["style-riso_painting_retro_vintage"]["open"] = (
-    "A risograph print close up illustration in vintage poster style."
+    "A rich risograph print illustration in vintage graphic novel poster style."
 )
 
 

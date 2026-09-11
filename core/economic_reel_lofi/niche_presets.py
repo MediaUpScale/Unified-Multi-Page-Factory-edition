@@ -21,25 +21,25 @@ RELATIONSHIP_LOCATION_ANCHOR = (
     "a vintage warm-paper world of interiors, doorways, and dusk streets"
 )
 _RELATIONSHIP_CHARACTER_ARC = (
-    "Warm intimate interior: a dark-haired woman sitting on a bed or beside a sunlit window, golden hour dust motes, deep shadows",
-    "The Doorway Motif: a striking silhouette standing in an open doorway looking out at a massive warm glowing sunset disc",
-    "The Graphic Minimalist Prop: a single isolated symbolic object on textured cream amber paper ground, vintage steaming kettle or folded envelope or lone suitcase or ceramic teacups",
-    "Emotional close-up: delicate profile of the dark-haired woman, soft sorrowful eyes, fine ink cross-hatching, wind in her hair",
-    "Atmospheric hallway or domestic interior with a glowing doorway, warm floorboards, and long evening shadows",
-    "Contemplative exterior: silhouette of a figure under an umbrella or leaning on a balcony looking at rain falling through an amber streetlamp beam",
-    "Wide cinematic setting: wet street corner, solitary train tracks at dusk, or rain streaking down a quiet window pane",
-    "Emotional resolution: a couple walking together down a warm narrow alley at sunset with bags, or a silhouette stepping forward into the morning sun",
+    "Hook: silhouette of a dark-haired woman in shoes or vintage boots, seated near a sunset window, golden rim light",
+    "Sun Doorway: silhouette of the woman in an open doorway against a massive burning sunset disc",
+    "Minimalist Prop: isolated steaming ceramic cup or vintage kettle on textured amber paper",
+    "Tender Profile: gentle profile of the woman, soft ink hatching, warm amber backlight, shoes or cropped feet",
+    "Hallway: dim domestic hallway with long shadows and light spilling from an open door",
+    "Rain Silhouette: silhouette of a man under an umbrella on a balcony watching rain under a streetlamp",
+    "Atmospheric Setting: solitary wet street corner with glowing amber lantern reflections",
+    "Resolution: couple walking hand-in-hand down a narrow sunlit alley with luggage into the sunset",
 )
 PARENTING_LOCATION_ANCHOR = "a cozy child's bedroom doorway at twilight"
 _PARENTING_CHARACTER_ARC = (
-    "Wide warm hook illustration of a dark-haired parent beside the window, young child nearby",
-    "Medium shot of the dark-haired parent folding a small blanket beside the young child",
-    "Atmospheric detail of a wooden toy under a warm lamp, the parent's hand and child nearby",
-    "Silhouette of the dark-haired parent watching the young child sleep peacefully",
-    "Over-the-shoulder view of the parent looking into the night while the child rests nearby",
-    "Stylized risograph side profile of the loving weary dark-haired parent beside the child",
-    "Silhouette of the dark-haired parent gently holding the young child's small hand",
-    "Peaceful dawn light around parent and child, quiet presence and gratitude",
+    "Hook: atmospheric silhouette of a parent seated near a golden-hour window, warm rim light, shoes or boots",
+    "Sun Doorway: silhouette of parent and child holding hands in a doorway against a giant sunset sun",
+    "Minimalist Prop: isolated vintage wooden toy train or tiny worn shoes on warm paper ground",
+    "Tender Profile: loving weary profile of a parent under amber lamplight, gouache contours",
+    "Hallway: dark hallway, floorboard shadows, soft nightlight glow from a child's cracked bedroom door",
+    "Rain Silhouette: silhouette of a parent at a rainy window at dusk reflecting on passing time",
+    "Atmospheric Setting: front porch with a glowing lantern casting warm light on steps through evening rain",
+    "Resolution: silhouette of parent and child walking hand-in-hand along a golden pathway toward sunrise",
 )
 
 
@@ -100,8 +100,9 @@ RELATIONSHIP = NichePreset(
         "No therapist-speak slogans."
     ),
     visual_notes=(
-        "Rain, quiet distance between two people, gouache blocks, halftone, and "
-        "fine ink contours. Mood-match the spoken beat without literalizing it."
+        "Atmospheric painterly risograph, golden rim-lit silhouettes, gouache "
+        "depth, paper tooth, and fine ink. Never photoreal or flat vector. "
+        "Footwear or cropped feet. Mood-match the spoken beat."
     ),
 )
 
@@ -122,8 +123,9 @@ PARENTING = NichePreset(
         "presence and the moments that disappear."
     ),
     visual_notes=(
-        "Warm domestic light, small hands, wooden toys, a bedroom doorway, "
-        "nostalgic Risograph gouache, paper grain, and fine ink linework."
+        "Warm domestic twilight, parent-and-child silhouettes, wooden toys, "
+        "worn shoes, painterly risograph gouache, paper grain, golden rim light. "
+        "Never photoreal or flat vector."
     ),
 )
 
@@ -286,45 +288,38 @@ def inject_prompt_fields(
 def writer_visual_clause(preset: NichePreset) -> str:
     if preset.key == "relationship":
         return (
-            "VISUAL DIRECTION — poetic vintage risograph print art with flat "
-            "gouache, paper grain, and warm nostalgic tones. Set location_anchor "
-            f"exactly to: \"{RELATIONSHIP_LOCATION_ANCHOR}\". Preserve emotional "
-            "continuity across this proven 8-beat formula: 1 hook, warm intimate "
-            "interior, dark-haired woman on a bed or beside a sunlit window, "
-            "golden hour dust motes, deep shadows; 2 the Doorway Motif, a striking "
-            "silhouette in an open doorway looking out at a massive warm glowing "
-            "sunset disc; 3 the Graphic Minimalist Prop, one isolated symbolic "
-            "object on textured cream/amber paper (steaming kettle, folded "
-            "envelope, lone suitcase, or ceramic teacups); 4 emotional close-up, "
-            "delicate profile of the dark-haired woman, soft sorrowful eyes, fine "
-            "ink cross-hatching, wind in her hair; 5 atmospheric hallway or "
-            "domestic interior with a glowing doorway, warm floorboards, long "
-            "evening shadows; 6 contemplative exterior, silhouette under an "
-            "umbrella or on a balcony watching rain through an amber streetlamp "
-            "beam; 7 wide cinematic wet street corner, solitary train tracks at "
-            "dusk, or rain on a quiet window pane; 8 emotional resolution, a "
-            "couple walking down a warm narrow alley at sunset with bags, or a "
-            "silhouette stepping forward into the morning sun. Matte gouache, "
-            "cream, terracotta, and amber — never neon, glossy anime, or "
-            "searchlights. No front-facing portrait, direct eye contact, or "
-            "photorealism. Do not include the style prefix; the pipeline adds it."
+            "VISUAL DIRECTION — atmospheric painterly risograph/gouache with "
+            "cinematic depth, paper tooth, and golden rim light. Never photoreal, "
+            "never flat vector. Protect anatomy with shoes/boots or crop feet. "
+            f"Set location_anchor exactly to: \"{RELATIONSHIP_LOCATION_ANCHOR}\". "
+            "Keep this 8-beat formula in order: 1 Hook (<=3s) silhouette of a "
+            "dark-haired woman in shoes/boots seated near a sunset window with "
+            "golden rim light; 2 Sun Doorway silhouette against a massive burning "
+            "sunset disc; 3 isolated steaming ceramic cup or vintage kettle on "
+            "textured amber paper; 4 tender ink-hatched profile with warm amber "
+            "backlight; 5 dim hallway, long shadows, light from an open door; "
+            "6 man under an umbrella on a balcony watching rain under a streetlamp; "
+            "7 wet street corner with glowing amber lantern reflections; 8 couple "
+            "walking hand-in-hand down a narrow sunlit alley with luggage into the "
+            "sunset. No front-facing portrait, direct eye contact, or photorealism. "
+            "Do not include the style prefix; the pipeline adds it."
         )
     if preset.key == "parenting":
         return (
-            "VISUAL DIRECTION — illustrated Risograph parenting micro-drama. Set "
-            f"location_anchor exactly to: \"{PARENTING_LOCATION_ANCHOR}\". Every "
-            "scene stays there. A dark-haired parent and young child embody the "
-            "fleeting passage of time. Use this framing arc in order: 1 wide warm "
-            "hook of parent at the window at dusk, child nearby; 2 medium parent "
-            "folding a small blanket or holding a warm cup; 3 wooden toy under a "
-            "warm lamp with parent and child still grounded nearby; 4 parent "
-            "silhouette watching the child sleep; 5 over-the-shoulder toward the "
-            "night, feeling time pass; 6 loving, weary risograph parent profile; "
-            "7 parent holding the child's small hand; 8 peaceful dawn light, "
-            "presence and gratitude. Use gouache blocks, paper grain, halftone, "
-            "and fine ink linework. No front-facing portrait, direct eye contact, "
-            "photorealism, or sterile empty-room B-roll. Do not include the style "
-            "prefix; the pipeline adds it."
+            "VISUAL DIRECTION — atmospheric painterly risograph parenting "
+            "micro-drama with cinematic depth and golden rim light. Never photoreal, "
+            "never flat vector. Protect anatomy with shoes/boots or crop feet. "
+            f"Set location_anchor exactly to: \"{PARENTING_LOCATION_ANCHOR}\". "
+            "Keep this 8-beat formula in order: 1 Hook (<=3s) parent silhouette "
+            "seated near a golden-hour window, warm rim light; 2 parent and child "
+            "holding hands in a doorway against a giant sunset sun; 3 isolated "
+            "vintage wooden toy train or tiny worn shoes on warm paper; 4 loving "
+            "weary parent profile under amber lamplight; 5 dark hallway, nightlight "
+            "from a child's cracked bedroom door; 6 parent at a rainy dusk window; "
+            "7 front porch lantern on wet steps; 8 parent and child walking "
+            "hand-in-hand toward sunrise. No front-facing portrait, direct eye "
+            "contact, or photorealism. Do not include the style prefix; the "
+            "pipeline adds it."
         )
     return (
         "VISUAL CONCEPTS: choose one specific physical location_anchor first. "

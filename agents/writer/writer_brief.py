@@ -17,6 +17,43 @@ from typing import Any, Literal
 
 BriefMode = Literal["emotional", "theme", "quote", "paraphrase"]
 
+_RELATIONSHIP_VISUAL_ARC = (
+    "VISUAL ARC — 8 beats, atmospheric painterly risograph/gouache with cinematic "
+    "depth. Never photoreal. Never flat vector. Golden rim light on silhouettes. "
+    "Protect anatomy with shoes/boots or crop feet out of frame.\n"
+    "1 Hook (<=3s): Silhouette of dark-haired woman in shoes/boots, seated near "
+    "sunset window with golden rim light.\n"
+    "2 Sun Doorway: Silhouette of woman in doorway against massive burning sunset disc.\n"
+    "3 Minimalist Prop: Isolated steaming ceramic cup or vintage kettle on textured amber paper.\n"
+    "4 Tender Profile: Gentle profile of the woman, soft ink hatching, warm amber backlight.\n"
+    "5 Hallway: Dim domestic hallway with long shadows and light spilling from an open door.\n"
+    "6 Rain Silhouette: Silhouette of man under umbrella on balcony watching rain under streetlamp.\n"
+    "7 Atmospheric Setting: Solitary wet street corner with glowing amber lantern reflections.\n"
+    "8 Resolution: Couple walking hand-in-hand down narrow sunlit alley with luggage into the sunset."
+)
+
+_PARENTING_VISUAL_ARC = (
+    "VISUAL ARC — 8 beats, atmospheric painterly risograph/gouache with cinematic "
+    "depth. Never photoreal. Never flat vector. Golden rim light on silhouettes. "
+    "Protect anatomy with shoes/boots or crop feet out of frame.\n"
+    "1 Hook (<=3s): Atmospheric silhouette of parent seated near golden-hour window, "
+    "warm rim light.\n"
+    "2 Sun Doorway: Silhouette of parent and child holding hands in doorway against giant sunset sun.\n"
+    "3 Minimalist Prop: Isolated vintage wooden toy train or tiny worn shoes on warm paper ground.\n"
+    "4 Tender Profile: Loving, weary profile of parent under amber lamplight, gouache contours.\n"
+    "5 Hallway: Dark hallway, floorboard shadows, soft nightlight glow from child's cracked bedroom door.\n"
+    "6 Rain Silhouette: Silhouette of parent at rainy window at dusk reflecting on passing time.\n"
+    "7 Atmospheric Setting: Front porch with glowing lantern casting warm light on steps through evening rain.\n"
+    "8 Resolution: Silhouette of parent and child walking hand-in-hand along golden pathway toward sunrise."
+)
+
+
+def _visual_arc_clause(module: str) -> str:
+    niche = str(module or "relationship").strip().lower()
+    if niche == "parenting":
+        return _PARENTING_VISUAL_ARC
+    return _RELATIONSHIP_VISUAL_ARC
+
 
 @dataclass(frozen=True)
 class WriterBrief:
@@ -255,13 +292,7 @@ class WriterBrief:
                     "a verified public literary quote anchor or a striking behavioral "
                     "truth; never invent an attribution. "
                     "Move from wound or contradiction toward a mature truth the "
-                    "listener can carry, without reducing the ending to advice. "
-                    "Visual beats follow the vintage risograph formula: intimate "
-                    "golden-hour interior, doorway silhouette against a massive "
-                    "sunset disc, one graphic isolated object, ink-hatched profile, "
-                    "warm hallway, rain through amber lamplight, dusk street or "
-                    "tracks, then a couple walking a narrow alley or a figure "
-                    "stepping into morning sun."
+                    "listener can carry, without reducing the ending to advice."
                 )
             parts.append(
                 "EMOTIONAL REFLECTION:\n"
@@ -297,4 +328,6 @@ class WriterBrief:
                 "write a different piece. Here is why it failed:\n"
                 f"{self.revision_note}"
             )
+        if self.mode != "paraphrase":
+            parts.append(_visual_arc_clause(self.module))
         return "\n\n".join(parts)

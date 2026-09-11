@@ -34,6 +34,7 @@ from core.economic_reel_lofi.image_gen import (
 )
 from core.economic_reel_lofi.pipeline import (
     _assemble_stage3_prompts,
+    _current_run_scene_audio_paths,
     _gate2_review_rows,
     _generate_validated_script,
     _load_locked_script,
@@ -44,6 +45,11 @@ from core.economic_reel_lofi.pipeline import (
 from core.economic_reel_lofi.style_modules.riso_retro_flat_v4 import STYLE as RISO_STYLE
 from core.economic_reel_lofi.visual_concept import _fallback_concept
 from core.economic_reel_lofi.visual_identity import assign_palette_arc
+from core.economic_reel_lofi.assembler import (
+    _visual_only,
+    is_verified_instrumental_bgm,
+    list_library_bgm_tracks,
+)
 from core.economic_reel_lofi.voiceover import ensure_script_voiceover
 
 
@@ -592,15 +598,104 @@ def test_locked_atmospheric_hold_reuses_stills_after_legacy_prop_only_failure(
 
 def test_stale_temp_voice_files_are_purged_before_assembly(tmp_path: Path) -> None:
     stale = tmp_path / "temp_voice_old.mp3"
+    leftover = tmp_path / "cached_mix.mp3"
+    extra_scene = tmp_path / "vo_scene_09.mp3"
     kept = tmp_path / "vo_scene_01.mp3"
     stale.write_bytes(b"stale")
+    leftover.write_bytes(b"leftover")
+    extra_scene.write_bytes(b"old-scene")
     kept.write_bytes(b"approved")
 
-    removed = _purge_stale_temp_voice_files(tmp_path)
+    removed = _purge_stale_temp_voice_files(
+        tmp_path, keep_names={"vo_scene_01.mp3"}
+    )
 
-    assert removed == [stale]
+    assert stale in removed
+    assert leftover in removed
+    assert extra_scene in removed
     assert not stale.exists()
+    assert not leftover.exists()
+    assert not extra_scene.exists()
     assert kept.exists()
+
+
+def test_current_run_scene_audio_paths_ignore_glob_leftovers(tmp_path: Path) -> None:
+    (tmp_path / "temp_voice_old.mp3").write_bytes(b"stale")
+    (tmp_path / "random.mp3").write_bytes(b"noise")
+    (tmp_path / "vo_scene_01.mp3").write_bytes(b"one")
+    (tmp_path / "vo_scene_02.mp3").write_bytes(b"two")
+    (tmp_path / "vo_scene_09.mp3").write_bytes(b"extra")
+
+    paths = _current_run_scene_audio_paths(
+        tmp_path,
+        2,
+        [tmp_path / "random.mp3", Path("/other/run/vo_scene_02.mp3")],
+    )
+
+    assert [p.name if p else None for p in paths] == [
+        "vo_scene_01.mp3",
+        "vo_scene_02.mp3",
+    ]
+    assert all(p.parent == tmp_path for p in paths if p)
+
+
+def test_bgm_pool_rejects_reference_reel_dumps(tmp_path: Path) -> None:
+    assert is_verified_instrumental_bgm(tmp_path / "Fading_Embers_2026-08-16.mp3")
+    assert not is_verified_instrumental_bgm(tmp_path / "0816.MP3")
+    assert not is_verified_instrumental_bgm(tmp_path / "0816(1).MP3")
+    assert not is_verified_instrumental_bgm(tmp_path / "lofi_bed_01.mp3")
+    assert not is_verified_instrumental_bgm(
+        tmp_path / "_quarantine_vocals" / "Fading_Embers_2026-08-16.mp3"
+    )
+    engine = tmp_path
+    bgm_dir = engine / "channels_config" / "wonder_feed" / "audio" / "bgm"
+    bgm_dir.mkdir(parents=True)
+    (bgm_dir / "0816.MP3").write_bytes(b"x" * 2000)
+    (bgm_dir / "Fading_Embers_ok.mp3").write_bytes(b"x" * 2000)
+    tracks = list_library_bgm_tracks(engine)
+    assert [p.name for p in tracks] == ["Fading_Embers_ok.mp3"]
+
+
+def test_visual_only_strips_clip_audio() -> None:
+    clip = SimpleNamespace(audio="leaked-voice")
+
+    def without_audio():
+        return SimpleNamespace(audio="still-there")
+
+    clip.without_audio = without_audio
+    silent = _visual_only(clip)
+    assert silent.audio is None
+
+
+def test_voiceover_writes_canonical_scene_files_only(tmp_path: Path) -> None:
+    stale = tmp_path / "temp_voice_old.mp3"
+    leftover = tmp_path / "echo_cache.mp3"
+    stale.write_bytes(b"stale")
+    leftover.write_bytes(b"echo")
+    script = {
+        "theme": "presence",
+        "lines": [{"scene": 1, "text": "Stay with the moment you still have."}],
+    }
+
+    def fake_generate(text: str, output: Path, **kwargs: object):
+        Path(output).write_bytes(b"fresh-vo")
+        return Path(output), [("Stay", 0.0, 0.2)]
+
+    with (
+        patch(
+            "agents.media.audio_engine.generate_voiceover_with_timestamps",
+            side_effect=fake_generate,
+        ),
+        patch(
+            "core.economic_reel_lofi.assembler.measure_vo_speech_duration",
+            return_value=1.2,
+        ),
+    ):
+        ensure_script_voiceover({}, script, tmp_path)
+
+    assert not stale.exists()
+    assert not leftover.exists()
+    assert (tmp_path / "vo_scene_01.mp3").read_bytes() == b"fresh-vo"
 
 
 def test_elastic_timeline_clamps_hook_and_adds_outro_tail(tmp_path: Path) -> None:
