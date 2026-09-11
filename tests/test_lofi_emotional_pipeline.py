@@ -28,9 +28,15 @@ from core.economic_reel_lofi.niche_presets import (
     wrap_visual_prompt,
 )
 from core.economic_reel_lofi import config as lofi_cfg
+from core.economic_reel_lofi import lofi_collections as rag
 from core.economic_reel_lofi.image_gen import (
     enforce_full_bleed,
     generate_scene_image_gemini,
+)
+from core.economic_reel_lofi.output_hygiene import (
+    enforce_clips_mp4_only,
+    migrate_channel_clips,
+    migrate_outputs_root,
 )
 from core.economic_reel_lofi.pipeline import (
     _assemble_stage3_prompts,
@@ -41,6 +47,7 @@ from core.economic_reel_lofi.pipeline import (
     _print_script_report,
     _produce_one,
     _purge_stale_temp_voice_files,
+    _resolve_page_dirs,
 )
 from core.economic_reel_lofi.style_modules.riso_retro_flat_v4 import STYLE as RISO_STYLE
 from core.economic_reel_lofi.visual_concept import _fallback_concept
@@ -57,12 +64,11 @@ def test_emotional_brief_prioritizes_depth_without_literal_props() -> None:
     brief = WriterBrief.from_emotional(theme="detachment", subtheme="quiet_boundary")
     block = brief.assignment_block()
     assert brief.mode == "emotional"
-    assert "micro-philosophical" in block
-    assert "do not force an object" in block
+    assert "award-winning auteur" in block
+    assert "psychological paradox" in block
     assert "therapy slogans" in block
-    assert "Doorway Motif" in block or "doorway silhouette" in block
-    assert "strictly 5–7" in block
-    assert "fewer than 45 characters" in block
+    assert "7–11 spoken words" in block
+    assert "Mad-Libs repetition" in block
 
 
 def test_fast_prompt_embeds_all_six_golden_examples_and_candidate_schema() -> None:
@@ -78,11 +84,11 @@ def test_fast_prompt_embeds_all_six_golden_examples_and_candidate_schema() -> No
     assert "visual_concept" in contract
     assert '"beats": [' in contract
     assert "exactly eight" in _SYSTEM
-    assert "5–7-word hook" in _SYSTEM
-    assert RELATIONSHIP_LOCATION_ANCHOR in _SYSTEM
-    assert "Doorway Motif" in _SYSTEM
-    assert "Graphic Minimalist Prop" in _SYSTEM
-    assert "never neon" in _SYSTEM
+    assert "award-winning auteur" in _SYSTEM
+    assert "7–11 naturally spoken words" in _SYSTEM
+    assert "midnight diner" in _SYSTEM
+    assert "Do not default" in _SYSTEM
+    assert "cups on tables" in _SYSTEM
 
 
 def test_parenting_preset_swaps_few_shots_and_aesthetic_wrapper() -> None:
@@ -91,17 +97,17 @@ def test_parenting_preset_swaps_few_shots_and_aesthetic_wrapper() -> None:
     assert "They won't remember how clean the house was" in prompt
     assert "One day you will put your child down" in prompt
     assert "Never ask a liar why they lied" not in prompt
-    assert PARENTING_LOCATION_ANCHOR in prompt
-    assert "dark-haired parent and young child" in prompt
+    assert "parent-child relationship" in prompt
+    assert "rainy subway platform" in prompt
     assert get_niche_preset("parenting") is PARENTING
     wrapped = wrap_visual_prompt(
         "A cinematic, melancholic shot of a dimly lit hallway with two umbrellas leaning on separate walls.",
         "relationship",
     )
     assert wrapped.startswith(RELATIONSHIP.aesthetic_prefix)
-    assert "Nostalgic warm color palette" in wrapped
+    assert "Nostalgic warm palette" in wrapped
     assert "vertical 9:16 full-bleed composition" in wrapped.lower()
-    assert "vintage poster" in wrapped.lower()
+    assert "vintage graphic novel poster" in wrapped.lower()
     assert "35mm" not in wrapped.lower()
     parent_wrap = wrap_visual_prompt("small shoes by a sunlit doorway", "parenting")
     assert parent_wrap.startswith(PARENTING.aesthetic_prefix)
@@ -131,8 +137,7 @@ def test_draft_to_script_keeps_writer_visual_concepts() -> None:
     script = draft_to_script(draft)
     inject_prompt_fields(script)
     assert script["niche"] == "relationship"
-    assert script["location_anchor"] == RELATIONSHIP_LOCATION_ANCHOR
-    assert "dark-haired woman" in script["lines"][0]["visual_concept"]
+    assert script["location_anchor"] == "A dim diner booth beside a rain-slicked window"
     assert "A melancholic wide view" in script["lines"][0]["visual_concept"]
     assert script["lines"][0]["visual_source"] == "writer_single_pass"
 
@@ -164,10 +169,9 @@ def test_prompt_fields_are_programmatic_and_single_location_anchored() -> None:
         ],
     }
     inject_prompt_fields(script)
-    assert script["location_anchor"] == RELATIONSHIP_LOCATION_ANCHOR
+    assert script["location_anchor"] == anchor
     for i, beat in enumerate(script["lines"], start=1):
-        assert beat["visual_concept"].startswith(RELATIONSHIP_LOCATION_ANCHOR)
-        assert "vintage warm-paper world" in beat["visual_concept"]
+        assert beat["visual_concept"].startswith(anchor)
         assert beat["final_positive_prompt"].startswith(RELATIONSHIP.aesthetic_prefix)
         assert beat["negative_prompt"] == RELATIONSHIP.negative_prompt
         assert "photorealistic" in beat["negative_prompt"]
@@ -182,16 +186,17 @@ def test_riso_flux_builder_uses_three_act_palette_and_style_negative() -> None:
     assert RISO_STYLE.profile_name == "style-riso_painting_retro_vintage"
     assert "full-bleed composition" in RISO_STYLE.format
     assert "white border" in RISO_STYLE.style_negative
-    assert "neon" in RISO_STYLE.style_negative
+    assert "photorealistic" in RISO_STYLE.style_negative
+    assert "flat vector" in RISO_STYLE.style_negative
     positive, negative = build_flux_prompt("woman waiting beside tea", 7)
     assert positive.startswith(RISO_STYLE.open)
     assert RISO_STYLE.technique.strip() in positive
     assert RISO_STYLE.palettes["CONTRAST"] in positive
     assert RISO_STYLE.linework_guard in positive
     assert "35mm" not in positive.lower()
-    assert "vintage poster" in positive.lower()
+    assert "vintage graphic novel poster" in positive.lower()
     assert "full-bleed" in positive.lower()
-    assert "matte finish" in positive.lower()
+    assert "paper tooth" in positive.lower()
     assert negative == RISO_STYLE.style_negative
 
 
@@ -225,11 +230,73 @@ def test_parenting_prompt_fields_lock_parent_child_arc() -> None:
 
     inject_prompt_fields(script)
 
-    assert script["location_anchor"] == PARENTING_LOCATION_ANCHOR
+    assert script["location_anchor"] == "somewhere else"
     for beat in script["lines"]:
-        assert beat["visual_concept"].startswith(PARENTING_LOCATION_ANCHOR)
-        assert "parent" in beat["visual_concept"].lower()
-        assert "child" in beat["visual_concept"].lower()
+        assert beat["visual_concept"].startswith("somewhere else")
+        assert "soft twilight" in beat["visual_concept"].lower()
+
+
+def test_theme_selector_never_repeats_consecutively(tmp_path: Path) -> None:
+    bank = tmp_path / "lofi_theme_bank_relationship.json"
+    rotation = tmp_path / "lofi_theme_rotation_relationship.json"
+    bank.write_text(
+        json.dumps(
+            [
+                {
+                    "theme": "trust",
+                    "subtheme": "consistency",
+                    "status": "used",
+                    "last_used_date": "2026-09-01",
+                },
+                {
+                    "theme": "closure",
+                    "subtheme": "unfinished",
+                    "status": "used",
+                    "last_used_date": "2026-09-01",
+                },
+                {
+                    "theme": "pride",
+                    "subtheme": "cost",
+                    "status": "used",
+                    "last_used_date": "2026-09-01",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_store(name: str) -> Path:
+        if name == "lofi_theme_bank_relationship":
+            return bank
+        if name == "lofi_theme_rotation_relationship":
+            return rotation
+        return tmp_path / f"{name}.json"
+
+    with (
+        patch.object(rag, "ensure_seeded"),
+        patch.object(rag, "_store_path", side_effect=fake_store),
+    ):
+        first = rag.select_theme("relationship")
+        rag.mark_theme_used(
+            "relationship", first["theme"], first.get("subtheme")
+        )
+        second = rag.select_theme("relationship")
+        rag.mark_theme_used(
+            "relationship", second["theme"], second.get("subtheme")
+        )
+        third = rag.select_theme("relationship")
+
+    assert (first["theme"], first["subtheme"]) != (
+        second["theme"],
+        second["subtheme"],
+    )
+    assert (second["theme"], second["subtheme"]) != (
+        third["theme"],
+        third["subtheme"],
+    )
+    persisted = json.loads(bank.read_text(encoding="utf-8"))
+    stamped = next(row for row in persisted if row["theme"] == first["theme"])
+    assert "T" in stamped["last_used_at"]
 
 
 def test_total_narration_budget_is_normalized_without_llm_repair() -> None:
@@ -765,3 +832,42 @@ def test_gemini_generator_normalizes_output_path(tmp_path: Path) -> None:
     assert path == out
     assert Image.open(out).size == (720, 1280)
     assert meta["gen_model"] == "models/gemini-2.5-flash-image"
+
+
+def test_momma_circle_uses_png_logo_not_text_handle() -> None:
+    cfg = lofi_cfg.channel_assembly_cfg("momma_circle")
+    assert cfg["use_text_watermark"] is False
+    logo = lofi_cfg.resolve_logo_path(
+        "momma_circle", Path(__file__).resolve().parents[1]
+    )
+    assert logo is not None
+    assert logo.suffix.lower() == ".png"
+    assert logo.is_file()
+
+
+def test_resolve_page_dirs_separates_clips_and_metadata(tmp_path: Path) -> None:
+    page, clips, assets, metadata = _resolve_page_dirs("wonder_feed", tmp_path)
+    assert page == tmp_path
+    assert clips == tmp_path / "clips"
+    assert assets == tmp_path / "assets"
+    assert metadata == tmp_path / "metadata"
+    assert clips.is_dir() and metadata.is_dir()
+
+
+def test_output_hygiene_moves_json_and_root_tests(tmp_path: Path) -> None:
+    (tmp_path / "test_music_track.mp3").write_bytes(b"probe")
+    (tmp_path / "_api_test_ping.json").write_text("{}", encoding="utf-8")
+    clips = tmp_path / "wonder_feed" / "clips"
+    clips.mkdir(parents=True)
+    (clips / "keep.mp4").write_bytes(b"mp4")
+    (clips / "lofi_pipeline_x.json").write_text("{}", encoding="utf-8")
+    (clips / "reel_vo_concat.mp3").write_bytes(b"tmp")
+
+    migrate_outputs_root(tmp_path)
+    report = migrate_channel_clips(tmp_path / "wonder_feed")
+
+    assert (tmp_path / "_tests" / "test_music_track.mp3").is_file()
+    assert not (clips / "lofi_pipeline_x.json").exists()
+    assert (tmp_path / "wonder_feed" / "metadata" / "lofi_pipeline_x.json").is_file()
+    assert "reel_vo_concat.mp3" in report["deleted"]
+    assert enforce_clips_mp4_only(clips) == []

@@ -27,7 +27,6 @@ distinct character states.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
 import os
@@ -40,7 +39,15 @@ import numpy as np
 
 try:
     from ..contracts import DebateTranscript, SpeakerRole, Utterance, pretty_model_name
-    from ..settings import AiwakeSettings, RenderConfig, Theme, resolve_outputs_dir, resolve_scratch_dir
+    from ..settings import (
+        AiwakeSettings,
+        RenderConfig,
+        Theme,
+        ensure_cta_two_line,
+        pick_cta,
+        resolve_outputs_dir,
+        resolve_scratch_dir,
+    )
     from .audio import AudioAsset, concat_audio, estimate_duration
     from .vfx import FrameContext, apply_chain, chain_needs_audio, resolve_chain
 except ImportError:  # pragma: no cover — standalone extraction
@@ -55,6 +62,9 @@ except ImportError:  # pragma: no cover — standalone extraction
     from settings import (  # type: ignore[no-redef]
         AiwakeSettings,
         RenderConfig,
+        Theme,
+        ensure_cta_two_line,
+        pick_cta,
         resolve_outputs_dir,
         resolve_scratch_dir,
     )
@@ -227,49 +237,8 @@ _CTA_TTS_RATE = "+28%"  # edge-tts rate bump for a quicker spoken CTA
 _CTA_PAUSE_S = 0.30  # short beat between the two CTA lines (visual typewriter beat)
 # Extra viewport shrink while streaming so the typing edge clears the input mask.
 _STREAM_SCROLL_PAD_PX = 36
-# The fixed first line (lead phrase, ends with a period) and the weighted second-
-# clause library are sourced from `Theme.defaults()` so the CTA copy lives in the
-# same single source of truth as every other skin constant.
-_CTA_HEAD = Theme.defaults().cta_head
-_CTA_LINES: tuple[tuple[str, int], ...] = Theme.defaults().cta_lines
-
-
-def ensure_cta_two_line(line: str) -> str:
-    """Force the two-line, period-based CTA shape.
-
-    ``Follow Aiwake.`` (period, not comma) on the first line; the given clause
-    re-cased as its own sentence on a second line. Rebuilds any legacy single-
-    line/comma-joined text so no phrasing variant can collapse back to one
-    flowing line.
-    """
-    text = (line or "").strip().replace("\n", " ").strip()
-    if text.lower().startswith(_CTA_HEAD.lower()):
-        tail = text[len(_CTA_HEAD):].lstrip(" ,.")
-    else:
-        tail = text
-    tail = tail.strip()
-    if tail and tail[0].islower():
-        tail = tail[0].upper() + tail[1:]
-    if tail and tail[-1] not in ".!?…":
-        tail += "."
-    return f"{_CTA_HEAD}.\n{tail}"
-
-
-def pick_cta(seed: str) -> str:
-    """Weighted CTA pick, stable for a session so a rerender does not drift.
-
-    Always normalised into the two-line shape: ``Follow Aiwake.`` on line one, a
-    short beat, then the second clause as its own sentence on line two.
-    """
-    total = sum(weight for _, weight in _CTA_LINES)
-    digest = hashlib.md5((seed or "aiwake").encode("utf-8")).digest()
-    needle = int.from_bytes(digest[:8], "big") % total
-    cursor = 0
-    for line, weight in _CTA_LINES:
-        cursor += weight
-        if needle < cursor:
-            return ensure_cta_two_line(line)
-    return ensure_cta_two_line(_CTA_LINES[0][0])
+# CTA copy (head + weighted second-clause library) lives on Theme / settings
+# so descriptions and the end-card stay on the same picker.
 
 
 def cta_revealed_chars(text: str, local_s: float, duration_s: float) -> int:
@@ -2488,6 +2457,7 @@ __all__ = [
     "ease_in_out",
     "ease_in",
     "ease_out",
+    "ensure_cta_two_line",
     "model_accent",
     "pick_cta",
     "render_transcript",

@@ -1603,6 +1603,10 @@ def upload_short(
     # Final assignment point for snippet.tags (must stay a clean list[str]).
     body_tags = sanitize_youtube_tags(tag_list)
     effective_privacy = "private" if publish_at else privacy_status
+    if publish_at is not None and publish_at.tzinfo is None:
+        publish_at = publish_at.replace(tzinfo=timezone.utc)
+    if publish_at is not None:
+        publish_at = publish_at.astimezone(timezone.utc).replace(microsecond=0)
     scheduled_str = publish_at.strftime("%Y-%m-%dT%H:%M:%SZ") if publish_at else None
 
     _LOG.info(

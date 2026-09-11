@@ -465,7 +465,7 @@ def test_hook_line_brevity_is_writer_target_not_still_hold() -> None:
     contract = _output_contract(
         WriterBrief.from_theme(theme="healing", meta={"duration_s": 27})
     )
-    assert "Scene 1 MUST contain 5–7" in contract
+    assert "Every scene, including scene 1, contains 7–11" in contract
 
 
 def test_slot_duration_follows_measured_vo_not_estimate() -> None:

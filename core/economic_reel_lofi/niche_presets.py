@@ -18,28 +18,10 @@ from core.economic_reel_lofi.style_modules.riso_retro_flat_v4 import (
 
 RISO_PREFIX = f"{RISO_STYLE.open} {RISO_STYLE.technique}".strip()
 RELATIONSHIP_LOCATION_ANCHOR = (
-    "a vintage warm-paper world of interiors, doorways, and dusk streets"
+    "a story-specific cinematic environment chosen for this narrative"
 )
-_RELATIONSHIP_CHARACTER_ARC = (
-    "Hook: silhouette of a dark-haired woman in shoes or vintage boots, seated near a sunset window, golden rim light",
-    "Sun Doorway: silhouette of the woman in an open doorway against a massive burning sunset disc",
-    "Minimalist Prop: isolated steaming ceramic cup or vintage kettle on textured amber paper",
-    "Tender Profile: gentle profile of the woman, soft ink hatching, warm amber backlight, shoes or cropped feet",
-    "Hallway: dim domestic hallway with long shadows and light spilling from an open door",
-    "Rain Silhouette: silhouette of a man under an umbrella on a balcony watching rain under a streetlamp",
-    "Atmospheric Setting: solitary wet street corner with glowing amber lantern reflections",
-    "Resolution: couple walking hand-in-hand down a narrow sunlit alley with luggage into the sunset",
-)
-PARENTING_LOCATION_ANCHOR = "a cozy child's bedroom doorway at twilight"
-_PARENTING_CHARACTER_ARC = (
-    "Hook: atmospheric silhouette of a parent seated near a golden-hour window, warm rim light, shoes or boots",
-    "Sun Doorway: silhouette of parent and child holding hands in a doorway against a giant sunset sun",
-    "Minimalist Prop: isolated vintage wooden toy train or tiny worn shoes on warm paper ground",
-    "Tender Profile: loving weary profile of a parent under amber lamplight, gouache contours",
-    "Hallway: dark hallway, floorboard shadows, soft nightlight glow from a child's cracked bedroom door",
-    "Rain Silhouette: silhouette of a parent at a rainy window at dusk reflecting on passing time",
-    "Atmospheric Setting: front porch with a glowing lantern casting warm light on steps through evening rain",
-    "Resolution: silhouette of parent and child walking hand-in-hand along a golden pathway toward sunrise",
+PARENTING_LOCATION_ANCHOR = (
+    "a story-specific lived-in environment shared by parent and child"
 )
 
 
@@ -219,24 +201,20 @@ def anchor_visual_concept(
     *,
     scene: int = 1,
 ) -> str:
-    """Attach the immutable location programmatically to a relative shot."""
+    """Attach the writer's story world without erasing its scene staging."""
     anchor = " ".join(str(location_anchor or "").split()).rstrip(".,; ")
     concept = " ".join(str(visual_concept or "").split()).rstrip(".,; ")
     if not anchor:
         raise ValueError("single-pass writer returned no location_anchor")
     if not concept:
         raise ValueError("single-pass writer returned an empty visual_concept")
-    anchor_low = anchor.lower()
     concept_low = concept.lower()
-    drifted = any(
-        term in concept_low and term not in anchor_low for term in _LOCATION_TERMS
-    )
     unsafe_human = any(term in concept_low for term in _UNSAFE_HUMAN_TERMS)
-    if drifted or unsafe_human:
+    if unsafe_human:
         angle = _CAMERA_ARC[(max(1, int(scene)) - 1) % len(_CAMERA_ARC)]
         concept = (
-            f"{angle}, anonymous silhouette or inanimate detail, changing light "
-            "across tactile surfaces"
+            f"{angle}, natural side profile or silhouette, changing light across "
+            "tactile surfaces in the declared environment"
         )
     if concept.lower().startswith(anchor.lower()):
         return concept
@@ -251,30 +229,20 @@ def inject_prompt_fields(
     preset = niche if isinstance(niche, NichePreset) else get_niche_preset(
         str(niche or script.get("niche") or script.get("module") or "relationship")
     )
-    if preset.key == "relationship":
-        script["location_anchor"] = RELATIONSHIP_LOCATION_ANCHOR
-    elif preset.key == "parenting":
-        script["location_anchor"] = PARENTING_LOCATION_ANCHOR
-    anchor = str(script.get("location_anchor") or "").strip()
+    fallback_anchor = (
+        PARENTING_LOCATION_ANCHOR
+        if preset.key == "parenting"
+        else RELATIONSHIP_LOCATION_ANCHOR
+    )
+    anchor = str(script.get("location_anchor") or fallback_anchor).strip()
+    script["location_anchor"] = anchor
     rows = [row for row in (script.get("lines") or []) if isinstance(row, dict)]
     for i, row in enumerate(rows, start=1):
-        if preset.key == "relationship":
-            concept = " ".join(str(row.get("visual_concept") or "").split())
-            anchored = (
-                f"{anchor}. {_RELATIONSHIP_CHARACTER_ARC[(i - 1) % 8]}. "
-                f"{concept}"
-            ).rstrip(". ")
-        else:
-            anchored = anchor_visual_concept(
-                anchor,
-                str(row.get("visual_concept") or ""),
-                scene=int(row.get("scene") or i),
-            )
-        if preset.key == "parenting":
-            anchored = (
-                f"{anchor}. {_PARENTING_CHARACTER_ARC[(i - 1) % 8]}. "
-                f"{anchored.removeprefix(anchor).lstrip('. ')}"
-            ).rstrip(". ")
+        anchored = anchor_visual_concept(
+            anchor,
+            str(row.get("visual_concept") or ""),
+            scene=int(row.get("scene") or i),
+        )
         row["visual_concept"] = anchored
         positive, negative = build_flux_prompt(anchored, int(row.get("scene") or i))
         row["final_positive_prompt"] = positive
@@ -286,52 +254,26 @@ def inject_prompt_fields(
 
 
 def writer_visual_clause(preset: NichePreset) -> str:
-    if preset.key == "relationship":
-        return (
-            "VISUAL DIRECTION — atmospheric painterly risograph/gouache with "
-            "cinematic depth, paper tooth, and golden rim light. Never photoreal, "
-            "never flat vector. Protect anatomy with shoes/boots or crop feet. "
-            f"Set location_anchor exactly to: \"{RELATIONSHIP_LOCATION_ANCHOR}\". "
-            "Keep this 8-beat formula in order: 1 Hook (<=3s) silhouette of a "
-            "dark-haired woman in shoes/boots seated near a sunset window with "
-            "golden rim light; 2 Sun Doorway silhouette against a massive burning "
-            "sunset disc; 3 isolated steaming ceramic cup or vintage kettle on "
-            "textured amber paper; 4 tender ink-hatched profile with warm amber "
-            "backlight; 5 dim hallway, long shadows, light from an open door; "
-            "6 man under an umbrella on a balcony watching rain under a streetlamp; "
-            "7 wet street corner with glowing amber lantern reflections; 8 couple "
-            "walking hand-in-hand down a narrow sunlit alley with luggage into the "
-            "sunset. No front-facing portrait, direct eye contact, or photorealism. "
-            "Do not include the style prefix; the pipeline adds it."
-        )
-    if preset.key == "parenting":
-        return (
-            "VISUAL DIRECTION — atmospheric painterly risograph parenting "
-            "micro-drama with cinematic depth and golden rim light. Never photoreal, "
-            "never flat vector. Protect anatomy with shoes/boots or crop feet. "
-            f"Set location_anchor exactly to: \"{PARENTING_LOCATION_ANCHOR}\". "
-            "Keep this 8-beat formula in order: 1 Hook (<=3s) parent silhouette "
-            "seated near a golden-hour window, warm rim light; 2 parent and child "
-            "holding hands in a doorway against a giant sunset sun; 3 isolated "
-            "vintage wooden toy train or tiny worn shoes on warm paper; 4 loving "
-            "weary parent profile under amber lamplight; 5 dark hallway, nightlight "
-            "from a child's cracked bedroom door; 6 parent at a rainy dusk window; "
-            "7 front porch lantern on wet steps; 8 parent and child walking "
-            "hand-in-hand toward sunrise. No front-facing portrait, direct eye "
-            "contact, or photorealism. Do not include the style prefix; the "
-            "pipeline adds it."
-        )
+    participants = (
+        "Keep the parent-child relationship legible through natural shared action."
+        if preset.key == "parenting"
+        else "Keep recurring people visually coherent without forcing one protagonist."
+    )
     return (
-        "VISUAL CONCEPTS: choose one specific physical location_anchor first. "
-        "Every visual_concept is a RELATIVE shot inside or directly facing that "
-        "exact anchor; never name or imply another place. Progress only through "
-        "camera angle, light, texture, and micro-actions. Keep each concept "
-        "10–16 words to control latency. "
-        f"Niche look: {preset.visual_notes} "
-        "Allowed people: hands, silhouettes, over-the-shoulder, back-of-head, "
-        "soft-focus profiles. Never request front portraits, direct eye contact, "
-        "or visible smiling/speaking mouths. Do not include the aesthetic prefix; "
-        "the pipeline wraps it programmatically."
+        "VISUAL STAGING — Choose a fresh, story-specific environment; do not default "
+        "to a doorway, giant sun, isolated cup, hallway, or sunset alley. Strong "
+        "options include a midnight diner, rainy subway platform, artist studio at "
+        "3 AM, misty coastal overlook, old library aisle, laundromat, ferry deck, "
+        "or high-rise balcony, but invent others when the story asks for them. "
+        "The location_anchor names the coherent story world, not a mandatory prop. "
+        "Across eight beats, vary wide establishing shots, moody medium profiles, "
+        "over-the-shoulder views, evocative silhouettes, tactile environmental "
+        "details, and a wide atmospheric resolution. Every prop must belong in its "
+        "real context: cups on tables or counters, bags on racks or seats, books on "
+        "desks or shelves. Never scatter symbolic objects on floors or thresholds. "
+        f"{participants} Render as {preset.visual_notes} No front-facing portrait, "
+        "direct eye contact, visible speaking mouth, photorealism, or flat vector. "
+        "Do not include the style prefix; the pipeline adds it."
     )
 
 

@@ -65,6 +65,37 @@ def _row(
     }
 
 
+def test_plan_skips_tests_and_reproved_folders() -> None:
+    ok = _row(
+        session="ok",
+        timestamp="2026-09-05T10:00:00+00:00",
+        path="/outputs/aiwake/aiwake_debate_ok.mp4",
+    )
+    reproved = _row(
+        session="bad-reproved",
+        timestamp="2026-09-06T10:00:00+00:00",
+        path="/outputs/aiwake/reproved/aiwake_debate_bad.mp4",
+    )
+    tests = _row(
+        session="bad-tests",
+        timestamp="2026-09-07T10:00:00+00:00",
+        path="/outputs/aiwake/tests/aiwake_debate_test.mp4",
+    )
+    scratch = _row(
+        session="bad-tmp",
+        timestamp="2026-09-08T10:00:00+00:00",
+        path="/outputs/aiwake/tmp/aiwake_debate_tmp.mp4",
+    )
+    planned, rejected = plan_schedule([ok, reproved, tests, scratch], limit=10)
+    assert [item.session_id for item in planned] == ["ok"]
+    reasons = " ".join(item["reason"] for item in rejected)
+    assert "reproved" in reasons
+    assert "tests" in reasons
+    assert "tmp" in reasons
+    picked = select_pending_rows([ok, reproved, tests, scratch], limit=10)
+    assert [row["session_id"] for row in picked] == ["ok"]
+
+
 def test_select_pending_newest_first_top_10() -> None:
     rows = [
         _row(session="old", timestamp="2026-09-01T10:00:00+00:00", youtube="pending"),
@@ -136,6 +167,24 @@ def test_payload_falls_back_to_base_metadata() -> None:
     payload = map_youtube_payload(row)
     assert payload["title"] == "Base hook"
     assert payload["description"] == "Base caption body"
+
+
+def test_plan_continues_after_existing_future_slots() -> None:
+    already = _row(
+        session="live",
+        timestamp="2026-09-08T00:00:00+00:00",
+        youtube="scheduled",
+    )
+    already["platform_overrides"]["youtube"]["scheduled_time"] = "2026-09-15T22:00:00Z"
+    pending = _row(session="next", timestamp="2026-09-10T00:00:00+00:00")
+    planned, rejected = plan_schedule(
+        [already, pending],
+        limit=10,
+        now=datetime(2026, 9, 11, 12, 0, tzinfo=ET),
+    )
+    assert rejected == []
+    assert [item.session_id for item in planned] == ["next"]
+    assert planned[0].publish_at_iso == "2026-09-16T22:00:00Z"
 
 
 def test_plan_binds_newest_to_earliest_slot() -> None:

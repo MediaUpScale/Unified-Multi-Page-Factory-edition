@@ -1504,6 +1504,8 @@ def assemble_lofi_reel(
     voice_paths: Sequence[Path | None] | None = None,
     word_timings_per_scene: Sequence[Sequence[tuple[str, float, float]] | None] | None = None,
     caption_beats_per_scene: Sequence[Sequence[str] | None] | None = None,
+    sidecar_dir: Path | None = None,
+    vo_sidecar_dir: Path | None = None,
     audit_out: dict[str, Any] | None = None,
 ) -> Path:
     """
@@ -2088,9 +2090,13 @@ def assemble_lofi_reel(
                     "— keeping full VO and extending mix (never trim)"
                 )
                 mix_dur = vo_len
-            vo_sidecar = Path(output_mp4).with_name(
-                f"{Path(output_mp4).stem}_vo_concat.mp3"
+            vo_dir = Path(vo_sidecar_dir) if vo_sidecar_dir else (
+                Path(output_mp4).parent.parent / "assets"
+                if Path(output_mp4).parent.name == "clips"
+                else Path(output_mp4).parent
             )
+            vo_dir.mkdir(parents=True, exist_ok=True)
+            vo_sidecar = vo_dir / f"{Path(output_mp4).stem}_vo_concat.mp3"
             try:
                 vo_full.write_audiofile(str(vo_sidecar), logger=None)
                 print(f"[LOFI assemble] raw VO concat -> {vo_sidecar}")
@@ -2173,7 +2179,13 @@ def assemble_lofi_reel(
         try:
             import json as _json
 
-            dbg = Path(output_mp4).with_name(Path(output_mp4).stem + "_pulse_debug.json")
+            json_dir = Path(sidecar_dir) if sidecar_dir else (
+                Path(output_mp4).parent.parent / "metadata"
+                if Path(output_mp4).parent.name == "clips"
+                else Path(output_mp4).parent
+            )
+            json_dir.mkdir(parents=True, exist_ok=True)
+            dbg = json_dir / f"{Path(output_mp4).stem}_pulse_debug.json"
             dbg.write_text(
                 _json.dumps(
                     {

@@ -20,7 +20,7 @@ import argparse
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -157,12 +157,43 @@ def row_recency_key(row: dict[str, Any]) -> str:
     return Path(str(row.get("video_path") or "")).stem
 
 
+_ALWAYS_SKIP_FOLDERS = frozenset({
+    "reproved", "tests", "archive", "needs_metadata", "posted_facebook",
+})
+_CHANNEL_SKIP_FOLDERS = frozenset({
+    "tmp", "temp", "scratch", "__pycache__", ".git",
+})
+
+
+def excluded_video_folder(path: Path | str) -> str:
+    """Return the skipped folder name if *path* lives under tests/reproved/etc.
+
+    OS temp roots (pytest ``tmp_path``, ``%TEMP%``) are ignored. ``tmp`` /
+    ``temp`` only exclude files under the channel outputs tree.
+    """
+    parts = [part.lower() for part in Path(path).parts]
+    channel_seen = False
+    for name in parts:
+        if name == CHANNEL_ID:
+            channel_seen = True
+        if name in _ALWAYS_SKIP_FOLDERS:
+            return name
+        if name in _CHANNEL_SKIP_FOLDERS and channel_seen:
+            return name
+    return ""
+
+
 def select_pending_rows(
     rows: list[dict[str, Any]],
     *,
     limit: int = DEFAULT_LIMIT,
 ) -> list[dict[str, Any]]:
-    pending = [row for row in rows if youtube_status(row) == "pending"]
+    pending = [
+        row
+        for row in rows
+        if youtube_status(row) == "pending"
+        and not excluded_video_folder(str(row.get("video_path") or ""))
+    ]
     pending.sort(key=row_recency_key, reverse=True)
     cap = max(0, int(limit))
     return pending[:cap]
@@ -171,6 +202,36 @@ def select_pending_rows(
 def first_publish_slot(*, now: datetime | None = None) -> datetime:
     """Tomorrow at 18:00 America/New_York (15:00 PT → 22:00 UTC in EDT)."""
     return first_us_peak_slot(now=now)
+
+
+def latest_future_publish_slot(
+    rows: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Latest future YouTube ``scheduled_time`` already on the catalog."""
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    latest: datetime | None = None
+    for row in rows:
+        if youtube_status(row) not in {"scheduled", "posted"}:
+            continue
+        youtube = _nested(row, "platform_overrides", "youtube")
+        youtube = youtube if isinstance(youtube, dict) else {}
+        raw = str(youtube.get("scheduled_time") or "").strip()
+        if not raw:
+            continue
+        try:
+            slot = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if slot.tzinfo is None:
+            slot = slot.replace(tzinfo=timezone.utc)
+        slot = slot.astimezone(timezone.utc)
+        if slot <= current:
+            continue
+        if latest is None or slot > latest:
+            latest = slot
+    return latest
 
 
 def build_publish_slots(
@@ -233,6 +294,13 @@ def plan_schedule(
     rejected: list[dict[str, str]] = []
     eligible: list[dict[str, Any]] = []
     for row in pending:
+        skipped = excluded_video_folder(str(row.get("video_path") or ""))
+        if skipped:
+            rejected.append({
+                "session_id": str(row.get("session_id") or Path(str(row.get("video_path") or "")).stem),
+                "reason": f"skipped folder '{skipped}' (tests/reproved/archive are never queued)",
+            })
+            continue
         catalog_errors = validate_queue_ready(row, require_scheduled_time=False)
         if catalog_errors:
             rejected.append({
@@ -243,7 +311,12 @@ def plan_schedule(
         eligible.append(row)
         if len(eligible) >= max(0, int(limit)):
             break
-    slots = build_publish_slots(len(eligible), now=now, interval=interval)
+    last = latest_future_publish_slot(rows, now=now)
+    first = None
+    if last is not None:
+        gap = interval if isinstance(interval, timedelta) and interval.total_seconds() > 0 else timedelta(hours=24)
+        first = last + gap
+    slots = build_publish_slots(len(eligible), now=now, first=first, interval=interval)
     planned: list[SchedulePlanItem] = []
     for index, (row, slot) in enumerate(zip(eligible, slots), start=1):
         payload = map_youtube_payload(row)

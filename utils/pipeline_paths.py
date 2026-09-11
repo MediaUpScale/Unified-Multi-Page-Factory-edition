@@ -158,6 +158,14 @@ def page_clips_dir(page_id: str, *, create: bool = True) -> Path:
     return path
 
 
+def page_metadata_dir(page_id: str, *, create: bool = True) -> Path:
+    """Diagnostics / script JSON for a page: ``{OUTPUT_PATH}/{page}/metadata``."""
+    path = page_outputs_dir(page_id) / "metadata"
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def page_library_dir(page_id: str, *, create: bool = False) -> Path:
     """Telemetry / post JSON for a page: ``{OUTPUT_PATH}/{page}/library``."""
     path = page_outputs_dir(page_id) / "library"

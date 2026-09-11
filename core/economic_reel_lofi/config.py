@@ -1011,16 +1011,17 @@ CAPTION_STYLES: frozenset[str] = frozenset(
 CHANNEL_ASSEMBLY: dict[str, dict[str, Any]] = {
     "momma_circle": {
         "logo_candidates": [
+            "assets/logos/momma_circle.png",
             "assets/logos/momma_circle_watermark.png",
             "channels_config/momma_circle/logo/logo.png",
         ],
-        # Text watermark — preferred for LOFI cohesion vs PNG logo
         "watermark_handle": "@Momma Circle",
         "logo_position": "bottom_center",
-        "logo_opacity": 0.55,
-        "logo_scale": 0.04,  # was 0.06 (~33% smaller)
+        "logo_opacity": 0.90,
+        "logo_scale": 0.18,
+        "logo_bottom_px": 72,
         "caption_color": (255, 255, 255),
-        "use_text_watermark": True,
+        "use_text_watermark": False,
     },
     "wonder_feed": {
         "logo_candidates": [

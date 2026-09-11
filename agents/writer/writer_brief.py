@@ -17,43 +17,6 @@ from typing import Any, Literal
 
 BriefMode = Literal["emotional", "theme", "quote", "paraphrase"]
 
-_RELATIONSHIP_VISUAL_ARC = (
-    "VISUAL ARC — 8 beats, atmospheric painterly risograph/gouache with cinematic "
-    "depth. Never photoreal. Never flat vector. Golden rim light on silhouettes. "
-    "Protect anatomy with shoes/boots or crop feet out of frame.\n"
-    "1 Hook (<=3s): Silhouette of dark-haired woman in shoes/boots, seated near "
-    "sunset window with golden rim light.\n"
-    "2 Sun Doorway: Silhouette of woman in doorway against massive burning sunset disc.\n"
-    "3 Minimalist Prop: Isolated steaming ceramic cup or vintage kettle on textured amber paper.\n"
-    "4 Tender Profile: Gentle profile of the woman, soft ink hatching, warm amber backlight.\n"
-    "5 Hallway: Dim domestic hallway with long shadows and light spilling from an open door.\n"
-    "6 Rain Silhouette: Silhouette of man under umbrella on balcony watching rain under streetlamp.\n"
-    "7 Atmospheric Setting: Solitary wet street corner with glowing amber lantern reflections.\n"
-    "8 Resolution: Couple walking hand-in-hand down narrow sunlit alley with luggage into the sunset."
-)
-
-_PARENTING_VISUAL_ARC = (
-    "VISUAL ARC — 8 beats, atmospheric painterly risograph/gouache with cinematic "
-    "depth. Never photoreal. Never flat vector. Golden rim light on silhouettes. "
-    "Protect anatomy with shoes/boots or crop feet out of frame.\n"
-    "1 Hook (<=3s): Atmospheric silhouette of parent seated near golden-hour window, "
-    "warm rim light.\n"
-    "2 Sun Doorway: Silhouette of parent and child holding hands in doorway against giant sunset sun.\n"
-    "3 Minimalist Prop: Isolated vintage wooden toy train or tiny worn shoes on warm paper ground.\n"
-    "4 Tender Profile: Loving, weary profile of parent under amber lamplight, gouache contours.\n"
-    "5 Hallway: Dark hallway, floorboard shadows, soft nightlight glow from child's cracked bedroom door.\n"
-    "6 Rain Silhouette: Silhouette of parent at rainy window at dusk reflecting on passing time.\n"
-    "7 Atmospheric Setting: Front porch with glowing lantern casting warm light on steps through evening rain.\n"
-    "8 Resolution: Silhouette of parent and child walking hand-in-hand along golden pathway toward sunrise."
-)
-
-
-def _visual_arc_clause(module: str) -> str:
-    niche = str(module or "relationship").strip().lower()
-    if niche == "parenting":
-        return _PARENTING_VISUAL_ARC
-    return _RELATIONSHIP_VISUAL_ARC
-
 
 @dataclass(frozen=True)
 class WriterBrief:
@@ -259,43 +222,12 @@ class WriterBrief:
                 "its argument. Return a genuine variation, not a new composition."
             )
         elif self.mode == "emotional":
-            parts.append(lofi_cfg.hook_line_brevity_clause())
-            parts.append(
-                "SCENE 1 RETENTION HOOK: strictly 5–7 punchy, high-retention "
-                "words, fewer than 45 characters, written to finish speaking "
-                "under 2.8 seconds."
-            )
             niche = str(self.module or "relationship").strip().lower()
-            if niche == "parenting":
-                reflection = (
-                    "Write intimate micro-philosophical prose about presence, "
-                    "childhood time slipping away, quiet love, and the ordinary "
-                    "moments a parent only recognizes as sacred later. Use "
-                    "psychological depth without lectures, shame, or productivity "
-                    "advice. Let each beat feel discovered, not announced. "
-                    "Concrete details may ground the reflection, but do not force "
-                    "an object merely to supply an image. Beat 1 may use a verified "
-                    "public literary quote anchor or a striking behavioral truth; "
-                    "never invent an attribution. Move toward a mature truth the "
-                    "listener can carry, without reducing the ending to advice."
-                )
-            else:
-                reflection = (
-                    "Write intimate micro-philosophical prose about what remains "
-                    "unspoken: silence, boundaries, heartbreak, detachment, longing, "
-                    "or emotional maturity. Use psychological depth, moral tension, "
-                    "and lucid existential observation. Let each beat feel discovered, "
-                    "not announced. Concrete details may ground the reflection, but "
-                    "do not force an object, room, or action merely to supply an image. "
-                    "Avoid therapy slogans, motivational certainty, melodrama, ornate "
-                    "purple prose, and imitation of any named author. Beat 1 may use "
-                    "a verified public literary quote anchor or a striking behavioral "
-                    "truth; never invent an attribution. "
-                    "Move from wound or contradiction toward a mature truth the "
-                    "listener can carry, without reducing the ending to advice."
-                )
             parts.append(
-                "EMOTIONAL REFLECTION:\n"
+                "AUTEUR MICRO-NARRATIVE:\n"
+                "You are an award-winning auteur and philosophical storyteller for "
+                "short-form cinema (ECONOMIC_REEL_LOFI). Write a unique, "
+                "psychologically gripping micro-narrative anchored in human truth.\n"
                 f"  Niche: {niche}\n"
                 f"  Theme: {self.theme.replace('_', ' ')}\n"
                 + (
@@ -303,7 +235,17 @@ class WriterBrief:
                     if self.subtheme
                     else ""
                 )
-                + reflection
+                + "THE ANCHOR: Begin from a profound philosophical insight or "
+                "psychological paradox: how lies multiply to survive, why pride "
+                "costs more than grief, the illusion of closure, the unspoken "
+                "weight of time, or an equally specific truth you discover. "
+                "Do not copy those examples. NO GENERIC SOCIAL MEDIA QUOTES: build "
+                "one cohesive eight-beat narrative with rising tension, meaningful "
+                "turns, and a poignant resolution. Avoid therapy slogans, "
+                "motivational certainty, lectures, shame, melodrama, and imitation "
+                "of any named author. VOICE & PACING: every beat has 7–11 spoken "
+                "words in natural cadence. Each beat must advance the thought; no "
+                "Mad-Libs repetition, interchangeable filler, or repeated moral."
             )
         else:
             parts.append(lofi_cfg.hook_line_brevity_clause())
@@ -328,6 +270,4 @@ class WriterBrief:
                 "write a different piece. Here is why it failed:\n"
                 f"{self.revision_note}"
             )
-        if self.mode != "paraphrase":
-            parts.append(_visual_arc_clause(self.module))
         return "\n\n".join(parts)

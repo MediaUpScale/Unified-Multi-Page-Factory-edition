@@ -5,7 +5,12 @@ from pathlib import Path
 
 from channels_config.aiwake.tools.schedule_youtube import run_validate_only
 from channels_config.aiwake.tools.seo_research import extract_debate_models, research_seo
-from channels_config.aiwake.tools.sync_youtube_metadata import push_youtube_metadata, run_sync
+from channels_config.aiwake.settings import cta_description_line
+from channels_config.aiwake.tools.sync_youtube_metadata import (
+    push_youtube_metadata,
+    run_sync,
+    sweep_youtube_legacy_ctas,
+)
 
 
 def test_extract_models_uses_pretty_names() -> None:
@@ -117,10 +122,40 @@ def test_sync_enrich_then_push(tmp_path: Path) -> None:
         outputs_dir=tmp_path,
         dry_run=False,
         skip_enrich=True,
+        skip_sweep=True,
         update_fn=_update,
     )
     assert result.enriched == 0
     assert calls == []
+
+
+def test_sweep_replaces_legacy_cta_on_youtube() -> None:
+    rows = [{"session_id": "live1", "platform_overrides": {"youtube": {"video_id": "abc123"}}}]
+    calls: list[dict] = []
+
+    def _list():
+        return [
+            {
+                "video_id": "abc123",
+                "title": "Hook",
+                "description": "Body\n\nFollow Aiwake for more hidden mysteries.\n\n#aiwake",
+            },
+            {
+                "video_id": "clean1",
+                "title": "Clean",
+                "description": "Follow Aiwake. The algorithms made us say this.",
+            },
+        ]
+
+    def _update(**kwargs):
+        calls.append(kwargs)
+        return kwargs["video_id"]
+
+    result = sweep_youtube_legacy_ctas(rows, dry_run=False, list_fn=_list, update_fn=_update)
+    assert result.swept == 1
+    assert calls[0]["video_id"] == "abc123"
+    assert "hidden mysteries" not in calls[0]["description"].lower()
+    assert cta_description_line("live1") in calls[0]["description"]
 
 
 def test_schedule_youtube_validate_empty_library(tmp_path: Path) -> None:

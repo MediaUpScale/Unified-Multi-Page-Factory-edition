@@ -46,6 +46,8 @@ from modules.distribution_contract import (
     build_us_peak_slots,
     clip_text,
     content_library_path,
+    load_distribution_library,
+    save_distribution_library,
     strip_shorts_title,
     merge_high_rpm_search_tags,
     posting_status_from_map,
@@ -65,9 +67,19 @@ from modules.durable_store import restore_channel_state
 from utils.pipeline_paths import page_outputs_dir
 
 try:
-    from channels_config.aiwake.settings import resolve_store_dir
+    from channels_config.aiwake.settings import (
+        cta_description_line,
+        has_legacy_description_cta,
+        replace_legacy_description_cta,
+        resolve_store_dir,
+    )
 except ImportError:  # pragma: no cover — standalone extraction
-    from settings import resolve_store_dir  # type: ignore[no-redef]
+    from settings import (  # type: ignore[no-redef]
+        cta_description_line,
+        has_legacy_description_cta,
+        replace_legacy_description_cta,
+        resolve_store_dir,
+    )
 
 _LOG = logging.getLogger("aiwake.backfill")
 
@@ -76,12 +88,12 @@ POST_TYPE = "AIWAKE_REEL"
 CORE_HASHTAGS: tuple[str, ...] = DEFAULT_HASHTAGS
 PINTEREST_BOARD = "AI Consciousness & Tech"
 YOUTUBE_CATEGORY_ID = YOUTUBE_CATEGORY_SCIENCE_TECH
-CTA_LINE = "Follow Aiwake for more hidden mysteries."
 _VIDEO_PREFIX = "aiwake_debate_"
-_SKIP_DIR_NAMES = frozenset({
+SKIP_DIR_NAMES = frozenset({
     "tmp", "temp", "scratch", "__pycache__", ".git", "needs_metadata",
     "reproved", "tests", "archive", "posted_facebook",
 })
+_SKIP_DIR_NAMES = SKIP_DIR_NAMES
 _MIN_VIDEO_BYTES = 50_000
 _SESSION_FROM_NAME = re.compile(
     rf"^(?:{_VIDEO_PREFIX})?(?P<sid>.+?)$",
@@ -347,6 +359,7 @@ def build_caption(
     keywords: Iterable[str] | None = None,
     extra_questions: Iterable[str] | None = None,
     extra_answers: Iterable[str] | None = None,
+    seed: str = "",
 ) -> str:
     subject = " ".join((topic or "consciousness").split()).strip()
     matchup = " vs ".join(part for part in (challenger.strip(), defender.strip()) if part)
@@ -382,20 +395,26 @@ def build_caption(
             "The exchange treats model weights, inference, and who owns the stack as live questions — "
             "not a product demo."
         )
-    parts.append(CTA_LINE)
+    parts.append(cta_description_line(seed))
     tags = " ".join(tag for tag in hashtags if tag)
     if tags:
         parts.append(tags)
     return "\n\n".join(part for part in parts if part)
 
 
-def build_x_caption(title: str, topic: str, hashtags: Iterable[str]) -> str:
+def build_x_caption(
+    title: str,
+    topic: str,
+    hashtags: Iterable[str],
+    *,
+    seed: str = "",
+) -> str:
     tags = " ".join(list(hashtags)[:4])
     subject = " ".join((topic or "").split()).strip()
     body = title if title.endswith("?") else f"{title} Two AIs. No script."
     if subject and subject.lower() not in body.lower():
         body = f"{body} ({subject})"
-    draft = f"{body} {CTA_LINE} {tags}".strip()
+    draft = f"{body} {cta_description_line(seed)} {tags}".strip()
     return clip_text(draft, X_CAPTION_MAX_CHARS)
 
 
@@ -493,6 +512,7 @@ def build_record(
         keywords=seo.keywords,
         extra_questions=orch_lines[1:],
         extra_answers=target_lines[1:],
+        seed=doc.session_id,
     )
     search_tags = merge_high_rpm_search_tags(
         build_search_tags(
@@ -511,7 +531,7 @@ def build_record(
         search_tags=search_tags,
         hooks=hooks,
     )
-    x_caption = build_x_caption(title, topic, hashtags)
+    x_caption = build_x_caption(title, topic, hashtags, seed=doc.session_id)
     record = DistributionRecord(
         channel_id=CHANNEL_ID,
         post_type=POST_TYPE,
@@ -571,6 +591,65 @@ def persist_record(
         record.asset_id = asset_id
     upsert_distribution_row(library_path, record)
     return record, asset_id
+
+
+def _set_nested(row: dict[str, Any], keys: tuple[str, ...], value: str) -> None:
+    cursor: Any = row
+    for key in keys[:-1]:
+        child = cursor.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[key] = child
+        cursor = child
+    cursor[keys[-1]] = value
+
+
+def _get_nested(row: dict[str, Any], keys: tuple[str, ...]) -> str:
+    cursor: Any = row
+    for key in keys:
+        if not isinstance(cursor, dict):
+            return ""
+        cursor = cursor.get(key)
+    return str(cursor or "")
+
+
+def rewrite_row_legacy_cta(row: dict[str, Any], seed: str = "") -> bool:
+    """Replace leftover mystery CTAs on one library row. True if anything changed."""
+    session = seed or str(row.get("session_id") or "").strip()
+    changed = False
+    fields: tuple[tuple[str, ...], ...] = (
+        ("final_caption",),
+        ("base_metadata", "caption"),
+        ("platform_overrides", "youtube", "caption"),
+        ("platform_overrides", "x", "caption"),
+    )
+    for keys in fields:
+        current = _get_nested(row, keys)
+        if not current or not has_legacy_description_cta(current):
+            continue
+        rewritten = replace_legacy_description_cta(current, session)
+        if keys == ("platform_overrides", "x", "caption"):
+            rewritten = clip_text(rewritten, X_CAPTION_MAX_CHARS)
+        if rewritten != current:
+            _set_nested(row, keys, rewritten)
+            changed = True
+    return changed
+
+
+def rewrite_library_legacy_ctas(
+    library_path: Path,
+    *,
+    dry_run: bool = False,
+) -> tuple[int, list[dict[str, Any]]]:
+    """Rewrite Ancient Knowledge-style CTAs in the local catalog."""
+    rows = load_distribution_library(library_path)
+    changed = 0
+    for row in rows:
+        if rewrite_row_legacy_cta(row):
+            changed += 1
+    if changed and not dry_run:
+        save_distribution_library(library_path, rows)
+    return changed, rows
 
 
 def run_backfill(

@@ -410,15 +410,18 @@
     "concrete_details": [
       {
         "detail": "a night lamp on the bedside table",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "a stuffed bear tucked under the blanket",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "small shoes lined up by the bed",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "the hallway lamp dimmed",
@@ -502,15 +505,18 @@
     "concrete_details": [
       {
         "detail": "an unmade bed left empty",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "dishes left in the sink till morning",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "a folded towel on the bathroom counter",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "the same chair pulled out at dawn",

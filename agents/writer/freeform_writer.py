@@ -250,27 +250,27 @@ descriptions. Spoken words only. Produce exactly 7 to 9 beats. Each beat contain
 7 to 12 words and should take roughly 2.5 to 3.5 seconds when spoken. Output valid \
 SCRIPT_CANDIDATE_JSON and nothing else."""
 
-LOFI_WRITER_SYSTEM_PROMPT = """You are the Lead Art Director for an illustrated \
-Risograph micro-drama (ECONOMIC_REEL_LOFI). The visual identity is a vintage \
-risograph print poster with bold flat gouache blocks, paper-grain halftone, and \
-fine ink linework. Return ONLY valid JSON matching the requested schema.
+LOFI_WRITER_SYSTEM_PROMPT = """You are an award-winning auteur and philosophical \
+storyteller for short-form cinema (ECONOMIC_REEL_LOFI). Write a unique, \
+psychologically gripping micro-narrative anchored in human truth. The visual \
+identity is painterly risograph/gouache: textured paper, rich chiaroscuro, fine \
+ink linework, and no photorealism. Return ONLY valid JSON matching the schema.
 
 CRITICAL RULES:
-1. Declare location_anchor first and obey the niche-specific visual direction. \
-Some niches stay in one physical room; an explicitly cinematic relationship arc \
-may use one continuous poetic world across expansive locations from sunset to dawn. \
-Preserve character, weather, palette, and emotional continuity.
-2. Keep the niche's recurring human protagonist present except on the one \
-graphic-minimalist object beat. Use hands, silhouettes, over-the-shoulder views, \
-side profiles, or stylized three-quarter profiles. Never return sterile empty \
-furniture B-roll, a front-facing portrait, direct eye contact, or a clearly \
-visible smiling or speaking mouth.
-3. Return exactly eight narration beats. Scene 1 is a punchy 5–7-word hook under \
-45 characters so speech finishes under 2.8 seconds. Scenes 2–8 have 7–11 \
-words; total narration stays below 80 words. Keep each metadata value at 3 words \
-maximum. Keep every visual_concept concise but concrete: subject, framing, light, \
-texture, and micro-action relative to the anchor. Emit compact single-line JSON. \
-The pipeline adds known metadata, the anchor, and full prompts programmatically."""
+1. Start from a profound philosophical insight or psychological paradox. Build \
+one cohesive eight-beat arc with rising tension and a poignant resolution. No \
+generic social-media quotes or repeated paraphrases of the same moral.
+2. Declare a fresh story-specific location_anchor first. Do not default to the \
+same doorway, giant sun, hallway, isolated cup, or sunset alley. Stage realistic \
+props where they belong: cups on tables, bags on racks, books on desks.
+3. Mix wide establishing shots, silhouettes with motivated rim light, moody \
+medium profiles, tactile environmental details, and a wide atmospheric ending. \
+Never return sterile B-roll, direct eye contact, a visible speaking mouth, or \
+photorealism.
+4. Return exactly eight narration beats, each with 7–11 naturally spoken words. \
+Total narration stays below 80 words. Keep metadata values at 3 words maximum. \
+Every visual_concept names subject, framing, light, texture, and meaningful \
+action. Emit compact JSON. The pipeline adds style and full prompts."""
 
 
 def _niche_key(brief: WriterBrief | None = None) -> str:
@@ -314,7 +314,7 @@ def _output_contract(brief: WriterBrief | None = None) -> str:
   "beats": [
     {{
       "scene": 1,
-      "text": "<5-7 punchy words, fewer than 45 characters>",
+      "text": "<7-11 punchy spoken words>",
       "visual_concept": "<concise subject, framing, light, texture, and action>"
     }},
     {{
@@ -330,8 +330,8 @@ numbered consecutively 1–8. Every beat MUST include text and visual_concept. \
 Do not return writer_mode, theme, subtheme, niche, or any keys outside this schema; \
 the pipeline already owns them. location_anchor must be the first key.
 
-Scene 1 MUST contain 5–7 punchy words under 45 characters. Scenes 2–8 contain \
-7–11 words and never exceed {min(11, target_max)} words (absolute ceiling \
+Every scene, including scene 1, contains 7–11 spoken words and never exceeds \
+{min(11, target_max)} words (absolute ceiling \
 {ceiling}). Total narration MUST stay below 80 words. Write one lucid breath \
 per beat."""
 
@@ -494,11 +494,7 @@ def write_draft(
     if any(not concept for concept in visuals):
         raise ValueError("writer response had an empty visual_concept")
     word_counts = [len(line.split()) for line in lines]
-    if not 5 <= word_counts[0] <= 7 or len(lines[0]) >= 45:
-        raise ValueError(
-            "writer hook must contain 5-7 words and fewer than 45 characters"
-        )
-    if any(count < 7 or count > 11 for count in word_counts[1:]):
+    if any(count < 7 or count > 11 for count in word_counts):
         raise ValueError(f"writer beat word counts outside contract: {word_counts}")
     draft = ScriptDraft(
         lines=lines,

@@ -1055,7 +1055,7 @@
       {
         "detail": "a coat still on the hook by the door",
         "sensory_type": "object",
-        "last_used_date": "2026-08-22"
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "two coats hanging on one hook",
@@ -1084,12 +1084,13 @@
       },
       {
         "detail": "tea cooling beside the unturned photo",
-        "sensory_type": "object"
+        "sensory_type": "object",
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "an empty train platform at night",
         "sensory_type": "object",
-        "last_used_date": null,
+        "last_used_date": "2026-09-11",
         "performance_score": null
       }
     ],
@@ -1253,17 +1254,17 @@
       {
         "detail": "untied shoes waiting on the stoop at dawn",
         "sensory_type": "object",
-        "last_used_date": "2026-08-24"
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "the kettle just starting before sunrise",
         "sensory_type": "object",
-        "last_used_date": "2026-08-24"
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "a work bag still by the door",
         "sensory_type": "object",
-        "last_used_date": "2026-08-24"
+        "last_used_date": "2026-09-11"
       },
       {
         "detail": "cold water splashed on a face at the sink",

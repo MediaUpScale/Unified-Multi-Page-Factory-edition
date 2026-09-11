@@ -2980,10 +2980,13 @@ def _generate_validated_script(
     return None, fallback_reasons or last_errors or ["script validation failed"], True
 
 
-def _resolve_page_dirs(page_id: str, outputs_dir: Path | str | None) -> tuple[Path, Path, Path]:
-    """
-    Return ``(page_outputs, clips_dir, assets_dir)`` using the existing
-    per-page layout: ``outputs/<page>/{clips,assets}/``.
+def _resolve_page_dirs(
+    page_id: str, outputs_dir: Path | str | None
+) -> tuple[Path, Path, Path, Path]:
+    """Return ``(page_outputs, clips_dir, assets_dir, metadata_dir)``.
+
+    ``clips/`` is final MP4s only. JSON diagnostics go to ``metadata/``.
+    Scene stills and VO stay under ``assets/<run_id>/``.
     """
     from utils.pipeline_paths import coerce_outputs_path, page_outputs_dir
 
@@ -2996,11 +2999,15 @@ def _resolve_page_dirs(page_id: str, outputs_dir: Path | str | None) -> tuple[Pa
             page_outputs = page_outputs.parent
         elif page_outputs.name == "economic_reel_lofi":
             page_outputs = page_outputs.parent
+        elif page_outputs.name == "metadata":
+            page_outputs = page_outputs.parent
     clips_dir = page_outputs / "clips"
     assets_dir = page_outputs / "assets"
+    metadata_dir = page_outputs / "metadata"
     clips_dir.mkdir(parents=True, exist_ok=True)
     assets_dir.mkdir(parents=True, exist_ok=True)
-    return page_outputs, clips_dir, assets_dir
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    return page_outputs, clips_dir, assets_dir, metadata_dir
 
 
 def _load_locked_script(path: Path | str) -> dict[str, Any]:
@@ -3185,6 +3192,7 @@ def _assemble_stage3_prompts(
     theme_row: dict[str, Any] | None,
     lock_visuals: bool,
     clips_dir: Path,
+    metadata_dir: Path | None = None,
     stamp: str,
     scene_count: int,
 ) -> dict[str, Any]:
@@ -3276,7 +3284,9 @@ def _assemble_stage3_prompts(
 
         lib_diff = export_active_library_diff()
         try:
-            live_dump = clips_dir / f"riso_library_live_{stamp}.json"
+            dest = Path(metadata_dir) if metadata_dir else clips_dir.parent / "metadata"
+            dest.mkdir(parents=True, exist_ok=True)
+            live_dump = dest / f"riso_library_live_{stamp}.json"
             live_dump.write_text(
                 json.dumps(load_riso_library(), indent=2, ensure_ascii=False),
                 encoding="utf-8",
@@ -3350,6 +3360,7 @@ def _produce_one(
     duration_s: int,
     clips_dir: Path,
     assets_dir: Path,
+    metadata_dir: Path | None = None,
     force_theme: str | None = None,
     force_subtheme: str | None = None,
     writer_mode: str = "emotional",
@@ -3367,6 +3378,8 @@ def _produce_one(
 ) -> LofiItemResult:
     scene_count = lofi_cfg.scene_count_for_duration(duration_s, thematic=True)
     stamp = _utc_stamp()
+    metadata_dir = Path(metadata_dir) if metadata_dir else clips_dir.parent / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
     persist_on_pass = not script_only and not stills_only
     review_required = bool(
         lofi_cfg.REVIEW_REQUIRED if review_required is None else review_required
@@ -3449,7 +3462,7 @@ def _produce_one(
                 )
                 _print_script_report(script, index=index, qty=batch_qty)
                 errs = list(locked_result.reasons)
-                review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
+                review_path = metadata_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
                 review_path.write_text(
                     json.dumps(
                         {
@@ -3498,7 +3511,7 @@ def _produce_one(
             strict_judge=strict_writer,
         )
     if script is None:
-        review_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
+        review_path = metadata_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
         review_path.write_text(
             json.dumps(
                 {"errors": errs, "theme": theme_row, "module": module, "script_only": script_only},
@@ -3532,7 +3545,7 @@ def _produce_one(
         sub = str(script.get("subtheme") or theme_row.get("subtheme") or "")
         _print_script_report(script, index=index, qty=batch_qty)
         theme_slug = _episode_slug(script, theme=theme, subtheme=sub)
-        meta_path = clips_dir / f"lofi_script_{theme_slug}_{stamp}_v{index:02d}.json"
+        meta_path = metadata_dir / f"lofi_script_{theme_slug}_{stamp}_v{index:02d}.json"
         meta = {
             "post_type": "ECONOMIC_REEL_LOFI",
             "mode": "script_only",
@@ -3641,7 +3654,7 @@ def _produce_one(
             pipeline_stage=f"gate{gate}_hold",
         )
 
-    state_path = clips_dir / f"lofi_pipeline_{stamp}_{index:02d}.json"
+    state_path = metadata_dir / f"lofi_pipeline_{stamp}_{index:02d}.json"
     if resume_state and resume_state.get("source"):
         src = Path(str(resume_state["source"]))
         if src.is_file() and "lofi_pipeline_" in src.name:
@@ -3747,6 +3760,7 @@ def _produce_one(
             theme_row=theme_row,
             lock_visuals=lock_visuals,
             clips_dir=clips_dir,
+            metadata_dir=metadata_dir,
             stamp=stamp,
             scene_count=scene_count,
         ) or episode_variety
@@ -4230,7 +4244,7 @@ def _produce_one(
             "est_cost_usd": total_est_cost,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        meta_path = clips_dir / f"lofi_stills_{theme_slug}_{stamp}_v{index:02d}.json"
+        meta_path = metadata_dir / f"lofi_stills_{theme_slug}_{stamp}_v{index:02d}.json"
         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"[LOFI stills-only] wrote {meta_path}")
         print(f"[LOFI stills-only] stills {run_dir}")
@@ -4294,7 +4308,7 @@ def _produce_one(
             "est_cost_usd": total_est_cost,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        hold_path = clips_dir / f"lofi_hold_{theme_slug}_{stamp}_v{index:02d}.json"
+        hold_path = metadata_dir / f"lofi_hold_{theme_slug}_{stamp}_v{index:02d}.json"
         hold_path.write_text(
             json.dumps(hold_meta, indent=2, ensure_ascii=False), encoding="utf-8"
         )
@@ -4452,7 +4466,7 @@ def _produce_one(
         )
         if not lofi_cfg.allow_mixed_era_assemble():
             print(f"[LOFI assemble] REFUSE mixed-era: {mix_msg}")
-            hold_path = clips_dir / f"lofi_hold_mixed_era_{stamp}_v{index:02d}.json"
+            hold_path = metadata_dir / f"lofi_hold_mixed_era_{stamp}_v{index:02d}.json"
             hold_path.write_text(
                 json.dumps(
                     {
@@ -4536,11 +4550,13 @@ def _produce_one(
                 else []
                 for r in lines
             ],
+            sidecar_dir=metadata_dir,
+            vo_sidecar_dir=run_dir,
             audit_out=assemble_audit,
         )
     except ShipGateError as exc:
         _LOG.error("ship gate blocked assemble: %s", exc)
-        hold_path = clips_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
+        hold_path = metadata_dir / f"lofi_manual_review_{stamp}_{index:02d}.json"
         hold_path.write_text(
             json.dumps(
                 {
@@ -4649,7 +4665,7 @@ def _produce_one(
         "est_cost_usd": total_est_cost,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    meta_path = clips_dir / f"{out_mp4.stem}.json"
+    meta_path = metadata_dir / f"{out_mp4.stem}.json"
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
     ao = script.get("anchor_object") if isinstance(script.get("anchor_object"), dict) else {}
@@ -4745,7 +4761,9 @@ def run_economic_reel_lofi(
     if locked_rows:
         qty = len(locked_rows)
 
-    page_outputs, clips_dir, assets_dir = _resolve_page_dirs(page, outputs_dir)
+    page_outputs, clips_dir, assets_dir, metadata_dir = _resolve_page_dirs(
+        page, outputs_dir
+    )
 
     items: list[dict[str, Any]] = []
     ok_n = 0
@@ -4764,6 +4782,7 @@ def run_economic_reel_lofi(
             duration_s=dur,
             clips_dir=clips_dir,
             assets_dir=assets_dir,
+            metadata_dir=metadata_dir,
             force_theme=force_theme,
             force_subtheme=force_subtheme,
             writer_mode=mode,
@@ -4812,7 +4831,7 @@ def run_economic_reel_lofi(
         "outputs_dir": str(page_outputs),
         "clips_dir": str(clips_dir),
     }
-    summary_path = clips_dir / f"lofi_batch_{_utc_stamp()}.json"
+    summary_path = metadata_dir / f"lofi_batch_{_utc_stamp()}.json"
     summary_path.write_text(json.dumps(envelope, indent=2, ensure_ascii=False), encoding="utf-8")
     envelope["batch_meta"] = str(summary_path)
     return envelope

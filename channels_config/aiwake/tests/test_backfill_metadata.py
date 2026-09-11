@@ -4,13 +4,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from channels_config.aiwake.settings import cta_description_line
 from channels_config.aiwake.tools.backfill_metadata import (
     TranscriptDoc,
+    build_caption,
     build_record,
     build_title,
     build_x_caption,
     index_transcripts,
     match_transcript,
+    rewrite_library_legacy_ctas,
+    rewrite_row_legacy_cta,
     session_id_from_video,
 )
 from modules.distribution_contract import (
@@ -64,9 +68,26 @@ def test_x_caption_fits_twitter() -> None:
         "Is grief a slow update?",
         "grief",
         ("#aiwake", "#ai", "#aiconsciousness", "#tech"),
+        seed="sess-cta",
     )
     assert len(caption) <= X_CAPTION_MAX_CHARS
     assert "#aiwake" in caption
+    assert "hidden mysteries" not in caption.lower()
+    assert cta_description_line("sess-cta") in caption
+
+
+def test_caption_uses_fun_cta_not_ancient_knowledge() -> None:
+    caption = build_caption(
+        topic="grief",
+        first_question="Is grief a slow update?",
+        first_answer="It is a weight update.",
+        hashtags=("#aiwake",),
+        seed="sess-cta",
+    )
+    assert "hidden mysteries" not in caption.lower()
+    assert "Follow Aiwake." in caption
+    assert cta_description_line("sess-cta") in caption
+    assert caption.strip().splitlines()[-1].startswith("#")
 
 
 def test_session_id_from_standard_filename() -> None:
@@ -170,7 +191,52 @@ def test_build_record_universal_schema(tmp_path: Path) -> None:
         "kwai": "pending",
     }
     assert row["final_caption"] == row["base_metadata"]["caption"]
-    assert "Follow Aiwake" in row["base_metadata"]["caption"]
+    assert "Follow Aiwake." in row["base_metadata"]["caption"]
+    assert "hidden mysteries" not in row["base_metadata"]["caption"].lower()
+    assert cta_description_line("sess1") in row["base_metadata"]["caption"]
+    assert cta_description_line("sess1") in row["platform_overrides"]["x"]["caption"]
+
+
+def test_rewrite_row_replaces_legacy_mystery_cta() -> None:
+    seed = "rewrite-seed"
+    row = {
+        "session_id": seed,
+        "final_caption": "Body\n\nFollow Aiwake for more hidden mysteries.\n\n#aiwake",
+        "base_metadata": {
+            "caption": "Follow Ancient Knowledge for more hidden mysteries.",
+        },
+        "platform_overrides": {
+            "youtube": {"caption": "Stay. Follow Aiwake for more hidden mysteries"},
+            "x": {"caption": "Hook Follow Aiwake for more hidden mysteries. #ai"},
+        },
+    }
+    assert rewrite_row_legacy_cta(row) is True
+    fun = cta_description_line(seed)
+    assert row["final_caption"].count(fun) == 1
+    assert "hidden mysteries" not in json.dumps(row).lower()
+    assert rewrite_row_legacy_cta(row) is False
+
+
+def test_rewrite_library_legacy_ctas(tmp_path: Path) -> None:
+    library = tmp_path / "content_library.json"
+    library.write_text(
+        json.dumps([
+            {
+                "session_id": "lib1",
+                "final_caption": "Follow Aiwake for more hidden mysteries.",
+                "base_metadata": {"caption": "Follow Aiwake for more hidden mysteries."},
+                "platform_overrides": {
+                    "youtube": {"caption": "Follow Aiwake for more hidden mysteries."},
+                },
+            }
+        ]),
+        encoding="utf-8",
+    )
+    changed, rows = rewrite_library_legacy_ctas(library)
+    assert changed == 1
+    assert "hidden mysteries" not in rows[0]["final_caption"].lower()
+    saved = json.loads(library.read_text(encoding="utf-8"))
+    assert saved[0]["final_caption"] == cta_description_line("lib1")
 
 
 def test_upsert_preserves_live_posting_status(tmp_path: Path) -> None:

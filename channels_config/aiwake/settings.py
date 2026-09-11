@@ -17,6 +17,7 @@ Values already present in the environment always win; loading is non-destructive
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -647,6 +648,65 @@ class Theme(_Frozen):
         )
 
 
+_LEGACY_DESCRIPTION_CTA_RE = re.compile(
+    r"Follow (?:Aiwake|Ancient Knowledge) for more hidden mysteries\.?",
+    re.IGNORECASE,
+)
+
+
+def ensure_cta_two_line(line: str, *, theme: Theme | None = None) -> str:
+    """Force the two-line, period-based CTA shape used on the end-card."""
+    skin = theme or Theme.defaults()
+    head = skin.cta_head
+    text = (line or "").strip().replace("\n", " ").strip()
+    if text.lower().startswith(head.lower()):
+        tail = text[len(head):].lstrip(" ,.")
+    else:
+        tail = text
+    tail = tail.strip()
+    if tail and tail[0].islower():
+        tail = tail[0].upper() + tail[1:]
+    if tail and tail[-1] not in ".!?…":
+        tail += "."
+    return f"{head}.\n{tail}"
+
+
+def pick_cta(seed: str, *, theme: Theme | None = None) -> str:
+    """Weighted CTA pick, stable for a session so a rerender does not drift."""
+    skin = theme or Theme.defaults()
+    lines = skin.cta_lines
+    total = sum(weight for _, weight in lines) or 1
+    digest = hashlib.md5((seed or "aiwake").encode("utf-8")).digest()
+    needle = int.from_bytes(digest[:8], "big") % total
+    cursor = 0
+    for line, weight in lines:
+        cursor += weight
+        if needle < cursor:
+            return ensure_cta_two_line(line, theme=skin)
+    return ensure_cta_two_line(lines[0][0], theme=skin)
+
+
+def cta_description_line(seed: str, *, theme: Theme | None = None) -> str:
+    """Same weighted CTA as the video end-card, as one description paragraph."""
+    return " ".join(
+        part.strip()
+        for part in pick_cta(seed, theme=theme).splitlines()
+        if part.strip()
+    )
+
+
+def has_legacy_description_cta(text: str) -> bool:
+    """True when copy still uses the Ancient Knowledge-style follow line."""
+    return bool(_LEGACY_DESCRIPTION_CTA_RE.search(text or ""))
+
+
+def replace_legacy_description_cta(text: str, seed: str, *, theme: Theme | None = None) -> str:
+    """Swap leftover mystery CTAs for the session-stable fun follow line."""
+    if not has_legacy_description_cta(text):
+        return text
+    return _LEGACY_DESCRIPTION_CTA_RE.sub(cta_description_line(seed, theme=theme), text)
+
+
 class RenderConfig(_Frozen):
     enabled: bool = True
     width: int = Field(default=1080, ge=256, le=4096)
@@ -1009,8 +1069,13 @@ __all__ = [
     "VFXConfig",
     "VFXHookConfig",
     "cached_settings",
+    "cta_description_line",
+    "ensure_cta_two_line",
+    "has_legacy_description_cta",
     "load_environment",
     "load_settings",
+    "pick_cta",
+    "replace_legacy_description_cta",
     "require_secret",
     "resolve_outputs_dir",
     "resolve_scratch_dir",

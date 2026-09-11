@@ -38,18 +38,36 @@ from modules.durable_store import restore_channel_state
 from utils.pipeline_paths import page_outputs_dir
 
 try:
-    from channels_config.aiwake.tools.backfill_metadata import CHANNEL_ID, run_backfill
+    from channels_config.aiwake.settings import (
+        cta_description_line,
+        has_legacy_description_cta,
+        replace_legacy_description_cta,
+    )
+    from channels_config.aiwake.tools.backfill_metadata import (
+        CHANNEL_ID,
+        rewrite_library_legacy_ctas,
+        run_backfill,
+    )
     from channels_config.aiwake.tools.schedule_youtube import (
         _nested,
         map_youtube_payload,
         youtube_status,
     )
 except ImportError:  # pragma: no cover
-    from backfill_metadata import CHANNEL_ID, run_backfill  # type: ignore[no-redef]
+    from backfill_metadata import (  # type: ignore[no-redef]
+        CHANNEL_ID,
+        rewrite_library_legacy_ctas,
+        run_backfill,
+    )
     from schedule_youtube import (  # type: ignore[no-redef]
         _nested,
         map_youtube_payload,
         youtube_status,
+    )
+    from settings import (  # type: ignore[no-redef]
+        cta_description_line,
+        has_legacy_description_cta,
+        replace_legacy_description_cta,
     )
 
 _LOG = logging.getLogger("aiwake.sync")
@@ -72,7 +90,9 @@ class SyncItem:
 class SyncResult:
     dry_run: bool
     enriched: int = 0
+    rewritten: int = 0
     pushed: int = 0
+    swept: int = 0
     skipped: int = 0
     errors: list[SyncItem] = field(default_factory=list)
     items: list[SyncItem] = field(default_factory=list)
@@ -176,14 +196,106 @@ def push_youtube_metadata(
     return result
 
 
+def _session_by_video_id(rows: list[dict[str, Any]]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for row in rows:
+        video_id = _youtube_video_id(row)
+        session_id = str(row.get("session_id") or "").strip()
+        if video_id and session_id:
+            mapping[video_id] = session_id
+    return mapping
+
+
+def sweep_youtube_legacy_ctas(
+    rows: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
+    youtube_client=None,
+    list_fn=None,
+    update_fn=None,
+) -> SyncResult:
+    """Patch leftover mystery CTAs on every scheduled or published upload."""
+    result = SyncResult(dry_run=dry_run)
+    seeds = _session_by_video_id(rows)
+    lister = list_fn
+    updater = update_fn
+    youtube = youtube_client
+    if lister is None:
+        from agents.posting.youtube_publisher import (
+            build_youtube_client_for_page,
+            list_channel_upload_videos,
+            update_video_metadata,
+        )
+
+        if youtube is None:
+            youtube = build_youtube_client_for_page(CHANNEL_ID, enforce_channel=True)
+        lister = lambda: list_channel_upload_videos(youtube)
+        if updater is None:
+            def _bound(video_id, title, description, tags, category_id):
+                return update_video_metadata(
+                    youtube,
+                    video_id,
+                    title=title,
+                    description=description,
+                    tags=tags,
+                    category_id=category_id,
+                )
+
+            updater = _bound
+    videos = lister() if lister is not None else []
+    for video in videos or []:
+        video_id = str((video or {}).get("video_id") or "").strip()
+        description = str((video or {}).get("description") or "")
+        title = str((video or {}).get("title") or "")
+        if not video_id or not has_legacy_description_cta(description):
+            result.skipped += 1
+            continue
+        seed = seeds.get(video_id) or video_id
+        rewritten = replace_legacy_description_cta(description, seed)
+        item = SyncItem(
+            session_id=seeds.get(video_id, ""),
+            video_id=video_id,
+            title=title,
+            description=rewritten,
+        )
+        if dry_run:
+            item.status = "dry_run"
+            item.detail = f"would replace CTA → {cta_description_line(seed)}"
+            result.items.append(item)
+            result.swept += 1
+            continue
+        try:
+            if updater is None:
+                raise RuntimeError("YouTube updater unavailable")
+            updater(
+                video_id=video_id,
+                title=title,
+                description=rewritten,
+                tags=None,
+                category_id=YOUTUBE_CATEGORY_SCIENCE_TECH,
+            )
+            item.status = "swept"
+            item.detail = "legacy CTA replaced on YouTube"
+            result.swept += 1
+        except Exception as exc:  # noqa: BLE001 — keep the batch moving
+            _LOG.exception("YouTube CTA sweep failed for %s", video_id)
+            item.status = "error"
+            item.detail = str(exc)[:240]
+            result.errors.append(item)
+        result.items.append(item)
+    return result
+
+
 def run_sync(
     *,
     outputs_dir: Path | None = None,
     transcripts_dir: Path | None = None,
     dry_run: bool = False,
     skip_enrich: bool = False,
+    skip_sweep: bool = False,
     youtube_client=None,
     update_fn=None,
+    list_fn=None,
 ) -> SyncResult:
     if outputs_dir is None:
         restore_channel_state(CHANNEL_ID)
@@ -200,7 +312,9 @@ def run_sync(
         library_path = content_library_path(CHANNEL_ID)
     else:
         library_path = content_library_path(CHANNEL_ID, outputs_dir=media_root)
-    rows = load_distribution_library(library_path)
+    rewritten, rows = rewrite_library_legacy_ctas(library_path, dry_run=dry_run)
+    if not rows:
+        rows = load_distribution_library(library_path)
     result = push_youtube_metadata(
         rows,
         dry_run=dry_run,
@@ -208,6 +322,18 @@ def run_sync(
         update_fn=update_fn,
     )
     result.enriched = enriched
+    result.rewritten = rewritten
+    if not skip_sweep:
+        sweep = sweep_youtube_legacy_ctas(
+            rows,
+            dry_run=dry_run,
+            youtube_client=youtube_client,
+            list_fn=list_fn,
+            update_fn=update_fn,
+        )
+        result.swept = sweep.swept
+        result.items.extend(sweep.items)
+        result.errors.extend(sweep.errors)
     return result
 
 
@@ -216,7 +342,9 @@ def print_sync_report(result: SyncResult) -> None:
     print("Aiwake YouTube metadata sync")
     print(f"  mode      : {'DRY-RUN' if result.dry_run else 'write'}")
     print(f"  enriched  : {result.enriched}")
+    print(f"  rewritten : {result.rewritten}")
     print(f"  pushed    : {result.pushed}")
+    print(f"  swept     : {result.swept}")
     print(f"  errors    : {len(result.errors)}")
     for item in result.items:
         print(f"  [{item.status}] {item.session_id} {item.video_id} | {item.title[:60]}")
@@ -241,6 +369,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Push current library copy without rebuilding from transcripts.",
     )
+    parser.add_argument(
+        "--skip-sweep",
+        action="store_true",
+        help="Do not list the YouTube uploads playlist for leftover mystery CTAs.",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
@@ -257,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
         transcripts_dir=args.transcripts_dir,
         dry_run=bool(args.dry_run),
         skip_enrich=bool(args.skip_enrich),
+        skip_sweep=bool(args.skip_sweep),
     )
     print_sync_report(result)
     return 2 if result.errors else 0

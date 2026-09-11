@@ -465,8 +465,49 @@ def _merge_new_seed_rows(dest: Path, src: Path) -> None:
 
 
 def _theme_lru_key(row: dict[str, Any]) -> str:
-    raw = str(row.get("last_used_date") or "").strip()
+    raw = str(
+        row.get("last_used_at") or row.get("last_used_date") or ""
+    ).strip()
     return raw if raw else "0000-01-01"
+
+
+def _theme_rotation_path(module: str) -> Path:
+    return _store_path(f"lofi_theme_rotation_{module}")
+
+
+def _theme_identity(row: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(row.get("theme") or "").strip().lower(),
+        str(row.get("subtheme") or "").strip().lower(),
+    )
+
+
+def _last_selected_theme(module: str) -> tuple[str, str]:
+    raw = _read_json(_theme_rotation_path(module), {})
+    return _theme_identity(raw) if isinstance(raw, dict) else ("", "")
+
+
+def _remember_selected_theme(module: str, row: dict[str, Any]) -> None:
+    theme, subtheme = _theme_identity(row)
+    _write_json(
+        _theme_rotation_path(module),
+        {
+            "theme": theme,
+            "subtheme": subtheme,
+            "selected_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def _avoid_consecutive_repeat(
+    rows: list[dict[str, Any]],
+    *,
+    module: str,
+) -> list[dict[str, Any]]:
+    """Exclude the previous selection whenever another candidate exists."""
+    last = _last_selected_theme(module)
+    alternatives = [row for row in rows if _theme_identity(row) != last]
+    return alternatives if alternatives else rows
 
 
 def select_theme(
@@ -506,18 +547,29 @@ def select_theme(
             return chosen
         print(f"[LOFI theme] WARN forced theme={theme!r} not found — falling through")
 
-    unused = [r for r in rows if isinstance(r, dict) and str(r.get("status", "unused")) == "unused"]
+    unused = [
+        r
+        for r in rows
+        if isinstance(r, dict) and str(r.get("status", "unused")) == "unused"
+    ]
     if unused:
-        chosen = dict(unused[0])
+        eligible = _avoid_consecutive_repeat(unused, module=module)
+        chosen = dict(random.choice(eligible))
+        _remember_selected_theme(module, chosen)
         print(
             f"[LOFI theme] unused theme={chosen.get('theme')} "
             f"subtheme={chosen.get('subtheme')} remaining={len(unused)}"
         )
         return chosen
 
-    used = [r for r in rows if isinstance(r, dict)]
+    used = _avoid_consecutive_repeat(
+        [r for r in rows if isinstance(r, dict)],
+        module=module,
+    )
+    random.shuffle(used)
     used.sort(key=_theme_lru_key)
     chosen = dict(used[0])
+    _remember_selected_theme(module, chosen)
     print(
         f"[LOFI theme] recycle LRU theme={chosen.get('theme')} "
         f"subtheme={chosen.get('subtheme')} last_used={chosen.get('last_used_date')}"
@@ -531,7 +583,8 @@ def mark_theme_used(module: str, theme: str, subtheme: str | None = None) -> Non
     rows = _read_json(path, [])
     if not isinstance(rows, list):
         return
-    today = date.today().isoformat()
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
     for r in rows:
         if str(r.get("theme")) != theme:
             continue
@@ -539,6 +592,7 @@ def mark_theme_used(module: str, theme: str, subtheme: str | None = None) -> Non
             continue
         r["status"] = "used"
         r["last_used_date"] = today
+        r["last_used_at"] = now.isoformat()
         break
     _write_json(path, rows)
 
